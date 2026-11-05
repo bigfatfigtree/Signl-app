@@ -120,8 +120,8 @@ const webhook = async (obj) => {
 };
 
 console.log("verify-build55: Command Center Money + Businesses + charge capture");
-check("build stamp is 2026.11.04-129", BUILD_ID === "2026.11.04-129", BUILD_ID);
-check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.04-129"));
+check("build stamp is 2026.11.05-130", BUILD_ID === "2026.11.05-130", BUILD_ID);
+check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.05-130"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);
@@ -310,8 +310,8 @@ const routerSrc = fs.readFileSync(new URL("../netlify/functions/lib/router.js", 
 check("client: Money and Businesses subtabs fetch their aggregates and render class panels + the agreement table",
   appSrc.includes("ccMoneyHtml") && appSrc.includes("ccBusinessesHtml") && appSrc.includes("/admin/command/money") && appSrc.includes("/admin/command/businesses")
   && appSrc.includes("cc-modeled-panel") && appSrc.includes("Founding rate, locked") && appSrc.includes("Recorded only"));
-check("client: the overview tile prints Recorded and Charged side by side, never summed",
-  appSrc.includes("dollarsFlowing") && appSrc.includes("charged on cards so far") && appSrc.includes("never added together"));
+check("client: Recorded and Charged stay separate ledgers, never summed (money view panels; Stats Collected reads the charged ledger only)",
+  appSrc.includes("Through the platform") && appSrc.includes("On cards") && appSrc.includes("(money.charged") && appSrc.includes("ccMoneyHtml"));
 check("server: capture runs inside the webhook before the snapshot branches, keyed on Stripe object ids, idempotent on event ids",
   routerSrc.includes("captureStripeCharge(evt, obj)") && routerSrc.includes("charge:stripe:") && routerSrc.includes("stripeEventIds")
   && routerSrc.indexOf("captureStripeCharge(evt, obj)") < routerSrc.indexOf('evt.type === "checkout.session.completed" && obj.mode === "setup"'));

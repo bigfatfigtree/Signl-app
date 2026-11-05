@@ -73,7 +73,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || "";
-check("stamp is 2026.11.04-129 and identical in build.js + index.html", stamp === "2026.11.04-129" && indexHtml.includes(stamp), String(stamp));
+check("stamp is 2026.11.05-130 and identical in build.js + index.html", stamp === "2026.11.05-130" && indexHtml.includes(stamp), String(stamp));
 check("index.html cache-busts app.js + theme-v3 with the rolled stamp",
   indexHtml.includes(`/app.js?v=${stamp}`) && indexHtml.includes(`/theme-v3.css?v=${stamp}`));
 
@@ -127,14 +127,14 @@ check("existing sign-out paths survive: rail Sign out buttons still call signOut
 // 3 — icons at the top
 part("3: icons, not words");
 check("the admin top row's Everything is an icon button (aria + title carry the word; no spelled-out button text)",
-  appJs.includes('class="tr-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("more")}</button>') &&
+  appJs.includes('class="tr-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button>') &&
   !appJs.includes('${bnIcon("more")}<span>Everything</span>'));
 check("the admin top row's help is an icon button, not a spelled-out link",
   appJs.includes('class="tr-help126" href="mailto:hello@joinsignl.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a>') &&
   !appJs.includes('<a href="mailto:hello@joinsignl.com">Need help?</a>'));
 check("the word Everything still titles the panel itself, and the top bar's Everything stays icon-only",
   appJs.includes('<div class="ev125-head"><strong>Everything</strong>') &&
-  appJs.includes('class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("more")}</button>'));
+  appJs.includes('class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button>'));
 check("icon buttons keep generous tap targets (40px) in CSS",
   css.includes(".tr-ev125 { width: 40px; height: 40px;") && css.includes(".pv-tab126 {") && css.includes("min-height: 40px"));
 
@@ -174,9 +174,9 @@ check("totals strip + preview tabs + identity menu CSS present",
 
 // Inherited pins
 part("S2: inherited pins");
-check("Momentum naming intact, Sig portrait art intact, photo avatars intact",
+check("Momentum naming intact, Sig orb art intact (Build -130), photo avatars intact",
   appJs.includes("Momentum — you reply fast and show up. Businesses see it before followers.") &&
-  appJs.includes('const SIG_ART = "/assets/sig-a";') && appJs.includes("function selfAvatarUrl122(u)"));
+  appJs.includes('const SIG_ART = "/assets/sig-orb";') && appJs.includes("function selfAvatarUrl122(u)"));
 check("payment gates stay shut: founding Stripe prices still resolve only from unset env",
   routerJs.includes('process.env.STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') &&
   !process.env.STRIPE_PRICE_FOUNDING_SELF_SERVICE && !process.env.STRIPE_PRICE_FOUNDING_GROWTH && !process.env.STRIPE_PRICE_FOUNDING_MANAGED);

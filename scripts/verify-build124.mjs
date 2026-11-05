@@ -1,31 +1,31 @@
 #!/usr/bin/env node
-// Build -124 verification (Jeff, 2026-11-04): "Let's try A but
-// I like the pencil drawing and orb — so keep them handy so if
-// I don't like A, we use them." Sig's face swaps from the V4
-// beanie-kid render to Concept A — the painterly portrait from
-// ~/workspace/research_notes/sig-concepts-2026-11-04/ — on every
-// surface where Sig's face appears, app AND marketing site.
-//   A. one swappable reference: SIG_ART = "/assets/sig-a" in
-//      app.js; every face resolves through it or the literal
-//      head-idle paths (tab, rail, FAB, More rows), all repointed.
-//   V. stills only: Concept A has no clips, so SIG_ART_VIDEO is
-//      false and both attach points (sigHeroSet, sigCelebKick)
-//      are gated — the stills carry every state, no request ever
-//      goes out for a clip that does not exist.
-//   L. legacy kept: the full V4 set (stills + clips) survives at
-//      public/assets/sig-v4-legacy/ — a revert, or a later swap
-//      to the ink companion (C) or the orb (D), is a folder of
-//      derived stills + repointing SIG_ART and the literals.
-//   F. fallbacks untouched: the C and D concept masters still
-//      sit in the research folder, unmodified.
-//   H. server: boots; every sig-a still serves 200; the retired
-//      /assets/sig-v4/ path serves nothing; the shell stamp is
-//      consistent between build.js and index.html. (The literal
-//      stamp step is NOT pinned here: Builds -122/-123 are
-//      landing in parallel in this tree and the stamp roll rides
-//      with the sequence — consistency is what -124 owns.)
-// The rendered proof (pill size, round crops, four roles) lives
-// in ~/workspace/research_notes/signl-build124-qa/.
+// Build -124 verification (Jeff, 2026-11-04): Sig's face swap —
+// one swappable reference (SIG_ART), every surface resolving
+// through it or the literal small-path set, the state machine
+// and triggers untouched by the art change.
+//
+// Build -130 (Jeff, 2026-11-05) superseded the ART this file
+// was written for: the Concept A portrait (and the V4 render
+// before it) is retired and Sig's mark is THE ORB — a gradient
+// blue-to-mint orb with radiating signal arcs, one still plus
+// one living clip. The pins below now assert the orb model
+// through the same machinery -124 built:
+//   A. one swappable reference: SIG_ART = "/assets/sig-orb";
+//      every dynamic surface resolves through it; the literal
+//      orb paths (tab, rail, FAB, More rows) point at sig-orb;
+//      ZERO references to the retired folders remain.
+//   V. the video model: SIG_ART_VIDEO is true; sigHeroSet
+//      attaches the single orb clip lazily (data-clip "orb",
+//      looping), gated by reduced motion; sigCelebKick plays
+//      the same clip one-shot on the claim win; the think
+//      state still rests the hero on the still.
+//   L. assets on disk: orb.webp + orb.mp4 ship in sig-orb;
+//      the retired sets (sig-a, sig-v4-legacy, sig-axolotl)
+//      are gone from the bundle.
+//   F. the picked masters stay in the research folder.
+//   H. server: boots; the orb assets serve 200; the retired
+//      /assets/sig-a/ path serves no stale face; the shell
+//      stamp is consistent between build.js and index.html.
 //
 // Run: node scripts/verify-build124.mjs
 
@@ -59,38 +59,37 @@ const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || "";
-check("SIG_ART names the Concept A folder", appJs.includes('const SIG_ART = "/assets/sig-a";'));
-check("every dynamic face resolves through SIG_ART (avatar, hero, stills, celeb)", count(appJs, "${SIG_ART}/") >= 8, String(count(appJs, "${SIG_ART}/")));
-check("the literal head-idle paths (More row, tab, rail, FAB) point at sig-a, none at sig-v4", count(appJs, 'src="/assets/sig-a/head-idle.webp"') >= 4 && count(appJs, 'src="/assets/sig-v4/head-idle.webp"') === 0, String(count(appJs, 'src="/assets/sig-a/head-idle.webp"'))); // 5 placements at -124; Build -125's nav rewrite consolidated the duplicate More renderer, leaving 4 — the invariant is the folder, the count rides with the nav model
-check("SIG_HEAD still maps the five states to head crops", appJs.includes('const SIG_HEAD = { "": "head-idle", greet: "head-greet", think: "head-think", talk: "head-talk", celebrate: "head-celebrate" }'));
+check("SIG_ART names the orb folder", appJs.includes('const SIG_ART = "/assets/sig-orb";'));
+check("every dynamic surface resolves through SIG_ART (avatar, hero, celeb, clips)", count(appJs, "${SIG_ART}/") >= 8, String(count(appJs, "${SIG_ART}/")));
+check("the literal orb paths (More row, tab, rail, FAB) point at sig-orb", count(appJs, 'src="/assets/sig-orb/orb.webp"') >= 4, String(count(appJs, 'src="/assets/sig-orb/orb.webp"')));
+check("zero references to the retired face folders remain in app.js", !appJs.includes("/assets/sig-a") && !appJs.includes("/assets/sig-v4") && !appJs.includes("head-idle") && !appJs.includes("still-celebrate"));
 check("alt/labels unchanged: avatars still carry aria-label Sig", appJs.includes('role="img" aria-label="Sig"'));
-check("no user-facing reference to the V4 folder remains in app.js", !appJs.includes("/assets/sig-v4/"), "");
+check("the orb still + clip are named once (SIG_STILL / SIG_CLIP)", appJs.includes('const SIG_STILL = "orb.webp";') && appJs.includes('const SIG_CLIP = "orb.mp4";'));
 check("stamp is consistent between build.js and index.html", !!stamp && indexHtml.includes(stamp), String(stamp));
 
-// ---------- V: stills only ----------
-part("V: stills only");
-check("SIG_ART_VIDEO is false", appJs.includes("const SIG_ART_VIDEO = false;"));
-check("sigHeroSet lands on the still when video is off (same path as reduced motion)", appJs.includes("if (!SIG_ART_VIDEO || sigReducedMotion())"));
-check("sigCelebKick never attaches a clip for a stills-only character", appJs.includes('if (!SIG_ART_VIDEO) return; // stills-only character (Build -124): the celebrate still stands'));
-check("the clip machinery survives for a future character (attach code untouched)", appJs.includes('video.innerHTML = `<source src="${SIG_ART}/${name}.webm" type="video/webm"><source src="${SIG_ART}/${name}.mp4" type="video/mp4">`'));
-check("the think state still swaps to the think still", appJs.includes('if (mode === "think")') && appJs.includes("${SIG_ART}/still-think.webp"));
+// ---------- V: the video model ----------
+part("V: the orb clip model");
+check("SIG_ART_VIDEO is true (the orb has a living clip)", appJs.includes("const SIG_ART_VIDEO = true;"));
+check("sigHeroSet rests on the still when video is off or motion is reduced", appJs.includes("if (!SIG_ART_VIDEO || sigReducedMotion())"));
+check("sigCelebKick stays gated on SIG_ART_VIDEO", appJs.includes("if (!SIG_ART_VIDEO) return;"));
+check("sigHeroSet attaches the one orb clip, looping, marked data-clip orb", appJs.includes('video.setAttribute("data-clip", "orb")') && appJs.includes("video.loop = true") && appJs.includes('video.innerHTML = `<source src="${SIG_ART}/${SIG_CLIP}" type="video/mp4">`'));
+check("the think state still swaps the video out for the still", appJs.includes('if (mode === "think")') && appJs.includes('class="sig-hero-still sig-hero-think"'));
 
 // ---------- L + F: assets on disk ----------
 part("L: assets on disk");
-const sigA = (rel) => path.join(root, "public/assets/sig-a", rel);
-const legacy = (rel) => path.join(root, "public/assets/sig-v4-legacy", rel);
+const orb = (rel) => path.join(root, "public/assets/sig-orb", rel);
 const sizeOf = (p) => (fs.existsSync(p) ? fs.statSync(p).size : -1);
 const isWebp = (p) => { try { const b = fs.readFileSync(p); return b.slice(0, 4).toString() === "RIFF" && b.slice(8, 12).toString() === "WEBP"; } catch (e) { return false; } };
-for (const f of ["hero.webp", "still-greet.webp", "still-think.webp", "still-talk.webp", "still-celebrate.webp", "head-idle.webp", "head-greet.webp", "head-think.webp", "head-talk.webp", "head-celebrate.webp"]) {
-  check(`Concept A still ships in sig-a: ${f}`, sizeOf(sigA(f)) > 0 && sizeOf(sigA(f)) <= 120000 && isWebp(sigA(f)), `${sizeOf(sigA(f))} bytes`);
+check("orb still ships in sig-orb (webp, sane weight)", sizeOf(orb("orb.webp")) > 0 && sizeOf(orb("orb.webp")) <= 200000 && isWebp(orb("orb.webp")), `${sizeOf(orb("orb.webp"))} bytes`);
+check("orb clip ships in sig-orb (mp4, sane weight)", sizeOf(orb("orb.mp4")) > 0 && sizeOf(orb("orb.mp4")) <= 3000000, `${sizeOf(orb("orb.mp4"))} bytes`);
+for (const gone of ["sig-a", "sig-v4-legacy"]) {
+  check(`retired face folder is gone from the bundle: ${gone}`, !fs.existsSync(path.join(root, "public/assets", gone)));
 }
-for (const f of ["hero.webp", "still-greet.webp", "still-think.webp", "still-talk.webp", "still-celebrate.webp", "head-idle.webp", "head-greet.webp", "head-think.webp", "head-talk.webp", "head-celebrate.webp", "idle.webm", "idle.mp4", "talk.webm", "talk.mp4", "greet.webm", "greet.mp4", "celebrate.webm", "celebrate.mp4"]) {
-  check(`V4 legacy kept intact: ${f}`, sizeOf(legacy(f)) > 0, `${sizeOf(legacy(f))} bytes`);
-}
-part("F: fallbacks untouched");
+check("the retired axolotl asset is gone", !fs.existsSync(path.join(root, "public/assets/sig-axolotl.png")));
+part("F: masters untouched");
 const concepts = path.join(os.homedir(), "workspace/research_notes/sig-concepts-2026-11-04");
-for (const f of ["sig-concept-a-grounded-portrait.png", "sig-concept-c-ink-companion.png", "sig-concept-d-the-orb.png", "sig-concept-b-signal-mark.png"]) {
-  check(`concept master still handy: ${f}`, sizeOf(path.join(concepts, f)) > 0, `${sizeOf(path.join(concepts, f))} bytes`);
+for (const f of ["media-generation-sig-mark-orb-v1-0-2f1dccf9-3ec0-4bdc-92ef-11450213b7de.webp", "media-generation-sig-orb-animated-v1-0-f4c68bde-d7ba-47a3-8f2a-6585e049bd8c.mp4"]) {
+  check(`picked orb master still handy: ${f}`, sizeOf(path.join(concepts, f)) > 0, `${sizeOf(path.join(concepts, f))} bytes`);
 }
 
 // ---------- H: server ----------
@@ -112,13 +111,13 @@ try {
   const up = await waitForServer();
   check("dev server boots and /api/bootstrap responds", up);
   if (!up) throw new Error("server did not start");
-  for (const f of ["hero.webp", "still-think.webp", "still-celebrate.webp", "head-idle.webp", "head-greet.webp", "head-think.webp", "head-talk.webp", "head-celebrate.webp"]) {
-    const res = await fetch(BASE + "/assets/sig-a/" + f);
-    check(`serves 200: /assets/sig-a/${f}`, res.status === 200, String(res.status));
+  for (const f of ["orb.webp", "orb.mp4"]) {
+    const res = await fetch(BASE + "/assets/sig-orb/" + f);
+    check(`serves 200: /assets/sig-orb/${f}`, res.status === 200, String(res.status));
   }
-  const retired = await fetch(BASE + "/assets/sig-v4/head-idle.webp");
+  const retired = await fetch(BASE + "/assets/sig-a/head-idle.webp");
   const retiredBody = Buffer.from(await retired.arrayBuffer());
-  check("the retired /assets/sig-v4/ path serves no stale face (shell fallback only, never the webp)", !(retiredBody.slice(0, 4).toString() === "RIFF" && retiredBody.slice(8, 12).toString() === "WEBP"), `${retired.status}, ${retiredBody.length} bytes`);
+  check("the retired /assets/sig-a/ path serves no stale face (shell fallback only, never the webp)", !(retiredBody.slice(0, 4).toString() === "RIFF" && retiredBody.slice(8, 12).toString() === "WEBP"), `${retired.status}, ${retiredBody.length} bytes`);
   const pageRes = await fetch(BASE + "/");
   const pageText = await pageRes.text();
   check("the served shell carries the current stamp", pageRes.status === 200 && pageText.includes(stamp), String(pageRes.status));

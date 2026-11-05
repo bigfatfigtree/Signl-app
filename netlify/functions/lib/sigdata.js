@@ -217,6 +217,9 @@ function buildAdminFacts(d) {
       // full stacked total, counted once per creator.
       signedUp: d.platformTotals ? d.platformTotals.creatorsSignedUp : cs.approved + cs.pending,
       totalFollowers: d.platformTotals ? d.platformTotals.totalFollowers : null,
+      // Build -130: the strip's two local numbers, same source.
+      localFollowers: d.platformTotals ? d.platformTotals.localFollowers : null,
+      avgLocalPct: d.platformTotals ? d.platformTotals.avgLocalPct : null,
       byMarket, byTier, marketReach, claimsToday, signups7d, recent: recentCreators,
     },
     businesses: {
@@ -585,7 +588,7 @@ function factsLines(role, f) {
     const c = f.creators, b = f.businesses;
     const lines = [];
     lines.push(`Live platform counts right now, computed from the same records Admin shows (tester and demo records are excluded from every roster count): ${fmt(c.total)} ${plural(c.total, "creator")} in total: ${fmt(c.approved)} approved, ${fmt(c.pending)} pending, ${fmt(c.rejected)} rejected. Of the approved creators, ${fmt(c.complete)} have finished profiles, and finished profiles are the roster businesses can see; ${fmt(c.approvedIncomplete)} approved creators have not finished yet.`);
-    lines.push(`Platform totals — the same two numbers the strip at the top of Admin home shows: ${fmt(c.signedUp)} creators signed up (approved plus pending, tester records excluded)${c.totalFollowers !== null && c.totalFollowers !== undefined ? `, carrying ${fmt(c.totalFollowers)} total followers across all markets (each signed-up creator's full stacked total, as reported by creators, each creator counted once)` : ""}. Sign out lives in the menu behind your name and photo at the top left of Admin: tap it, then Sign out; the same menu holds Your account, where the password can be changed.`);
+    lines.push(`Platform totals — the same numbers the strip at the top of Admin home shows: ${fmt(c.signedUp)} creators signed up (approved plus pending, tester records excluded)${c.totalFollowers !== null && c.totalFollowers !== undefined ? `, carrying ${fmt(c.totalFollowers)} total followers across all markets (each signed-up creator's full stacked total, as reported by creators, each creator counted once)` : ""}${c.localFollowers !== null && c.localFollowers !== undefined ? `, of which ${fmt(c.localFollowers)} are local followers (followers who live in each creator's own market, worked out from the local share each creator reports, each creator counted once on their home market)` : ""}${c.avgLocalPct !== null && c.avgLocalPct !== undefined ? `; the average signed-up creator's local share (their audience living in their own market) is ${c.avgLocalPct}%` : ""}. Sign out lives in the menu behind your name and photo at the top left of Admin: tap it, then Sign out; the same menu holds Your account, where the password can be changed.`);
     if (c.byMarket.length) lines.push(`Creators by market (total / approved / finished): ${c.byMarket.slice(0, 8).map((m) => `${m.market} ${m.creators}/${m.approved}/${m.complete}`).join("; ")}${c.byMarket.length > 8 ? `; plus ${c.byMarket.length - 8} more markets` : ""}.`);
     if (c.marketReach && c.marketReach.length) lines.push(`Combined followers by market (approved creators, each creator's own reported stacked total, counted in every market they are listed in): ${c.marketReach.slice(0, 8).map((m) => `${m.market}: ${fmt(m.combinedFollowers)} combined followers across ${fmt(m.creators)} listed ${plural(m.creators, "creator")}`).join("; ")}.`);
     if (c.byTier.length) lines.push(`Approved creators by tier: ${c.byTier.map((t) => `${t.tier} ${t.count}`).join(", ")}.`);
@@ -950,7 +953,7 @@ function answerAdmin(f, q, t) {
       (hasWord(t, "followers") && hasWord(t, "total", "platform", "overall", "altogether") && !market &&
        !hasWord(t, "market", "markets", "combined", "most", "biggest", "largest", "leading", "top")) ||
       (hasWord(t, "creators", "signups") && hasWord(t, "platform", "overall") && countAsk)) {
-    return `${fmt(c.signedUp)} creators signed up on the platform (approved plus pending, tester records excluded)${c.totalFollowers !== null && c.totalFollowers !== undefined ? `, carrying ${fmt(c.totalFollowers)} total followers across all markets — each signed-up creator's full stacked total, as reported by creators, each creator counted once` : ""}. The same two numbers sit at the top of Admin home.`;
+    return `${fmt(c.signedUp)} creators signed up on the platform (approved plus pending, tester records excluded)${c.totalFollowers !== null && c.totalFollowers !== undefined ? `, carrying ${fmt(c.totalFollowers)} total followers across all markets — each signed-up creator's full stacked total, as reported by creators, each creator counted once` : ""}${c.localFollowers !== null && c.localFollowers !== undefined ? `, of which ${fmt(c.localFollowers)} are local followers (living in each creator's own market)` : ""}${c.avgLocalPct !== null && c.avgLocalPct !== undefined ? `; the average local share is ${c.avgLocalPct}%` : ""}. The same numbers sit at the top of Admin home.`;
   }
 
   // Combined reach by market (Build -116): the same live

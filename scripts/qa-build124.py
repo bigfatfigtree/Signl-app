@@ -2,11 +2,11 @@
 """Build -124 Playwright QA (Sig character swap to Concept A):
 - Creator home at phone (390) + desktop (1440): the Sig FAB pill,
   the bottom-tab / rail Sig icon, and the queue card avatar all
-  show the new portrait; the Sig tab hero shows the A bust still.
+  show the orb still; the Sig tab hero plays the animated orb (Build -130).
 - Admin home desktop: the Admin Sig card avatar.
 - Business home desktop: the Ask Sig row avatar.
 - Network audit on every page: every /assets/sig-* request is a
-  sig-a still answered 200; ZERO requests for sig-v4 art or for
+  sig-orb assets answered 200; ZERO requests for retired sig-a/sig-v4 art.
   any Sig clip (stills-only gate holds in the real render).
 Chromium runs through the local relay (127.0.0.1:8899) with
 loopback bypassed, per the standing QA chain. Seed mirrors
@@ -89,7 +89,7 @@ try:
 
         def sig_audit(sigreq):
             return {
-                "sig_a_200": sorted({u for u, s in sigreq if u.startswith("/assets/sig-a/") and s == 200}),
+                "sig_orb_200": sorted({u for u, s in sigreq if u.startswith("/assets/sig-orb/") and s == 200}),
                 "sig_bad": [(u, s) for u, s in sigreq if s >= 400],
                 "sig_v4_requests": [u for u, s in sigreq if "sig-v4" in u],
                 "clip_requests": [u for u, s in sigreq if u.endswith((".webm", ".mp4"))],
@@ -100,7 +100,7 @@ try:
         R["creator_login"] = cst
         R["creator_page_errors"] = cerrs
         R["creator_fab_visible"] = cpage.locator(".sig-fab").first.is_visible() if cpage.locator(".sig-fab").count() else False
-        R["creator_avatars"] = cpage.locator("img[src*='/assets/sig-a/']").count()
+        R["creator_avatars"] = cpage.locator("img[src*='/assets/sig-orb/']").count()
         shot(cpage, "creator-home-390.png")
         # Sig tab: the hero still in the large placement (the app's
         # own navigation, the same call the More-row tap makes)
@@ -118,7 +118,7 @@ try:
 
         # ============ CREATOR DESKTOP (1440) ============
         dctx, dpage, dst, derrs, dsig = open_role("cara@b124qa.dev", 1440, 900)
-        R["creator_desktop_avatars"] = dpage.locator("img[src*='/assets/sig-a/']").count()
+        R["creator_desktop_avatars"] = dpage.locator("img[src*='/assets/sig-orb/']").count()
         shot(dpage, "creator-home-desktop.png")
         R["creator_desktop_sig_network"] = sig_audit(dsig)
         dctx.close()
@@ -132,7 +132,7 @@ try:
         except Exception:
             pass
         apage.wait_for_timeout(800)
-        R["admin_sig_avatars"] = apage.locator("img[src*='/assets/sig-a/']").count()
+        R["admin_sig_avatars"] = apage.locator("img[src*='/assets/sig-orb/']").count()
         shot(apage, "admin-home-desktop.png")
         R["admin_sig_network"] = sig_audit(asig)
         actx.close()
@@ -141,7 +141,7 @@ try:
         bctx, bpage, bst, berrs, bsig = open_role("basil@b124qa.dev", 1440, 900)
         R["business_login"] = bst
         R["business_page_errors"] = berrs
-        R["business_sig_avatars"] = bpage.locator("img[src*='/assets/sig-a/']").count()
+        R["business_sig_avatars"] = bpage.locator("img[src*='/assets/sig-orb/']").count()
         shot(bpage, "business-home-desktop.png")
         R["business_sig_network"] = sig_audit(bsig)
         bctx.close()

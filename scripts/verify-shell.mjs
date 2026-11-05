@@ -168,7 +168,7 @@ try {
   check("the preview's chrome is the banner: the legacy topbar + footer are hidden in preview mode", themeCss.includes("body.preview-on .topbar, body.preview-on .footer"));
   check("phone fit: main can shrink and the tab row is capped at the viewport on admin + preview", themeCss.includes("body.rail-on main, body.preview-on main { min-width: 0; }") && themeCss.includes(".tabs { min-width: 0; max-width: 100%; }"));
   check("the preview Discover step renders the live Find creators composition (market strip, category chips, filters fold)", appJs.includes("function previewDiscoverHtml(") && appJs.includes('class="filters disc-top"') && appJs.includes("pvDiscoverCatChip") && appJs.includes('class="filters-fold"') && appJs.includes("function pvDiscoverCatChip("));
-  check("Sig's face is the current character (Build -124 portrait) behind one swappable reference", appJs.includes("SIG_AVATAR_HTML") && appJs.includes("/assets/sig-a/head-idle.webp") && fs.existsSync(path.join(root, "public", "assets", "sig-a", "head-idle.webp")) && !fs.existsSync(path.join(root, "public", "assets", "sig-musician.svg")));
+  check("Sig's mark is the orb (Build -130) behind one swappable reference", appJs.includes("SIG_AVATAR_HTML") && appJs.includes("/assets/sig-orb/orb.webp") && fs.existsSync(path.join(root, "public", "assets", "sig-orb", "orb.webp")) && !fs.existsSync(path.join(root, "public", "assets", "sig-musician.svg")) && !fs.existsSync(path.join(root, "public", "assets", "sig-a")));
   check("Ask Sig is a Home row + sheet, not a floating button", appJs.includes("function askSigRowHtml(") && appJs.includes("function openAgentSheet("));
 
   part("source: nav + Sig tab (Jeff, from live use; BUILD -41 full rail)");
@@ -203,7 +203,7 @@ try {
   check("no account state shrinks the destination set (no market-live or founding branch in tabItemsFor)", !tabSlice.includes("marketLive") && !tabSlice.includes("founding"));
   check("Visits and Earnings ride the rail as composed row items, not a second hard-coded list", !tabSliceBizCr.includes('label: "Visits", tab:') && !tabSliceBizCr.includes('label: "Earnings", tab:') && !tabSliceBizCr.includes('label: "Offers", tab: "My Offers"') && tabSlice.includes("railRowItems()"));
   check("Sig tab badge is the pending queue count (state.sigQueueCount)", tabSlice.includes("state.sigQueueCount") && tabSlice.includes('badge: sigBadge'));
-  check("Sig tab item renders Sig's face, not a line glyph", tabSlice.includes('icon: "sig"') && appJs.includes('class="tab-sig-img"') && appJs.includes("/assets/sig-a/head-idle.webp"));
+  check("Sig tab item renders Sig's orb mark, not a line glyph", tabSlice.includes('icon: "sig"') && appJs.includes('class="tab-sig-img"') && appJs.includes("/assets/sig-orb/orb.webp"));
   check("every destination lights itself; Counter rides the business Visits item (BUILD -41)", appJs.includes("function railRowItems(") && appJs.includes('r.tab === "Visits & Posts" && t === "Counter"') && appJs.includes("on: t === r.tab") && !appJs.includes("BIZ_MORE_TABS") && !appJs.includes("CR_MORE_TABS") && !appJs.includes("PT_MORE_TABS"));
   const moreSlice = fnSlice("moreRowsFor", "tabBarHtml");
   check("creator More leads with Visits + Earnings rows, badges carried from waitCounts", moreSlice.indexOf('label: "Visits"') > -1 && moreSlice.indexOf('label: "Visits"') < moreSlice.indexOf('label: "My profile"') && moreSlice.indexOf('label: "Earnings"') < moreSlice.indexOf('label: "My profile"') && moreSlice.includes("wc.crVisits") && moreSlice.includes("wc.crLicense"));

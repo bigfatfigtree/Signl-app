@@ -109,10 +109,12 @@ check("admin: rail primaries + More sheet + row More wrap + toggleRowMore, railI
   appJs.includes('ADMIN_RAIL_PRIMARY_125 = ["Applications", "Creators", "Markets", "Stats"]') &&
   appJs.includes("function openAdminMoreSheet()") && appJs.includes("function toggleRowMore(userId)") &&
   appJs.includes('class="row-more"') && appJs.includes('onclick="toggleRowMore('));
-check("admin markets: photo headers for the three photographed markets + gradient fallback",
-  appJs.includes("MARKET_PHOTOS_119") && appJs.includes("/assets/market-vb.jpg") && appJs.includes("/assets/market-nashville.jpg") && appJs.includes("/assets/market-london.jpg") && appJs.includes('class="mkt-photo grad"'));
+check("admin markets: photo header on EVERY market card (Build -130 id-based photos) + gradient layered underneath as fallback",
+  appJs.includes("function marketPhoto130(m)") && appJs.includes("/assets/market-photos/") && appJs.includes("'),var(--grad)"));
 check("the three market photos are in the app bundle",
   ["market-vb.jpg", "market-nashville.jpg", "market-london.jpg"].every((f) => fs.existsSync(path.join(root, "public/assets", f)) && fs.statSync(path.join(root, "public/assets", f)).size > 10000));
+check("the Build -130 per-market photos exist for the original three markets",
+  ["hampton-roads.jpg", "nashville.jpg", "london.jpg"].every((f) => fs.existsSync(path.join(root, "public/assets/market-photos", f)) && fs.statSync(path.join(root, "public/assets/market-photos", f)).size > 10000));
 check("Sig fab is real now: ensureSigFab builds the pill (head + dot + count badge)",
   appJs.includes("function ensureSigFab()") && appJs.includes('class="fab-dot"') && appJs.includes("renderAgentFab"));
 check("in-app Sig answer mirror intentionally unchanged (server-owned wording; flagged, not forked)",
@@ -128,7 +130,7 @@ check("payment gates stay shut: founding Stripe prices still resolve only from u
 // availability / "Standing hours", the creatorStanding account
 // status fields) are preserved byte-for-byte.
 part("S2: Build -120 naming");
-check("stamp is 2026.11.04-129", stamp === "2026.11.04-129", String(stamp));
+check("stamp is 2026.11.05-130", stamp === "2026.11.05-130", String(stamp));
 const ABSENT_120 = ["Standing points", "Your Standing", "your Standing", "Standing trend",
   "Standing moves you up", "How does Standing work", "Standing — you reply fast",
   'wsHead("Standing"', 'kpiCard("Standing"', "Comped visits build your Standing",

@@ -22,7 +22,7 @@ const sigdata = require("./sigdata");
 const { buildProfilePageHtml, buildClaimPageHtml, buildRosterPageHtml, buildRosterNotFoundHtml } = require("./profile-meta");
 const { videoEmbedFor } = require("./video-embed");
 const intentLib = require("./intent");
-const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT, verifiedInMarket, computeAudienceVerification } = require("./audience-markets");
+const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT, verifiedInMarket, computeAudienceVerification, canonicalMarketName } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
 const pilots = require("./pilots");
@@ -1397,13 +1397,41 @@ function audienceTotalOf(creator) {
 function platformTotals126(users) {
   let creatorsSignedUp = 0;
   let totalFollowers = 0;
+  // Build -130 (Jeff, 2026-11-05, "thats crucial"): two more
+  // numbers off the SAME population and the SAME share the
+  // public profile shows (audienceShareInMarket — the stated
+  // localAudiencePct at home; the Build -108 verification
+  // record labels that share, it never rewrites it, so the
+  // Meta feed refines these numbers through the same field
+  // with no second integration). Local followers = each
+  // creator's stacked total x their home-market share,
+  // rounded per creator, each creator counted once — the
+  // home-basis twin of the follower total. Avg % local = the
+  // straight average of home shares over the creators who
+  // stated one; an unstated share is excluded, never a zero.
+  let localFollowers = 0;
+  let localPctSum = 0;
+  let localPctCount = 0;
   for (const u of users || []) {
     if (!u || u.role !== "creator" || isTester(u)) continue;
     if (u.status !== "approved" && u.status !== "pending") continue;
     creatorsSignedUp += 1;
-    totalFollowers += audienceTotalOf(u.creator || {}) || 0;
+    const total = audienceTotalOf(u.creator || {}) || 0;
+    totalFollowers += total;
+    const homePct = audienceShareInMarket(u, u.market);
+    if (typeof homePct === "number" && Number.isFinite(homePct)) {
+      localPctSum += homePct;
+      localPctCount += 1;
+      localFollowers += Math.round((total * homePct) / 100);
+    }
   }
-  return { creatorsSignedUp, totalFollowers };
+  return {
+    creatorsSignedUp,
+    totalFollowers,
+    localFollowers,
+    avgLocalPct: localPctCount ? Math.round(localPctSum / localPctCount) : null,
+    avgLocalCount: localPctCount,
+  };
 }
 
 // The Admin home preview tabs' targets (Build -126), resolved in
@@ -20167,8 +20195,44 @@ async function route(event) {
           r.followers += total;
         }
       }
+      // Build -130: per-market local numbers over the signed-up
+      // population (approved + pending, testers excluded — the
+      // platformTotals126 population). Every creator listed in a
+      // market (listedMarketsFor: home plus extra markets at or
+      // above the 5% floor) contributes the share they stated
+      // FOR THAT MARKET (audienceShareInMarket's stored values,
+      // via the listing entries): the straight average of those
+      // shares (unstated excluded, never zero) and the local
+      // follower sum — stacked total x that market's share,
+      // rounded per creator. A multi-market creator lands in
+      // each market at that market's own share.
+      const localByMarket = {};
+      for (const u of all) {
+        if (u.role !== "creator" || isTester(u)) continue;
+        if (u.status !== "approved" && u.status !== "pending") continue;
+        const total = audienceTotalOf(u.creator || {});
+        for (const e of listedMarketsFor(u)) {
+          if (typeof e.pct !== "number" || !Number.isFinite(e.pct)) continue;
+          const r = localByMarket[e.market] || (localByMarket[e.market] = { pctSum: 0, pctCount: 0, localFollowers: 0 });
+          r.pctSum += e.pct;
+          r.pctCount += 1;
+          r.localFollowers += Math.round((total * e.pct) / 100);
+        }
+      }
       const out = MARKETS.map((m) => {
-        const inMarket = all.filter((u) => u.market === m.name && u.role !== "admin");
+        // Build -130 Part 5 (count fix, audit 2026-11-05): the
+        // home-count bucket matches CANONICALLY, exactly like
+        // the reach counts below (listedMarketsFor). The raw
+        // u.market === m.name equality dropped legacy records
+        // stored under pre-rename or label forms ("Hampton
+        // Roads", "Tampa, Florida") out of their home market's
+        // approved/pending/business counts while the same
+        // records still counted in listed/combined — Virginia
+        // Beach showed 9 approved of 11 real, Tampa showed 0
+        // of 1. No stored record is rewritten (standing
+        // design); only the match changes. Definitions from
+        // Builds -116/-126 are unchanged.
+        const inMarket = all.filter((u) => u.role !== "admin" && canonicalMarketName(u.market) === m.name);
         return {
           id: m.id,
           name: m.name,
@@ -20190,6 +20254,12 @@ async function route(event) {
           // combined followers (as reported by creators).
           creatorsListed: (reachByMarket[m.name] || {}).creators || 0,
           combinedFollowers: (reachByMarket[m.name] || {}).followers || 0,
+          // Build -130: this market's local numbers (see
+          // localByMarket above). avgLocalPct is null when no
+          // listed creator has stated a share for this market.
+          localFollowers: (localByMarket[m.name] || {}).localFollowers || 0,
+          avgLocalPct: (localByMarket[m.name] || {}).pctCount ? Math.round((localByMarket[m.name] || {}).pctSum / (localByMarket[m.name] || {}).pctCount) : null,
+          avgLocalCount: (localByMarket[m.name] || {}).pctCount || 0,
         };
       });
       return json(200, { markets: out, testMode: TEST_MODE });

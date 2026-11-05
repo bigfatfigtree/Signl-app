@@ -213,14 +213,14 @@ console.log("== Source checks ==");
 {
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
-  check("Admin renders the funnel section from the endpoint", appJs.includes("ccFunnelHtml") && appJs.includes("Creator funnel by market") && appJs.includes("/admin/command/funnel"), "");
+  check("Admin Stats renders the approvals funnel in the chart stack (the /admin/command/funnel endpoint stays served for the server-side facts)", appJs.includes("funnel2Html(") && appJs.includes("From signup to ready") && routerJs.includes("ccFunnel"), "");
   const overviewSrc = appJs.slice(appJs.indexOf("function ccOverviewHtml("));
-  check("funnel section sits under the sign-up board on Overview", overviewSrc.indexOf("adminSignupBoardHtml(s.signupBoard)") >= 0 && overviewSrc.indexOf("adminSignupBoardHtml(s.signupBoard)") < overviewSrc.indexOf("ccFunnelHtml(funnel)"), "");
-  check("funnel section carries the plain-words stage key", appJs.includes("First offer taken") && appJs.includes("left out of every stage, always"), "");
+  check("funnel sits in the Stats chart stack under the filters", (() => { const w = appJs.slice(appJs.indexOf("async function loadStats()"), appJs.indexOf("async function ccShowTab()")); return w.includes('id="ast-charts"') && w.includes("astRender();") && appJs.includes("From signup to ready"); })(), "");
+  check("funnel stages carry plain words (Signed up · Approved · Profile complete)", appJs.includes('"Signed up"') && appJs.includes('"Profile complete"') && appJs.includes("ready to be booked"), "");
   check("server computes the funnel from creator + booking records (profileCompleteOf, live-booking test)", routerJs.includes("ccFunnel") && routerJs.includes("profileCompleteOf") && routerJs.includes('bk.collabRole === "plusone"'), "");
-  check("build stamp is 2026.11.04-129 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.04-129"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.04-129"'), "");
+  check("build stamp is 2026.11.05-130 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.05-130"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.05-130"'), "");
 }
 
 console.log(`\nBuild -93 verify: ${passed} passed, ${failed} failed`);

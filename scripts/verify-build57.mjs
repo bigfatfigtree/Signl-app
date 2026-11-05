@@ -167,8 +167,8 @@ const sign = (raw) => {
 };
 
 console.log("verify-build57: Owed + Reconciliation + Close & Export");
-check("build stamp is 2026.11.04-129", BUILD_ID === "2026.11.04-129", BUILD_ID);
-check("index.html carries the -57 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.04-129"));
+check("build stamp is 2026.11.05-130", BUILD_ID === "2026.11.05-130", BUILD_ID);
+check("index.html carries the -57 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.05-130"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);
@@ -373,8 +373,8 @@ check("client: the Owed and Close subtabs render their real views (owed ledger, 
   appSrc.includes("ccOwedHtml") && appSrc.includes("ccCloseHtml") && appSrc.includes("ccReconHtml")
   && appSrc.includes("/admin/command/owed") && appSrc.includes("/admin/command/reconciliation") && appSrc.includes("/admin/command/close")
   && appSrc.includes("ccExport('pack')") && appSrc.includes("Promises, not cash") && appSrc.includes("Adjustments landed"));
-check("client: the overview money-owed tile renders the ledger totals when they exist",
-  appSrc.includes("t.moneyOwed") && appSrc.includes("owedOut"));
+check("client: the Owed book view renders the ledger totals (ccOwedHtml fed by /admin/command/owed in the Stats books)",
+  appSrc.includes("ccOwedHtml") && appSrc.includes("/admin/command/owed") && appSrc.includes('if (ccTab === "owed")'));
 check("server: the -57 routes sit inside the admin gate",
   routerSrc.indexOf('seg[2] === "owed"') > routerSrc.indexOf('if (seg[0] === "admin")')
   && routerSrc.indexOf('seg[2] === "reconciliation"') > routerSrc.indexOf('if (seg[0] === "admin")')

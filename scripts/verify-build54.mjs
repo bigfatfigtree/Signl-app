@@ -121,8 +121,8 @@ const cookieOf = (res) => (((res.headers || {})["Set-Cookie"] || (res.headers ||
 
 console.log("verify-build54: Command Center foundation + Overview + Markets");
 
-check("build stamp is 2026.11.04-129", BUILD_ID === "2026.11.04-129", BUILD_ID);
-check("index.html carries the -54 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.04-129"));
+check("build stamp is 2026.11.05-130", BUILD_ID === "2026.11.05-130", BUILD_ID);
+check("index.html carries the -54 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.05-130"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);
@@ -288,18 +288,19 @@ const win = (startMarker, endMarker) => {
   return a >= 0 && b > a ? appSrc.slice(a, b) : "";
 };
 const shell = win("async function loadStats()", "async function adminLineLookup()");
-check("Stats renders the Command Center shell: title, filters, honesty legend, exclusion note",
-  shell.includes("Command Center") && shell.includes("ccSetPeriod") && shell.includes("ccSetMarket") && shell.includes("ccSetTesters")
+check("Stats renders the -130 page: title, chart filters, the books filter row, honesty legend, exclusion note",
+  shell.includes('wsHead("Stats"') && shell.includes("astSetFilter") && shell.includes("ccSetPeriod") && shell.includes("ccSetMarket") && shell.includes("ccSetTesters")
   && shell.includes("Counted") && shell.includes("Recorded") && shell.includes("Charged") && shell.includes("Modeled")
   && shell.includes("excluded from every count"), shell.slice(0, 160));
-check("subtab bar carries Jeff's eight: Overview · Money · Partners · Businesses · Creators · Markets · Owed · Close",
-  ["Overview", "Money", "Partners", "Businesses", "Creators", "Markets", "Owed", "Close"].every((l) => shell.includes(`ccSetTab('${l.toLowerCase()}')`)));
-check("Overview renders tiles, attention strip, waiting-for-launch state and the board",
-  shell.includes("ccOverviewHtml") && shell.includes("Needs attention") && shell.includes("Waiting for launch") && shell.includes("Finished deals") && shell.includes("Register dollars"));
-check("money and businesses render their real views since -55; the later-phase views still render forming states, never invented totals",
-  shell.includes("ccFormingHtml") && shell.includes("Forming") && shell.includes("ccMoneyHtml") && shell.includes("ccBusinessesHtml") && shell.includes("/admin/command/money") && shell.includes("/admin/command/businesses"));
-check("Markets view renders the gate bar, live state, counted dollars and the unlisted resolution lines",
-  shell.includes("ccMarketsHtml") && shell.includes("the launch gate") && shell.includes("Founding — not launched") && shell.includes("counted at registers") && shell.includes("Not in a market yet"));
+check("the books strip carries the five real views: Money · Partners · Businesses · Owed · Close (Overview/Creators/Markets left the shell in -130)",
+  ["Money", "Partners", "Businesses", "Owed", "Close"].every((l) => shell.includes(`ccSetTab('${l.toLowerCase()}')`))
+  && !shell.includes("ccSetTab('overview')") && !shell.includes("ccSetTab('creators')") && !shell.includes("ccSetTab('markets')"));
+check("the chart stack renders the headline band, the signups trend, the approvals funnel and the markets table",
+  appSrc.includes("stat-band") && appSrc.includes("Signups over time") && appSrc.includes("From signup to ready") && appSrc.includes("funnel2Html(") && appSrc.includes("Local followers"));
+check("money and businesses render their real views; the forming placeholder is deleted — no Admin destination lands on a view with nothing to do",
+  !appSrc.includes("ccFormingHtml") && shell.includes("ccMoneyHtml") && shell.includes("ccBusinessesHtml") && shell.includes("/admin/command/money") && shell.includes("/admin/command/businesses"));
+check("the London race and the layers readouts render at the Stats foot; the Markets tab owns the market grid",
+  shell.includes("ccLondonRaceHtml") && shell.includes("/admin/command/london-race") && shell.includes("Spanish and campus layers") && shell.includes("Sign-ups outside the listed markets"));
 check("the queue row carries the attribution repair control with partner select and required reason",
   appSrc.includes("toggleAttributionEditor") && appSrc.includes("saveAttribution") && appSrc.includes("attr-partner-") && appSrc.includes("attr-reason-") && appSrc.includes("Partner attribution"));
 check("server: the command routes sit inside the admin gate (after the 403 check)",

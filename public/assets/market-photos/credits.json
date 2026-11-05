@@ -1,0 +1,313 @@
+{
+  "hampton-roads": {
+    "source": "existing SIGNL bundle photo (market-vb.jpg)",
+    "license": "SIGNL bundle asset",
+    "page": null
+  },
+  "nashville": {
+    "source": "existing SIGNL bundle photo (market-nashville.jpg)",
+    "license": "SIGNL bundle asset",
+    "page": null
+  },
+  "london": {
+    "source": "https://commons.wikimedia.org/wiki/File:London_Skyline_from_Waterloo_Bridge,_London,_UK_-_Diliff.jpg",
+    "license": "CC BY-SA 3.0",
+    "artist": "Diliff",
+    "page": null,
+    "file": "London Skyline from Waterloo Bridge, London, UK - Diliff.jpg"
+  },
+  "richmond": {
+    "source": "https://commons.wikimedia.org/wiki/File:A_downtown_view_of_Richmond,_VA.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Bruce Emmerling",
+    "page": "https://en.wikipedia.org/wiki/Richmond%2C_Virginia",
+    "file": "A_downtown_view_of_Richmond,_VA.jpg"
+  },
+  "washington-dc": {
+    "source": "https://commons.wikimedia.org/wiki/File:12-07-13-washington-by-RalfR-08.jpg",
+    "license": "CC BY-SA 3.0",
+    "artist": "Ralf Roletschek (talk) - Infos über Fahrräder auf fahrradmonteur.de Wikis in der Ausbildung",
+    "page": "https://en.wikipedia.org/wiki/Washington%2C_D.C.",
+    "file": "12-07-13-washington-by-RalfR-08.jpg"
+  },
+  "raleigh": {
+    "source": "https://commons.wikimedia.org/wiki/File:Raleigh_Skyline.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Abhiram Juvvadi",
+    "page": "https://en.wikipedia.org/wiki/Raleigh%2C_North_Carolina",
+    "file": "Raleigh_Skyline.jpg"
+  },
+  "charlotte": {
+    "source": "https://commons.wikimedia.org/wiki/File:Uptown_Charlotte_2018_taking_by_DJI_Phantom_4_pro.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Precisionviews",
+    "page": "https://en.wikipedia.org/wiki/Charlotte%2C_North_Carolina",
+    "file": "Uptown_Charlotte_2018_taking_by_DJI_Phantom_4_pro.jpg"
+  },
+  "baltimore": {
+    "source": "https://commons.wikimedia.org/wiki/File:Fell%27s_Point_Aerial_2022.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Matthew Binebrink",
+    "page": "https://en.wikipedia.org/wiki/Baltimore",
+    "file": "Fell's_Point_Aerial_2022.jpg"
+  },
+  "atlanta": {
+    "source": "https://commons.wikimedia.org/wiki/File:A2ATL20250614-0721_(cropped).jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "AtlChampion",
+    "page": "https://en.wikipedia.org/wiki/Atlanta",
+    "file": "A2ATL20250614-0721_(cropped).jpg"
+  },
+  "austin": {
+    "source": "https://commons.wikimedia.org/wiki/File:Skyline_of_Austin,_Texas_(cropped).jpg",
+    "license": "CC BY 4.0",
+    "artist": "Quintin Soloviev",
+    "page": "https://en.wikipedia.org/wiki/Austin%2C_Texas",
+    "file": "Skyline_of_Austin,_Texas_(cropped).jpg"
+  },
+  "dallas": {
+    "source": "https://commons.wikimedia.org/wiki/File:Dallas_Texas_skyline_from_Reunion_Tower_September_2025_(cropped).png",
+    "license": "CC0",
+    "artist": "IcedCowboyCoffee",
+    "page": "https://en.wikipedia.org/wiki/Dallas",
+    "file": "Dallas_Texas_skyline_from_Reunion_Tower_September_2025_(cropped).png"
+  },
+  "chicago": {
+    "source": "https://commons.wikimedia.org/wiki/File:Chicago_River_ferry_b.jpg",
+    "license": "CC BY 2.0",
+    "artist": "File:Chicago River ferry.jpg: John Picken derivative work: Georgfotoart",
+    "page": "https://en.wikipedia.org/wiki/Chicago",
+    "file": "Chicago_River_ferry_b.jpg"
+  },
+  "los-angeles": {
+    "source": "https://commons.wikimedia.org/wiki/File:Hollywood_sign_(8485145044).jpg",
+    "license": "CC BY-SA 2.0",
+    "artist": "Gnaphron",
+    "page": "https://en.wikipedia.org/wiki/Los_Angeles",
+    "file": "Hollywood_sign_(8485145044).jpg"
+  },
+  "san-diego": {
+    "source": "https://commons.wikimedia.org/wiki/File:La_Jolla_Shores_view_(cropped).jpg",
+    "license": "CC BY-SA 3.0",
+    "artist": "Dirk Hansen",
+    "page": "https://en.wikipedia.org/wiki/San_Diego",
+    "file": "La_Jolla_Shores_view_(cropped).jpg"
+  },
+  "seattle": {
+    "source": "https://commons.wikimedia.org/wiki/File:Seattle_Center_as_night_falls.jpg",
+    "license": "CC BY-SA 3.0",
+    "artist": "Jeffery Hayes",
+    "page": "https://en.wikipedia.org/wiki/Seattle",
+    "file": "Seattle_Center_as_night_falls.jpg"
+  },
+  "tampa": {
+    "source": "https://commons.wikimedia.org/wiki/File:Downtown_Tampa,_Florida.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Clément Bardot",
+    "page": "https://en.wikipedia.org/wiki/Tampa%2C_Florida",
+    "file": "Downtown_Tampa,_Florida.jpg"
+  },
+  "phoenix": {
+    "source": "https://commons.wikimedia.org/wiki/File:Downtown_Phoenix_Aerial_Looking_Northeast.jpg",
+    "license": "CC BY-SA 3.0",
+    "artist": "DPPed",
+    "page": "https://en.wikipedia.org/wiki/Phoenix%2C_Arizona",
+    "file": "Downtown_Phoenix_Aerial_Looking_Northeast.jpg"
+  },
+  "denver": {
+    "source": "https://commons.wikimedia.org/wiki/File:Denver,_Colorado_skyline_(cropped_3x5).jpg",
+    "license": "CC BY 4.0",
+    "artist": "Quintin Soloviev",
+    "page": "https://en.wikipedia.org/wiki/Denver",
+    "file": "Denver,_Colorado_skyline_(cropped_3x5).jpg"
+  },
+  "minneapolis": {
+    "source": "https://commons.wikimedia.org/wiki/File:Minneapolis_Skyline_looking_south.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "BpA9543",
+    "page": "https://en.wikipedia.org/wiki/Minneapolis",
+    "file": "Minneapolis_Skyline_looking_south.jpg"
+  },
+  "philadelphia": {
+    "source": "https://commons.wikimedia.org/wiki/File:Philadelphia_skyline_20240528_(cropped_2-1).jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "颐园居",
+    "page": "https://en.wikipedia.org/wiki/Philadelphia",
+    "file": "Philadelphia_skyline_20240528_(cropped_2-1).jpg"
+  },
+  "pittsburgh": {
+    "source": "https://commons.wikimedia.org/wiki/File:Ascending_the_Duquesne_Incline.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Dllu",
+    "page": "https://en.wikipedia.org/wiki/Pittsburgh",
+    "file": "Ascending_the_Duquesne_Incline.jpg"
+  },
+  "cincinnati": {
+    "source": "https://commons.wikimedia.org/wiki/File:Downtown_Cincinnati_viewed_from_Devou_Park_(cropped).jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "EEJCC",
+    "page": "https://en.wikipedia.org/wiki/Cincinnati",
+    "file": "Downtown_Cincinnati_viewed_from_Devou_Park_(cropped).jpg"
+  },
+  "columbus": {
+    "source": "https://commons.wikimedia.org/wiki/File:Downtown_Columbus_View_from_Main_St_Bridge_-_edit1.jpg",
+    "license": "Public domain",
+    "artist": "Paul Wasneski",
+    "page": "https://en.wikipedia.org/wiki/Columbus%2C_Ohio",
+    "file": "Downtown_Columbus_View_from_Main_St_Bridge_-_edit1.jpg"
+  },
+  "new-orleans": {
+    "source": "https://commons.wikimedia.org/wiki/File:New_Orleans_from_the_Air_September_2019_-_Central_Business_District_Skyline_(cropped).jpg",
+    "license": "CC BY 2.0",
+    "artist": "George Bannister",
+    "page": "https://en.wikipedia.org/wiki/New_Orleans",
+    "file": "New_Orleans_from_the_Air_September_2019_-_Central_Business_District_Skyline_(cropped).jpg"
+  },
+  "orlando": {
+    "source": "https://commons.wikimedia.org/wiki/File:Orlando,_Florida_(cropped).jpg",
+    "license": "CC BY 4.0",
+    "artist": "Quintin Soloviev",
+    "page": "https://en.wikipedia.org/wiki/Orlando%2C_Florida",
+    "file": "Orlando,_Florida_(cropped).jpg"
+  },
+  "miami": {
+    "source": "https://commons.wikimedia.org/wiki/File:Miami,_Florida,_Skyline_4.jpg",
+    "license": "CC0",
+    "artist": "Wilfredor",
+    "page": "https://en.wikipedia.org/wiki/Miami",
+    "file": "Miami,_Florida,_Skyline_4.jpg"
+  },
+  "houston": {
+    "source": "https://commons.wikimedia.org/wiki/File:Texas_medical_center.jpg",
+    "license": "CC BY 2.0",
+    "artist": "Katie Haugland Brown",
+    "page": "https://en.wikipedia.org/wiki/Houston",
+    "file": "Texas_medical_center.jpg"
+  },
+  "san-antonio": {
+    "source": "https://commons.wikimedia.org/wiki/File:San_Antonio_Skyline_at_Night_(12216535856).jpg",
+    "license": "CC BY 2.0",
+    "artist": "Jonathan Cutrer from San Angelo, United States",
+    "page": null,
+    "file": "San Antonio Skyline at Night (12216535856).jpg"
+  },
+  "las-vegas": {
+    "source": "https://commons.wikimedia.org/wiki/File:Center_Strip_Before_Sunrise.jpg",
+    "license": "CC BY-SA 2.0",
+    "artist": "Eric Kilby",
+    "page": "https://en.wikipedia.org/wiki/Las_Vegas",
+    "file": "Center_Strip_Before_Sunrise.jpg"
+  },
+  "detroit": {
+    "source": "https://commons.wikimedia.org/wiki/File:Detroit_Skyline_from_Windsor_2025-09-01.jpg",
+    "license": "CC0",
+    "artist": "TheWxResearcher",
+    "page": "https://en.wikipedia.org/wiki/Detroit",
+    "file": "Detroit_Skyline_from_Windsor_2025-09-01.jpg"
+  },
+  "san-juan": {
+    "source": "https://commons.wikimedia.org/wiki/File:2013_Old_San_Juan_01.JPG",
+    "license": "CC BY-SA 3.0",
+    "artist": "Farragutful",
+    "page": "https://en.wikipedia.org/wiki/San_Juan%2C_Puerto_Rico",
+    "file": "2013_Old_San_Juan_01.JPG"
+  },
+  "manchester": {
+    "source": "https://commons.wikimedia.org/wiki/File:Tower_Blocks_over_Knott_Mill,_geograph_6866152_by_David_Dixon.jpg",
+    "license": "CC BY-SA 2.0",
+    "artist": "David Dixon",
+    "page": "https://en.wikipedia.org/wiki/Manchester",
+    "file": "Tower_Blocks_over_Knott_Mill,_geograph_6866152_by_David_Dixon.jpg"
+  },
+  "dublin": {
+    "source": "https://commons.wikimedia.org/wiki/File:Dublin_-_aerial_-_2025-07-07_01.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "瑞丽江的河水",
+    "page": "https://en.wikipedia.org/wiki/Dublin",
+    "file": "Dublin_-_aerial_-_2025-07-07_01.jpg"
+  },
+  "amsterdam": {
+    "source": "https://commons.wikimedia.org/wiki/File:Amsterdam_Canals_(23585867048).jpg",
+    "license": "CC BY 2.0",
+    "artist": "Billie Grace Ward from New York, USA",
+    "page": "https://en.wikipedia.org/wiki/Amsterdam",
+    "file": "Amsterdam_Canals_(23585867048).jpg"
+  },
+  "copenhagen": {
+    "source": "https://commons.wikimedia.org/wiki/File:2018_-_Christiansborg_from_the_Marble_Bridge.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Moahim",
+    "page": "https://en.wikipedia.org/wiki/Copenhagen",
+    "file": "2018_-_Christiansborg_from_the_Marble_Bridge.jpg"
+  },
+  "mexico-city": {
+    "source": "https://commons.wikimedia.org/wiki/File:Sobrevuelos_CDMX_HJ2A4913_(25514321687)_(cropped).jpg",
+    "license": "CC0",
+    "artist": "Gobierno CDMX",
+    "page": "https://en.wikipedia.org/wiki/Mexico_City",
+    "file": "Sobrevuelos_CDMX_HJ2A4913_(25514321687)_(cropped).jpg"
+  },
+  "dubai": {
+    "source": "https://en.wikipedia.org/wiki/File:Burj_Khalifa_2021.jpg",
+    "license": "CC-BY-2.0",
+    "artist": "Francisco Anzola",
+    "page": "https://en.wikipedia.org/wiki/Dubai",
+    "file": "Burj_Khalifa_2021.jpg"
+  },
+  "paris": {
+    "source": "https://commons.wikimedia.org/wiki/File:La_Tour_Eiffel_vue_de_la_Tour_Saint-Jacques,_Paris_ao%C3%BBt_2014_(2).jpg",
+    "license": "CC BY-SA 2.0",
+    "artist": "Yann Caradec from Paris, France",
+    "page": "https://en.wikipedia.org/wiki/Paris",
+    "file": "La_Tour_Eiffel_vue_de_la_Tour_Saint-Jacques,_Paris_août_2014_(2).jpg"
+  },
+  "barcelona": {
+    "source": "https://commons.wikimedia.org/wiki/File:Evening_light_over_Barcelona.jpg",
+    "license": "CC BY 2.0",
+    "artist": "M McBey",
+    "page": "https://en.wikipedia.org/wiki/Barcelona",
+    "file": "Evening_light_over_Barcelona.jpg"
+  },
+  "lisbon": {
+    "source": "https://commons.wikimedia.org/wiki/File:Lisboa_-_Portugal_(52597836992).jpg",
+    "license": "CC BY-SA 2.0",
+    "artist": "Vitor Oliveira from Torres Vedras, PORTUGAL",
+    "page": "https://en.wikipedia.org/wiki/Lisbon",
+    "file": "Lisboa_-_Portugal_(52597836992).jpg"
+  },
+  "toronto": {
+    "source": "https://commons.wikimedia.org/wiki/File:Toronto_Skyline_from_Snake_Island,_September_11_2026_(01).jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Dillan Payne",
+    "page": "https://en.wikipedia.org/wiki/Toronto",
+    "file": "Toronto_Skyline_from_Snake_Island,_September_11_2026_(01).jpg"
+  },
+  "montreal": {
+    "source": "https://commons.wikimedia.org/wiki/File:Montreal,_Quebec_skyline.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Quintin Soloviev",
+    "page": "https://en.wikipedia.org/wiki/Montreal",
+    "file": "Montreal,_Quebec_skyline.jpg"
+  },
+  "auckland": {
+    "source": "https://commons.wikimedia.org/wiki/File:Auckland_skyline_-_May_2024_(2).jpg",
+    "license": "CC BY-SA 2.0",
+    "artist": "elpinto007",
+    "page": "https://en.wikipedia.org/wiki/Auckland",
+    "file": "Auckland_skyline_-_May_2024_(2).jpg"
+  },
+  "wellington": {
+    "source": "https://commons.wikimedia.org/wiki/File:Seddon_Statue_in_Parliament_Grounds.jpg",
+    "license": "CC BY-SA 2.0",
+    "artist": "russellstreet",
+    "page": "https://en.wikipedia.org/wiki/Wellington",
+    "file": "Seddon_Statue_in_Parliament_Grounds.jpg"
+  },
+  "christchurch": {
+    "source": "https://commons.wikimedia.org/wiki/File:The_%22Brill%22_Tram_178.New_Regent_St_Christchurch._(11510530335).jpg",
+    "license": "CC0",
+    "artist": "Bernard Spragg. NZ from Christchurch, New Zealand",
+    "page": "https://en.wikipedia.org/wiki/Christchurch",
+    "file": "The_\"Brill\"_Tram_178.New_Regent_St_Christchurch._(11510530335).jpg"
+  }
+}

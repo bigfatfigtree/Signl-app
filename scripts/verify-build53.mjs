@@ -225,8 +225,8 @@ const win = (startMarker, endMarker) => {
   return a >= 0 && b > a ? appSrc.slice(a, b) : "";
 };
 
-check("build stamp is 2026.11.04-129", BUILD_ID === "2026.11.04-129", BUILD_ID);
-check("index.html carries the -53 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.04-129"));
+check("build stamp is 2026.11.05-130", BUILD_ID === "2026.11.05-130", BUILD_ID);
+check("index.html carries the -53 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.05-130"));
 
 const rail = win('if (u.role === "admin") {', "return items;");
 check("rail: admin block found", rail.length > 0);
@@ -239,8 +239,8 @@ const allLabels = railLabels;
 // Pin updated at the Build -70 merge (2026-11-02): Build -70 added the
 // Admin Outreach tab (Jeff's owner outreach workspace) after Recruiters,
 // superseding this suite's ten-destination pin. Order otherwise unchanged.
-check("rail: ELEVEN admin destinations in Jeff's order (Applications, Requests, Markets, Recruiters, Outreach, Partners, Event Log, Compliance, Campaign, Stats, Sig)",
-  JSON.stringify(allLabels) === JSON.stringify(["Applications", "Requests", "Markets", "Recruiters", "Outreach", "Partners", "Event Log", "Compliance", "Campaign", "Stats", "Sig"]),
+check("rail: TWELVE admin destinations in Jeff's order (Creators added as its own tab, Build -130 Part 9)",
+  JSON.stringify(allLabels) === JSON.stringify(["Applications", "Requests", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "Event Log", "Compliance", "Campaign", "Stats", "Sig"]),
   allLabels.join(" | "));
 
 const renderAdminSrc = win("function renderAdmin() {", "function adminSigItems(");
@@ -274,10 +274,10 @@ check("filter matches market rows by canonical market and unlisted rows by typed
   filterSrc.includes('f.kind === "market"') && filterSrc.includes("adminCanonMarket(u.market) === f.market") && filterSrc.includes("unlistedPlace(u) === f.place"));
 
 const statsSrc = win("async function loadStats()", "async function adminLineLookup()");
-check("Stats renders the sign-up board first, above the existing tiles",
-  statsSrc.indexOf("adminSignupBoardHtml(s.signupBoard)") >= 0 && statsSrc.indexOf("adminSignupBoardHtml(s.signupBoard)") < statsSrc.indexOf('class="stat-row"'));
-check("everything Stats already carried stays below the board (Your Line lookup, market table, Square connections)",
-  statsSrc.includes("Your Line lookup") && statsSrc.includes("s.perMarket") && statsSrc.includes("Register connections (Square)"));
+check("Stats renders filters, then the chart stack, then the books (Build -130 Part 9)",
+  statsSrc.includes("astSetFilter('range'") && statsSrc.indexOf('id="ast-charts"') >= 0 && statsSrc.indexOf('id="ast-charts"') < statsSrc.indexOf("The books"));
+check("everything Stats already carried has a home (Your Line on the Creators tab; layers, unlisted sign-ups and Square connections at the Stats foot)",
+  appSrc.includes("Your Line lookup") && appSrc.includes("Spanish and campus layers") && appSrc.includes("Sign-ups outside the listed markets") && appSrc.includes("Register connections (Square)"));
 const boardSrc = win("function adminSignupBoardHtml(", "async function loadStats()");
 check("board renders totals strip, two-segment bars and plain-word splits",
   boardSrc.includes("Signed up") && boardSrc.includes("awaiting review") && boardSrc.includes("profile finished") && boardSrc.includes("sb-creators") && boardSrc.includes("sb-biz") && boardSrc.includes("Not in a market yet"));

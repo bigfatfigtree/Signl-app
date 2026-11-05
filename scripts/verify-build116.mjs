@@ -67,7 +67,7 @@ const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.j
 const sigdataJs = fs.readFileSync(path.join(root, "netlify/functions/lib/sigdata.js"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v2.css"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.04-129", indexHtml.includes("2026.11.04-129") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.04-129"));
+check("stamp is 2026.11.05-130", indexHtml.includes("2026.11.05-130") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-130"));
 check("client: deck renders the first pending application as the card", appJs.includes("function adminDeckHtml(pend)") && appJs.includes("const u = pend[0];"));
 check("client: Deck/List toggle with the deck as the default while a queue exists", appJs.includes('onclick="adminAppSetView(\'deck\')"') && appJs.includes('adminAppView = pend.length ? "deck" : "list"'));
 check("client: deck decisions post to the existing review endpoint", appJs.includes('await api("POST", "/admin/review", { userId, decision, ...(reason ? { reason } : {}) })'));
@@ -87,6 +87,7 @@ check("server: markets totals computed live from listed markets x stacked totals
 check("server: user search endpoint is admin-area, short query returns no rows", routerJs.includes('seg[1] === "users" && seg[2] === "search"') && routerJs.includes("needsQuery: true"));
 check("server: search market filter follows the listing rules", routerJs.includes("isListedInMarket(u, marketWanted)"));
 check("server: Sig facts get the same listing + audience helpers", routerJs.includes("listedMarketsFor, audienceTotalOf,"));
+check("server (Build -130 Part 5): market home counts match canonically, never raw string equality", routerJs.includes("canonicalMarketName(u.market) === m.name"));
 check("sigdata: marketReach facts + facts line + reach answer", sigdataJs.includes("marketReach") && sigdataJs.includes("Combined followers by market") && sigdataJs.includes("leads both ways"));
 check("no undo is faked anywhere in the deck", !appJs.includes("adminDeckUndo") && !routerJs.includes("un-review"));
 
@@ -135,6 +136,26 @@ const fixtures = [
   creatorRec("b116-rob", "Rob Rejected", "rob@fixtures.dev", "robrejected", {
     top: { status: "rejected", market: "Richmond", city: "Richmond", createdAt: iso(now0 - 25 * DAY), reviewedAt: iso(now0 - 24 * DAY), rejectionReason: "Content not a fit" },
     creator: { followerCount: 5000, totalAudience: 5000, audienceStack: { instagram: 5000 } },
+  }),
+  // Build -130 Part 5 (count fix): legacy variant-stored records.
+  // Their stored market strings are the pre-rename / label forms;
+  // no code rewrites stored records, so the COUNTS must match
+  // canonically. Vicky + Penny are stored "Hampton Roads" (the
+  // Virginia Beach market's old name); Jamie is stored
+  // "Tampa, Florida" (the label form). Before the fix, the raw
+  // u.market === m.name bucket dropped all three from their
+  // home counts while listed/combined (canonical) kept them.
+  creatorRec("b116-vicky", "Vicky Variant", "vicky@fixtures.dev", "vickyvariant", {
+    top: { status: "approved", market: "Hampton Roads", city: "Virginia Beach", reviewedAt: iso(now0 - 15 * DAY), createdAt: iso(now0 - 16 * DAY) },
+    creator: { followerCount: 3000, totalAudience: 3000, audienceStack: { instagram: 3000 }, localAudiencePct: 65 },
+  }),
+  creatorRec("b116-penny", "Penny Pending Variant", "penny@fixtures.dev", "pennyvariant", {
+    top: { market: "Hampton Roads", city: "Norfolk", createdAt: iso(now0 - 3600 * 1000), updatedAt: iso(now0 - 3600 * 1000) },
+    creator: { followerCount: 800, totalAudience: 800, audienceStack: { instagram: 800 }, localAudiencePct: 50 },
+  }),
+  creatorRec("b116-jamie", "Jamie Labelform", "jamie@fixtures.dev", "jamielabelform", {
+    top: { status: "approved", market: "Tampa, Florida", city: "Tampa", reviewedAt: iso(now0 - 11 * DAY), createdAt: iso(now0 - 12 * DAY) },
+    creator: { followerCount: 2370, totalAudience: 2370, audienceStack: { instagram: 2370 }, localAudiencePct: 40 },
   }),
   {
     id: "b116-bistro", role: "business", email: "owner@pendingbistro.dev", name: "Bistro Owner",
@@ -210,7 +231,7 @@ try {
   const apps = await admin("GET", "/api/admin/applications");
   check("applications read ok", apps.status === 200, String(apps.status));
   const pendIds = (apps.data.pending || []).map((u) => u.id);
-  check("pending queue in createdAt order (the deck's order)", JSON.stringify(pendIds) === JSON.stringify(["b116-gary", "b116-pete", "b116-pam", "b116-bistro"]), pendIds.join(","));
+  check("pending queue in createdAt order (the deck's order)", JSON.stringify(pendIds) === JSON.stringify(["b116-gary", "b116-pete", "b116-pam", "b116-bistro", "b116-penny"]), pendIds.join(","));
   const pete = (apps.data.pending || []).find((u) => u.id === "b116-pete");
   check("deck audience block: stacked total rides along", pete && pete.creator.audience && pete.creator.audience.total === 216000, JSON.stringify(pete && pete.creator.audience));
   const pam = (apps.data.pending || []).find((u) => u.id === "b116-pam");
@@ -227,6 +248,12 @@ try {
   check("Richmond: the multi-market creator counts here too, plus the home creator", rich1 && rich1.creatorsListed === 2, JSON.stringify(rich1 && { l: rich1.creatorsListed, f: rich1.combinedFollowers }));
   check("Richmond: combined followers = 15,000 (listed) + 2,000 (home) = 17,000", rich1 && rich1.combinedFollowers === 17000, String(rich1 && rich1.combinedFollowers));
   check("home-market counts untouched by the new fields", nash1 && nash1.creatorsApproved === 1 && rich1 && rich1.creatorsApproved === 1, JSON.stringify({ n: nash1 && nash1.creatorsApproved, r: rich1 && rich1.creatorsApproved }));
+  const vb1 = marketRow(mk1.data, "Virginia Beach");
+  const tampa1 = marketRow(mk1.data, "Tampa");
+  check("Part 5: 'Hampton Roads'-stored records land in Virginia Beach's home counts (1 approved + 1 pending)", vb1 && vb1.creatorsApproved === 1 && vb1.creatorsPending === 1, JSON.stringify(vb1 && { a: vb1.creatorsApproved, p: vb1.creatorsPending }));
+  check("Part 5: Virginia Beach listed/combined count her too — both paths canonical now", vb1 && vb1.creatorsListed === 1 && vb1.combinedFollowers === 3000, JSON.stringify(vb1 && { l: vb1.creatorsListed, f: vb1.combinedFollowers }));
+  check("Part 5: 'Tampa, Florida'-stored approved creator lands in Tampa's home counts + listed", tampa1 && tampa1.creatorsApproved === 1 && tampa1.creatorsListed === 1 && tampa1.combinedFollowers === 2370, JSON.stringify(tampa1 && { a: tampa1.creatorsApproved, l: tampa1.creatorsListed, f: tampa1.combinedFollowers }));
+  check("Part 5: variant-stored records count toward complete exactly like canonical ones", vb1 && tampa1 && rich1 && vb1.creatorsApprovedComplete === rich1.creatorsApprovedComplete && tampa1.creatorsApprovedComplete === rich1.creatorsApprovedComplete, JSON.stringify({ vb: vb1 && vb1.creatorsApprovedComplete, t: tampa1 && tampa1.creatorsApprovedComplete, r: rich1 && rich1.creatorsApprovedComplete }));
 
   // ---------- C: Find a user ----------
   part("C: user search");

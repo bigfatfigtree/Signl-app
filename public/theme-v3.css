@@ -676,6 +676,7 @@ body.v3-on .tb2-btn.tb2-ev125:hover, .tb2-btn.tb2-ev125:hover { border-color: va
 
 /* ---- Admin home: platform totals strip + preview tabs ---- */
 .totals126 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 4px 0 12px; }
+@media (min-width: 900px) { .totals126 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .totals126:empty { display: none; }
 .tot126 { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .tot126-num { font-size: 2rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; color: var(--ink); }
@@ -720,3 +721,47 @@ main .panel, main .card { min-width: 0; }
   .cc-tile { min-width: 0; }
 }
 .cc-flabel select { max-width: 100%; }
+
+/* ---------- Build -130 Parts 6/7/8: desktop rail, Sig chat boxes, mobile top bar ---------- */
+/* Part 6: on desktop the Everything panel's triggers are gone
+   (the rail lists every destination; the panel itself remains
+   for phones, where the bottom bar is unchanged). */
+@media (min-width: 768px) {
+  .tab-ev125, .tr-ev125 { display: none !important; }
+  body.v3-on #tabbar .tab-main { overflow-y: auto; min-height: 0; scrollbar-width: thin; }
+}
+/* Part 7: the working Sig chat box — orb, a real type-in
+   field, and the answer thread when a conversation starts. */
+.sigbox130 { margin: 12px 0; }
+.sigbox-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.sigbox-orb { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; background: #0B0D0C; }
+.sigbox-htext { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.sigbox-htext strong { font-size: .95rem; }
+.sigbox-htext span { color: var(--ink2); font-size: .82rem; }
+.sigbox-form { display: flex; gap: 8px; }
+.sigbox-form input { flex: 1; min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px; font: inherit; background: #fff; color: var(--ink); }
+.sigbox-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sigbox-go { border-radius: 999px; min-height: 44px; padding: 0 18px; }
+.sigbox-thread { max-height: 320px; overflow-y: auto; margin: 4px 0 10px; display: flex; flex-direction: column; gap: 8px; }
+.sigbox-thread[hidden] { display: none; }
+.sigtop130 { padding: 14px 16px 6px; margin: 0 0 14px; }
+.sigtop130 .sigbox130 { margin: 0; }
+.sigtop-nudges { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 8px; }
+.sigtop-nudges:empty { display: none; }
+.sigtop-nlabel { font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink3); }
+.sigtop-nudge { text-align: left; border: 1px solid var(--line); background: var(--paper2); color: var(--ink); border-radius: 12px; padding: 8px 12px; font: 600 .86rem 'Instrument Sans', system-ui, sans-serif; cursor: pointer; }
+button.sigtop-nudge:hover { border-color: var(--ink3); }
+.sigtop-nudge.plain { cursor: default; font-weight: 500; color: var(--ink2); }
+/* Part 8 (mobile only): top bars read name · help · the
+   dashboard's own middle icons · hamburger. The Admin top
+   row's right cluster unwraps so its icons can order with
+   the identity: help right after the name, the graph icon in
+   the middle, the hamburger far right. */
+.tb2-help130 { flex: none; }
+@media (max-width: 767.98px) {
+  .tr-right { display: contents; }
+  .tr-id { order: 1; }
+  .tr-help126 { order: 2; }
+  .tr-right > button:not(.tr-ev125) { order: 3; margin-left: auto; }
+  .tr-ev125 { order: 4; margin-left: auto; }
+}

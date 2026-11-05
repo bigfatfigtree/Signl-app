@@ -2061,6 +2061,7 @@ function renderNav() {
 // clipped, and the translucent bar fought the browser chrome.
 function bnIcon(name) {
   const paths = {
+    menu: `<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>`,
     home: `<path d="M3 10.8 12 3l9 7.8"/><path d="M5.2 9.4V21h13.6V9.4"/><path d="M9.5 21v-6h5v6"/>`,
     profile: `<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1.4-3.9 4.4-5.4 7.5-5.4s6.1 1.5 7.5 5.4"/>`,
     offers: `<path d="M3.5 12V4.5H11l9.5 9.5-7.5 7.5z"/><circle cx="8" cy="9.2" r="1.5"/>`,
@@ -2175,9 +2176,12 @@ async function loadAdminTotals126() {
     const el = document.getElementById("admin-totals126");
     if (!el) return;
     const followers = d.totalFollowers || 0;
+    const localFollowers = d.localFollowers || 0;
     el.innerHTML = `
       <div class="tot126"><span class="tot126-num">${fmtNum(d.creatorsSignedUp || 0)}</span><span class="tot126-lbl">Creators signed up</span><span class="tot126-sub">Across all markets. Approved + waiting. Test accounts are not counted.</span></div>
-      <div class="tot126"><span class="tot126-num">${fmtNum(followers)}</span><span class="tot126-lbl">Total followers</span><span class="tot126-sub">${followers.toLocaleString("en-US")} across all markets, as reported by creators.</span></div>`;
+      <div class="tot126"><span class="tot126-num">${fmtNum(followers)}</span><span class="tot126-lbl">Total followers</span><span class="tot126-sub">${followers.toLocaleString("en-US")} across all markets, as reported by creators.</span></div>
+      <div class="tot126"><span class="tot126-num">${fmtNum(localFollowers)}</span><span class="tot126-lbl">Local followers</span><span class="tot126-sub">${localFollowers.toLocaleString("en-US")} of those followers live in each creator's own market, worked out from the local share each creator reports.</span></div>
+      <div class="tot126"><span class="tot126-num">${d.avgLocalPct === null || d.avgLocalPct === undefined ? "—" : d.avgLocalPct + "%"}</span><span class="tot126-lbl">Avg % local</span><span class="tot126-sub">Average share of a creator's audience that lives in their market.</span></div>`;
   } catch (e) { /* the strip never blocks the queue */ }
 }
 
@@ -2547,8 +2551,7 @@ const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Post
 // (leaves the app, e.g. email support). A row may carry a
 // right-aligned `status` word instead of a sub (Momentum).
 function ptEarnGo125(seg) { state.partnerEarnSeg = seg; return go("dashboard", "Earnings"); }
-function adminCreatorsGo125() { ccTab = "creators"; return go("dashboard", "Stats"); }
-function adminWalletGo125() { ccTab = "money"; return go("dashboard", "Stats"); }
+function adminCreatorsGo125() { return go("dashboard", "Creators"); }
 function everythingGroups125() {
   const u = state.user;
   if (!u) return [];
@@ -2568,9 +2571,8 @@ function everythingGroups125() {
       { title: "Watch", rows: [
         R("list", "Event Log", "Everything that happened", "Event Log"),
         R("shield", "Compliance", "Posts, deadlines and strikes", "Compliance"),
-        R("stats", "Stats", "The command center", "Stats"),
-        { icon: "person", label: "Creators", sub: "Every creator, by state", act: "return adminCreatorsGo125()" },
-        { icon: "banknote", label: "Wallet", sub: "Billing, charges and the plan books", act: "return adminWalletGo125()" },
+        R("stats", "Stats", "Charts, money and the books", "Stats"),
+        { icon: "person", label: "Creators", sub: "Every creator, with the local numbers", act: "return adminCreatorsGo125()" },
       ] },
       { title: "System", rows: [
         R("sig", "Sig", "Your attention list", "Sig"),
@@ -2660,7 +2662,7 @@ function everythingGroups125() {
   return [];
 }
 function everythingRowHtml125(r) {
-  const inner = `<span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-a/head-idle.webp" alt="">` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
+  const inner = `<span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
   if (r.href) return `<a class="more-row ev125-row" href="${esc(r.href)}" onclick="closeEverything125()">${inner}</a>`;
   const act = r.act || `return go('dashboard','${r.tab}')`;
   return `<button type="button" class="more-row ev125-row" onclick="closeEverything125(); ${act}">${inner}</button>`;
@@ -2818,6 +2820,21 @@ function tabBarHtml() {
   const ordered = prim.map((t) => byTab[t]).filter(Boolean);
   const sigIt = byTab["Sig"] && !prim.includes("Sig") ? byTab["Sig"] : null;
   const exitIt = byTab["__partner_scope_exit"] || null;
+  // Build -130 Part 6 (Jeff, 2026-11-05): on DESKTOP the
+  // Everything panel is gone — the left rail lists EVERY
+  // destination directly. The non-primary destinations ride
+  // as secondary rail items under a "More" group label (the
+  // -119 form); the existing CSS orders them below the daily
+  // stops and hides them (and the label) on phones, where the
+  // bottom bar + Everything panel stay exactly as they were.
+  const primSet = new Set(prim);
+  const seenSec = new Set();
+  const secondary = items.filter((it) => {
+    if (primSet.has(it.tab) || it.tab === "Sig" || it.tab === "__partner_scope_exit") return false;
+    if (seenSec.has(it.tab)) return false;
+    seenSec.add(it.tab);
+    return true;
+  });
   const btnHtml = (it, cls) => {
     // Build -125 display names ride the -41 dual-span mechanism:
     // the full label on the wide rail, the design's one-word
@@ -2826,7 +2843,7 @@ function tabBarHtml() {
     const short = NAV_LABEL_125[it.tab] || RAIL_SHORT[it.tab] || full;
     return `
     <button type="button" class="tab-item ${cls} ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(full)}">
-      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-a/head-idle.webp" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
+      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
       <span class="tab-label"><span class="lbl-full">${esc(full)}</span><span class="lbl-short">${esc(short)}</span></span>
     </button>`;
   };
@@ -2834,6 +2851,8 @@ function tabBarHtml() {
     `<button type="button" class="tab-item tab-ev125" onclick="return openEverything125()" aria-label="Everything — all sections"><span class="tab-ic">${bnIcon("more")}</span><span class="tab-label">Everything</span></button>`,
     ...(exitIt ? [btnHtml(exitIt, "tab-secondary")] : []),
     ...ordered.map((it) => btnHtml(it, "tab-primary")),
+    ...(secondary.length ? [`<div class="tab-grouplabel">More</div>`] : []),
+    ...secondary.map((it) => btnHtml(it, "tab-secondary")),
     ...(sigIt ? [btnHtml(sigIt, "tab-secondary tab-sigpin")] : []),
   ].join("");
   // Sign out rides directly under the last destination, below
@@ -2868,15 +2887,21 @@ function renderTopBar2(full) {
   const initial = String(name || "?").trim().charAt(0).toUpperCase() || "S";
   const b = state.badges || {};
   const live = u.role === "business" ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
+  // Build -130 Part 8 (Jeff, 2026-11-05, corrected): the
+  // mobile top bar reads name/photo far left, the help icon
+  // right after the name, this dashboard's other icons in the
+  // middle, and a HAMBURGER at the far right where the
+  // three-dots icon used to open the same Everything panel.
+  // (This bar renders on phones only; desktop is untouched.)
   el.innerHTML = `<div class="tb2-in">
     <button type="button" class="tb2-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">
       ${avaHtml122("tb2-ava txt", "tb2-ava", photo, initial)}
       <span class="tb2-name">${esc(name || "")}</span>
     </button>
+    ${full ? `<button type="button" class="tb2-btn tb2-help130" onclick="return go('dashboard','Help')" aria-label="Help">${bnIcon("help")}</button>` : `<a class="tb2-btn tb2-help130" href="mailto:hello@joinsignl.com" aria-label="Help">${bnIcon("help")}</a>`}
     <span class="tb2-actions">
       ${full && (live || u.role === "creator") ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Messages')" aria-label="Messages">${bnIcon("bubble")}${b.messages ? `<span class="tab-badge">${b.messages > 99 ? "99+" : b.messages}</span>` : ""}</button>` : ""}
-      ${full ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Help')" aria-label="Help">${bnIcon("help")}</button>` : `<a class="tb2-btn" href="mailto:hello@joinsignl.com" aria-label="Help">${bnIcon("help")}</a>`}
-      <button type="button" class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("more")}</button>
+      <button type="button" class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button>
     </span>
   </div>`;
 }
@@ -2937,35 +2962,36 @@ function openAdminMoreSheet() {
 // logic behind the button in this stage.
 const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.1 6.9L21 11l-6.9 2.1L12 20l-2.1-6.9L3 11l6.9-2.1z"/></svg>`;
 
-// Sig's face (Build -124, Jeff, 2026-11-04): the painterly
-// portrait Jeff picked as Concept A, replacing the V4 beanie-kid
-// render ("Sig is scaring me a bit... something that doesn't
-// seem so cartoony"). One swappable reference: SIG_ART names the
-// folder, every face on every surface resolves through it (plus
-// the literal head-idle paths in the tab/rail/FAB/More rows).
-// The V4 assets live on at /assets/sig-v4-legacy/ (clips and
-// all); the ink companion and the orb Jeff kept as fallbacks
-// live in ~/workspace/research_notes/sig-concepts-2026-11-04/ —
-// a swap to any of them is: derive the same still set into a
-// folder, repoint SIG_ART + the literal head-idle paths.
-// The asset model (state machine and triggers unchanged):
-//   - The Sig-tab hero (sigHeroMediaHtml) keeps its video-stack
-//     markup, but Concept A is stills-only: SIG_ART_VIDEO is
-//     false, so no clip ever attaches and the hero still carries
-//     every state, exactly like the reduced-motion path. The
-//     think STILL still swaps in while Sig is thinking.
+// Sig's mark (Build -130, Jeff, 2026-11-05): THE ORB — a
+// gradient blue-to-mint orb with radiating signal arcs. Jeff
+// picked it over every face: the painted portraits read
+// uncanny ("looks weird"), and the pattern across the
+// industry is an abstract mark, never a realistic face. The
+// Concept A portrait set and the V4 render before it are
+// retired (masters stay in
+// ~/workspace/research_notes/sig-concepts-2026-11-04/).
+// One swappable reference: SIG_ART names the folder, every
+// Sig surface resolves through it (plus the literal orb
+// paths in the tab/rail/FAB/More rows). The orb ships ONE
+// still and ONE living clip:
+//   - Prominent placements (the Sig hero stack) play the
+//     animated orb — gradient flowing, arcs radiating —
+//     attached lazily by sigHeroSet; every state plays the
+//     same living orb. The think state rests the hero on
+//     the still while Sig is thinking (the existing still
+//     swap, kept).
 //   - Everywhere small (queue cards, thread turns, the claim
-//     confirmation, the bottom tab) Sig is a tight head-crop
-//     still of the state. No video at small sizes, ever.
+//     confirmation, the bottom tab) Sig is the orb still.
+//     No video at small sizes, ever.
 //   - prefers-reduced-motion: stills everywhere, no autoplay.
 //   - A clip that fails leaves its poster still standing; the
 //     surface is never an empty hole.
-const SIG_ART = "/assets/sig-a";
-const SIG_ART_VIDEO = false;
-const SIG_HEAD = { "": "head-idle", greet: "head-greet", think: "head-think", talk: "head-talk", celebrate: "head-celebrate" };
+const SIG_ART = "/assets/sig-orb";
+const SIG_ART_VIDEO = true;
+const SIG_STILL = "orb.webp";
+const SIG_CLIP = "orb.mp4";
 function sigAvatarHtml(mood) {
-  const head = SIG_HEAD[mood || ""] || SIG_HEAD[""];
-  return `<span class="sig-ava sig-ava-img${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Sig"><img src="${SIG_ART}/${head}.webp" alt="" loading="lazy" decoding="async"></span>`;
+  return `<span class="sig-ava sig-ava-img${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Sig"><img src="${SIG_ART}/${SIG_STILL}" alt="" loading="lazy" decoding="async"></span>`;
 }
 const SIG_AVATAR_HTML = sigAvatarHtml("");
 
@@ -2980,12 +3006,13 @@ let sigQueueBeat = "";
 // state's clips, so nothing downloads before the hero renders.
 function sigHeroMediaHtml() {
   return `<span class="sig-hero-media" data-sig-hero-media>
-    <img class="sig-hero-still" src="${SIG_ART}/hero.webp" alt="" decoding="async">
-    <video class="sig-hero-video" data-sig-hero-video muted loop playsinline autoplay preload="none" poster="${SIG_ART}/hero.webp" aria-hidden="true"></video>
-    <img class="sig-hero-still sig-hero-think" src="${SIG_ART}/still-think.webp" alt="" decoding="async" hidden>
+    <img class="sig-hero-still" src="${SIG_ART}/${SIG_STILL}" alt="" decoding="async">
+    <video class="sig-hero-video" data-sig-hero-video muted loop playsinline autoplay preload="none" poster="${SIG_ART}/${SIG_STILL}" aria-hidden="true"></video>
+    <img class="sig-hero-still sig-hero-think" src="${SIG_ART}/${SIG_STILL}" alt="" decoding="async" hidden>
   </span>`;
 }
-const SIG_HERO_CLIPS = { idle: 1, talk: 1, greet: 1, celebrate: 1 };
+// Build -130: the orb has a single living clip — every hero
+// state plays it (data-clip "orb" marks the attachment).
 let sigHeroMode = "";
 function sigReducedMotion() {
   try { return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) { return false; }
@@ -3011,46 +3038,41 @@ function sigHeroSet(mode) {
   }
   if (think) think.hidden = true;
   if (!SIG_ART_VIDEO || sigReducedMotion()) {
-    // Stills-only character (Build -124): no clips exist for the
-    // current art, so the hero still carries every state — the
-    // same landing as the reduced-motion path below deck. When a
-    // future character ships clips, flip SIG_ART_VIDEO and the
-    // loops/one-shots below come back untouched.
+    // Reduced motion (or a mark with no clip): the hero rests
+    // on the orb still, which carries every state.
     sigHeroMode = mode;
     try { video.pause(); } catch (e) {}
     video.hidden = true;
     return;
   }
   video.hidden = false;
-  const name = SIG_HERO_CLIPS[mode] ? mode : "idle";
-  if (video.getAttribute("data-clip") !== name) {
-    sigHeroMode = name;
-    video.setAttribute("data-clip", name);
-    video.loop = name === "idle" || name === "talk";
-    video.innerHTML = `<source src="${SIG_ART}/${name}.webm" type="video/webm"><source src="${SIG_ART}/${name}.mp4" type="video/mp4">`;
+  if (video.getAttribute("data-clip") !== "orb") {
+    sigHeroMode = mode;
+    video.setAttribute("data-clip", "orb");
+    video.loop = true;
+    video.innerHTML = `<source src="${SIG_ART}/${SIG_CLIP}" type="video/mp4">`;
     try { video.load(); } catch (e) {}
   }
   const p = video.play && video.play();
   if (p && p.catch) p.catch(() => { /* the poster still carries the surface */ });
 }
 // The claim confirmation's celebration: the win hook's one
-// centered Sig gets the celebrate clip over its still (same
+// centered Sig gets the orb clip over its still (same
 // treatment as the hero, one shot). Reduced motion or a failed
-// clip leaves the still, and the still swaps back to his idle
-// face when the clip ends.
+// clip leaves the still standing.
 function sigCelebMediaHtml() {
   return `<span class="sig-celeb-media" data-sig-celeb-media>
-    <img src="${SIG_ART}/still-celebrate.webp" alt="" decoding="async" data-sig-celeb-still>
-    <video data-sig-celeb-video muted playsinline preload="none" poster="${SIG_ART}/still-celebrate.webp" aria-hidden="true" hidden></video>
+    <img src="${SIG_ART}/${SIG_STILL}" alt="" decoding="async" data-sig-celeb-still>
+    <video data-sig-celeb-video muted playsinline preload="none" poster="${SIG_ART}/${SIG_STILL}" aria-hidden="true" hidden></video>
   </span>`;
 }
 function sigCelebKick() {
-  if (!SIG_ART_VIDEO) return; // stills-only character (Build -124): the celebrate still stands
+  if (!SIG_ART_VIDEO) return; // a mark with no clip: the orb still stands
   const host = document.querySelector("[data-sig-celeb-media]");
   if (!host || sigReducedMotion()) return;
   const video = host.querySelector("[data-sig-celeb-video]");
   if (!video) return;
-  video.innerHTML = `<source src="${SIG_ART}/celebrate.webm" type="video/webm"><source src="${SIG_ART}/celebrate.mp4" type="video/mp4">`;
+  video.innerHTML = `<source src="${SIG_ART}/${SIG_CLIP}" type="video/mp4">`;
   video.hidden = false;
   try { video.load(); } catch (e) {}
   const p = video.play && video.play();
@@ -3068,7 +3090,7 @@ if (typeof document !== "undefined") {
       v.hidden = true;
       const host = v.closest ? v.closest("[data-sig-celeb-media]") : null;
       const still = host && host.querySelector("[data-sig-celeb-still]");
-      if (still) still.src = `${SIG_ART}/hero.webp`;
+      if (still) still.src = `${SIG_ART}/${SIG_STILL}`;
     }
   }, true);
   document.addEventListener("error", (ev) => {
@@ -3108,6 +3130,7 @@ function railItems() {
     add("a", "inbox", "Applications", "return go('dashboard','Applications')", t === "Applications" || !t);
     add("a", "requests", "Requests", "return go('dashboard','Requests')", t === "Requests");
     add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
+    add("a", "users", "Creators", "return go('dashboard','Creators')", t === "Creators");
     add("a", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
     add("a", "users", "Outreach", "return go('dashboard','Outreach')", t === "Outreach");
     add("a", "building", "Partners", "return go('dashboard','Partners')", t === "Partners");
@@ -3174,29 +3197,23 @@ function renderRail() {
   // shows only the primary items, with every other
   // destination inside a sheet.
   // Build -125: the phone bar is the design's four daily
-  // stops — Review · Creators · Markets · Wallet. "Creators"
-  // is the Command Center's creators view (Stats, ccTab
-  // creators); "Wallet" is the same view's money tab riding
-  // the Stats item's short label. The More sheet is gone:
-  // the Everything panel (top row, beside help) holds every
-  // section, grouped. The desktop rail still lists all
-  // sections labeled (Jeff's -121 call, unchanged).
+  // stops. The More sheet is gone: the Everything panel (top
+  // row, beside help) holds every section, grouped. The
+  // desktop rail still lists all sections labeled (Jeff's
+  // -121 call, unchanged).
+  // Build -130 (Part 9): the stops are Review · Creators ·
+  // Markets · Stats — Creators is its own tab now and Admin
+  // has no Wallet anywhere (the money views live in Stats).
   const railLabel119 = (label) => label === "Applications" ? "Review" : label;
   const ADMIN_RAIL_PRIMARY_125 = ["Applications", "Creators", "Markets", "Stats"];
-  const railItems125 = [];
-  for (const it of items) {
-    railItems125.push(it);
-    if (it.label === "Markets") railItems125.push({ sec: it.sec, icon: "person", label: "Creators", onclick: "ccTab = 'creators'; return go('dashboard','Stats')", active: state.tab === "Stats" && ccTab === "creators", badge: 0 });
-  }
+  const railItems125 = items.slice();
   const rows = railItems125.map((it) => {
     const sec = lastSec && it.sec !== lastSec ? `<div class="rail-sep"></div>` : "";
     lastSec = it.sec;
     const disp = railLabel119(it.label);
-    const active = it.label === "Stats" ? (it.active && ccTab !== "creators") : it.active;
-    const labelHtml = it.label === "Stats"
-      ? `<span class="rail-label rail-label-full">Stats</span><span class="rail-label rail-label-short">Wallet</span>`
-      : `<span class="rail-label">${esc(disp)}</span>`;
-    return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_125.includes(it.label) ? `rail-primary rail-p-${it.label.toLowerCase()}` : ""} ${active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-a/head-idle.webp" alt="">` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
+    const active = it.active;
+    const labelHtml = `<span class="rail-label">${esc(disp)}</span>`;
+    return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_125.includes(it.label) ? `rail-primary rail-p-${it.label.toLowerCase()}` : ""} ${active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
   }).join("");
   rail.innerHTML = `
     <button type="button" class="rail-brand" title="SIGNL" aria-label="SIGNL home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="SIGNL"></button>
@@ -3235,7 +3252,7 @@ function syncAdminSecbar121() {
     if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(bar, anchor.nextSibling);
     else document.body.appendChild(bar);
   }
-  bar.innerHTML = items.map((it) => `<button type="button" class="sec-chip121${it.active && !(it.label === "Stats" && ccTab === "creators") ? " on" : ""}" onclick="${it.onclick}">${esc(it.label)}${it.badge ? `<span class="sec-badge121">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>${it.label === "Stats" ? `<button type="button" class="sec-chip121${state.tab === "Stats" && ccTab === "creators" ? " on" : ""}" onclick="ccTab = 'creators'; return go('dashboard','Stats')">Creators</button>` : ""}`).join("");
+  bar.innerHTML = items.map((it) => `<button type="button" class="sec-chip121${it.active ? " on" : ""}" onclick="${it.onclick}">${esc(it.label)}${it.badge ? `<span class="sec-badge121">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`).join("");
   const on = bar.querySelector(".sec-chip121.on");
   if (on) { try { bar.scrollLeft = Math.max(0, on.offsetLeft - (bar.clientWidth - on.clientWidth) / 2); } catch (e) { /* no-op */ } }
 }
@@ -3256,7 +3273,7 @@ function renderTopRow() {
   // Settings / Sign out), and the spelled-out controls are
   // icons — Everything keeps its name as the panel's title and
   // this button's title/aria-label; help is a help icon.
-  el.innerHTML = `<div class="wrap tr-in"><button type="button" class="tr-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span></button><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("more")}</button><a class="tr-help126" href="mailto:hello@joinsignl.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a></span></div>`;
+  el.innerHTML = `<div class="wrap tr-in"><button type="button" class="tr-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span></button><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button><a class="tr-help126" href="mailto:hello@joinsignl.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a></span></div>`;
 }
 
 // Build -119: the greeting hour comes from the user's own
@@ -3296,7 +3313,7 @@ function renderAgentFab() {
     && (document.body.classList.contains("v3-on") || document.body.classList.contains("v3-slim"));
   if (!state.user || state.preview || (!q && !inAppShell)) { fab.classList.remove("show"); fab.innerHTML = ""; fab.onclick = null; return; }
   fab.classList.add("show");
-  fab.innerHTML = `<img src="/assets/sig-a/head-idle.webp" alt=""><span class="fab-dot" aria-hidden="true"></span>Sig${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
+  fab.innerHTML = `<img src="/assets/sig-orb/orb.webp" alt=""><span class="fab-dot" aria-hidden="true"></span>Sig${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
   fab.onclick = q ? openAgentSheet : () => go("dashboard", "Sig");
 }
 // Overhaul V2: the ready-for-you card is the Grin agent card —
@@ -3498,7 +3515,7 @@ function nextStepsHtml(queue, steps, opts) {
   const doneCount = st.filter((x) => x.done && !x.info).length;
   const doneLine = doneCount ? `<div class="nx-done-line">${doneCount} step${doneCount === 1 ? "" : "s"} done — nice work.</div>` : "";
   const total = q.length + st.filter((x) => !x.done && !x.info).length;
-  return `<div class="nx-card"><div class="nx-head">${SIG_AVATAR_HTML}<div><div class="nx-title">Next</div><div class="nx-sub">${total <= 1 ? "One thing needs you." : `${total} things need you, in order.`}</div></div></div>${hero}${rows.join("")}${doneLine}</div>`;
+  return `<div class="nx-card"><div class="nx-head"><div><div class="nx-title">Next</div><div class="nx-sub">${total <= 1 ? "One thing needs you." : `${total} things need you, in order.`}</div></div></div>${hero}${rows.join("")}${doneLine}</div>`;
 }
 function wireNextSteps(root, queue, steps, links) {
   wireSigQueue(root, queue || [], links || []);
@@ -3592,19 +3609,107 @@ function snapshotHtml(cells, fillLine, tab) {
   return `<button type="button" class="snap-strip" style="--snap-n:${cells.length}" onclick="return go('dashboard','${tab}')">${cells.map((c) => `<span class="snap-cell"><span class="snap-num">${c.num}</span><span class="snap-lbl">${esc(c.label)}</span>${c.sub ? `<span class="snap-sub">${esc(c.sub)}</span>` : ""}</span>`).join("")}</button>`;
 }
 
-// The Ask Sig row (spec §4.1): opens Sig's guided flows.
-function askSigRowHtml() {
-  return `<button type="button" class="ask-sig" onclick="return openAgentSheet()">${SIG_AVATAR_HTML}<span class="ask-tx"><strong>Ask Sig</strong><span class="muted small">Walkthroughs and straight answers.</span></span><span class="ask-chev">›</span></button>`;
+// ---------- Build -130 Part 7: wherever Sig is, a chat box ----------
+// Jeff (2026-11-04 23:00 + 2026-11-05, "that was key"): Sig is
+// never a passive avatar and never reminders-only. Anywhere
+// her orb shows up there is an OPEN type-in chat box wired to
+// the live Sig (sigAsk — the same server answers, grounded in
+// the user's real records, that the Sig tab gives). The old
+// door components (the Ask Sig row, the V4.1 home ask box)
+// rendered a button that merely WALKED to the Sig tab; they
+// now render the working box itself. Compact placements use
+// the still; the home-top box plays the animated orb. The
+// multi-step operator stays on the Sig tab by design (its
+// flows hold per-step state); the box answers questions and
+// carries the answer's own walk-to/action buttons.
+function sigOrbMedia130(still) {
+  if (still || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+    return `<img class="sigbox-orb" src="${SIG_ART}/${SIG_STILL}" alt="">`;
+  }
+  return `<video class="sigbox-orb" autoplay muted loop playsinline poster="${SIG_ART}/${SIG_STILL}" src="${SIG_ART}/${SIG_CLIP}" aria-hidden="true"></video>`;
+}
+function sigChatBoxHtml(key, opts) {
+  const o = opts || {};
+  return `<div class="sigbox130" data-sigbox="${esc(key)}">
+    <div class="sigbox-head">${sigOrbMedia130(!!o.still)}<div class="sigbox-htext"><strong>Sig</strong><span>${esc(o.hint || "Ask me anything. I work from your real numbers, and I can get things done.")}</span></div></div>
+    <div class="sigbox-thread" id="sigbox-thread-${esc(key)}" hidden></div>
+    <form class="sigbox-form" onsubmit="return sigBoxSend(event, '${esc(key)}')">
+      <input id="sigbox-input-${esc(key)}" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
+      <button type="submit" class="btn sigbox-go">Ask</button>
+    </form>
+  </div>`;
+}
+const sigBoxTurns130 = {};
+async function sigBoxSend(ev, key) {
+  if (ev) ev.preventDefault();
+  const input = document.getElementById("sigbox-input-" + key);
+  const thread = document.getElementById("sigbox-thread-" + key);
+  if (!input || !thread) return false;
+  const text = input.value.trim();
+  if (!text) return false;
+  input.value = "";
+  const turns = sigBoxTurns130[key] || (sigBoxTurns130[key] = []);
+  turns.push({ who: "user", text });
+  const pending = { who: "sig", text: "One sec.", pending: true };
+  turns.push(pending);
+  const paint = () => {
+    if (!document.body.contains(thread)) return;
+    thread.hidden = false;
+    thread.innerHTML = turns.map((t) => t.who === "user"
+      ? `<div class="sig-turn user"><div class="sig-bub">${esc(t.text)}</div></div>`
+      : `<div class="sig-turn sig"><span class="sig-turn-ava">${t.pending ? sigAvatarHtml("think") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(t.text)}${t.pending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}${t.flow != null && sigFlowsFor()[t.flow] ? `<button type="button" class="btn small-btn sig-turn-act" onclick="return sigBoxFlow(${t.flow})">${esc(sigFlowsFor()[t.flow].label)}</button>` : ""}${t.linkDest ? `<button type="button" class="btn small-btn sig-turn-act" onclick="return sigLinkGo('${esc(t.linkDest)}')">${esc(t.linkLabel || "Open")}</button>` : ""}</div></div>`).join("");
+    thread.scrollTop = thread.scrollHeight;
+  };
+  paint();
+  const reply = await sigAsk(text);
+  pending.text = reply.text;
+  pending.flow = reply.flow != null ? reply.flow : null;
+  if (reply.link && reply.link.dest) { pending.linkDest = reply.link.dest; pending.linkLabel = reply.link.label; }
+  delete pending.pending;
+  paint();
+  if (document.body.contains(input)) input.focus();
+  return false;
+}
+function sigBoxFlow(i) {
+  const f = sigFlowsFor()[i];
+  if (f && f.act) f.act();
+  return false;
+}
+// The top of every role home (Build -130 Part 7): the working
+// chat box FIRST, with Sig's proactive reminders under it —
+// her live-state chips from GET /sig/home, the same facts her
+// tab opens with. Nothing is fabricated: with no chips the
+// reminder zone renders nothing at all.
+function sigHomeTopHtml() {
+  return `<section class="sigtop130 panel">${sigChatBoxHtml("home")}<div class="sigtop-nudges" id="sigtop-nudges"></div></section>`;
+}
+async function loadSigTopNudges() {
+  const host = document.getElementById("sigtop-nudges");
+  if (!host) return;
+  let d = state.sigHome;
+  if (!d) {
+    try { d = await api("GET", "/sig/home"); state.sigHome = d; } catch (e) { d = null; }
+  }
+  const host2 = document.getElementById("sigtop-nudges");
+  if (!host2) return;
+  const chips = (d && d.chips) || [];
+  if (!chips.length) { host2.innerHTML = ""; return; }
+  host2.innerHTML = `<div class="sigtop-nlabel">Sig noticed</div>` + chips.slice(0, 4).map((c) => {
+    const dest = sigChipDest(c);
+    return dest ? `<button type="button" class="sigtop-nudge" onclick="return sigLinkGo('${dest}')">${esc(c)}</button>` : `<div class="sigtop-nudge plain">${esc(c)}</div>`;
+  }).join("");
 }
 
-// The Home chat box (V4.1, Jeff 2026-10-27): Sig's field on Home
-// told you things but never LOOKED like you could talk back, so
-// the ask box sits at the top of the mint field — Sig's face, a
-// white pill that reads "Ask Sig anything", an ink send chip.
-// It is a door, not a form: one tap lands on the Sig tab with
-// the real chat input focused. Same Sig, same queue, two doors.
+// The Ask Sig row (spec §4.1; Build -130: the working box,
+// not a door to the sheet).
+function askSigRowHtml() {
+  return sigChatBoxHtml("foot", { still: true });
+}
+
+// The Home chat box (V4.1's door, retired by Build -130): the
+// Sig card's ask slot now carries the working box itself.
 function sigAskBoxHtml() {
-  return `<button type="button" class="sig-askbox" onclick="return goSigChat()" aria-label="Ask Sig anything">${SIG_AVATAR_HTML}<span class="sig-askbox-ph">Ask Sig anything</span><span class="sig-askbox-go">›</span></button>`;
+  return sigChatBoxHtml("card", { still: true });
 }
 function goSigChat() {
   state.sigFocusAsk = true;
@@ -4569,14 +4674,14 @@ function sigLinkGo(dest) {
     case "biz-wallet-receipts": state.bizWalletSeg125 = "receipts"; return go("dashboard", "Plan");
     case "partner-wallet": return go("dashboard", "Earnings");
     case "admin-wallet": ccTab = "money"; return go("dashboard", "Stats");
-    case "admin-creators": ccTab = "creators"; return go("dashboard", "Stats");
+    case "admin-creators": return go("dashboard", "Creators");
     case "cr-terms": window.open("https://joinsignl.com/creator-terms.html", "_blank", "noopener"); return false;
     case "cr-profile": return go("dashboard", "Profile");
     case "admin-applications": return go("dashboard", "Applications");
     case "admin-businesses": ccTab = "businesses"; return go("dashboard", "Stats");
     case "admin-partners": return go("dashboard", "Partners");
     case "admin-compliance": return go("dashboard", "Compliance");
-    case "admin-markets": ccTab = "markets"; return go("dashboard", "Stats");
+    case "admin-markets": return go("dashboard", "Markets");
     // Partner Sig walks (Build -106): the partner shell's own
     // tabs, and the Impact Portal's Report.
     case "partner-earnings": return go("dashboard", "Earnings");
@@ -4991,6 +5096,7 @@ function openAgentSheet() {
   el.innerHTML = `
   <div class="sheet" role="dialog" aria-label="Ask Sig">
     <div class="flex-between"><span class="sig-top" style="gap:10px">${SIG_AVATAR_HTML}<strong>Ask Sig</strong></span><button class="linklike" onclick="closeAgentSheet()">Close</button></div>
+    ${sigChatBoxHtml("sheet", { still: true, hint: "Ask me anything, or pick a walk-through below." })}
     <p class="small muted" style="margin:8px 0 4px">Tell Sig what you want to do. Sig walks you to the exact screen.</p>
     ${flows.map((f, i) => `<button type="button" class="sheet-row ask-flow" data-flow="${i}"><span>${esc(f.label)}</span><span class="ask-chev">›</span></button>`).join("")}
     <h4 style="margin:16px 0 4px">Straight answers</h4>
@@ -10942,6 +11048,7 @@ async function loadFoundingDashboard() {
     el.innerHTML = `
     ${wsHead("Home", { sub: "Start here. One list, in the order things need you.", subKey: "cr-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
+    ${sigHomeTopHtml()}
     ${nextStepsHtml(queueItems, fSteps, { caughtUp: sigQueueHtml([], { links: [], askBox: true }) })}
     <div class="wcard">
       <div style="display:flex;gap:16px;align-items:center">${pctSet ? donutHtml119(p.localAudiencePct) : ""}<div><div class="kpi-label">Your local reach</div>
@@ -10956,6 +11063,7 @@ async function loadFoundingDashboard() {
     <p class="small muted" style="margin:14px 2px 0">Your Charter card, founding class, points, and full status live under <a class="tlink" href="#" onclick="return go('dashboard','Status')">Status</a> and <a class="tlink" href="#" onclick="return go('dashboard','Momentum')">Momentum</a>.</p>
     ${askSigRowHtml()}`;
     wireNextSteps(el, queueItems, fSteps, []);
+    loadSigTopNudges();
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -14000,12 +14108,14 @@ async function loadCreatorHome() {
     ${wsHead("Home", { sub: "Start here. One list, in the order things need you.", subKey: "cr-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greetLine)}</div></div>
     ${strikeStatusHtml(u)}
+    ${sigHomeTopHtml()}
     ${nextStepsHtml(queue, steps, { caughtUp: sigQueueHtml([], { links: caughtLinks, askBox: true }) })}
     ${gateDone ? creatorShapesHtml119({ earned: money.released || 0, earnedSeries, localPct: pctSet ? Number(cprof.localAudiencePct) : null, points: m.points || 0 }) : ""}
     <h3 style="margin:20px 0 0">Activity</h3>
     <div id="cr-feed">${crFeedHtml()}</div>
     ${askSigRowHtml()}`;
     wireNextSteps(el, queue, steps, caughtLinks);
+    loadSigTopNudges();
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -16139,11 +16249,13 @@ async function loadFoundingBusinessHome() {
   if (!el) return;
   const u = state.user;
   el.innerHTML = `
+  ${sigHomeTopHtml()}
   ${foundingStatusCardHtml(u)}
   ${sqNoticeHtml()}
   <div id="biz-setup-checklist"></div>
   ${foundingFirstMonthCardHtml(u)}
   <div id="fbz-sig-queue" style="margin-top:14px"></div>`;
+  loadSigTopNudges();
   // Sig's queue for a founding business: the two things worth
   // doing before opening day. The same items feed the Sig tab
   // and the rail badge, like every other queue.
@@ -16427,7 +16539,7 @@ function renderPartnerTab(tab) {
   const el = document.getElementById("tab-body");
   if (!el || !state.partnerData) return;
   const d = state.partnerData;
-  if (tab === "Home") el.innerHTML = partnerHomeHtml(d);
+  if (tab === "Home") { el.innerHTML = partnerHomeHtml(d); loadSigTopNudges(); }
   if (tab === "Markets") el.innerHTML = partnerMarketsHtml(d);
   if (tab === "Creators") el.innerHTML = partnerCreatorsHtml(d);
   if (tab === "Businesses") el.innerHTML = partnerBusinessesHtml(d);
@@ -16625,6 +16737,7 @@ function partnerHomeHtml(d) {
   const empty = t.creatorsAttributed === 0 && t.businessesAttributed === 0;
   return `
   ${wsHead(p.name, { chip: partnerSampleChip(d), sub: "Your markets, your bench, your share: the creators and businesses who came in through your links, and the share they earn you.", subKey: "pt-home" })}
+  ${sigHomeTopHtml()}
   ${partnerScopesCardHtml(d)}
   ${partnerSigCardHtml(d)}
   ${empty ? "" : `
@@ -17566,6 +17679,7 @@ async function loadBusinessHome() {
     ${wsHead("Home", { sub: "Start here. One list, in the order things need you.", subKey: "biz-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line serif-line">${esc(greetLine)}</div></div>
     ${sqNoticeHtml()}
+    ${sigHomeTopHtml()}
     ${nextStepsHtml(nxQueue, [], { caughtUp: sigQueueHtml([], { links: caughtLinks, askBox: true }) })}
     ${d.setupChecklist ? setupChecklistHtml(d.setupChecklist) : ""}
     ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market has not launched yet.</strong> Businesses sign up when we are ready to launch. Draft offers now; publishing switches on at launch.</div>`}
@@ -17577,6 +17691,7 @@ async function loadBusinessHome() {
     ${askSigRowHtml()}
     </div>`;
     wireNextSteps(el, nxQueue, [], caughtLinks);
+    loadSigTopNudges();
     loadPerformanceCard(el);
     renderBottomNav();
   } catch (err) {
@@ -21842,6 +21957,7 @@ function renderAdmin() {
   app.innerHTML = `
     <h2>SIGNL Admin</h2>
     ${landing ? `
+    ${sigHomeTopHtml()}
     <div id="admin-totals126" class="totals126" aria-label="Platform totals"></div>
     <div class="pv-tabs126" role="group" aria-label="Preview the app as another role">
       <span class="pv-tabs126-label">Preview as</span>
@@ -21858,12 +21974,13 @@ function renderAdmin() {
       <div class="admin-home-main"><div id="tab-body"><p class="muted">Loading...</p></div></div>
     </div>` : `
     <div id="tab-body"><p class="muted">Loading...</p></div>`}`;
-  if (landing) { loadAdminSig(); loadAdminTotals126(); }
+  if (landing) { loadAdminSig(); loadAdminTotals126(); loadSigTopNudges(); }
   if (tab === "Account") renderAdminAccount126();
   if (tab === "Sig") renderAdminSig();
   if (tab === "Applications") loadApplications();
   if (tab === "Requests") loadAdminRequests();
   if (tab === "Markets") loadMarkets();
+  if (tab === "Creators") loadAdminCreators130();
   if (tab === "Partners") loadAdminPartners();
   if (tab === "Recruiters") loadLeaderboard();
   if (tab === "Outreach") loadAdminOutreach();
@@ -22836,17 +22953,23 @@ function setAdminMarketGroup(value) {
   return false;
 }
 
-// Build -119: market cards lead with a photo (the design's
-// market cards). Place photography only — Hampton Roads,
-// Nashville and London have real place photos in the bundle;
-// every other market gets the gradient header.
-const MARKET_PHOTOS_119 = { "Hampton Roads": "/assets/market-vb.jpg", "Nashville": "/assets/market-nashville.jpg", "London": "/assets/market-london.jpg" };
+// Build -119: market cards lead with a photo. Build -130
+// (Jeff, 2026-11-05): EVERY market carries a real photo of
+// its city, keyed by market id — public/assets/market-photos/
+// <id>.jpg (1200x675; sources and licences in that folder's
+// credits.json). Adding a market means adding its photo file
+// in the same change; verify-build130 fails the build when
+// any market in lib/markets.js lacks one. The gradient stays
+// layered UNDER the photo, so a failed image load leaves the
+// gradient band, never a broken card.
+function marketPhoto130(m) { return "/assets/market-photos/" + String((m && m.id) || "") + ".jpg"; }
 function adminMarketCardHtml(m) {
-  const photo = MARKET_PHOTOS_119[m.name];
   return `<div class="panel mkt-card">
-    ${photo ? `<div class="mkt-photo" style="background-image:url('${photo}')" role="img" aria-label="${esc(m.label)}"></div>` : `<div class="mkt-photo grad" aria-hidden="true"></div>`}
+    <div class="mkt-photo" style="background-image:url('${marketPhoto130(m)}'),var(--grad)" role="img" aria-label="${esc(m.label)}"></div>
     <div class="mkt-card-head"><div><strong class="mkt-name">${esc(m.label)}</strong><br><span class="muted small">${esc(m.country || "United States")}</span></div>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</div>
     <div class="mkt-reach"><span class="mkt-reach-num">${fmtNum(m.combinedFollowers || 0)}</span> <span class="muted small">combined followers (as reported by creators), across ${fmtNum(m.creatorsListed || 0)} listed ${m.creatorsListed === 1 ? "creator" : "creators"}</span></div>
+    <div class="mkt-reach"><span class="mkt-reach-num">${fmtNum(m.localFollowers || 0)}</span> <span class="muted small">local followers: the part of that audience that lives in ${esc(m.label)}, worked out from the local share each creator reports for this market</span></div>
+    <p class="mkt-stats"><strong>${m.avgLocalPct === null || m.avgLocalPct === undefined ? "—" : m.avgLocalPct + "%"}</strong> avg % local <span class="muted small">(average share of a listed creator's audience that lives in their market)</span></p>
     <p class="mkt-stats"><strong>${m.creatorsApproved}</strong> approved creators &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> complete &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></p>
     <div class="mkt-actions"><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button><div class="muted small" style="margin-top:4px">${m.live ? "Back to founding only: no new offers or bookings there." : "Opens publishing and bookings here. Founding businesses still activate separately."}</div>${m.businessesFounding ? `<button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}<button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleBench('${esc(m.name)}', ${m.benchOpen ? "false" : "true"})">${m.benchOpen ? "Close bench" : "Open bench"}</button><div class="muted small" style="margin-top:4px">Bench: creators seeing each other in this market. ${m.live ? "Open while the market is live." : m.benchOpen ? "Open by override, ahead of launch." : "Opens at launch unless you open it here."}</div></div>
   </div>`;
@@ -23861,21 +23984,83 @@ function adminSignupBoardHtml(b) {
   </div>`;
 }
 
-// ---------- Admin Command Center (Build -54) ----------
-// Stats becomes the Command Center (spec
-// signl-admin-command-center-spec-2026-10-30.md): a shell with
-// the subtab bar (Overview · Money · Partners · Businesses ·
-// Creators · Markets · Owed · Close), the global filters and the
-// honesty-class legend, over views fed by GET /admin/command/*.
-// -54 shipped the shell, Overview and Markets; Build -55 landed
-// Money and Businesses on the charge ledger; the remaining views
-// render their designed forming states until their phases land
-// (-56 partner deals, -57 Owed/Close). The -53
-// sign-up board stays the top of Overview, consuming the same
-// /admin/stats aggregate, and everything Stats already carried
-// (market table, layers, Your Line, register connections) stays
-// on Overview below it.
-let ccTab = "overview";
+
+// ---------- Admin: Creators (Build -130, Part 9) ----------
+// Every signed-up creator in one place: the roster the totals
+// strip counts, with the local numbers beside each name. Data is
+// the applications payload (pending + decided), tester accounts
+// excluded. A row tap opens the creator's full profile exactly
+// as a business sees it (adminViewCreator).
+let adminCreators130Cache = [];
+function adminCreators130RowsHtml(rows) {
+  if (!rows.length) return `<p class="small muted" style="margin-top:10px">No creators match that.</p>`;
+  return `<div class="table-wrap" style="margin-top:10px"><table>
+    <tr><th>Creator</th><th>Market</th><th>Status</th><th>Followers</th><th>% local</th><th>Profile</th><th></th></tr>
+    ${rows.map((u) => {
+      const c = u.creator || {};
+      const pct = typeof c.localAudiencePct === "number" ? c.localAudiencePct + "%" : "—";
+      return `<tr>
+        <td><strong>${esc(u.name || "")}</strong>${c.handle ? `<div class="muted small">@${esc(String(c.handle).replace(/^@/, ""))}</div>` : ""}</td>
+        <td data-label="Market">${esc(adminCanonMarket(u.market || ""))}</td>
+        <td data-label="Status">${u.status === "approved" ? "Approved" : u.status === "pending" ? "Waiting on review" : esc(u.status || "")}</td>
+        <td data-label="Followers">${astFull(astCreatorTotal(u))}</td>
+        <td data-label="% local">${pct}</td>
+        <td data-label="Profile">${u.status === "approved" && u.profileComplete ? "Complete" : "Not finished"}</td>
+        <td><button type="button" class="btn small-btn ghost" onclick="adminViewCreator('${u.id}')">View</button></td>
+      </tr>`;
+    }).join("")}
+  </table></div>`;
+}
+function adminCreators130Filter(q) {
+  const host = document.getElementById("acr-list");
+  if (!host) return;
+  const needle = String(q || "").trim().toLowerCase();
+  const rows = !needle ? adminCreators130Cache : adminCreators130Cache.filter((u) => {
+    const c = u.creator || {};
+    return String(u.name || "").toLowerCase().includes(needle)
+      || String(c.handle || "").toLowerCase().includes(needle)
+      || String(u.email || "").toLowerCase().includes(needle)
+      || adminCanonMarket(u.market || "").toLowerCase().includes(needle);
+  });
+  host.innerHTML = adminCreators130RowsHtml(rows);
+  return false;
+}
+async function loadAdminCreators130() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const data = await api("GET", "/admin/applications");
+    const rows = [...(data.pending || []), ...(data.decided || [])]
+      .filter((u) => u.role === "creator" && u.status !== "rejected" && !u.tester)
+      .sort((a, b) => astCreatorTotal(b) - astCreatorTotal(a));
+    adminCreators130Cache = rows;
+    const approved = rows.filter((u) => u.status === "approved").length;
+    el.innerHTML = `
+      ${wsHead("Creators", { sub: "Every creator on the platform, biggest audience first." })}
+      <p class="small muted" style="margin:0 0 10px">${rows.length} signed up · ${approved} approved · ${rows.length - approved} waiting on review. Tester accounts are not listed.</p>
+      <div class="field" style="max-width:420px"><label>Search this list</label><input type="search" placeholder="Name, @handle, email or market" oninput="adminCreators130Filter(this.value)"></div>
+      <div id="acr-list">${adminCreators130RowsHtml(rows)}</div>
+      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Your Line lookup</h3>
+      <p class="small muted" style="margin:0 0 8px">Who brought whom under one creator, and the points their line earned.</p>
+      <div class="row" style="gap:8px;align-items:center"><input id="line-pick" type="text" placeholder="Creator handle" style="max-width:240px"><button type="button" class="btn small-btn" onclick="adminLineLookup()">Look up</button></div>
+      <div id="line-out" style="margin-top:8px"></div></div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// ---------- Admin Stats + the books (Builds -54..-57, -130) ----------
+// History: Build -54 made Stats a "Command Center" shell over
+// GET /admin/command/* (-55 Money + Businesses, -56 partner
+// deals, -57 Owed/Close). Build -130 (Part 9, Jeff's live Admin
+// review) retired the shell: the numbers job moved to the Stats
+// charts at the top of loadStats, the ledger views (Money ·
+// Partners · Businesses · Owed · Close) kept their endpoints
+// and renderers as "The books" under those charts, the forming
+// placeholder views were deleted, Creators became its own tab,
+// and Admin's Wallet was removed everywhere.
+let ccTab = "money";
 let ccFilters = { period: "all", market: "", testers: false, partner: "" };
 let ccAttentionCache = [];
 let ccPartnerId = null;
@@ -23910,6 +24095,174 @@ function ccSetPeriod(v) { ccFilters.period = v; loadStats(); return false; }
 function ccSetMarket(v) { ccFilters.market = v; loadStats(); return false; }
 function ccSetTesters(on) { ccFilters.testers = !!on; loadStats(); return false; }
 
+// ---------- Admin Stats (Build -130, Part 9) ----------
+// The Stats tab is the platform's numbers page: charts at a
+// glance, built with the same -119 stat components the creator
+// and business dashboards use (stat-band cells, funnel2Html,
+// sparkSvg119, the shared table styles). Every number derives
+// from record-level payloads (the applications list carries each
+// creator's audience + local shares; the books below keep their
+// /admin/command/* feeds), so the filters slice everything on
+// the page for real. The old Command Center shell is gone: its
+// numbers job lives here, its books (Money · Partners ·
+// Businesses · Owed · Close) keep their views under "The books",
+// the London race and the register connections sit at the foot
+// of this page, and Creators is its own Admin tab now. Admin has
+// no Wallet: creator/business money pages are theirs alone.
+let astFilters = { range: "all", market: "", status: "all" };
+let astData = null;
+
+function astFull(n) { return (Number(n) || 0).toLocaleString("en-US"); }
+function astCreatorTotal(u) {
+  if (u.audience && typeof u.audience.total === "number") return u.audience.total;
+  const st = (u.creator && u.creator.stack) || {};
+  const sum = Object.values(st).reduce((a, v) => a + (Number(v) || 0), 0);
+  return sum || Number((u.creator && u.creator.followerCount) || 0) || 0;
+}
+function astCreatorListings(u) {
+  // The markets a creator is listed in, with their % local to
+  // each: the home market at their home %, plus every
+  // audienceMarkets entry at its own share (the Part 2/3 basis).
+  const c = u.creator || {};
+  const home = adminCanonMarket(u.market || "");
+  const out = [];
+  if (home) out.push({ market: home, pct: typeof c.localAudiencePct === "number" ? c.localAudiencePct : null });
+  for (const e of Array.isArray(c.audienceMarkets) ? c.audienceMarkets : []) {
+    if (!e || !e.market || e.market === home) continue;
+    out.push({ market: e.market, pct: typeof e.pct === "number" ? e.pct : null });
+  }
+  return out;
+}
+function astFilteredCreators() {
+  const all = (astData && astData.creators) || [];
+  const f = astFilters;
+  return all.filter((u) => {
+    if (f.status === "pending" && u.status !== "pending") return false;
+    if (f.status === "approved" && u.status !== "approved") return false;
+    if (f.status === "complete" && !(u.status === "approved" && u.profileComplete)) return false;
+    if (f.market && adminCanonMarket(u.market || "") !== f.market) return false;
+    if (f.range !== "all") {
+      const t = new Date(u.createdAt || 0).getTime();
+      if (!Number.isFinite(t)) return false;
+      const now = new Date();
+      if (f.range === "30d" && t < now.getTime() - 30 * 864e5) return false;
+      if (f.range === "this_month" && (new Date(t).getMonth() !== now.getMonth() || new Date(t).getFullYear() !== now.getFullYear())) return false;
+      if (f.range === "last_month") {
+        const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        if (new Date(t).getMonth() !== lm.getMonth() || new Date(t).getFullYear() !== lm.getFullYear()) return false;
+      }
+    }
+    return true;
+  });
+}
+function astSetFilter(kind, value) {
+  astFilters[kind] = value;
+  astRender();
+  return false;
+}
+function astRender() {
+  const host = document.getElementById("ast-charts");
+  if (!host || !astData) return;
+  const creators = astFilteredCreators();
+  const totals = creators.reduce((a, u) => {
+    const total = astCreatorTotal(u);
+    const pct = u.creator && typeof u.creator.localAudiencePct === "number" ? u.creator.localAudiencePct : null;
+    a.followers += total;
+    if (pct !== null) { a.pctSum += pct; a.pctN += 1; a.localFollowers += Math.round(total * pct / 100); }
+    return a;
+  }, { followers: 0, pctSum: 0, pctN: 0, localFollowers: 0 });
+  const avg = totals.pctN ? Math.round(totals.pctSum / totals.pctN) : null;
+  // Trend: signups per bucket over the filtered range (daily up
+  // to ~62 days, weekly beyond), from the same creator records.
+  const now = Date.now();
+  const spanDays = astFilters.range === "30d" ? 30 : astFilters.range === "all" ? 84 : 31;
+  const bucketMs = spanDays > 62 ? 7 * 864e5 : 864e5;
+  const buckets = new Array(Math.ceil(spanDays / (bucketMs / 864e5))).fill(0);
+  for (const u of creators) {
+    const t = new Date(u.createdAt || 0).getTime();
+    if (!Number.isFinite(t)) continue;
+    const idx = Math.floor((t - (now - spanDays * 864e5)) / bucketMs);
+    if (idx >= 0 && idx < buckets.length) buckets[idx] += 1;
+  }
+  // Per-market table (listed basis: a creator counts in every
+  // market they are listed in, at that market's %).
+  const byMarket = {};
+  for (const u of creators) {
+    const total = astCreatorTotal(u);
+    for (const l of astCreatorListings(u)) {
+      const m = byMarket[l.market] || (byMarket[l.market] = { creators: 0, followers: 0, localFollowers: 0, pctSum: 0, pctN: 0 });
+      m.creators += 1;
+      m.followers += total;
+      if (l.pct !== null) { m.pctSum += l.pct; m.pctN += 1; m.localFollowers += Math.round(total * l.pct / 100); }
+    }
+  }
+  const marketRows = Object.entries(byMarket).sort((a, b) => b[1].creators - a[1].creators);
+  const funnel = funnel2Html([
+    { label: "Signed up", n: creators.length, cap: "every creator in this view" },
+    { label: "Approved", n: creators.filter((u) => u.status === "approved").length, cap: "through review" },
+    { label: "Profile complete", n: creators.filter((u) => u.status === "approved" && u.profileComplete).length, cap: "ready to be booked" },
+  ]);
+  // Revenue: collected is the charge ledger's real net (nothing
+  // is invented; while payments are off it reads $0 and says so).
+  // Pipeline = businesses approved at the founding rates they
+  // signed up at, recorded on their records, not yet billed.
+  const money = astData.money || {};
+  const collected = (money.charged && money.charged.netTotal) || 0;
+  const plans = (state.boot && state.boot.plans) || [];
+  const planRate = (id) => { const p = plans.find((x) => x.id === id); return p ? Number(p.priceMonthly) || 0 : 0; };
+  const planName = (id) => { const p = plans.find((x) => x.id === id); return p ? (p.name || id) : id; };
+  const pipe = {};
+  for (const b of astData.businesses) {
+    if (b.status !== "approved") continue;
+    const id = (b.business && b.business.plan) || "";
+    if (!id) continue;
+    pipe[id] = (pipe[id] || 0) + 1;
+  }
+  const pipeRows = Object.entries(pipe).map(([id, n]) => ({ id, n, rate: planRate(id), total: n * planRate(id) })).sort((a, b) => b.total - a.total);
+  const pipeTotal = pipeRows.reduce((a, r) => a + r.total, 0);
+  const waitingBiz = astData.businesses.filter((b) => b.status === "pending").length;
+  host.innerHTML = `
+    <div class="stat-band">
+      <div class="stat-cell"><span>Creators signed up</span><strong>${fmtNum(creators.length)}</strong></div>
+      <div class="stat-cell"><span>Followers</span><strong>${fmtNum(totals.followers)}</strong></div>
+      <div class="stat-cell"><span>Local followers</span><strong>${fmtNum(totals.localFollowers)}</strong></div>
+      <div class="stat-cell"><span>Avg % local</span><strong>${avg === null ? "—" : avg + "%"}</strong></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Signups over time</h3>
+      <p class="muted small" style="margin:0 0 8px">New creators in this view, ${spanDays > 62 ? "per week" : "per day"}.</p>
+      ${sparkSvg119(buckets)}
+      <p class="small" style="margin:6px 0 0"><strong>${fmtNum(buckets.reduce((a, b) => a + b, 0))}</strong> signups in the period shown</p>
+    </div>
+    <div class="panel">
+      <h3 style="margin:0 0 2px">From signup to ready</h3>
+      <p class="muted small" style="margin:0 0 8px">How far creators in this view have got.</p>
+      ${funnel}
+    </div>
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Revenue</h3>
+      <p class="muted small" style="margin:0 0 10px">Only what the records say. Nothing here is estimated.</p>
+      <div class="stat-band">
+        <div class="stat-cell"><span>Collected so far</span><strong>${ccMoneyFmt(collected)}</strong></div>
+        <div class="stat-cell"><span>Founding pipeline</span><strong>${ccMoneyFmt(pipeTotal)}/mo</strong></div>
+      </div>
+      ${collected === 0 ? `<p class="small" style="margin:8px 0 0">Payments are turned off right now, so nothing has been charged or collected yet.</p>` : ""}
+      ${pipeRows.length ? `<div class="table-wrap" style="margin-top:10px"><table>
+        <tr><th>Plan</th><th>Businesses</th><th>Rate</th><th>Recorded monthly</th></tr>
+        ${pipeRows.map((r) => `<tr><td>${esc(planName(r.id))}</td><td data-label="Businesses">${r.n}</td><td data-label="Rate">${ccMoneyFmt(r.rate)}/mo</td><td data-label="Recorded monthly">${ccMoneyFmt(r.total)}/mo</td></tr>`).join("")}
+      </table></div>
+      <p class="small muted" style="margin:6px 0 0">Recorded, not yet billed: businesses approved at the founding rates they signed up at.${waitingBiz ? ` ${waitingBiz} more ${waitingBiz === 1 ? "business is" : "businesses are"} waiting on review.` : ""}</p>` : `<p class="small muted" style="margin:8px 0 0">No approved businesses yet, so the founding pipeline is empty.</p>`}
+    </div>
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Markets</h3>
+      <p class="muted small" style="margin:0 0 8px">Creators listed in each market, with the share of their audience that lives there.</p>
+      ${marketRows.length ? `<div class="table-wrap"><table>
+        <tr><th>Market</th><th>Creators</th><th>Followers</th><th>Local followers</th><th>Avg % local</th></tr>
+        ${marketRows.map(([name, m]) => `<tr><td>${esc(name)}</td><td data-label="Creators">${astFull(m.creators)}</td><td data-label="Followers">${astFull(m.followers)}</td><td data-label="Local followers">${astFull(m.localFollowers)}</td><td data-label="Avg % local">${m.pctN ? Math.round(m.pctSum / m.pctN) + "%" : "—"}</td></tr>`).join("")}
+      </table></div>` : `<p class="small muted">No creators match these filters yet.</p>`}
+    </div>`;
+}
+
 async function loadStats() {
   const el = document.getElementById("tab-body");
   try {
@@ -23920,9 +24273,38 @@ async function loadStats() {
       .concat(((state.boot && state.boot.markets) || []).map((m) => `<option value="${esc(m.name)}" ${ccFilters.market === m.name ? "selected" : ""}>${esc(m.label || m.name)}</option>`))
       .concat([`<option value="${esc(unlistedLabel())}" ${ccFilters.market === unlistedLabel() ? "selected" : ""}>${esc(unlistedLabel())}</option>`])
       .join("");
+    const astMarketOpts = [`<option value="">All markets</option>`]
+      .concat(((state.boot && state.boot.markets) || []).map((m) => `<option value="${esc(m.name)}" ${astFilters.market === m.name ? "selected" : ""}>${esc(m.label || m.name)}</option>`))
+      .join("");
     el.innerHTML = `
-      <h2 style="margin:0 0 2px">Command Center</h2>
-      <p class="muted" style="margin:0 0 12px">Every number in SIGNL, kept honest. One glance, kept current.</p>
+      ${wsHead("Stats", { sub: "The platform in numbers — creators, reach, money and the books." })}
+      <div class="panel cc-filters">
+        <div class="cc-filter-row">
+          <label class="cc-flabel">When
+            <select onchange="astSetFilter('range', this.value)">
+              <option value="all" ${astFilters.range === "all" ? "selected" : ""}>All time</option>
+              <option value="30d" ${astFilters.range === "30d" ? "selected" : ""}>Last 30 days</option>
+              <option value="this_month" ${astFilters.range === "this_month" ? "selected" : ""}>This month</option>
+              <option value="last_month" ${astFilters.range === "last_month" ? "selected" : ""}>Last month</option>
+            </select>
+          </label>
+          <label class="cc-flabel">Market
+            <select onchange="astSetFilter('market', this.value)">${astMarketOpts}</select>
+          </label>
+          <label class="cc-flabel">Status
+            <select onchange="astSetFilter('status', this.value)">
+              <option value="all" ${astFilters.status === "all" ? "selected" : ""}>All creators</option>
+              <option value="pending" ${astFilters.status === "pending" ? "selected" : ""}>Waiting on review</option>
+              <option value="approved" ${astFilters.status === "approved" ? "selected" : ""}>Approved</option>
+              <option value="complete" ${astFilters.status === "complete" ? "selected" : ""}>Profile complete</option>
+            </select>
+          </label>
+        </div>
+        <p class="small muted" style="margin:8px 0 0">These filters shape every chart on this page. Tester accounts are excluded from every count.</p>
+      </div>
+      <div id="ast-charts"><p class="muted">Loading…</p></div>
+      <h3 style="margin:22px 0 4px">The books</h3>
+      <p class="muted small" style="margin:0 0 10px">Money in, money owed, and the month-end close — straight from the records.</p>
       <div class="panel cc-filters">
         <div class="cc-filter-row">
           <label class="cc-flabel">Period
@@ -23952,16 +24334,65 @@ async function loadStats() {
         </div>
       </div>
       ${wsTabs([
-        { label: "Overview", on: ccTab === "overview", onclick: "return ccSetTab('overview')" },
-        { label: "Wallet", on: ccTab === "money", onclick: "return ccSetTab('money')" },
+        { label: "Money", on: ccTab === "money", onclick: "return ccSetTab('money')" },
         { label: "Partners", on: ccTab === "partners", onclick: "return ccSetTab('partners')" },
         { label: "Businesses", on: ccTab === "businesses", onclick: "return ccSetTab('businesses')" },
-        { label: "Creators", on: ccTab === "creators", onclick: "return ccSetTab('creators')" },
-        { label: "Markets", on: ccTab === "markets", onclick: "return ccSetTab('markets')" },
         { label: "Owed", on: ccTab === "owed", onclick: "return ccSetTab('owed')" },
         { label: "Close", on: ccTab === "close", onclick: "return ccSetTab('close')" },
       ])}
-      <div id="cc-body"><p class="muted">Loading…</p></div>`;
+      <div id="cc-body"><p class="muted">Loading…</p></div>
+      <div id="ast-foot"><p class="muted">Loading…</p></div>`;
+    const [apps, money, race, sq, stats53] = await Promise.all([
+      api("GET", "/admin/applications"),
+      api("GET", "/admin/command/money?period=all").catch(() => null),
+      api("GET", "/admin/command/london-race").catch(() => null),
+      api("GET", "/admin/square").catch(() => null),
+      api("GET", "/admin/stats").catch(() => null),
+    ]);
+    const rows = [...(apps.pending || []), ...(apps.decided || [])];
+    astData = {
+      creators: rows.filter((u) => u.role === "creator" && u.status !== "rejected" && !u.tester),
+      businesses: rows.filter((u) => u.role === "business"),
+      money: money || {},
+    };
+    astRender();
+    const foot = document.getElementById("ast-foot");
+    if (foot) {
+      let html = "";
+      if (stats53 && stats53.unlistedByCity && stats53.unlistedByCity.length) {
+        html += `
+      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Sign-ups outside the listed markets</h3>
+      <p class="small muted" style="margin:0 0 8px">Creators who signed up from cities SIGNL has not listed yet — demand showing up on its own.</p>
+      ${stats53.unlistedByCity.map((r) => `<div class="kv"><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"}</b></div>`).join("")}
+      </div>`;
+      }
+      if (stats53 && stats53.layers) {
+        const L = stats53.layers;
+        html += `
+      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Spanish and campus layers</h3>
+      <p class="muted small" style="margin:0 0 8px">Read-only, from live records. Claims window: the last ${L.periodDays} days. Cities outside the listed markets appear as their own rows.</p>
+      <div class="table-wrap"><table>
+        <tr><th>Market</th><th>Creators</th><th>Approved</th><th>Finished profiles</th><th>Spanish content</th><th>With Spanish %</th><th>Claims in window</th><th>Spanish claims</th></tr>
+        ${(L.markets || []).map((r) => `<tr><td>${esc(r.market)}</td><td data-label="Creators">${r.creators}</td><td data-label="Approved">${r.approved}</td><td data-label="Finished profiles">${r.complete}</td><td data-label="Spanish content">${r.spanishFlagged}</td><td data-label="With Spanish %">${r.withSpanishPct}</td><td data-label="Claims in window">${r.claimsInPeriod}</td><td data-label="Spanish claims">${r.spanishClaimsInPeriod}</td></tr>`).join("")}
+      </table></div>
+      <p class="small" style="margin-top:12px"><strong>Campus Leads:</strong> ${L.campusLeads && L.campusLeads.length ? L.campusLeads.map((e) => `${esc(e.university)}: ${e.leads} (${(e.handles || []).map((h) => "@" + esc(h)).join(", ")})`).join(" &middot; ") : "none yet. A Campus Lead is a current student with 5 approved referrals from their own school."}</p>
+      <p class="small"><strong>Business language:</strong> ${L.businessLanguage.es} ${L.businessLanguage.es === 1 ? "business prefers" : "businesses prefer"} Spanish, ${L.businessLanguage.en} ${L.businessLanguage.en === 1 ? "prefers" : "prefer"} English.</p>
+      </div>`;
+      }
+      html += ccLondonRaceHtml(race);
+      if (sq && sq.square) {
+        const s2 = sq.square;
+        html += `
+      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Register connections (Square)</h3>
+      <p class="small">Server ${s2.configured ? "carries the Square app credentials" : "does not carry the Square app credentials, so connect renders the concierge state"}. Environment: <strong>${esc(s2.env || "")}</strong>${s2.env === "sandbox" ? " — SANDBOX: connections here are test registers, not live ones." : ""}</p>
+      ${s2.connections && s2.connections.length ? `<div class="table-wrap"><table>
+        <tr><th>Business</th><th>Environment</th><th>Status</th><th>Connected</th><th>Last read-back</th><th>Locations</th></tr>
+        ${s2.connections.map((c) => `<tr><td>${esc(c.businessName || c.businessId)}</td><td data-label="Environment">${esc(c.env || "")}</td><td data-label="Status">${esc(c.status || "")}</td><td data-label="Connected">${c.connectedAt ? esc(fmtDay(c.connectedAt)) : ""}</td><td data-label="Last read-back">${c.lastSyncAt ? esc(fmtDay(c.lastSyncAt)) : "never"}</td><td data-label="Locations">${(c.locations || []).map(esc).join(", ")}</td></tr>`).join("")}
+      </table></div>` : `<p class="small muted">No business has connected a register yet.</p>`}
+      </div>`;
+      }
+      foot.innerHTML = html;
+    }
     await ccShowTab();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -23972,41 +24403,6 @@ async function ccShowTab() {
   const host = document.getElementById("cc-body");
   if (!host) return;
   try {
-    if (ccTab === "overview") {
-      const [s, ov, funnel] = await Promise.all([api("GET", "/admin/stats"), api("GET", "/admin/command/overview?" + ccQuery()), api("GET", "/admin/command/funnel").catch(() => null)]);
-      host.innerHTML = ccOverviewHtml(s, ov, funnel);
-      // Register connections (Square, Build -44): the environment
-      // is labeled on purpose; a sandbox connection is a test
-      // register and must never be mistaken for a live one.
-      try {
-        const sqData = await api("GET", "/admin/square");
-        const sq = sqData.square || {};
-        host.innerHTML += `
-      <div class="panel" id="cc-registers" style="margin-top:14px"><h3 style="margin:0 0 8px">Register connections (Square)</h3>
-      <p class="small">Server ${sq.configured ? "carries the Square app credentials" : "does not carry the Square app credentials, so connect renders the concierge state"}. Environment: <strong>${esc(sq.env || "")}</strong>${sq.env === "sandbox" ? " — SANDBOX: connections here are test registers, not live ones." : ""}</p>
-      ${sq.connections && sq.connections.length ? `<div class="table-wrap"><table>
-        <tr><th>Business</th><th>Environment</th><th>Status</th><th>Connected</th><th>Last read-back</th><th>Locations</th></tr>
-        ${sq.connections.map((c) => `<tr><td>${esc(c.businessName || c.businessId)}</td><td data-label="Environment">${esc(c.env || "")}</td><td data-label="Status">${esc(c.status || "")}</td><td data-label="Connected">${c.connectedAt ? esc(fmtDay(c.connectedAt)) : ""}</td><td data-label="Last read-back">${c.lastSyncAt ? esc(fmtDay(c.lastSyncAt)) : "never"}</td><td data-label="Locations">${(c.locations || []).map(esc).join(", ")}</td></tr>`).join("")}
-      </table></div>` : `<p class="small muted">No business has connected a register yet.</p>`}
-      </div>`;
-      } catch (e) { /* Stats stand without the register block */ }
-      return;
-    }
-    if (ccTab === "markets") {
-      const [d, funnel, race] = await Promise.all([api("GET", "/admin/command/markets?" + ccQuery()), api("GET", "/admin/command/funnel").catch(() => null), api("GET", "/admin/command/london-race").catch(() => null)]);
-      host.innerHTML = ccFunnelHtml(funnel) + ccLondonRaceHtml(race) + ccMarketsHtml(d);
-      return;
-    }
-    if (ccTab === "money") {
-      const d = await api("GET", "/admin/command/money?" + ccQuery());
-      host.innerHTML = ccMoneyHtml(d);
-      return;
-    }
-    if (ccTab === "businesses") {
-      const d = await api("GET", "/admin/command/businesses?" + ccQuery());
-      host.innerHTML = ccBusinessesHtml(d);
-      return;
-    }
     if (ccTab === "partners") {
       if (ccPartnerId) {
         const d = await api("GET", `/admin/command/partners/${encodeURIComponent(ccPartnerId)}?` + ccQuery());
@@ -24015,6 +24411,11 @@ async function ccShowTab() {
         const d = await api("GET", "/admin/command/partners?" + ccQuery());
         host.innerHTML = ccPartnersHtml(d);
       }
+      return;
+    }
+    if (ccTab === "businesses") {
+      const d = await api("GET", "/admin/command/businesses?" + ccQuery());
+      host.innerHTML = ccBusinessesHtml(d);
       return;
     }
     if (ccTab === "owed") {
@@ -24030,159 +24431,13 @@ async function ccShowTab() {
       host.innerHTML = ccCloseHtml(recon, close);
       return;
     }
-    host.innerHTML = ccFormingHtml(ccTab);
+    const d = await api("GET", "/admin/command/money?" + ccQuery());
+    host.innerHTML = ccMoneyHtml(d);
   } catch (err) {
     host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 
-// Creator funnel (Build -93): claim -> approval -> finished ->
-// first offer taken, per market, from GET /admin/command/funnel.
-// Admin-only. The percentages are step to step (each stage as a
-// share of the stage before it); a stage with nothing before it
-// shows a dash, never a made-up 0%. Testers and demo showcase
-// creators are out of every stage, always — the shell's tester
-// toggle does not change this section, and the section says so.
-function ccFunnelPct(v) { return v === null || v === undefined ? "—" : `${v}%`; }
-function ccFunnelHtml(f) {
-  if (!f || !Array.isArray(f.markets)) return "";
-  const d = f.definitions || {};
-  const row = (r, bold) => `
-      <tr${bold ? ' class="cc-funnel-total"' : ""}><td>${bold ? `<strong>${esc(r.label || r.market)}</strong>` : esc(r.label || r.market)}</td><td data-label="Claimed">${r.claimed}</td><td data-label="Approved">${r.approved}</td><td data-label="% of claimed">${ccFunnelPct(r.rates && r.rates.approvedFromClaimed)}</td><td data-label="Finished">${r.finished}</td><td data-label="% of approved">${ccFunnelPct(r.rates && r.rates.finishedFromApproved)}</td><td data-label="First offer taken">${r.firstOfferTaken}</td><td data-label="% of finished">${ccFunnelPct(r.rates && r.rates.firstOfferTakenFromFinished)}</td></tr>`;
-  const t = f.totals || { claimed: 0, approved: 0, finished: 0, firstOfferTaken: 0, rates: {} };
-  return `
-  <div class="panel" id="cc-funnel" style="margin-top:14px">
-    <h3 style="margin:0 0 4px">Creator funnel by market</h3>
-    <p class="muted small" style="margin:0 0 4px">How far creators get, market by market. Tester accounts and demo showcase creators are left out of every stage, always.</p>
-    <p class="small" style="margin:0 0 10px"><strong>Claimed</strong> = ${esc(d.claimed || "every creator record in the market.")}<br><strong>Approved</strong> = ${esc(d.approved || "claimed creators whose status is approved.")}<br><strong>Finished</strong> = ${esc(d.finished || "approved creators who passed the profile gate, so businesses can see them.")}<br><strong>First offer taken</strong> = ${esc(d.firstOfferTaken || "finished creators with at least one live booking. Applying alone does not count.")}</p>
-    <div class="table-wrap"><table>
-      <tr><th>Market</th><th>Claimed</th><th>Approved</th><th>% of claimed</th><th>Finished</th><th>% of approved</th><th>First offer taken</th><th>% of finished</th></tr>
-      ${f.markets.map((r) => row(r, false)).join("")}
-      ${row({ label: "All markets", ...t }, true)}
-    </table></div>
-    ${f.unlisted && f.unlisted.claimed ? `<p class="small muted" style="margin:8px 0 0">Not in a market yet (not in the totals above): ${f.unlisted.claimed} claimed &middot; ${f.unlisted.approved} approved &middot; ${f.unlisted.finished} finished &middot; ${f.unlisted.firstOfferTaken} took a first offer.</p>` : ""}
-  </div>`;
-}
-
-function ccOverviewHtml(s, ov, funnel) {
-  const t = ov.tiles || {};
-  const fd = t.finishedDeals || { compVisits: 0, paidBookings: 0, licenses: 0, total: 0 };
-  ccAttentionCache = ov.attention || [];
-  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const periodName = ccFilters.period === "all" ? "all time" : (ov.filters && ov.filters.periodLabel ? ov.filters.periodLabel.toLowerCase() : "this period");
-  const formingTile = (label, note) => `<div class="cc-tile forming"><div class="cc-tlabel">${label}</div><div class="cc-tform">Forming</div><div class="cc-tsub">${note}</div></div>`;
-  const tiles = `
-    <div class="cc-tiles">
-      <div class="cc-tile cc-hero"><div class="cc-tlabel">Users</div><div class="cc-tnum">${t.usersTotal || 0}</div><div class="cc-tsub">${plural(t.creators || 0, "creator", "creators")} &middot; ${plural(t.businesses || 0, "business", "businesses")} &middot; ${plural(t.partners || 0, "partner", "partners")}</div></div>
-      <div class="cc-tile"><div class="cc-tlabel">Businesses</div><div class="cc-tnum">${t.businesses || 0}</div><div class="cc-tsub">Every business signed up</div></div>
-      <div class="cc-tile"><div class="cc-tlabel">Comps booked now</div><div class="cc-tnum">${t.compsBookedNow || 0}</div><div class="cc-tsub">Visits on the books right now</div></div>
-      <div class="cc-tile"><div class="cc-tlabel">Comps completed</div><div class="cc-tnum">${t.compsCompleted || 0}</div><div class="cc-tsub">${plural(t.compsCounted || 0, "visit", "visits")} counted at a register &middot; ${periodName}</div></div>
-      <div class="cc-tile"><div class="cc-tlabel">Finished deals</div><div class="cc-tnum">${fd.total}</div><div class="cc-tsub">${plural(fd.compVisits, "comp visit", "comp visits")} &middot; ${plural(fd.paidBookings, "paid booking", "paid bookings")} &middot; ${plural(fd.licenses, "license", "licenses")} &middot; ${periodName}</div></div>
-      <div class="cc-tile"><div class="cc-tlabel">Register dollars <span class="cc-chip counted">Counted</span></div><div class="cc-tnum">${ccMoneyFmt(t.countedRegister || 0)}</div><div class="cc-tsub">Counted at business registers &middot; ${periodName}</div></div>
-      ${t.dollarsFlowing
-        ? `<div class="cc-tile"><div class="cc-tlabel">Dollars flowing <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt(t.dollarsFlowing.recorded || 0)}</div><div class="cc-tsub">Recorded on platform records &middot; ${ccMoneyFmt(t.dollarsFlowing.charged || 0)} charged on cards so far <span class="cc-chip charged">Charged</span> &middot; the classes are never added together &middot; ${periodName}</div></div>`
-        : formingTile("Dollars flowing", "The all-money view lands with charge capture, on the Wallet tab.")}
-      ${t.moneyOwed
-        ? `<div class="cc-tile"><div class="cc-tlabel">Money owed</div><div class="cc-tnum">${ccMoneyFmt(t.moneyOwed.owedOut || 0)}</div><div class="cc-tsub">Owed out: ${ccMoneyFmt(t.moneyOwed.toCreators || 0)} to creators &middot; ${ccMoneyFmt(t.moneyOwed.toPartners || 0)} to partners &middot; businesses owe ${ccMoneyFmt(t.moneyOwed.byBusinessesMonthly || 0)}/mo on paper &middot; <a href="#" onclick="return ccSetTab('owed')">Open the Owed view</a></div></div>`
-        : formingTile("Money owed", "The owed ledger lands with the Owed tab.")}
-      <div class="cc-tile"><div class="cc-tlabel">Alerts</div><div class="cc-tnum">${t.alerts || 0}</div><div class="cc-tsub">${(t.alerts || 0) ? "Things that need a look, below" : "All clear"}</div></div>
-    </div>`;
-  const attention = ccAttentionCache.length ? `
-    <div class="panel cc-attention">
-      <h3 style="margin:0 0 6px">Needs attention</h3>
-      ${ccAttentionCache.map((a, i) => `<div class="cc-att-row"><span>${esc(a.text)}</span><button type="button" class="btn small-btn" onclick="return ccAttentionGo(${i})">${esc(ccAttentionLabel(a))}</button></div>`).join("")}
-    </div>` : "";
-  const waiting = (t.compsCompleted || 0) === 0 && fd.total === 0 ? `
-    <div class="panel cc-waiting"><strong>Waiting for launch.</strong> No visits have completed yet, so comps, finished deals and register dollars are zero. When the first market launches, they land here.</div>` : "";
-  return `
-    ${tiles}
-    ${attention}
-    ${waiting}
-    ${adminSignupBoardHtml(s.signupBoard)}
-    ${ccFunnelHtml(funnel)}
-      <div class="panel"><div class="stat-row">
-        <div class="stat"><div class="num">${s.users.creators}</div><div class="lbl">Creators</div></div>
-        <div class="stat"><div class="num">${s.users.businesses}</div><div class="lbl">Businesses</div></div>
-        <div class="stat"><div class="num">${s.users.pending}</div><div class="lbl">Pending</div></div>
-        <div class="stat"><div class="num">${s.users.testers || 0}</div><div class="lbl">Testers (excluded from roster counts)</div></div>
-        <div class="stat"><div class="num">${s.offers}</div><div class="lbl">Offers</div></div>
-        <div class="stat"><div class="num">${s.bookings.redeemed}</div><div class="lbl">Visits redeemed</div></div>
-        <div class="stat"><div class="num">${s.posts.total}</div><div class="lbl">Posts</div></div>
-        <div class="stat"><div class="num">${s.posts.onTimeRate === null ? "n/a" : s.posts.onTimeRate + "%"}</div><div class="lbl">Posts on time</div></div>
-      </div></div>
-      <div class="table-wrap panel"><table>
-        <tr><th>Market</th><th>Approved creators</th><th>Approved businesses</th><th>Bookings</th><th>Posts</th></tr>
-        ${Object.entries(s.perMarket).map(([m, v]) => `<tr><td>${esc(m)}</td><td data-label="Approved creators">${v.creators}</td><td data-label="Approved businesses">${v.businesses}</td><td data-label="Bookings">${v.bookings}</td><td data-label="Posts">${v.posts}</td></tr>`).join("")}
-      </table></div>
-      ${s.unlistedByCity && s.unlistedByCity.length ? `
-      <h3 class="mt">Sign-ups in cities not open yet</h3>
-      <p class="muted small">Creators who signed up from outside the listed markets, counted per city and country. This is the demand signal for where to open next.</p>
-      <div class="table-wrap panel"><table>
-        <tr><th>City, country</th><th>Creator sign-ups</th></tr>
-        ${s.unlistedByCity.map((r) => `<tr><td>${esc(r.place)}</td><td data-label="Creator sign-ups">${r.creators}</td></tr>`).join("")}
-      </table></div>` : ""}
-      ${s.layers ? `
-      <h3 class="mt">Spanish and campus layers</h3>
-      <p class="muted small">Read-only, from live records. Claims window: the last ${s.layers.periodDays} days. Cities outside the listed markets appear as their own rows.</p>
-      <div class="table-wrap panel"><table>
-        <tr><th>Market</th><th>Creators</th><th>Approved</th><th>Finished profiles</th><th>Spanish content</th><th>With Spanish %</th><th>Claims in window</th><th>Spanish claims</th></tr>
-        ${s.layers.markets.map((r) => `<tr><td>${esc(r.market)}</td><td data-label="Creators">${r.creators}</td><td data-label="Approved">${r.approved}</td><td data-label="Finished profiles">${r.complete}</td><td data-label="Spanish content">${r.spanishFlagged}</td><td data-label="With Spanish %">${r.withSpanishPct}</td><td data-label="Claims in window">${r.claimsInPeriod}</td><td data-label="Spanish claims">${r.spanishClaimsInPeriod}</td></tr>`).join("")}
-      </table></div>
-      <p class="small" style="margin-top:12px"><strong>Campus Leads:</strong> ${s.layers.campusLeads.length ? s.layers.campusLeads.map((e) => `${esc(e.university)}: ${e.leads} (${e.handles.map((h) => "@" + esc(h)).join(", ")})`).join(" &middot; ") : "none yet. A Campus Lead is a current student with 5 approved referrals from their own school."}</p>
-      <p class="small"><strong>Business language:</strong> ${s.layers.businessLanguage.es} ${s.layers.businessLanguage.es === 1 ? "business prefers" : "businesses prefer"} Spanish, ${s.layers.businessLanguage.en} English.</p>` : ""}
-      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Your Line lookup</h3>
-      <p class="small">Who brought whom under one creator, and the points by generation. Points land only when an invite finishes signing up. ${POINTS_WHY_SHORT}</p>
-      <div class="row" style="gap:8px;align-items:center"><input id="line-pick" type="text" placeholder="Creator handle" style="max-width:240px"><button class="btn" onclick="adminLineLookup()">View line</button></div>
-      <div id="line-out" style="margin-top:10px"></div></div>`;
-}
-
-function ccAttentionLabel(a) {
-  if (a.kind === "awaiting_review" || a.kind === "unknown_partner_code") return "Review applications";
-  if (a.kind === "unstamped_attribution") return "Stamp them now";
-  if (a.kind === "unlisted_records") return "See the Markets view";
-  if (a.kind === "unsigned_partners") return "Open Partners";
-  if (a.kind === "unconnected_registers") return "See register connections";
-  if (a.kind === "territory_conflicts") return "Review on Partners";
-  if (a.kind === "london_race_won") return "See the race board";
-  return "Open";
-}
-
-async function ccAttentionGo(i) {
-  const a = ccAttentionCache[i];
-  if (!a) return false;
-  const target = a.target || {};
-  if (a.kind === "unstamped_attribution") return ccRunBackfill();
-  if (target.view === "applications") return go("dashboard", "Applications");
-  if (target.view === "partners") return go("dashboard", "Partners");
-  if (target.view === "command" && target.subtab) {
-    ccTab = target.subtab;
-    await loadStats();
-    if (target.anchor) {
-      const anchor = document.getElementById("cc-" + target.anchor);
-      if (anchor) anchor.scrollIntoView({ block: "start" });
-    }
-    return false;
-  }
-  return false;
-}
-
-async function ccRunBackfill() {
-  try {
-    const r = await api("POST", "/admin/command/backfill-attribution", {});
-    const b = r.backfill || {};
-    alert(`Attribution backfill: ${b.stamped || 0} ${b.stamped === 1 ? "record" : "records"} stamped${b.unknownCode ? `, ${b.unknownCode} with a code that matches no partner (left for manual repair in Applications)` : ""}.`);
-    await loadStats();
-  } catch (err) {
-    alert(err.message);
-  }
-  return false;
-}
-
-// London district race board (Build -106, Admin only, never
-// public): the five Tier 1 districts against the 40/15 targets,
-// the race clock state, and the Admin start control. Until a
-// start date is set the board reads "race not started" and
-// shows raw counts only.
 function ccLondonRaceHtml(r) {
   if (!r || !r.districts) return "";
   const winnerName = r.winner ? (r.districts.find((x) => x.id === r.winner) || {}).name || "" : "";
@@ -24222,49 +24477,6 @@ async function ccStartLondonRace() {
   return false;
 }
 
-function ccMarketsHtml(d) {
-  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const periodName = ccFilters.period === "all" ? "all time" : ((d.filters && d.filters.periodLabel) || "this period").toLowerCase();
-  const hasSignal = (m) => m.signups.creators.signedUp + m.signups.businesses.signedUp + m.compsCompleted + (m.finishedDeals ? m.finishedDeals.total : 0) > 0 || m.live || (m.partners || []).length > 0;
-  const active = (d.markets || []).filter(hasSignal).sort((a, b) => (b.signups.creators.signedUp + b.signups.businesses.signedUp) - (a.signups.creators.signedUp + a.signups.businesses.signedUp));
-  const empty = (d.markets || []).filter((m) => !hasSignal(m));
-  const marketBlock = (m) => {
-    const c = m.signups.creators; const b = m.signups.businesses; const fd = m.finishedDeals || { total: 0 };
-    const gatePct = Math.max(0, Math.min(100, (m.launchGate.finished / m.launchGate.high) * 100)).toFixed(1);
-    return `
-    <div class="panel cc-market">
-      <div class="cc-mhead"><strong>${esc(m.label || m.market)}</strong>
-        ${m.live ? `<span class="cc-chip live">Live</span>` : `<span class="cc-chip founding">Founding — not launched</span>`}
-        ${(m.partners || []).length ? `<span class="muted small">with ${m.partners.map((p) => esc(p.name)).join(", ")}</span>` : `<span class="muted small">No partner attached</span>`}
-      </div>
-      <p class="small" style="margin:6px 0 2px">${plural(c.signedUp, "creator", "creators")} signed up &middot; ${c.awaitingReview} awaiting review &middot; ${c.approved} approved &middot; ${c.finished} finished setting up</p>
-      <p class="small" style="margin:0 0 8px">${plural(b.signedUp, "business", "businesses")} signed up &middot; ${b.awaitingReview} awaiting review &middot; ${b.approved} approved &middot; ${b.active} active</p>
-      <div class="cc-gate"><span class="cc-gatebar"><i style="width:${gatePct}%"></i></span><span class="small">${m.launchGate.finished} of ${m.launchGate.low}–${m.launchGate.high} finished creators — the launch gate${m.launchGate.met ? " — met" : ""}</span></div>
-      <p class="small" style="margin:8px 0 0">${periodName}: ${plural(m.compsCompleted, "comp", "comps")} completed (${m.compsCounted} counted) &middot; ${plural(fd.total, "finished deal", "finished deals")} &middot; ${ccMoneyFmt(m.countedRegister || 0)} counted at registers <span class="cc-chip counted">Counted</span> &middot; SIGNL take: forming with partner deals</p>
-      ${(m.unlistedClaiming || []).length ? `<p class="small" style="margin:4px 0 0">Typed cities that belong here, waiting to be filed: ${m.unlistedClaiming.map((x) => `${esc(x.city)} (${x.total})`).join(", ")}</p>` : ""}
-    </div>`;
-  };
-  const unlistedRow = (r) => `
-    <div class="cc-unlisted-row">
-      <span><strong>${esc(r.place)}</strong><br><span class="small muted">${r.resolveStatus === "unique" ? `${esc(r.city)} sits in the ${esc(r.resolvesTo)} area — these records file under ${esc(r.resolvesTo)}.` : r.resolveStatus === "ambiguous" ? `${esc(r.city)} could be ${(r.candidateMarkets || []).map(esc).join(" or ")} — each person picks.` : `No market covers ${esc(r.city)} yet — these sign-ups count toward opening one.`}</span></span>
-      <span class="cc-unlisted-n">${plural(r.total, "sign-up", "sign-ups")}<br><span class="small muted">${r.creators} creators &middot; ${r.businesses} businesses${r.awaitingReview ? ` &middot; ${r.awaitingReview} awaiting review` : ""}</span></span>
-    </div>`;
-  return `
-    <p class="muted small" style="margin:2px 0 10px">Every market: who has signed up, how close it is to launching, and what has actually happened there. The launch gate — 25 to 30 finished creators — is Admin-only and never shown to creators or businesses.</p>
-    ${active.length ? active.map(marketBlock).join("") : `<div class="panel cc-waiting"><strong>Waiting for launch.</strong> No market has sign-ups yet. When the first creator or business signs up, their market appears here.</div>`}
-    ${(d.unlisted || []).length ? `
-    <div class="panel">
-      <h3 style="margin:0 0 2px">Not in a market yet</h3>
-      <p class="muted small" style="margin:0 0 6px">Sign-ups from cities outside every market, counted by the city they typed.</p>
-      ${(d.unlisted || []).map(unlistedRow).join("")}
-    </div>` : ""}
-    ${empty.length ? `<p class="muted small">No sign-ups yet in: ${empty.map((m) => esc(m.label || m.market)).join(" &middot; ")}</p>` : ""}`;
-}
-
-// Money (Build -55, spec §3.1): every dollar by how sure we are
-// it is real. The four classes render in their own panels with
-// their own totals; nothing on this view ever adds across
-// classes. Modeled sits in its own quarantined panel at the end.
 function ccMonthYear(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -24886,34 +25098,6 @@ function ccCloseHtml(recon, d) {
   return `${ccReconHtml(recon)}${monthsPanel}${selPanel}${exportsPanel}`;
 }
 
-function ccFormingHtml(tab) {
-  const head = (title, sub) => `<div class="panel"><h3 style="margin:0 0 4px">${title}</h3><p class="muted small" style="margin:0 0 10px">${sub}</p>`;
-  if (tab === "partners") return `${head("Partners", "What each partner's deal is, and what it has earned.")}
-    <p class="small">Partners and their deals live on the Partners view above — this fallback never renders in the normal flow.</p></div>`;
-  if (tab === "creators") return `${head("Creators", "Every creator, what they have finished, and what they have earned.")}
-    <p class="small">The roster lives in Applications, and finished-profile counts by market are on the Markets view.</p>
-    <p class="small">Forming: per-creator lifetime value and payout history land with the money views.</p></div>`;
-  if (tab === "owed") return `${head("Owed", "Money SIGNL owes, and money owed to SIGNL — never a surprise at close.")}
-    <div class="cc-form-rows">
-      <p><strong>Creators</strong> — forming. Paid-booking funds release on the existing 48-hour hold after proof today; the owed ledger lands with the payout records.</p>
-      <p><strong>Partners</strong> — accruals are live on the Partners view; the owed ledger (accrued less paid, per partner) lands with the close phase.</p>
-      <p><strong>Businesses</strong> — forming. Credits and refunds are on the Wallet and Businesses views today; what a business owes lands with the close phase.</p>
-    </div></div>`;
-  if (tab === "close") return `${head("Close &amp; export", "Month-end, done once and done right.")}
-    <div class="cc-form-rows">
-      <p>☐ Counted register totals locked for the month</p>
-      <p>☐ Stripe reconciled to the charge</p>
-      <p>☐ Square reconciled to the register event</p>
-      <p>☐ Partner accruals match their statements</p>
-      <p>☐ Rollover liability carried into next month</p>
-      <p>☐ Export pack generated</p>
-    </div>
-    <p class="small">Forming: the close run lands with the owed ledger (charge capture and the reconciliation list are already live on the Wallet view). Nothing here can be run yet — a close with nothing to reconcile would be theater.</p></div>`;
-  return `${head("Forming", "")}<p class="small">This view is on its way.</p></div>`;
-}
-
-// Your Line lookup (Build -36, Admin Stats): who brought whom
-// under one creator, points by generation.
 async function adminLineLookup() {
   const out = document.getElementById("line-out");
   const input = document.getElementById("line-pick");
@@ -26542,6 +26726,7 @@ async function loadPilotOverview(el) {
     el.innerHTML = `
     ${pilotHeadHtml(p)}
     ${pilotStrip119("Overview")}
+    ${sigHomeTopHtml()}
     <div class="panel">
       <h3 style="margin-top:0">The fund</h3>
       <div style="display:flex;gap:14px;flex-wrap:wrap;text-align:center">
@@ -26572,6 +26757,7 @@ async function loadPilotOverview(el) {
       <p style="font-size:17px;margin:0">${pilotMoney(f.spentCents)} spent &middot; ${c.visitsDone} visit${c.visitsDone === 1 ? "" : "s"} done &middot; ${c.postsLive} post${c.postsLive === 1 ? "" : "s"} live &middot; ${c.countedCustomers} customer${c.countedCustomers === 1 ? "" : "s"} counted at the register${c.recordedCustomers ? ` &middot; ${c.recordedCustomers} more recorded by the businesses themselves` : ""}.</p>
       ${c.businesses === 0 ? `<p class="muted" style="margin-bottom:0">No businesses have been chosen yet. They will appear here as the pilot is set up.</p>` : ""}
     </div>`;
+    loadSigTopNudges();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }

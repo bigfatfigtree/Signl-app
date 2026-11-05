@@ -105,44 +105,40 @@ check("bank battery is at least 40 questions per side", CREATOR_QS.length >= 40 
   check("gibberish falls back (no topic)", gib.topic === null);
 }
 
-// ---------- 1b. The Sig asset model (V4 2026-10-28; Build -124) ----------
-// Build -124 (Jeff, 2026-11-04) swapped Sig's face to the
-// painterly portrait he picked (Concept A): stills only, no
-// clips. The V4 video model below stays pinned where it still
-// exists (hero stack markup, the state machine, the triggers,
-// the legacy clips kept at sig-v4-legacy for a revert), and the
-// stills-only gate is pinned shut: SIG_ART names the one folder
-// every face resolves through, SIG_ART_VIDEO is false, and no
-// user-facing reference to the old folder remains.
-console.log("== Sig asset model (Build -124: Concept A stills) ==");
+// ---------- 1b. The Sig asset model (V4 2026-10-28; -124; -130) ----------
+// Build -130 (Jeff, 2026-11-05): Sig's mark is THE ORB — one
+// still + one living clip in /assets/sig-orb, replacing every
+// face (the V4 render, then Build -124's Concept A portrait).
+// The model the earlier builds built stays pinned: SIG_ART
+// names the one folder every surface resolves through, the
+// hero state machine and triggers are unchanged, the small
+// surfaces stay stills-only, reduced motion rests everything
+// on the still — and ZERO references to the retired face
+// folders remain, in code or on disk.
+console.log("== Sig asset model (Build -130: the orb) ==");
 const themeCss = fs.readFileSync(path.join(ROOT, "public/theme-v2.css"), "utf8");
-const asset = (rel) => path.join(ROOT, "public/assets/sig-a", rel);
-const legacyAsset = (rel) => path.join(ROOT, "public/assets/sig-v4-legacy", rel);
+const asset = (rel) => path.join(ROOT, "public/assets/sig-orb", rel);
 const sizeOf = (rel) => (fs.existsSync(asset(rel)) ? fs.statSync(asset(rel)).size : -1);
-const legacySizeOf = (rel) => (fs.existsSync(legacyAsset(rel)) ? fs.statSync(legacyAsset(rel)).size : -1);
-check("one swappable reference: SIG_ART names the Concept A folder", appJs.includes('const SIG_ART = "/assets/sig-a"'));
-check("stills-only gate is shut (SIG_ART_VIDEO false, hero + celeb both gated)", appJs.includes("const SIG_ART_VIDEO = false") && appJs.includes("if (!SIG_ART_VIDEO || sigReducedMotion())") && appJs.includes("if (!SIG_ART_VIDEO) return;"));
-check("no user-facing reference to the V4 art folder remains in app.js", !appJs.includes("/assets/sig-v4/"));
+check("one swappable reference: SIG_ART names the orb folder", appJs.includes('const SIG_ART = "/assets/sig-orb"'));
+check("the orb clip gate is open (SIG_ART_VIDEO true, hero + celeb both gated)", appJs.includes("const SIG_ART_VIDEO = true") && appJs.includes("if (!SIG_ART_VIDEO || sigReducedMotion())") && appJs.includes("if (!SIG_ART_VIDEO) return;"));
+check("no reference to any retired face folder remains in app.js", !appJs.includes("/assets/sig-a") && !appJs.includes("/assets/sig-v4") && !appJs.includes("head-idle"));
 check("the SVG character is retired from every surface", !appJs.includes("sigSvgHtml") && !appJs.includes("sig-musician") && !themeCss.includes("sig-ava-svg") && !fs.existsSync(path.join(ROOT, "public/assets/sig-musician.svg")));
-check("small Sig is the head-crop still of the state (sigAvatarHtml -> sig-ava-img webp, no video)", appJs.includes("SIG_HEAD") && appJs.includes("head-greet") && appJs.includes("head-think") && appJs.includes("head-talk") && appJs.includes("head-celebrate") && appJs.includes("sig-ava-img") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
-check("the bottom tab icon is the idle head crop", appJs.includes('class="tab-sig-img" src="/assets/sig-a/head-idle.webp"'));
-const heroSlice = appJs.slice(appJs.indexOf("function sigHeroMediaHtml"), appJs.indexOf("const SIG_HERO_CLIPS"));
-check("hero markup is a video stack over the hero poster, think still included", heroSlice.includes('data-sig-hero-video') && heroSlice.includes("muted") && heroSlice.includes("playsinline") && heroSlice.includes("autoplay") && heroSlice.includes('preload="none"') && heroSlice.includes('poster="${SIG_ART}/hero.webp"') && heroSlice.includes("still-think.webp"));
-check("hero markup ships NO clip sources (only the visible state's clips attach, in sigHeroSet)", !heroSlice.includes("<source") && appJs.includes('video.innerHTML = `<source src="${SIG_ART}/${name}.webm" type="video/webm"><source src="${SIG_ART}/${name}.mp4" type="video/mp4">`'));
-check("only idle and talk loop; greet and celebrate are one-shots", appJs.includes('video.loop = name === "idle" || name === "talk"') && appJs.includes('const SIG_HERO_CLIPS = { idle: 1, talk: 1, greet: 1, celebrate: 1 }'));
-check("think has NO clip: the think state swaps the video out for the think still", appJs.includes('if (mode === "think")') && !appJs.slice(appJs.indexOf("const SIG_HERO_CLIPS"), appJs.indexOf("let sigHeroMode")).includes("think"));
-check("one-shots return to idle on ended", appJs.includes('addEventListener("ended"') && appJs.includes('if (m === "greet" || m === "celebrate") sigHeroSet("idle")'));
+check("small Sig is the orb still in every mood (sigAvatarHtml -> sig-ava-img webp, no video)", appJs.includes('const SIG_STILL = "orb.webp"') && appJs.includes("sig-ava-img") && appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("${SIG_ART}/${SIG_STILL}") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
+check("the bottom tab icon is the orb still", appJs.includes('class="tab-sig-img" src="/assets/sig-orb/orb.webp"'));
+const heroSlice = appJs.slice(appJs.indexOf("function sigHeroMediaHtml"), appJs.indexOf("let sigHeroMode"));
+check("hero markup is a video stack over the orb poster, think still included", heroSlice.includes('data-sig-hero-video') && heroSlice.includes("muted") && heroSlice.includes("playsinline") && heroSlice.includes("autoplay") && heroSlice.includes('preload="none"') && heroSlice.includes('poster="${SIG_ART}/${SIG_STILL}"') && heroSlice.includes("sig-hero-think"));
+check("hero markup ships NO clip sources (the one orb clip attaches in sigHeroSet)", !heroSlice.includes("<source") && appJs.includes('video.innerHTML = `<source src="${SIG_ART}/${SIG_CLIP}" type="video/mp4">`'));
+check("the orb clip loops in every hero state (one living clip, data-clip orb)", appJs.includes('video.setAttribute("data-clip", "orb")') && appJs.includes("video.loop = true"));
+check("think rests on the still: the think state swaps the video out", appJs.includes('if (mode === "think")') && appJs.slice(appJs.indexOf("function sigHeroSet"), appJs.indexOf("function sigCelebMediaHtml")).includes("video.hidden = true"));
+check("the celeb one-shot hides on ended and leaves its still", appJs.includes('addEventListener("ended"') && appJs.includes('hasAttribute("data-sig-celeb-video")'));
 check("reduced motion: stills everywhere, driven by the matchMedia gate", appJs.includes("function sigReducedMotion()") && appJs.includes('matchMedia("(prefers-reduced-motion: reduce)")') && themeCss.includes("prefers-reduced-motion: reduce"));
 check("a failed clip hides itself and leaves its poster (error listener)", appJs.includes('addEventListener("error"') && appJs.includes('hasAttribute("data-sig-hero-video")'));
 check("the queue card still records its one-shot moods for the hero (triggers unchanged)", appJs.includes('sigQueueBeat = "celebrate"') && appJs.includes('sigQueueBeat = "greet"') && appJs.includes("state.sigCelebrate = false"));
 check("the claim win hook renders the celebrate clip component and kicks it once", appJs.includes("function sigCelebMediaHtml()") && appJs.includes("setTimeout(sigCelebKick, 30)"));
 check("hero + celeb media CSS ships (stack, ring, hidden guards beat the layer display rules)", themeCss.includes(".sig-hero-media") && themeCss.includes(".sig-celeb-media") && themeCss.includes("video[hidden]") && themeCss.includes("img[hidden]"));
-for (const f of ["hero.webp", "still-greet.webp", "still-think.webp", "still-talk.webp", "still-celebrate.webp", "head-idle.webp", "head-greet.webp", "head-think.webp", "head-talk.webp", "head-celebrate.webp"]) {
-  check(`still ships: ${f}`, sizeOf(f) > 0 && sizeOf(f) <= 120000, `${sizeOf(f)} bytes`);
-}
-for (const [f, cap] of [["idle.webm", 800000], ["idle.mp4", 800000], ["talk.webm", 400000], ["talk.mp4", 400000], ["greet.webm", 400000], ["greet.mp4", 400000], ["celebrate.webm", 400000], ["celebrate.mp4", 400000]]) {
-  check(`V4 clip kept in legacy inside its weight budget (revert path intact): ${f} <= ${cap}`, legacySizeOf(f) > 0 && legacySizeOf(f) <= cap, `${legacySizeOf(f)} bytes`);
-}
+check("orb still ships (sane weight)", sizeOf("orb.webp") > 0 && sizeOf("orb.webp") <= 200000, `${sizeOf("orb.webp")} bytes`);
+check("orb clip ships (sane weight)", sizeOf("orb.mp4") > 0 && sizeOf("orb.mp4") <= 3000000, `${sizeOf("orb.mp4")} bytes`);
+check("the retired face folders are gone from the bundle", !fs.existsSync(path.join(ROOT, "public/assets/sig-a")) && !fs.existsSync(path.join(ROOT, "public/assets/sig-v4-legacy")) && !fs.existsSync(path.join(ROOT, "public/assets/sig-axolotl.png")));
 
 // ---------- 2. The AI path, against a local stub provider ----------
 let stubMode = "ok";

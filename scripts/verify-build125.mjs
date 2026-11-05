@@ -68,7 +68,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || "";
-check("stamp is 2026.11.04-129 and identical in build.js + index.html", stamp === "2026.11.04-129" && indexHtml.includes(stamp), String(stamp));
+check("stamp is 2026.11.05-130 and identical in build.js + index.html", stamp === "2026.11.05-130" && indexHtml.includes(stamp), String(stamp));
 check("index.html cache-busts app.js + theme-v3 with the rolled stamp",
   indexHtml.includes(`/app.js?v=${stamp}`) && indexHtml.includes(`/theme-v3.css?v=${stamp}`));
 
@@ -84,14 +84,15 @@ check("creator Profile is NOT a bar stop any more; Messages is",
   !appJs.includes('creator: ["Dashboard", "Offers", "My Visits", "Earnings", "Profile"]'));
 check("bar display labels are the design's one-word forms (Wallet for Earnings + Plan)",
   appJs.includes('const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Creators", "My Offers": "Campaigns", Performance: "Reports", Businesses: "Business" }'));
-check("the bar renders only primaries (+ Sig pin, scope exit, Everything) — no secondary group, no More item",
+check("the bar renders primaries first (+ Sig pin, scope exit, Everything) — Build -130 Part 6 supersedes the -125 rail model: every other destination now rides the desktop rail as a secondary under a More group label (phones still hide secondaries and keep the panel)",
   appJs.includes("const ordered = prim.map((t) => byTab[t]).filter(Boolean);") &&
   !appJs.includes('list.push({ icon: "more", label: "More", tab: "More"') &&
-  !appJs.includes('class="tab-grouplabel"'));
-check("admin phone bar primaries are Review · Creators · Markets · Wallet",
+  appJs.includes("const secondary = items.filter") &&
+  appJs.includes('<div class="tab-grouplabel">More</div>'));
+check("admin phone bar primaries are Review · Creators · Markets · Stats (Creators is its own tab and Admin has no Wallet — Build -130 Part 9)",
   appJs.includes('const ADMIN_RAIL_PRIMARY_125 = ["Applications", "Creators", "Markets", "Stats"];') &&
-  appJs.includes('<span class="rail-label rail-label-short">Wallet</span>') &&
-  appJs.includes("ccTab = 'creators'; return go('dashboard','Stats')"));
+  !appJs.includes('rail-label-short') &&
+  appJs.includes('add("a", "users", "Creators", "return go(\'dashboard\',\'Creators\')"'));
 check("admin rail no longer renders a More button",
   !appJs.includes('rail-item rail-primary rail-more'));
 
@@ -113,16 +114,16 @@ check("business groups are the design's: Your place / Grow / Account",
 check("partner groups are the design's: Your market / Terms / Account",
   appJs.includes('{ title: "Your market", rows: [') && appJs.includes('{ title: "Terms", rows: [') &&
   appJs.includes("ptEarnGo125('fund')") && appJs.includes("ptEarnGo125('returns')"));
-check("admin groups are the design's: Review & people / Watch / System",
+check("admin groups are the design's: Review & people / Watch / System (Creators row present, Wallet row removed — Build -130 Part 9)",
   appJs.includes('{ title: "Review & people", rows: [') && appJs.includes('{ title: "Watch", rows: [') && appJs.includes('{ title: "System", rows: [') &&
-  appJs.includes("function adminCreatorsGo125()") && appJs.includes("function adminWalletGo125()"));
+  appJs.includes("function adminCreatorsGo125()") && !appJs.includes("function adminWalletGo125()"));
 check("the creator Momentum panel row carries the level word as its status",
   appJs.includes('"Momentum", "", "Momentum", { status: lvl }'));
 
 // W — Money → Wallet
 part("W: Wallet rename");
-check("no user-facing Money nav label remains (bar, rail, strips, Sig labels)",
-  !appJs.includes('label: "Money"') && !appJs.includes('RAIL_SHORT["Earnings"] = "Money"') &&
+check("no creator/business Money nav label remains (the Admin books strip's Money tab is the one allowed exception — Build -130 Part 9)",
+  appJs.includes('{ label: "Money", on: ccTab === "money"') && !appJs.includes('RAIL_SHORT["Earnings"] = "Money"') &&
   !appJs.includes('rail-label-short">Money<') && !appJs.includes('return "Open Money"') &&
   !appJs.includes('"Open Earnings"') && !appJs.includes('under Earnings') && !appJs.includes('"See my earnings"') &&
   !sigdata.includes('"Open Earnings"') && !sigdata.includes('under Earnings') && !sigdata.includes('"See Earnings"'));
@@ -145,9 +146,9 @@ check("partner Wallet: head + strip read Wallet, Fund/Returns kept",
   appJs.includes('wsHead("Wallet", { sub: "Your share of subscription revenue in your markets."') &&
   appJs.includes('item("Earnings", "Wallet", "Earnings")') &&
   appJs.includes('{ label: "Fund", on: state.partnerEarnSeg !== "returns"') && appJs.includes('{ label: "Returns", on: state.partnerEarnSeg === "returns"'));
-check("admin money view reads Wallet (cc tab + home kicker)",
-  appJs.includes('{ label: "Wallet", on: ccTab === "money", onclick: "return ccSetTab(\'money\')" }') &&
-  appJs.includes('<p class="ui-kicker">Wallet</p>'));
+check("admin money view reads Money in the Stats books (the Admin Wallet label is abolished — Build -130 Part 9D)",
+  appJs.includes('{ label: "Money", on: ccTab === "money", onclick: "return ccSetTab(\'money\')" }') &&
+  !appJs.includes('{ label: "Wallet", on: ccTab === "money"'));
 check("the old cross-screen money strip is gone (Content and Results stand alone)",
   !appJs.includes("bizMoneyStrip119("));
 
@@ -173,15 +174,15 @@ check("Sig deep links carry the Wallet names to the same screens",
   appJs.includes('case "biz-wallet": return go("dashboard", "Plan");') &&
   appJs.includes('case "partner-wallet": return go("dashboard", "Earnings");') &&
   appJs.includes('case "admin-wallet": ccTab = "money"; return go("dashboard", "Stats");') &&
-  appJs.includes('case "admin-creators": ccTab = "creators"; return go("dashboard", "Stats");'));
+  appJs.includes('case "admin-creators": return go("dashboard", "Creators");'));
 check("Sig's creator flow is titled for the Wallet",
   appJs.includes('flow("See my wallet"') && sigdata.includes('"Open Wallet", "cr-earnings"') && sigdata.includes('"See your Wallet", "partner-earnings"'));
 
 // Inherited pins
 part("S2: inherited pins");
-check("Momentum naming intact (Build -120), Sig portrait art intact (Build -124), photo avatars intact (Build -122)",
+check("Momentum naming intact (Build -120), Sig orb art intact (Build -130; -124's portrait retired), photo avatars intact (Build -122)",
   appJs.includes("Momentum — you reply fast and show up. Businesses see it before followers.") &&
-  appJs.includes('const SIG_ART = "/assets/sig-a";') && appJs.includes("function selfAvatarUrl122(u)") && appJs.includes("function avaHtml122("));
+  appJs.includes('const SIG_ART = "/assets/sig-orb";') && appJs.includes("function selfAvatarUrl122(u)") && appJs.includes("function avaHtml122("));
 check("payment gates stay shut: founding Stripe prices still resolve only from unset env",
   fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8").includes('process.env.STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') &&
   !process.env.STRIPE_PRICE_FOUNDING_SELF_SERVICE && !process.env.STRIPE_PRICE_FOUNDING_GROWTH && !process.env.STRIPE_PRICE_FOUNDING_MANAGED);
@@ -234,8 +235,8 @@ for (const [label, tab] of PT_PANEL) {
 }
 check("partner Fund terms + Payout schedule deep-link the Wallet segments",
   appJs.includes('"Fund terms"') && appJs.includes('"Payout schedule"'));
-check("admin panel carries every section incl. Creators + Wallet shortcuts and previews",
-  appJs.includes('"Preview as business"') && appJs.includes('adminCreatorsGo125()') && appJs.includes('adminWalletGo125()'));
+check("admin panel carries every section incl. the Creators shortcut and previews (no Wallet shortcut — Build -130 Part 9D)",
+  appJs.includes('"Preview as business"') && appJs.includes('adminCreatorsGo125()') && !appJs.includes('adminWalletGo125()'));
 
 // ---------- H: server ----------
 part("H: server");
