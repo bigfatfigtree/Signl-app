@@ -14499,10 +14499,10 @@ function creatorProfileHtml(u) {
     <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on SIGNL. Both scores run 0 to 100. Reliability starts at a neutral 50 before you have any visits; your real visits move it from there. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available: self-reported means it is your own number, typed by you, not yet checked against Instagram.</p>
     <div class="preview-panel" id="profile-preview-panel">
       <div class="flex-between"><strong>Live preview</strong><span class="badge info">Updates as you type</span></div>
-      <p class="small muted" style="margin:6px 0 10px">Your card in Find creators and the top of your creator page, drawn from the fields on this page. Change a field and this changes with it. There is nothing separate to fill in.</p>
+      <p class="small muted" style="margin:6px 0 10px">This is what businesses see, drawn from the fields on this page: your card in Find creators, and the top of your page. Change a field and this changes with it. There is nothing separate to fill in.</p>
       <div class="chip-row" style="margin-bottom:10px">
-        <button type="button" class="chip pv-chip on" data-pv="business" onclick="return creatorPreviewSetView('business')">See it as a business</button>
-        <button type="button" class="chip pv-chip" data-pv="public" onclick="return creatorPreviewSetView('public')">See your public page top</button>
+        <button type="button" class="chip pv-chip on" data-pv="business" onclick="return creatorPreviewSetView('business')">Your card</button>
+        <button type="button" class="chip pv-chip" data-pv="public" onclick="return creatorPreviewSetView('public')">Top of your page</button>
       </div>
       <div id="profile-preview-host"></div>
     </div>
@@ -15357,7 +15357,7 @@ async function loadOpenBoard() {
     // instead of reading as an empty market. Charter is explained
     // in place: the founding class sees new offers first.
     const ea = data.earlyAccess && data.earlyAccess.opensAt ? data.earlyAccess : null;
-    const eaLine = ea ? `<p class="small" style="margin-top:10px">A new offer just posted in ${esc(marketTalkNameClient(state.user.market))}. Charter creators, the founding class, see new offers first; this one opens to you ${esc(fmtDay(ea.opensAt))} at ${esc(fmtTime(ea.opensAt))}.</p>` : "";
+    const eaLine = ea ? `<p class="small" style="margin-top:10px">A new offer just posted in ${esc(marketTalkNameClient(state.user.market))}. Charter creators, the founding class (creators approved before their market launched), see new offers first; this one opens to you ${esc(fmtDay(ea.opensAt))} at ${esc(fmtTime(ea.opensAt))}.</p>` : "";
     if (!data.offers.length) {
       el.innerHTML = foundingOffersEmptyHtml(eaLine);
       return;
@@ -19810,7 +19810,7 @@ function shelfTrayHtml() {
   const shown = saved.slice(0, 4);
   const best = shown.reduce((a, b) => ((cardLocalPct(b) ?? -1) > (cardLocalPct(a) ?? -1) ? b : a));
   return `<div class="shelf-tray">
-    <div class="shelf-tray-head"><strong>Your shortlist, side by side</strong><span class="small muted">${saved.length} saved</span><button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Favorites')">See all saved</button></div>
+    <div class="shelf-tray-head"><strong>Your shortlist, side by side</strong><span class="small muted">Top match = the highest share of local followers.</span><span class="small muted">${saved.length} saved</span><button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Favorites')">See all saved</button></div>
     <div class="shelf-tray-grid">${shown.map((c) => { const pct = cardLocalPct(c); const count = cardLocalCount(c); return `<div class="shelf-tray-col${c === best ? " top-match" : ""}">
       ${c === best ? `<span class="top-match-tag">Top match</span>` : ""}
       <div class="shelf-tray-name">${esc(c.name || "")}</div>
@@ -19848,7 +19848,7 @@ function whatYouGetHtml(c) {
       <li><strong>1 post + 1 story</strong>, in their own words. Honest posts only: nobody can require a positive one.</li>
       <li><strong>Posted within 48 hours</strong> of the visit. That is the goal every creator on SIGNL is held to.</li>
       <li><strong>Counted, not guessed.</strong> SIGNL counts the customers who come in with the visit code, so you see what the visit did.</li>
-      ${p.paidRate ? `<li><strong>A paid booking at ${sym}${fmtPrice(p.paidRate)}</strong> includes one standard licence: repost the post and run it as an ad for 90 days.</li>` : `<li><strong>Comped visits are native share only.</strong> Running the post as an ad is a separate licence at the creator&rsquo;s fee, with their approval.</li>`}
+      ${p.paidRate ? `<li><strong>A paid booking at ${sym}${fmtPrice(p.paidRate)}</strong> includes one standard licence: repost the post and run it as an ad for 90 days.</li>` : `<li><strong>Comped visits stay on their own page only.</strong> Running the post as an ad is a separate licence at the creator&rsquo;s fee, with their approval.</li>`}
     </ul>
     ${c.visitIncludes ? `<p class="small muted" style="margin:8px 0 0">The visit itself, in the creator&rsquo;s words: ${esc(c.visitIncludes)}</p>` : ""}
   </div>`;
@@ -19897,8 +19897,8 @@ function buyBoxHtml(c) {
   const first = (c.name || "this creator").trim().split(" ")[0] || "this creator";
   return `<div class="pdp-buy" id="pdp-buy">
     <div class="pdp-buy-h">Book ${esc(first)}</div>
-    ${p.paidRate ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="paid" checked><span><strong>Paid booking — ${sym}${fmtPrice(p.paidRate)}</strong><small>You pay the rate + 3%. They keep 97%. SIGNL holds the money until the post is live.</small></span></label>` : ""}
-    ${p.compOpen !== false ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="comp"${p.paidRate ? "" : " checked"}><span><strong>Comped visit — ${sym}0</strong><small>The experience is the payment: 1 post + 1 story, native share only.</small></span></label>` : ""}
+    ${p.paidRate ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="paid" checked><span><strong>Paid booking — ${sym}${fmtPrice(p.paidRate)}</strong><small>You pay the rate + 3% (card and transfer fees). They keep 97%. SIGNL holds the money until the post is live.</small></span></label>` : ""}
+    ${p.compOpen !== false ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="comp"${p.paidRate ? "" : " checked"}><span><strong>Comped visit — ${sym}0</strong><small>The experience is the payment: 1 post + 1 story on their own page only.</small></span></label>` : ""}
     <div class="pdp-days"><span class="pdp-days-l">Pick a day</span><div class="pdp-dayrow">${pdpDays().map((d, i) => `<button type="button" class="pdp-day${i === 0 ? " on" : ""}" data-full="${esc(d.full)}" onclick="pdpPickDay(this)">${esc(d.label)}<small>${esc(d.date)}</small></button>`).join("")}</div></div>
     <button type="button" class="btn pdp-send" onclick="pdpSendOffer('${c.userId}')">Send offer</button>
     <p class="small muted" style="margin:8px 0 0">Your offer opens with these terms filled in. The creator can accept, counter once, or decline with a reason.</p>
@@ -19924,7 +19924,7 @@ function pdpSendOffer(userId) {
 // piles ride the shared offers deck state.
 function mirrorPriceLine(o) {
   if (!o) return { main: "", sub: "" };
-  if (o.kind === "paid") return { main: `$${fmtPrice(o.cashRate)} paid`, sub: "a paid booking: you keep 97%" };
+  if (o.kind === "paid") return { main: `$${fmtPrice(o.cashRate)} paid`, sub: "a paid booking: you keep 97% (3% covers card + transfer fees)" };
   if (o.kind === "coupon") return { main: o.couponSummary || couponSummaryClient(o.coupon, o.businessName), sub: "the coupon is the payment for the post" };
   if (o.whatComped) {
     const thing = String(o.whatComped).replace(/^(a|an|the)\s+/i, "").replace(/^./, (ch) => ch.toLowerCase());
@@ -20002,7 +20002,7 @@ function renderFindOffers() {
       ${hasDistance ? `<label class="fo-selfilter">Distance <select onchange="state.foDistance=this.value; renderFindOffers()"><option value="">Any distance</option>${["Same neighborhood", "Under 2 miles", "Under 5 miles"].map((x) => `<option value="${esc(x)}"${dist === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></label>` : ""}
       <label class="fo-selfilter">Sort <select onchange="state.foSort=this.value; renderFindOffers()"><option value="new"${sort === "new" ? " selected" : ""}>Newest first</option>${hasDistance ? `<option value="close"${sort === "close" ? " selected" : ""}>Closest first</option>` : ""}<option value="value"${sort === "value" ? " selected" : ""}>Highest value</option></select></label>
     </div>
-    ${ea && ea.opensAt ? `<p class="small" style="margin:0 0 10px">A new offer just posted in your market. Charter creators, the founding class, see new offers first; this one opens to everyone ${esc(fmtDay(ea.opensAt))}.</p>` : ""}
+    ${ea && ea.opensAt ? `<p class="small" style="margin:0 0 10px">A new offer just posted in your market. Charter creators, the founding class (creators approved before their market launched), see new offers first; this one opens to everyone ${esc(fmtDay(ea.opensAt))}.</p>` : ""}
     ${list.length ? `<div class="mirror-grid">${list.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : `<div class="empty-state"><h3>No open visits match</h3><p>Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets.</p></div>`}
     ${applied.length ? `<h3 style="margin:22px 0 10px">You applied</h3><div class="mirror-grid">${applied.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : ""}
     ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3><div class="mirror-grid">${q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })).join("")}</div>` : ""}`;
@@ -20130,8 +20130,8 @@ async function loadDiscover() {
       { label: "My Regulars", on: false, onclick: "return go('dashboard','Regulars')" },
       { label: "Saved", on: false, onclick: "return go('dashboard','Favorites')" },
     ])}
-    ${foundingDisc ? `<p class="small" style="margin:10px 0 0"><strong>Ranked by how local their audience is, not by follower count.</strong></p>
-    <p class="small muted" style="margin:4px 0 0">${esc(foundingBizPlace(u))}'s founding roster is still joining. New creators show up here as they finish their pages.</p>` : ""}
+    <p class="small" style="margin:10px 0 0"><strong>Ranked by how local their audience is, not by follower count.</strong></p>
+    ${foundingDisc ? `<p class="small muted" style="margin:4px 0 0">${esc(foundingBizPlace(u))}'s founding roster is still joining. New creators show up here as they finish their pages.</p>` : ""}
     <div class="filters disc-top">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
     </div>
@@ -20145,16 +20145,16 @@ async function loadDiscover() {
     </div>
     <div class="filters">
       <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
-      <div><label>Tier</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
+      <div><label>Tier (their audience size)</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
       <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="f-sort"><option value="local" selected>Best local fit</option><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum</option><option value="fit">Best fit for my business</option></select></div>
+      <div><label>Sort by</label><select id="f-sort"><option value="local" selected>Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
       <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
       <div><label>University (current students)</label><select id="f-university"><option value="">All universities</option>${state.discoverUniversity ? `<option selected>${esc(state.discoverUniversity)}</option>` : ""}</select></div>
-      <div><label>Would accept (comp fit)</label><select id="f-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+      <div><label>Would accept as a comped visit</label><select id="f-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
       <div><label>Total audience min</label><input type="number" id="f-fmin" min="0" placeholder="Any"></div>
       <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
@@ -20251,7 +20251,7 @@ async function runDiscover() {
 // the exact card grid Discover has always rendered.
 function discoverModeToggleHtml() {
   const mode = state.discoverMode || "shelf";
-  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "shelf" ? " on" : ""}" onclick="setDiscoverMode('shelf')">Shelf</button><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setDiscoverMode('list')">See everyone</button></div>${deckChromeHtml("discover")}<span class="stack-pos" data-stackpos="discover"></span></div>${deckTeachHtml("discover")}`;
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "shelf" ? " on" : ""}" onclick="setDiscoverMode('shelf')">Shelf</button><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setDiscoverMode('list')">See everyone</button></div>${deckChromeHtml("discover")}<span class="stack-pos" data-stackpos="discover"></span></div>${mode === "cards" ? deckTeachHtml("discover") : ""}`;
 }
 // Build -74 deck save: the same favorites store the grid's
 // heart writes (POST /favorites toggles server-side), so a
@@ -21982,7 +21982,7 @@ async function viewApplicants(offerId) {
     <div class="panel">
       <div class="flex-between"><h3 style="margin:0">Applicants: ${esc(o.title)}</h3><button class="btn small-btn ghost" onclick="document.getElementById('applicant-stack').innerHTML=''">Close</button></div>
       <p class="small muted">${o.filledCount || 0} of ${o.spots} spots filled &middot; selection deadline ${fmtDate(o.selectionDeadline)}. Ranked by local fit, Local Impact Score, Momentum, and reliability; founding order breaks ties. Anyone you do not pick is released with a notification when spots fill or the deadline passes.</p>
-      ${o.earlyAccessUntil ? `<p class="small"><strong>In early access until ${esc(fmtDay(o.earlyAccessUntil))} at ${esc(fmtTime(o.earlyAccessUntil))}.</strong> Charter creators, the founding class, see new offers first, so this stack is still small on purpose. It opens to every creator at that time.</p>` : ""}
+      ${o.earlyAccessUntil ? `<p class="small"><strong>In early access until ${esc(fmtDay(o.earlyAccessUntil))} at ${esc(fmtTime(o.earlyAccessUntil))}.</strong> Charter creators, the founding class (creators approved before their market launched), see new offers first, so this stack is still small on purpose. It opens to every creator at that time.</p>` : ""}
       ${apps.length ? apps.map((a) => applicantCardHtml(o, a)).join("") : `<p class="muted">No applications yet. Offers with a value in the typical range for their tier and a window of 3+ days fill first.</p>`}
       ${waiting.length ? "" : apps.length ? `<p class="small muted">Nobody is waiting on this offer right now.</p>` : ""}
     </div>`;
@@ -26555,16 +26555,16 @@ function previewDiscoverHtml() {
   <details class="filters-fold"><summary>More filters</summary>
   <div class="filters">
     <div><label>Neighborhood / area</label><input id="pvf-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
-    <div><label>Tier</label><select id="pvf-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
+    <div><label>Tier (their audience size)</label><select id="pvf-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
     <div><label>Search</label><input id="pvf-q" placeholder="Name or handle"></div>
     <div><label>University (current students)</label><select id="pvf-university"><option value="">All universities</option>${pv.university ? `<option selected>${esc(pv.university)}</option>` : ""}</select></div>
   </div>
   <div class="filters">
-    <div><label>Would accept (comp fit)</label><select id="pvf-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+    <div><label>Would accept as a comped visit</label><select id="pvf-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
     <div><label>Total audience min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
     <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
     <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
-    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum</option><option value="fit">Best fit</option></select></div>
+    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit</option></select></div>
     <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
     <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
   </div>

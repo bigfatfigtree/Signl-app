@@ -241,9 +241,9 @@ console.log("== Source checks ==");
   check("canon locks untouched: founding Stripe prices stay env-or-empty (no market live for money)",
     routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'));
   check("no em dashes in the new copy", ["Set up a campaign", "Build a new campaign, step by step or with Sig.", "Current and past campaigns, who applied, and what they did.", "Tell Sig what you want", "Nothing is saved until you tap Save this draft", "Partway through the month,"].every((l) => !l.includes("—") && !l.includes("–")));
-  check("build stamp is 2026.11.06-134 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.06-134"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.06-134"'), "");
+  check("build stamp is 2026.11.06-135 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.06-135"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.06-135"'), "");
 }
 
 console.log(`\nBuild -97 verify: ${passed} passed, ${failed} failed`);

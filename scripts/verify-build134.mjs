@@ -38,7 +38,7 @@ const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
-check("stamp is 2026.11.06-134 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-134"') && indexHtml.includes("2026.11.06-134"));
+check("stamp is 2026.11.06-135 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-135"') && indexHtml.includes("2026.11.06-135"));
 
 // Nav: the Find Offers tab is first-class for creators.
 check("nav: Find Offers is a creator primary tab (phone bar)", appJs.includes('creator: ["Dashboard", "Offers", "Find Offers", "My Visits", "Messages", "Earnings"]'));
@@ -52,7 +52,7 @@ check("shelf: the tile component exists with the local hero + spelled-out count"
 check("shelf: Discover defaults to the Shelf view", appJs.includes('state.discoverMode || "shelf"') && appJs.includes("setDiscoverMode('shelf')"));
 check("shelf: booking-kind + rate filters are wired", appJs.includes("function discoverBookModeSet(mode)") && appJs.includes("function discoverRateSet(v)") && appJs.includes("function shelfClientFilter(list)"));
 check("shelf: live result count renders", appJs.includes('id="discover-count"') && appJs.includes("function setDiscoverCount(n)"));
-check("shelf: default sort reads Best local fit over the local-first ranking", appJs.includes('<option value="local" selected>Best local fit</option>'));
+check("shelf: default sort reads Best local fit over the local-first ranking", appJs.includes('<option value="local" selected>Best local fit (most local first)</option>'));
 check("shelf: compare tray needs two saved and marks the top match (bold box + tag, no pill)", appJs.includes("function shelfTrayHtml()") && appJs.includes("saved.length < 2") && appJs.includes("top-match") && appJs.includes("Top match") && !appJs.includes("Strongest local fit"));
 check("shelf: the first tile under the local sort wears the top-match box", appJs.includes("topMatch: i === 0 && localSort") && appJs.includes("shelf-tile${topMatch ? \" top-match\" : \"\"}"));
 check("shelf: Book rides the existing direct-offer flow, Save rides favorites", appJs.includes("onclick=\"startOffer('${c.userId}')\">Book</button>") && appJs.includes("function shelfToggleFav(userId)"));
@@ -77,7 +77,7 @@ check("mirror: filters cover kind, category, distance, sort", appJs.includes("st
 check("mirror: Grab rides applyToOffer; piles ride the shared offers deck", appJs.includes("function findOffersGrab(id)") && appJs.includes("await applyToOffer(id)") && appJs.includes("pileLater(\"offers\", id)") && appJs.includes("pileHide(\"offers\", id)"));
 
 // Setup live previews.
-check("preview: creator setup carries the live preview panel + the business-view toggle", appJs.includes('id="profile-preview-host"') && appJs.includes("See it as a business") && appJs.includes('oninput="creatorPreviewRefresh()"'));
+check("preview: creator setup carries the live preview panel + the plain-words view toggles (Build -135)", appJs.includes('id="profile-preview-host"') && appJs.includes(">Your card</button>") && appJs.includes(">Top of your page</button>") && !appJs.includes("See your public page top") && appJs.includes('oninput="creatorPreviewRefresh()"'));
 check("preview: creator preview builds its card from the live form and renders the real components", appJs.includes("function creatorPreviewCard()") && appJs.includes("shelfTileHtml(card, { preview: true })"));
 check("preview: business setup carries the live preview panel + the creator-view toggle", appJs.includes('id="offer-preview-host"') && appJs.includes("See it as a creator") && appJs.includes("mirrorOfferCardHtml(o, { preview: true })"));
 check("preview: the composer refreshes its preview from the draft sync", appJs.includes("function offerPreviewRefresh()") && appJs.includes("offerPreviewRefresh();"));

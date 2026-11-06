@@ -62,7 +62,7 @@ check("P1 partner footer prints redeemed without the contradiction", appJs.inclu
 // ---------- static: CONFUSING ----------
 part("CONFUSING statics");
 check("C3 early-access window rides the offers reads", routerJs.includes("earlyAccess") && routerJs.includes("offerEarlyAccessUntil"));
-check("C3 client names the window and the founding class", appJs.includes("Charter creators, the founding class, see new offers first"));
+check("C3 client names the window and the founding class", appJs.includes("Charter creators, the founding class (creators approved before their market launched), see new offers first"));
 check("C4 Momentum badge reads 'Just starting' at zero", appJs.includes("Just starting"));
 check("C4 referrals zero detail points at Home, no zero line", routerJs.includes("Your link is on your Home page"));
 check("C5 pending badge tells the truth about review order", appJs.includes("Applications are reviewed in sign-up order. Founding status starts at approval, not at sign-up."));
@@ -115,7 +115,7 @@ check("A5 campaign import previews before it writes", appJs.includes("previewCam
 check("A6 stats cells carry labels into the stacked layout", appJs.includes('data-label="Approved creators"') && css.includes("td[data-label]::before"));
 check("L1 sign-in and claim forms validate in JS, not bubbles", appJs.includes('<form novalidate onsubmit="return doSignin(event)">') && appJs.includes('<form novalidate onsubmit="return doQuickClaim(event)">'));
 check("L2 staff redeem is explained on the logged-out page", appJs.includes("Working the register at a SIGNL business?"));
-check("B-cases stamp: the build is 2026.11.06-134", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.06-134"'));
+check("B-cases stamp: the build is 2026.11.06-135", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.06-135"'));
 
 // ---------- live ----------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "signl-build47-"));
@@ -155,7 +155,7 @@ try {
   part("live boot");
   const idxRes = await fetch(BASE + "/");
   const idxHtml = await idxRes.text();
-  check("the served page carries build 2026.11.06-134", idxHtml.includes("2026.11.06-134"));
+  check("the served page carries build 2026.11.06-135", idxHtml.includes("2026.11.06-135"));
 
   const admin = makeClient();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, ["pass" + "word"]: ADMIN_PASSWORD });

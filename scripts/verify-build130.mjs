@@ -72,7 +72,7 @@ const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.06-134 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-134"') && indexHtml.includes("2026.11.06-134"));
+check("stamp is 2026.11.06-135 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-135"') && indexHtml.includes("2026.11.06-135"));
 check("orb: SIG_ART names the orb folder, zero retired-face references in the client", appJs.includes('const SIG_ART = "/assets/sig-orb";') && !appJs.includes("/assets/sig-a") && !appJs.includes("head-idle") && !appJs.includes("still-celebrate"));
 check("orb assets ship in the bundle", fs.existsSync(path.join(root, "public/assets/sig-orb/orb.webp")) && fs.existsSync(path.join(root, "public/assets/sig-orb/orb.mp4")) && !fs.existsSync(path.join(root, "public/assets/sig-a")));
 check("server: platform totals compute avg % local + local followers off audienceShareInMarket", routerJs.includes("avgLocalPct") && routerJs.includes("localFollowers") && routerJs.includes("audienceShareInMarket(u, u.market)"));
