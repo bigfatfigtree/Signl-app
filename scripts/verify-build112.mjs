@@ -65,7 +65,7 @@ const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const sigdataJs = fs.readFileSync(path.join(root, "netlify/functions/lib/sigdata.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.06-137", indexHtml.includes("2026.11.06-137"));
+check("stamp is 2026.11.06-138", indexHtml.includes("2026.11.06-138"));
 check("ONE shared posting-terms control exists (segmented chips, three options)", appJs.includes("postingTermsControlHtml") && appJs.includes("<strong>Standard</strong> · post within 7 days of the visit") && appJs.includes("Post by a specific date") && appJs.includes("<strong>Special terms</strong> · a date window, with a short note"));
 check("control helper line: creator sees the exact terms before accepting", appJs.includes("The creator sees these exact terms on the offer before accepting"));
 check("paid sheet uses the control (prefix paid-sheet)", appJs.includes('postingTermsControlHtml("paid-sheet"'));

@@ -16,14 +16,19 @@
 
 :root {
   /* Approved tokens (design artifact, exact) */
-  --paper: #FAF7F1;
-  --paper2: #F3EEE3;
+  /* Build -138 (Jeff, 2026-11-06): the warm cream theme is
+     dead — the app background is pure white on every surface,
+     every role; structure comes from clean borders, never from
+     a tinted page. */
+  --paper: #FFFFFF;
+  --paper2: #FFFFFF;
   --card: #FFFFFF;
   --ink: #171512;
   --ink2: #6F6A61;
   --ink3: #9A958A;
-  --line: #E9E1D3;
-  --line2: #EFE9DD;
+  --line: #E8E6E1;
+  --line2: #F0EFEA;
+  --hover: #F7F7F4;
   --accent: #FF4D00;
   --accent-soft: #FFF0E8;
   --grad: linear-gradient(92deg, #185BFF 0%, #0AA6C2 38%, #00B67A 72%, #22C55E 100%);
@@ -81,7 +86,7 @@ a { color: var(--ink); }
 .btn.ws-primary { background: var(--grad); color: #fff; border: 0; border-radius: 999px; padding: 0 22px; }
 .btn.ws-primary:hover { background: var(--grad); filter: brightness(1.05); }
 .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); box-shadow: none; }
-.btn.ghost:hover { background: var(--paper2); }
+.btn.ghost:hover { background: var(--hover); }
 .btn.ws-outline { background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; }
 .btn.ws-outline:hover { border-color: var(--ink3); background: #fff; }
 .btn.danger { background: #F9E9E4; color: var(--red); border: 1px solid #EDD5CB; }
@@ -241,7 +246,7 @@ body.v3-on #founding-dash .kpi-card .kpi-num { color: var(--ink); }
   .tab-user .tu-sub { font-size: .76rem; color: var(--ink2); }
   #tabbar .tab-item.tab-secondary { min-height: 40px; padding-top: 7px; padding-bottom: 7px; }
   #tabbar .tab-item.tab-secondary .tab-label { font-size: .88rem; font-weight: 600; }
-  #tabbar .tab-item:hover { background: var(--paper2); }
+  #tabbar .tab-item:hover { background: var(--hover); }
   #tabbar .tab-item.on { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); color: var(--ink); }
   #tabbar .tab-item.on:hover { background: var(--accent-soft); }
 }
@@ -288,7 +293,7 @@ body.v3-on #agent-fab.show, body.v3-slim #agent-fab.show { display: flex !import
 
 /* ---------- admin rail: labeled rail on desktop, bottom bar on phones ---------- */
 .rail-item { font-family: 'Instrument Sans', system-ui, sans-serif; color: var(--ink2); }
-.rail-item:hover { background: var(--paper2); color: var(--ink); }
+.rail-item:hover { background: var(--hover); color: var(--ink); }
 .rail-item.on { background: var(--accent-soft); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); }
 .rail-label { font-family: 'Instrument Sans', system-ui, sans-serif; }
 .rail-badge { background: var(--accent); }
@@ -435,7 +440,7 @@ body.v3-on :is([data-dash], #creator-home, #founding-dash) .feed-row { padding-l
 body.admin-on #rail { background: #FDFBF7; }
 body.rail-on #rail { background: #FDFBF7; border-right: 1px solid var(--line); }
 body.rail-on .rail-item { color: var(--ink2); }
-body.rail-on .rail-item:hover { background: var(--paper2); color: var(--ink); }
+body.rail-on .rail-item:hover { background: var(--hover); color: var(--ink); }
 body.rail-on .rail-item.on { background: var(--accent-soft); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); }
 body.rail-on .rail-brand img { box-shadow: none; }
 .rail-item.on .rail-sig-img { box-shadow: none; }
@@ -545,7 +550,7 @@ body.v3-on :is([data-dash], #creator-home, #founding-dash) .feed-row { padding-t
    since the reskin. Restore both on the ink system. ---- */
 body.admin-on .preview-cta strong { color: var(--ink); }
 body.admin-on .preview-cta .btn.ghost { background: transparent; border-color: var(--line); color: var(--ink2); box-shadow: none; }
-body.admin-on .preview-cta .btn.ghost:hover { background: var(--paper2); border-color: var(--ink3); }
+body.admin-on .preview-cta .btn.ghost:hover { background: var(--hover); border-color: var(--ink3); }
 
 /* ---- 4. Admin section bar (phones): every section, one tap ---- */
 #admin-secbar { display: none; }
@@ -669,7 +674,7 @@ body.v3-on .tb2-btn.tb2-ev125:hover, .tb2-btn.tb2-ev125:hover { border-color: va
 /* ---- Admin top row: identity is a button; the right side is
    icons with real tap targets (Build -126 item 3). ---- */
 .tr-id { display: inline-flex; align-items: center; gap: 10px; background: none; border: 0; cursor: pointer; padding: 4px 8px 4px 4px; border-radius: 999px; font: inherit; color: var(--ink); min-width: 0; }
-.tr-id:hover { background: var(--paper2); }
+.tr-id:hover { background: var(--hover); }
 .tr-id .tr-name { min-width: 0; }
 .tr-right > button, .tr-right > a.tr-help126 { min-width: 40px; min-height: 40px; justify-content: center; border-radius: 50%; }
 .tr-ev125 { width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
@@ -779,9 +784,9 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .bookmode-rate select { width: auto; }
 .shelf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 12px; }
 .shelf-tile { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; }
-.shelf-photo { position: relative; aspect-ratio: 4 / 3; background: var(--paper2); cursor: pointer; overflow: hidden; }
+.shelf-photo { position: relative; aspect-ratio: 4 / 3; background: #F4F4F1; cursor: pointer; overflow: hidden; }
 .shelf-photo-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.shelf-photo .avatar-initial { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 3.4rem; font-weight: 800; color: var(--ink3); background: var(--paper2); }
+.shelf-photo .avatar-initial { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 3.4rem; font-weight: 800; color: var(--ink3); background: #F4F4F1; }
 .shelf-badges { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
 .shelf-badge { background: rgba(23, 21, 18, .82); color: #fff; font-size: .68rem; font-weight: 700; letter-spacing: .04em; padding: 3px 8px; border-radius: 999px; }
 .shelf-badge.hot { background: var(--accent); }
@@ -806,15 +811,21 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .shelf-tray-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .shelf-tray-head .btn { margin-left: auto; }
 .shelf-tray-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px; }
-.shelf-tray-col { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; position: relative; }
+/* Build -138 (Jeff's phone, 2026-11-06): a tray column can never
+   be crushed below reading width, and nothing inside one may
+   cross its border: columns carry min-width:0 + hidden overflow,
+   the count pill wraps inside itself, names break anywhere, and
+   the acceptance switches stack vertically (one per row) so the
+   two pills can never overlap across a divider. */
+.shelf-tray-col { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; position: relative; min-width: 0; overflow: hidden; }
 .shelf-tray-col.top-match { border-color: var(--ink); box-shadow: inset 0 0 0 3px var(--ink); }
 .top-match-tag { position: absolute; top: -10px; left: 12px; background: var(--ink); color: #fff; font-size: .66rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; z-index: 3; }
 .shelf-tile { position: relative; }
 .shelf-tile.top-match { border-color: var(--ink); box-shadow: inset 0 0 0 3px var(--ink); overflow: visible; }
 .shelf-tile.top-match .shelf-photo { border-radius: 15px 15px 0 0; }
-.shelf-tray-name { font-weight: 700; }
+.shelf-tray-name { font-weight: 700; overflow-wrap: anywhere; }
 .shelf-tray-pct { font-size: 1.25rem; font-weight: 800; }
-.shelf-tray-line { font-size: .82rem; color: var(--ink2); }
+.shelf-tray-line { font-size: .82rem; color: var(--ink2); overflow-wrap: break-word; min-width: 0; }
 /* Build -136: the accepts-comps switch + highlighted local count
    (Jeff's card rulings). The switch mirrors the app's real .sw
    switch language: mint fill + knob right when ON. */
@@ -865,27 +876,89 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
    rail's head/foot and the mobile bar exist only where they
    belong, so nothing is duplicated or renamed between
    viewports. */
+/* Build -138 (Jeff, 2026-11-06): the shop surfaces match the
+   approved website concepts and take over the full screen on
+   desktop. One search row (name/handle + market + sort);
+   the rail carries labelled groups of checkbox/radio rows —
+   pill walls are dead everywhere. On a phone: one pinned
+   search input + one Filters button (with the active count),
+   a single scrolling category chip row, and the rail as a
+   bottom sheet with Clear all + "Show N results" pinned. */
 .rail-head, .rail-foot, .shop-mbar { display: none; }
 .rail-chips { flex-wrap: wrap; overflow: visible; }
+.takeover-bar { display: none; }
+.shop-chiprow { display: none; }
+.sr-filters { display: none; }
+.rail-only-m { display: none; }
+.shop-searchrow { display: flex; gap: 10px; align-items: center; margin: 0 0 6px; }
+.shop-searchrow .sr-q { flex: 1 1 auto; min-width: 0; }
+.shop-searchrow input[type="text"], .shop-searchrow input[type="search"], .shop-searchrow select {
+  width: 100%; font: inherit; color: var(--ink); background: #fff;
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+}
+.shop-searchrow .sr-sel { flex: 0 1 210px; min-width: 0; }
+.rail-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; cursor: pointer; font-weight: 600; margin: 0; }
+.rail-row:hover { background: var(--hover); }
+.rail-row input { accent-color: #006AFC; width: 17px; height: 17px; flex: none; margin: 0; }
+.rail-row .rr-tx { flex: 1 1 auto; min-width: 0; }
+.rail-row .rr-count { color: var(--ink2); font-weight: 600; font-size: .85rem; flex: none; }
+.rail-note { font-size: .8rem; color: var(--ink2); margin: 6px 10px 0; }
 @media (min-width: 900px) {
-  .shop-layout { display: grid; grid-template-columns: 272px 1fr; gap: 22px; align-items: start; }
+  .shop-layout { display: grid; grid-template-columns: 272px 1fr; gap: 26px; align-items: start; }
   .shop-rail { position: sticky; top: 12px; }
   .shop-rail .dcat-row { flex-wrap: wrap; overflow: visible; }
   .shop-rail .musthave-row { grid-template-columns: 1fr; }
 }
+@media (min-width: 1024px) {
+  /* Full-screen takeover: the dashboard chrome leaves, the
+     surface keeps a slim bar of its own with Back pinned
+     top-left. */
+  body.shop-takeover #rail { display: none; }
+  body.shop-takeover #tabbar { display: none; }
+  body.shop-takeover main, body.shop-takeover .footer { margin-left: 0; width: 100%; }
+  body.shop-takeover #toprow, body.shop-takeover #admin-secbar { display: none; }
+  body.shop-takeover .takeover-bar {
+    display: flex; align-items: center; gap: 14px;
+    position: sticky; top: 0; z-index: 60; background: #fff;
+    padding: 10px 0; border-bottom: 1px solid var(--line); margin-bottom: 14px;
+  }
+  .takeover-bar .tb-title { font-weight: 800; font-size: 1.05rem; }
+  .takeover-bar .tb-links { margin-left: auto; display: flex; gap: 8px; }
+}
 @media (max-width: 899px) {
-  .shop-rail { display: none; }
-  .shop-rail.open { display: block; position: fixed; inset: 0; z-index: 90; background: var(--paper); overflow-y: auto; padding: 16px; }
-  .rail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; font-size: 1.05rem; }
-  .rail-foot { display: block; margin-top: 16px; }
+  .shop-rail {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+    z-index: 120; background: #fff; border-radius: 18px 18px 0 0;
+    box-shadow: 0 -14px 44px rgba(23, 21, 18, .28);
+    max-height: 86vh; overflow-y: auto; padding: 6px 16px 0;
+    transform: translateY(105%); visibility: hidden; transition: transform .25s ease, visibility .25s;
+  }
+  .shop-rail.open { transform: none; visibility: visible; }
+  .rail-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; position: sticky; top: 0; background: #fff; padding: 12px 0 10px; z-index: 2; }
+  .rail-foot { display: block; position: sticky; bottom: 0; background: #fff; padding: 12px 0 16px; border-top: 1px solid var(--line); margin-top: 10px; }
   .rail-foot .btn { width: 100%; }
-  .shop-mbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 40; background: var(--paper); padding: 8px 0; }
+  .rail-only-m { display: block; }
+  .shop-mbar { display: none; }
   .fo-sortrow { display: none; }
+  .shop-searchrow { position: sticky; top: 0; z-index: 40; background: #fff; padding: 8px 0; }
+  .shop-searchrow .sr-sel { display: none; }
+  .sr-filters { display: inline-flex; flex: none; }
+  .shop-chiprow {
+    display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch; padding: 2px 0 8px; margin: 0;
+  }
+  .shop-chiprow::-webkit-scrollbar { display: none; }
+  .shop-chiprow .dcat-chip { flex: 0 0 auto; }
 }
 .rail-x { background: none; border: none; font-size: 1.5rem; line-height: 1; cursor: pointer; color: var(--ink); padding: 2px 6px; }
 .mbar-sort select, .shop-mbar select { margin-left: 6px; }
-.shelf-tray-count { display: inline-block; align-self: flex-start; background: var(--mint-b); color: var(--ink); font-weight: 800; font-size: .85rem; padding: 2px 9px; border-radius: 999px; }
+.shelf-tray-count { display: inline-block; align-self: flex-start; background: var(--mint-b); color: var(--ink); font-weight: 800; font-size: .85rem; padding: 2px 9px; border-radius: 999px; max-width: 100%; white-space: normal; overflow-wrap: break-word; }
 .shelf-tray-col .btn { margin-top: 8px; }
+/* Build -138: inside the tray the two acceptance switches stack
+   (one per row) instead of sitting side by side, so they fit any
+   column width the tray can produce. */
+.shelf-tray-acc .acc-row { display: flex; flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 2px; }
+.shelf-tray-acc .comp-sw { max-width: 100%; }
 .pdp-hero { display: flex; gap: 16px; align-items: center; background: var(--paper2); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 14px 0 4px; }
 .pdp-hero-pct { font-size: 3.6rem; font-weight: 800; line-height: .95; letter-spacing: -.03em; color: var(--ink); }
 .pdp-hero-tx { font-size: .98rem; line-height: 1.45; color: var(--ink); }
@@ -919,7 +992,18 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .pdp-send { width: 100%; }
 .cc-neighbors { font-weight: 700; margin-top: 6px; }
 .mirror-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+@media (min-width: 1280px) { .mirror-grid { grid-template-columns: repeat(3, 1fr); } }
 .mirror-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 5px; }
+/* Build -138 (the Mirror, per the approved concept): the lead
+   offer is a full-width photo-led card — photo left, the ask
+   stated like a price right — and the grid below it is even. */
+.mirror-cover-fallback { display: flex; align-items: center; justify-content: center; background: var(--grad); color: #fff; font-size: 3rem; font-weight: 800; }
+@media (min-width: 900px) {
+  .mirror-card.mirror-lead { grid-column: 1 / -1; display: grid; grid-template-columns: 5fr 7fr; gap: 18px; align-items: stretch; }
+  .mirror-card.mirror-lead .mirror-cover { height: 100%; min-height: 230px; margin: 0; border-radius: 12px; }
+  .mirror-card.mirror-lead .mirror-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .mirror-card.mirror-lead .mirror-price { font-size: 2rem; }
+}
 .mirror-top { display: flex; align-items: center; gap: 10px; }
 .mirror-mono { width: 40px; height: 40px; flex: none; border-radius: 10px; background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem; }
 .mirror-biz { font-weight: 700; }
@@ -930,7 +1014,11 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .mirror-sub { font-size: .88rem; color: var(--ink2); }
 .mirror-ask { font-size: .9rem; margin-top: 4px; }
 .mirror-line { font-size: .85rem; color: var(--ink2); }
-.mirror-track { font-size: .82rem; background: var(--paper2); border-radius: 8px; padding: 6px 10px; margin-top: 4px; }
+/* The track-record strip: ink, like the concept — big counted
+   numbers, one per fact the business has actually earned. */
+.mirror-track { display: flex; gap: 8px 22px; flex-wrap: wrap; background: var(--ink); color: #fff; border-radius: 10px; padding: 10px 14px; margin-top: 6px; }
+.mirror-track span { font-size: .78rem; color: #D8D5CF; display: flex; flex-direction: column; gap: 0; }
+.mirror-track strong { font-size: 1.25rem; font-weight: 800; color: #fff; line-height: 1.1; }
 .mirror-spots { font-size: .82rem; color: var(--ink2); }
 .mirror-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
 .fo-count { font-size: .95rem; color: var(--ink2); margin: 4px 0 10px; }
@@ -947,12 +1035,21 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .sig-ccard-sub { font-size: .85rem; color: var(--ink2); margin-top: 2px; }
 @media (max-width: 1100px) {
   .shelf-grid { grid-template-columns: repeat(2, 1fr); }
-  .shelf-tray-grid { grid-template-columns: repeat(2, 1fr); }
+  /* Build -138: columns floor at reading width instead of a
+     fixed count — at tablet widths the tray fits as many
+     210px+ columns as the space honestly holds. */
+  .shelf-tray-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 }
 @media (max-width: 767.98px) {
   .shelf-grid { grid-template-columns: 1fr; }
   .mirror-grid { grid-template-columns: 1fr; }
-  .shelf-tray-grid { grid-template-columns: 1fr; }
+  /* Build -138 (Jeff's phone defect): on a phone the tray is a
+     scroll-snap strip. Each column holds a readable 232px and
+     the rest swipe — side-by-side comparison survives, crushing
+     does not. The top padding leaves room for the Top match tag
+     so the strip's overflow never clips it. */
+  .shelf-tray-grid { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-top: 10px; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
+  .shelf-tray-col { flex: 0 0 232px; scroll-snap-align: start; }
   .pdp-similar { grid-template-columns: 1fr; }
   .pdp-specs { grid-template-columns: 1fr; }
   .pdp-hero { flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -1043,3 +1140,105 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .pdp-propose { margin-top: 14px; border-top: 1px solid var(--line2); padding-top: 12px; }
 .pdp-propose summary { font-weight: 700; cursor: pointer; font-size: .95rem; }
 .pdp-propose .field { margin-top: 10px; }
+
+/* ---- Build -138: Admin expansion rooms (Automations,
+   Connections, Templates, Marketing, Social, Team, Learn) ----
+   Written overflow-safe for 390px: every row stacks its side
+   block under the main block on narrow screens, long words
+   wrap, nothing in these rooms may cross its container. */
+.a138-h { margin: 22px 0 8px; }
+.a138-row { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line2); min-width: 0; }
+.a138-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.a138-row-side { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.a138-tag { display: inline-block; font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--line2); color: var(--ink); white-space: nowrap; }
+.a138-tag.live { background: #e3f6ec; color: #0a6b3c; }
+.a138-tag.off { background: #fdecec; color: #a12626; }
+.a138-conn { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line2); min-width: 0; }
+.a138-conn-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.a138-conn-state { font-weight: 600; }
+.a138-conn-side { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+.a138-tgl { position: relative; display: inline-block; width: 46px; height: 26px; flex: 0 0 auto; }
+.a138-tgl input { opacity: 0; width: 0; height: 0; }
+.a138-tgl .tr { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .15s; }
+.a138-tgl .tr::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.a138-tgl input:checked + .tr { background: var(--azure, #006AFC); }
+.a138-tgl input:checked + .tr::after { left: 23px; }
+.a138-detail { margin: 12px 0; }
+.a138-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; min-width: 0; }
+.a138-preview { background: #f7f8f7; border: 1px solid var(--line2); border-radius: 12px; padding: 12px; margin: 10px 0; }
+.a138-pv-k { font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 10px; }
+.a138-pv-k:first-child { margin-top: 0; }
+.a138-pv-sub { font-weight: 700; margin-top: 4px; overflow-wrap: anywhere; }
+.a138-pv-body { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .9rem; margin: 4px 0 0; max-height: 320px; overflow-y: auto; }
+.a138-notebox { background: #fff8e6; border: 1px solid #ead9a0; border-radius: 10px; padding: 8px 10px; font-size: .85rem; margin: 8px 0; overflow-wrap: anywhere; }
+.a138-lockline { background: #eef4ff; border: 1px solid #c9dcff; border-radius: 10px; padding: 8px 10px; font-size: .88rem; margin: 8px 0; overflow-wrap: anywhere; }
+.a138-chip { display: inline-block; font-family: ui-monospace, Menlo, monospace; font-size: .8rem; background: var(--line2); border-radius: 6px; padding: 1px 6px; margin: 0 2px; }
+.a138-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.a138-form.col { flex-direction: column; align-items: stretch; }
+.a138-form input[type="text"], .a138-form input[type="email"], .a138-form input[type="number"], .a138-form input[type="date"], .a138-form input[type="datetime-local"], .a138-form select, .a138-form textarea { min-width: 0; max-width: 100%; }
+.a138-form textarea { width: 100%; box-sizing: border-box; }
+.a138-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.a138-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 12px 0; }
+.a138-card { border: 1px solid var(--line2); border-radius: 14px; padding: 14px; min-width: 0; overflow-wrap: anywhere; }
+.a138-card h4 { margin: 0 0 6px; }
+.a138-bignum { font-size: 2rem; font-weight: 800; line-height: 1.05; }
+.a138-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
+.a138-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.a138-checks .ckrow { display: inline-flex; align-items: center; gap: 6px; font-size: .9rem; }
+.a138-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.a138-photo { display: flex; flex-direction: column; gap: 4px; padding: 4px; border: 2px solid var(--line2); border-radius: 10px; background: none; cursor: pointer; min-width: 0; text-align: left; }
+.a138-photo img { width: 100%; height: 64px; object-fit: cover; border-radius: 6px; display: block; }
+.a138-photo span { font-size: .68rem; overflow-wrap: anywhere; }
+.a138-photo.on { border-color: var(--azure, #006AFC); }
+.a138-photo:disabled { opacity: .45; cursor: not-allowed; }
+.a138-frame { width: 100%; height: 560px; border: 1px solid var(--line2); border-radius: 12px; background: #fff; margin-top: 10px; }
+.a138-ln-sec { border-top: 1px dashed var(--line2); padding-top: 8px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.a138-recips { max-height: 260px; overflow-y: auto; }
+@media (max-width: 767.98px) {
+  .a138-row, .a138-conn { flex-direction: column; gap: 6px; }
+  .a138-row-side { justify-content: flex-start; }
+  .a138-2col { grid-template-columns: 1fr; }
+  .a138-form { flex-direction: column; align-items: stretch; }
+  .a138-form .btn { align-self: flex-start; }
+}
+.a138-flag { display: inline-block; font-size: .78rem; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: #fff3d6; border: 1px solid #e5c15c; color: #7a5b00; white-space: nowrap; }
+
+/* Build -138 shop v2 bits: the Mirror card body keeps the
+   card's rhythm inside its wrapper, and the Find offers sort
+   label stretches to its search-row slot. */
+.mirror-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.shop-searchrow .fo-selfilter { width: 100%; }
+.shop-searchrow .fo-selfilter select { flex: 1 1 auto; min-width: 0; }
+.mirror-cover { border-radius: 10px; }
+
+/* Build -138 (desktop table sweep): Jeff's Decided-table
+   screenshot — the Details column ran off the card's right edge
+   on DESKTOP, text cut mid-word. Rules: every table stays inside
+   its card at every width; the applications tables (Pending +
+   Decided) use a fixed layout with sane column shares so the
+   Details line WRAPS and stays fully readable — never clipped,
+   never truncated away. Editors inside a cell may not force the
+   cell wider than its column. */
+.table-wrap { min-width: 0; max-width: 100%; }
+table { max-width: 100%; }
+.apps-table { table-layout: fixed; width: 100%; }
+.apps-table th, .apps-table td { overflow-wrap: break-word; }
+.apps-table td:first-child { overflow-wrap: anywhere; }
+.apps-table td > div, .apps-table td .row-more > div { min-width: 0 !important; max-width: 100%; }
+.apps-table td .field select, .apps-table td .field input { max-width: 100%; }
+
+/* The Type column's standing badge ("Founding priority #1")
+   is a nowrap pill wider than its column — inside the
+   applications tables badges wrap their text instead of
+   forcing the cell wider than the card. */
+.apps-table .badge { white-space: normal; }
+
+/* The Mirror card's fit pill never wraps its two words. */
+.mirror-fit { white-space: nowrap; }
+
+/* The Top match tag straddles the tray column's top border
+   (the approved bold-box + tag look, same as the shelf tiles);
+   the column's overflow guard clipped its top half. The tag is
+   the one intentional escapee — the column's content rules
+   (min-width 0, wrapping lines) still hold everything else in. */
+.shelf-tray-col.top-match { overflow: visible; }

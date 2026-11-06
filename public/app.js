@@ -231,7 +231,7 @@ function skelHtml(label, n) {
 // compact gradient monogram chip built from the business name
 // (existing data) instead of a bare text header.
 function bizChipHtml(name) {
-  const initial = (String(name || "?").trim().charAt(0) || "?").toUpperCase();
+  const initial = (String(name || "").trim().charAt(0) || "S").toUpperCase();
   return `<span class="avatar-initial" style="width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.02rem;flex:none" aria-hidden="true">${esc(initial)}</span>`;
 }
 
@@ -726,7 +726,7 @@ async function renderPublicProfile() {
   const total = totalAudienceOf(p);
   const place = p.unlisted ? esc(p.city) : esc(marketDisplayName(p.market));
   applyProfileShareShell(p, p.unlisted ? (p.city || "") : (p.market || ""));
-  const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const initial = esc((p.name || "").trim().charAt(0).toUpperCase() || "S");
   const tier = typeof p.viewerTier === "number" ? p.viewerTier : 0;
   // Market chips, deduped (Build -64, audit F4): the place chip
   // and the city chip named the same market twice in two cases.
@@ -857,7 +857,7 @@ function renderClaimedProfile(p) {
   setShareMeta("og:type", "property", "profile");
   setShareMeta("twitter:card", "name", "summary");
   setShareMeta("twitter:title", "name", document.title);
-  const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const initial = esc((p.name || "").trim().charAt(0).toUpperCase() || "S");
   app.innerHTML = `
   <div class="public-profile bookme" style="max-width:720px;margin:20px auto">
     <div class="bookme-cover">
@@ -918,7 +918,7 @@ async function renderPublicProof() {
   }
   const place = p.unlisted ? (p.city || "") : (p.market || "");
   document.title = `Listing proof: ${p.name} (@${p.handle}) | SIGNL`;
-  const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const initial = esc((p.name || "").trim().charAt(0).toUpperCase() || "S");
   const tr = p.trackRecord || {};
   const generated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   const statCells = [];
@@ -2607,12 +2607,26 @@ function everythingGroups125() {
         R("stats", "Stats", "Charts, money and the books", "Stats"),
         { icon: "person", label: "Creators", sub: "Every creator, with the local numbers", act: "return adminCreatorsGo125()" },
       ] },
+      { title: "Run the platform", rows: [
+        R("notice", "Marketing", "Campaign email to your own lists", "Marketing"),
+        R("star", "Learn", "Write and publish Learn articles", "Learn"),
+        R("play", "Social", "What SIGNL posted, and what it did", "Social"),
+        R("bolt", "Automations", "Every automatic email and text, and its switch", "Automations"),
+        R("deck", "Templates", "The wording behind emails, posts and messages", "Templates"),
+        R("users", "Team", "Who can do what in Admin", "Team"),
+      ] },
       { title: "System", rows: [
         R("sig", "Sig", "Your attention list", "Sig"),
         { icon: "building", label: "Preview as business", sub: "Walk the app as a business", act: "return enterPreview()" },
         { icon: "building", label: "Business dashboard", sub: "The founding business view", act: "return enterPreviewDashboard()" },
       ] },
-    ];
+    ].map((g) => ({ ...g, rows: g.rows.filter((r) => {
+      const allow138 = adminTabsAllowed138();
+      if (!allow138) return true;
+      const label = r.tab || r.label;
+      if (!r.tab && r.act && !String(r.act).includes("adminCreatorsGo125")) return false;
+      return allow138(label);
+    }) })).filter((g) => g.rows.length);
   }
   if (u.role === "creator") {
     const lvl = standingLevelName((u.momentum && u.momentum.points) || (u.creator && u.creator.momentumPoints) || 0);
@@ -2840,13 +2854,30 @@ function hamburgerGroups137() {
         R("list", "Event Log", "Everything that happened", "Event Log"),
         R("shield", "Compliance", "Posts, deadlines and strikes", "Compliance"),
       ] },
+      { title: "Run the platform", rows: [
+        R("notice", "Marketing", "Campaign email to your own lists", "Marketing"),
+        R("star", "Learn", "Write and publish Learn articles", "Learn"),
+        R("play", "Social", "What SIGNL posted, and what it did", "Social"),
+        R("bolt", "Automations", "Every automatic email and text, and its switch", "Automations"),
+        R("deck", "Templates", "The wording behind emails, posts and messages", "Templates"),
+      ] },
       { title: "System", rows: [
+        R("users", "Team", "Who can do what in Admin", "Team"),
         { icon: "building", label: "Preview as business", sub: "Walk the app as a business", act: "return enterPreview()" },
         { icon: "building", label: "Business dashboard", sub: "The founding business view", act: "return enterPreviewDashboard()" },
         R("person", "Your account", "Your settings: sign-in, email and password", "Account"),
         { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
       ] },
-    ];
+    ].map((g) => ({ ...g, rows: g.rows.filter((r) => {
+      // Build -138: a teammate's hamburger carries only their
+      // rooms (same rule as the rail and the routes). Preview
+      // rows are Jeff's tools; sign-out always stays.
+      const allow138 = adminTabsAllowed138();
+      if (!allow138) return true;
+      if (r.act === "signOut()") return true;
+      if (!r.tab) return false;
+      return allow138(r.tab === "Account" ? "Your account" : r.tab);
+    }) })).filter((g) => g.rows.length);
   }
   return [];
 }
@@ -2866,7 +2897,7 @@ function openHamburger137() {
   if (!u || !groups.length) return false;
   const name = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
   const photo = selfAvatarUrl122(u);
-  const initial = String(name || "?").trim().charAt(0).toUpperCase() || "S";
+  const initial = String(name || "").trim().charAt(0).toUpperCase() || "S";
   const roleWord = u.role === "admin" ? "Admin" : u.role === "creator" ? "Creator" : u.role === "business" ? "Business" : "Partner";
   const el = document.createElement("div");
   el.id = "hamburger137";
@@ -3009,7 +3040,7 @@ function openIdentityMenu126() {
   if (!rows.length) return false;
   const name = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
   const photo = selfAvatarUrl122(u);
-  const initial = String(name || "?").trim().charAt(0).toUpperCase() || "S";
+  const initial = String(name || "").trim().charAt(0).toUpperCase() || "S";
   const roleWord = u.role === "admin" ? "Admin"
     : u.role === "creator" ? "Creator"
     : u.role === "business" ? "Business"
@@ -3145,7 +3176,7 @@ function tabBarHtml() {
   const roleWord = u.role === "business" ? "Business" : u.role === "creator" ? "Creator" : u.role === "recruiter" ? "Recruiter" : (u.role === "pilot_partner" || state.pilotScopeId) ? "Impact Portal" : "Partner";
   const nm = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
   const photo = selfAvatarUrl122(u);
-  const initial = String(nm || "?").trim().charAt(0).toUpperCase() || "S";
+  const initial = String(nm || "").trim().charAt(0).toUpperCase() || "S";
   const sub = u.market ? marketDisplayName(u.market) : roleWord;
   const railhead = `<div class="tab-railhead"><img src="/assets/logo.png" alt="SIGNL"><span class="trh-sub">${esc(roleWord)}</span></div>`;
   const railfoot = `<div class="tab-railfoot"><div class="tab-user tab-user-btn" role="button" tabindex="0" title="Your account" aria-label="Your account menu" onclick="return openIdentityMenu126()">${avaHtml122("tu-ava", "tu-ava", photo, initial)}<span><span class="tu-name">${esc(nm || "")}</span><br><span class="tu-sub">${esc(sub)}</span></span></div></div>`;
@@ -3161,7 +3192,7 @@ function renderTopBar2(full) {
   const u = state.user;
   const name = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
   const photo = selfAvatarUrl122(u);
-  const initial = String(name || "?").trim().charAt(0).toUpperCase() || "S";
+  const initial = String(name || "").trim().charAt(0).toUpperCase() || "S";
   const b = state.badges || {};
   const live = u.role === "business" ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
   // Build -130 Part 8 (Jeff, 2026-11-05, corrected): the
@@ -3387,6 +3418,32 @@ if (typeof document !== "undefined") {
 // the account avatar chip pinned at the bottom. Groups are marked
 // by sec changes ("a", "b", "c"); the renderer draws a hairline
 // when the group changes.
+// Build -138: which Admin rooms this admin may see. Returns null
+// for a super-admin (Jeff — everything shows); otherwise a
+// predicate over rail labels. This mirrors the server's room map
+// (lib/permissions.js ROOM_FLAGS) — the server is the enforcement,
+// this only keeps a teammate's nav honest about their role.
+function adminTabsAllowed138() {
+  const u = state.user;
+  if (!u || u.role !== "admin") return null;
+  const p = u.adminPerms;
+  if (!p || p.super) return null;
+  const flags = p.flags || {};
+  const has = (f) => !!flags[f];
+  const ROOMS = {
+    "Applications": ["approvals"], "Requests": ["requests"], "Markets": ["markets.view"],
+    "Creators": ["creators.view"], "Recruiters": ["outreach"], "Outreach": ["outreach"],
+    "Partners": ["partners.view"], "Event Log": ["events.view"], "Compliance": ["compliance.view"],
+    "Campaign": ["campaign"], "Stats": ["stats.view"],
+    "Marketing": ["marketing.draft", "marketing.approve"],
+    "Learn": ["learn.view", "learn.edit", "learn.publish"],
+    "Social": ["social.view", "social.draft", "social.approve"],
+    "Automations": ["connections.view", "automations.manage"],
+    "Templates": ["templates.view", "templates.edit"], "Team": ["team.manage"],
+  };
+  return (label) => { const need = ROOMS[label]; if (!need) return true; return need.some(has); };
+}
+
 function railItems() {
   if (!state.user || state.view === "staff" || state.preview) return null;
   const u = state.user;
@@ -3417,8 +3474,22 @@ function railItems() {
     add("b", "list", "Event Log", "return go('dashboard','Event Log')", t === "Event Log");
     add("b", "shield", "Compliance", "return go('dashboard','Compliance')", t === "Compliance");
     add("b", "users", "Campaign", "return go('dashboard','Campaign')", t === "Campaign");
+    // Build -138: the Admin expansion rooms. Marketing and
+    // Campaign coexist on purpose (Jeff's call): Campaign is the
+    // founding outreach machine, Marketing is email to the
+    // platform's own lists.
+    add("b", "notice", "Marketing", "return go('dashboard','Marketing')", t === "Marketing");
+    add("b", "star", "Learn", "return go('dashboard','Learn')", t === "Learn");
+    add("b", "play", "Social", "return go('dashboard','Social')", t === "Social");
+    add("b", "bolt", "Automations", "return go('dashboard','Automations')", t === "Automations");
+    add("b", "deck", "Templates", "return go('dashboard','Templates')", t === "Templates");
     add("b", "stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
+    add("c", "users", "Team", "return go('dashboard','Team')", t === "Team");
     add("c", "sig", "Sig", "return go('dashboard','Sig')", t === "Sig");
+    // Build -138: a teammate's rail carries only their rooms —
+    // the same rule the server enforces on every route.
+    const allow138 = adminTabsAllowed138();
+    if (allow138) { for (let i = items.length - 1; i >= 0; i--) if (!allow138(items[i].label)) items.splice(i, 1); }
     return items;
   }
   if (u.status !== "approved" || isFoundingBusiness(u)) {
@@ -3469,7 +3540,7 @@ function renderRail() {
   if (!items) { rail.innerHTML = ""; return; }
   const u = state.user;
   const name = u.role === "business" && u.business ? u.business.businessName : u.name;
-  const initial = String(name || u.name || "?").trim().charAt(0).toUpperCase() || "S";
+  const initial = String(name || u.name || "").trim().charAt(0).toUpperCase() || "S";
   const avatarGo = u.role === "business" ? "return go('profile')" : u.role === "creator" ? "return go('dashboard','Profile')" : "return go('dashboard')";
   let lastSec = "";
   // Build -119: the rail carries the design's words (the
@@ -3550,7 +3621,7 @@ function renderTopRow() {
   const u = state.user;
   if (!u || state.preview || state.view === "staff" || !document.body.classList.contains("rail-on")) { el.innerHTML = ""; return; }
   const name = u.role === "business" && u.business ? u.business.businessName : u.name;
-  const initial = String(name || u.name || "?").trim().charAt(0).toUpperCase() || "S";
+  const initial = String(name || u.name || "").trim().charAt(0).toUpperCase() || "S";
   const photo = selfAvatarUrl122(u);
   const statsGo = u.role === "business" ? "return go('dashboard','Analytics')" : u.role === "admin" ? "return go('dashboard','Stats')" : "return go('dashboard')";
   // Build -126: the identity is a menu button (Profile /
@@ -4917,7 +4988,7 @@ function sigBankFor(biz) {
     { id: "money", q: "How do I make money on SIGNL?", ph: ["make money", "earn money", "making money", "how do i earn", "can i make money", "make some money", "earn cash"], g: [["money", "earn", "earning", "income", "cash", "paid", "pay"], ["how", "can", "do i", "ways", "make", "get"]], s: ["money"],
       a: (c) => {
         let t = "Two ways. First, comped visits: a local business covers your meal, service, or experience, and you post honestly about it. Second, paid bookings: businesses book you at the rate you set, and you keep 97% of it. There is also licensing: if a business wants to reuse your post, they pay your licensing fee and you keep 97% of that too.";
-        if (!c.live) t += " Your market has not opened yet, so bookings start when it opens. A finished profile is what puts you first in line when it does.";
+        if (!c.live) t += " Your city is building right now, and you're early. Bookings start when it opens, and a finished profile is what puts you first in line when it does: first pick goes to completed founding profiles.";
         else if (!c.profileComplete) t += " One thing first: businesses only see finished profiles, so finishing yours is the step that makes all of this reachable.";
         return t;
       }, flow: (c) => !c.profileComplete ? "Finish my profile" : (c.live ? "See my wallet" : "Check my Momentum") },
@@ -4963,7 +5034,7 @@ function sigBankFor(biz) {
       a: "Your book-me page is your public SIGNL page at your profile link. Turn it on under Profile: it shows your handle, your local reach, your categories, and your featured posts, and nothing private. Signed-in businesses see your listed rate and book you inside SIGNL. Businesses with a paid, active account can also see your social channels and message you in the app. Bookings that start on SIGNL stay on SIGNL.", flow: "Finish my profile" },
     { id: "offers", q: "How do I get offers?", ph: ["get offers", "no offers", "offers yet", "find work", "get booked", "bookings", "get work"], g: [["offer", "offers", "booked", "work", "gigs", "jobs"], ["how", "get", "find", "none", "no", "why", "any"]], s: [],
       a: (c) => {
-        let t = c.live ? "Businesses post offers and invite creators straight from the roster. Finished profiles with strong local reach get invited first. Applying is one tap, and your profile card is the application, so a finished profile is the whole game." : "Offers start when your market opens. Until then the work is your profile: finished profiles are the roster businesses meet on day one, so finishing yours now is what gets you booked first.";
+        let t = c.live ? "Businesses post offers and invite creators straight from the roster. Finished profiles with strong local reach get invited first. Applying is one tap, and your profile card is the application, so a finished profile is the whole game." : "Your city is building right now, and you're early. Offers start when it opens, and finished founding profiles are literally one of the counts that moves a city toward opening, so finishing yours now brings it closer AND puts you first in line: first pick goes to completed founding profiles.";
         if (c.charter) t += " And as a Charter Creator, you see new paid offers 24 hours before everyone else" + (c.live ? "." : " once your market is live.");
         return t;
       }, flow: (c) => c.live ? "See offers near you" : "Finish my profile" },
@@ -5738,6 +5809,12 @@ async function render() {
   // (the admin rail otherwise left-anchors it, stranding the
   // profile against the left with a void on the right).
   document.body.classList.toggle("profile-view", state.view === "public-profile");
+  // Build -138 (Jeff, 2026-11-06): the shopping surfaces take
+  // over the full screen on desktop — the dashboard rail and
+  // top row leave; the surface's own bar carries Back.
+  document.body.classList.toggle("shop-takeover",
+    !!state.user && ((state.user.role === "business" && state.tab === "Discover")
+      || (state.user.role === "creator" && state.tab === "Find Offers")));
   if (state.view === "public-profile") return renderPublicProfile();
   if (state.view === "public-proof") return renderPublicProof();
   clearShareShell();
@@ -7029,7 +7106,7 @@ function sigCreatorCardHtml(c, ti, ci) {
   const saved = !!c.isFavorite;
   return `<div class="sig-ccard"${c.userId ? ` data-sigprofile="${esc(c.userId)}"` : ""}>
     <div class="sig-ccard-top">
-      ${photos[0] ? `<img class="sig-ccard-photo" src="${esc(photos[0])}" alt="">` : `<span class="sig-ccard-photo sig-ccard-nophoto">${esc(String(c.name || "?").slice(0, 1))}</span>`}
+      ${photos[0] ? `<img class="sig-ccard-photo" src="${esc(photos[0])}" alt="">` : `<span class="sig-ccard-photo sig-ccard-nophoto">${esc(String(c.name || "S").slice(0, 1))}</span>`}
       <div class="sig-ccard-id">
         <div class="sig-ccard-name">${esc(c.name || "")}${p.tierBand ? ` <span class="sig-ccard-tier">${esc(p.tierBand)}</span>` : ""}</div>
         <div class="sig-ccard-handle">@${esc(p.handle || "")}${c.neighborhood ? ` · ${esc(c.neighborhood)}` : ""}</div>
@@ -8348,7 +8425,7 @@ async function sigC1Start() {
     return;
   }
   if (!(u.founding && u.founding.marketLive)) {
-    sigOpSay(ST("Your market has not opened yet, so there are no live offers to apply to today. Finished profiles are the roster businesses meet on day one, and your invite link works right now.", "Tu mercado aún no abrió, así que hoy no hay ofertas activas. Los perfiles terminados son la lista que los negocios conocen el primer día, y tu enlace de invitación ya funciona."), [
+    sigOpSay(ST("Your city is building right now — you're early, so there are no live offers to apply to today. Finished profiles are the roster businesses meet on day one, they count toward your city opening, and your invite link works right now.", "Tu ciudad se está construyendo ahora mismo — entraste temprano, así que hoy no hay ofertas activas. Los perfiles terminados son la lista que los negocios conocen el primer día, cuentan para que tu ciudad abra, y tu enlace de invitación ya funciona."), [
       { label: ST("Invite a creator", "Invitar a un creador"), primary: true, run: async () => { sigC4Run(); sigOpPaint(); } },
       { label: ST("Check my profile", "Revisar mi perfil"), run: async () => { await sigC2Start(); sigOpPaint(); } },
     ]);
@@ -10657,7 +10734,7 @@ function renderPending() {
     ${claimedOnly ? claimPayoffHtml(u) : ""}
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} to sign up in ${esc(marketTalkNameClient(u.market))}`}</span></p><p class="small muted">Applications are reviewed in sign-up order. Founding status starts at approval, not at sign-up.</p>` : ""}
     <p class="muted">${isUnlisted
-      ? `${T("SIGNL is not open in", "SIGNL aún no abrió en")} ${esc(u.city)} ${T("yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "y tu registro cuenta para abrirlo: abrimos mercados nuevos donde se juntan registros de creadores, y los registros fundadores de ahí van primero. Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("the moment", "en cuanto")} ${esc(u.city)} ${T("opens. Sign back in any time to check your status.", "abra. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`
+      ? `${T("You're in early.", "Entraste temprano.")} ${T("SIGNL is building in", "SIGNL se está construyendo en")} ${esc(u.city)} ${T("right now — it isn't a launch market yet, and sign-ups like yours are how we pick what opens next. Every application is reviewed by a person. The moment you are approved, your founding status page opens here. Finish your profile when you're approved and you're in the founding circle: founding creators hear first, and first pick goes to completed founding profiles. We will email you at", "ahora mismo — aún no es un mercado de lanzamiento, y registros como el tuyo son cómo elegimos qué abre después. Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí. Termina tu perfil al aprobarte y entras al círculo fundador: los creadores fundadores se enteran primero, y la primera elección es para perfiles fundadores completos. Te escribimos a")} ${esc(u.email)} ${T("as", "cuando")} ${esc(u.city)} ${T("gets close. Sign back in any time to check your status.", "se acerque. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`
       : `${T("Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("when", "cuando")} ${esc(marketTalkNameClient(u.market))} ${T("opens to businesses. Sign back in any time to check your status.", "abra para los negocios. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`}</p>
     ${isCreator && !(u.creator && u.creator.hasPhoto) ? `
     <div style="text-align:left">
@@ -11129,7 +11206,7 @@ async function submitBusinessReview(e, bookingId) {
 // they have not added one yet.
 function avatarHtml(card, cls) {
   if (card.photoUrl) return `<img class="${cls}" src="${esc(card.photoUrl)}" alt="">`;
-  const initial = esc((card.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const initial = esc((card.name || "").trim().charAt(0).toUpperCase() || "S");
   return `<span class="${cls} avatar-initial" aria-hidden="true">${initial}</span>`;
 }
 
@@ -11245,7 +11322,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
   const localTxt = p.localAudiencePct === null || p.localAudiencePct === undefined
     ? "Local audience not reported yet"
     : `${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span>`;
-  const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const initial = esc((c.name || "").trim().charAt(0).toUpperCase() || "S");
   return `
   <div class="panel">
     <p><button class="btn small-btn ghost" onclick="${adminView ? "adminBackToRequests()" : preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to ${adminView ? "Applications" : "results"}</button></p>
@@ -11366,7 +11443,7 @@ function creatorCard(c, viewer, opts) {
   // v2 .creator-card anatomy: one component for discovery, the public
   // profile hero, and the profile detail header (DESIGN-SYSTEM.md).
   // Same data, same words, same handlers; only the layout changed.
-  const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const initial = esc((c.name || "").trim().charAt(0).toUpperCase() || "S");
   return `
   <div class="creator-card${c.standing === "paused" ? " paused" : ""}">
     <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
@@ -11553,7 +11630,7 @@ async function loadFoundingDashboard() {
       queueItems.push({ text: "Finish your profile. Businesses can only find finished profiles.", btn: "Open profile", act: () => goFinishProfile() });
     }
     if (!queueItems.length) {
-      queueItems.push({ text: isUnl ? `You are on the founding roster. ${f.city} opens when sign-ups pile up; we email you the moment it opens.` : `You are on the founding roster for ${marketTalkNameClient(f.market)}. We email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
+      queueItems.push({ text: isUnl ? `You are on the founding roster, and ${f.city} is building right now. Finish your profile to lock your founding spot — first pick goes to completed founding profiles.` : `You are on the founding roster for ${marketTalkNameClient(f.market)}. We email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
     }
     // Sig activation ideas (founding home): once the essentials
     // are done, Sig prompts the two build-up moves a founding
@@ -11600,7 +11677,7 @@ async function loadFoundingDashboard() {
     // steps, stop (the founding roster line rides under).
     el.innerHTML = `
     ${wsHead("Home", { sub: "Start here.", subKey: "cr-home" })}
-    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
+    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} is building right now, and you're early. We email you as it gets close.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
     ${sigHero137Html(queueItems.length ? queueItems[0].text : "You are on the founding roster.")}
     ${highlights137Html([
       { label: "Momentum", sub: standingLevelName(momPts), value: `${fmtNum(momPts)} pts` },
@@ -12744,7 +12821,7 @@ function benchIntroCardHtml(intro) {
   </div>`;
 }
 function benchCardHtml(c) {
-  const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const initial = esc((c.name || "").trim().charAt(0).toUpperCase() || "S");
   return `<div class="card mb bench-card">
     <div style="display:flex;gap:12px;align-items:flex-start">
       ${c.photoUrl ? `<img class="avatar" style="width:56px;height:56px" src="${esc(c.photoUrl)}" alt="">` : `<span class="avatar avatar-initial" style="width:56px;height:56px;font-size:1.4rem">${initial}</span>`}
@@ -13194,8 +13271,8 @@ async function loadFoundingStatus() {
     </div>
     ${isUnl ? `
     <div class="panel">
-      <h3 style="margin-top:0">${esc(f.city)} opens when sign-ups pile up</h3>
-      <p>SIGNL is not open in ${place} yet. Your sign-up is counted: we open new markets where creator sign-ups pile up, and when ${esc(f.city)} opens, its founding sign-ups are first in line for offers. We email you at <strong>${esc(state.user.email)}</strong> the moment it opens.</p>
+      <h3 style="margin-top:0">${esc(f.city)} is building — and you're early</h3>
+      <p>SIGNL isn't a launch market in ${place} yet. Your city is building right now: sign-ups and finished founding profiles are the counts that move a city toward opening, and yours is counted. When ${esc(f.city)} opens, founding creators hear first, and first pick of businesses goes to completed founding profiles. We email you at <strong>${esc(state.user.email)}</strong> as it gets close.</p>
       ${f.priorityBand ? `<p><span class="badge tier badge-line" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} to sign up in ${esc(f.city)}</span></p>
       <p class="muted">You signed up early, and it counts: founding creators in a new market are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Keep your profile current in the meantime; when ${esc(f.city)} opens, your local audience percentage is what businesses look at first.</p>
@@ -14510,9 +14587,9 @@ async function loadCreatorHome() {
     // it now rides along inside the same Promise.all.
     const [, bkData, offData, fData, appData, openData, lrData, benchData] = await Promise.all([
       ensureDeckState(),
-      api("GET", "/bookings"),
-      api("GET", "/offers"),
-      api("GET", "/me/founding"),
+      api("GET", "/bookings").catch(() => ({ bookings: [] })),
+      api("GET", "/offers").catch(() => ({ offers: [] })),
+      api("GET", "/me/founding").catch(() => ({ card: {} })),
       api("GET", "/applications").catch(() => ({ applications: [] })),
       api("GET", "/open-offers").catch(() => ({ offers: [] })),
       api("GET", "/license-requests").catch(() => ({ licenseRequests: [] })),
@@ -18850,7 +18927,7 @@ function reqRowHtml(r) {
   return `<div class="req-row" id="reqrow-${a.id}">
     <div class="req-top">
       ${a.status === "applied" && reqState.tab === "waiting" ? `<input type="checkbox" class="req-check" ${reqState.sel[a.id] ? "checked" : ""} onchange="reqToggleSel('${a.id}', this.checked)" aria-label="Select ${esc(c.name || "creator")}">` : ""}
-      <span class="req-ava">${esc((c.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>
+      <span class="req-ava">${esc((c.name || "").trim().charAt(0).toUpperCase() || "S")}</span>
       <div class="req-main" onclick="return reqToggleOpen('${a.id}')" style="cursor:pointer">
         <div class="req-name">${esc(c.name || "")} ${statusBadge}</div>
         <div class="req-meta">@${esc(c.handle || "")} · for <strong>${esc(r.offer.title)}</strong></div>
@@ -19518,7 +19595,7 @@ function bizProfileCardHtml(bz, market, opts) {
        <span class="ps"><b>${opts.reviewsCount || 0}</b><span>creator reviews</span></span>
        <span class="ps"><b>${esc(opts.planName || bz.planName || "")}</b><span>plan</span></span>`;
   return `<div class="prof-card biz-profile-card"${opts.rootId ? ` id="${esc(opts.rootId)}"` : ""}><div class="prof-cover"></div><div class="prof-in">
-    <div class="prof-ava"><span class="bp-card-ava">${esc((bz.businessName || "?").trim().charAt(0).toUpperCase() || "?")}</span></div>
+    <div class="prof-ava"><span class="bp-card-ava">${esc((bz.businessName || "").trim().charAt(0).toUpperCase() || "S")}</span></div>
     <div class="prof-name"><span class="bp-card-name">${esc(bz.businessName || "")}</span>${opts.live ? `<span class="verified-dot">${bnIcon("check")}</span>` : ""}</div>
     <div class="prof-meta"><span class="bp-card-meta">${esc(bz.category || "Business")}${bz.neighborhood ? ` · ${esc(bz.neighborhood)}` : ""} · ${esc(marketDisplayName(market))}</span><br><span class="bp-card-about">${bz.about ? esc(bz.about) : "No about yet. A written-up experience fills offers faster."}</span>${availabilitySummaryClient(bz.standingAvailability) ? `<br><span class="bp-card-avail">${esc(availabilitySummaryClient(bz.standingAvailability))}</span>` : ""}</div>
     <div class="prof-stats">${stats}</div>
@@ -19555,7 +19632,7 @@ function bizProfilePaintCard() {
   const bz = bizProfileFormBiz();
   const u = state.user || {};
   const set = (sel, txt) => { const el = card.querySelector(sel); if (el) el.textContent = txt; };
-  set(".bp-card-ava", (bz.businessName || "?").trim().charAt(0).toUpperCase() || "?");
+  set(".bp-card-ava", (bz.businessName || "").trim().charAt(0).toUpperCase() || "S");
   set(".bp-card-name", bz.businessName || "");
   set(".bp-card-meta", `${bz.category || "Business"}${bz.neighborhood ? " · " + bz.neighborhood : ""} · ${marketDisplayName(u.market)}`);
   set(".bp-card-about", bz.about ? bz.about : "No about yet. A written-up experience fills offers faster.");
@@ -19755,11 +19832,13 @@ async function loadFavorites() {
       { label: "Saved", on: true, onclick: "return go('dashboard','Favorites')" },
     ])}`;
     if (!data.favorites.length) {
-      el.innerHTML = `${favHead}<div class="empty-card"><div class="ec-t">No favorites yet</div><div class="ec-s">Tap the heart on any creator while browsing Find creators and they are saved here: your standing roster for repeat visits.</div></div><p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Discover')">Browse creators</button></p>`;
+      el.innerHTML = `${favHead}<div class="empty-card"><div class="ec-t">No favorites yet</div><div class="ec-s">Tap the heart on any creator while browsing Find creators and they are saved here: your standing roster for repeat visits.</div></div><p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Discover')">Browse creators</button></p><div id="biz-wishlist"></div>`;
+      loadWishlistSection();
       return;
     }
     el.innerHTML = `${favHead}
-    <div class="creator-grid">${data.favorites.map((c) => `<div>${creatorCard(c, state.user)}<button class="btn small-btn mt" style="width:100%" onclick="rebookCreator('${c.userId}')">Invite again</button></div>`).join("")}</div>`;
+    <div class="creator-grid">${data.favorites.map((c) => `<div>${creatorCard(c, state.user)}<button class="btn small-btn mt" style="width:100%" onclick="rebookCreator('${c.userId}')">Invite again</button></div>`).join("")}</div><div id="biz-wishlist"></div>`;
+    loadWishlistSection();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -19780,6 +19859,12 @@ async function loadFavorites() {
 function shopRailToggle(id) {
   const r = document.getElementById(id);
   if (r) r.classList.toggle("open");
+  if (id === "disc-rail" && r && r.classList.contains("open")) {
+    const fm = document.getElementById("f-market"); const fmm = document.getElementById("f-market-m");
+    if (fm && fmm) fmm.value = fm.value;
+    const fs = document.getElementById("f-sort"); const fsm = document.getElementById("f-sort-m");
+    if (fs && fsm) fsm.value = fs.value;
+  }
   if (id === "disc-rail") { const b = document.getElementById("disc-rail-btn"); if (b) b.textContent = `Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}`; }
   if (id === "fo-rail") { const b = document.getElementById("fo-rail-btn"); if (b) b.textContent = `Filters${foActiveCount() ? ` (${foActiveCount()})` : ""}`; }
   return false;
@@ -19788,10 +19873,56 @@ function discActiveCount() {
   let n = 0;
   if ((state.discoverCats || []).length) n++;
   if ((state.discoverBookMode || "any") !== "any") n++;
+  if ((state.discoverRate || "any") !== "any") n++;
+  if (state.discoverMinLocal) n++;
   if (state.discoverSpanish) n++;
   if (state.discoverMusician) n++;
   if (state.discoverUniversity) n++;
   return n;
+}
+// Build -138: the rail's category checkboxes and the phone
+// chip row are two hands on the same state — every write goes
+// through one of these so both stay honest.
+function discCatAll() {
+  state.discoverCats = [];
+  syncDiscoverCatChips();
+  paintDiscCatBoxes();
+  runDiscover();
+  return false;
+}
+function discCatToggle(cat, on) {
+  const set = new Set(state.discoverCats || []);
+  if (on) set.add(cat); else set.delete(cat);
+  state.discoverCats = [...set];
+  const all = document.getElementById("disc-cat-all");
+  if (all) all.checked = !state.discoverCats.length;
+  syncDiscoverCatChips();
+  runDiscover();
+  return false;
+}
+function paintDiscCatBoxes() {
+  document.querySelectorAll("[data-dcat-box]").forEach((b) => { b.checked = (state.discoverCats || []).includes(b.getAttribute("data-dcat-box")); });
+  const all = document.getElementById("disc-cat-all");
+  if (all) all.checked = !(state.discoverCats || []).length;
+}
+function paintDiscCatCounts() {
+  const counts = state.discoverCatCounts || {};
+  document.querySelectorAll("[data-dcat-count]").forEach((sp) => {
+    const c = counts[sp.getAttribute("data-dcat-count")];
+    sp.textContent = c === undefined ? "" : String(c);
+  });
+}
+function discMinLocalSet(v) {
+  state.discoverMinLocal = v || "";
+  const h = document.getElementById("f-minlocal");
+  if (h) h.value = v || "";
+  runDiscover();
+  return false;
+}
+let discQT138 = null;
+function discQInput() {
+  clearTimeout(discQT138);
+  discQT138 = setTimeout(() => runDiscover(), 250);
 }
 function discMustAll() {
   state.discoverSpanish = false;
@@ -19805,6 +19936,7 @@ function discClearAll() {
   state.discoverMusician = "";
   state.discoverBookMode = "any";
   state.discoverRate = "any";
+  state.discoverMinLocal = "";
   state.discoverUniversity = "";
   loadDiscover();
   return false;
@@ -19818,6 +19950,7 @@ function discoverCatChip(cat, btn) {
     state.discoverCats = [...set];
   }
   syncDiscoverCatChips();
+  paintDiscCatBoxes();
   runDiscover();
   return false;
 }
@@ -20228,6 +20361,10 @@ function discoverBookModeSet(mode) {
 function discoverRateSet(v) { state.discoverRate = v; renderDiscoverResults(); }
 function setDiscoverCount(n) {
   const el = document.getElementById("discover-count");
+  const fb = document.getElementById("disc-show-btn");
+  if (fb) fb.textContent = `Show ${n} result${n === 1 ? "" : "s"}`;
+  const rb = document.getElementById("disc-rail-btn");
+  if (rb) rb.textContent = `Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}`;
   if (!el) return;
   const sel = document.getElementById("f-market");
   const mkt = sel && sel.selectedOptions && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : "";
@@ -20437,14 +20574,25 @@ function mirrorOfferValue(o) { return Number(o && o.cashRate) || Number(o && o.d
 function mirrorOfferCardHtml(o, opts) {
   const preview = !!(opts && opts.preview);
   const parked = !!(opts && opts.parked);
+  const lead = !!(opts && opts.lead);
   const price = mirrorPriceLine(o);
   const place = [o.businessNeighborhood, o.businessCity].filter(Boolean).join(", ");
   const spotsLeft = (Number(o.spots) || 0) - (Number(o.filledCount) || 0);
   const tr = o.businessTrackRecord;
-  return `<div class="mirror-card">
-    ${o.businessImageUrl ? `<img class="mirror-cover" src="${esc(o.businessImageUrl)}" alt="" loading="lazy">` : ""}
+  // Canon imagery chain: the business's cover photo, then its
+  // logo (both ride businessImageUrl in that order), then an
+  // INITIAL tile — the business's own initial, never a "?".
+  const initial = esc((String(o.businessName || o.businessCity || o.title || "SIGNL")).trim().charAt(0).toUpperCase() || "S");
+  const trackCells = tr ? [
+    tr.visitsHosted > 0 ? `<span><strong>${tr.visitsHosted}</strong> creator visit${tr.visitsHosted === 1 ? "" : "s"} hosted here</span>` : "",
+    tr.creatorsReturned > 0 ? `<span><strong>${tr.creatorsReturned}</strong> creator${tr.creatorsReturned === 1 ? "" : "s"} came back for a second visit</span>` : "",
+    tr.onTimePct !== null && tr.onTimePct !== undefined ? `<span><strong>${tr.onTimePct}%</strong> of visits ended with the post up on time</span>` : "",
+  ].filter(Boolean).join("") : "";
+  return `<div class="mirror-card${lead ? " mirror-lead" : ""}">
+    ${o.businessImageUrl ? `<img class="mirror-cover" src="${esc(o.businessImageUrl)}" alt="" loading="lazy">` : `<div class="mirror-cover mirror-cover-fallback" aria-hidden="true">${initial}</div>`}
+    <div class="mirror-body">
     <div class="mirror-top">
-      <span class="mirror-mono">${esc((o.businessName || "?").trim().charAt(0).toUpperCase() || "?")}</span>
+      <span class="mirror-mono">${initial}</span>
       <div class="mirror-id"><div class="mirror-biz">${esc(o.businessName || "")}</div><div class="mirror-meta">${esc(o.category || "")}${place ? ` · ${esc(place)}` : ""}${o.distanceBand ? ` · ${esc(o.distanceBand)}` : ""}</div></div>
       ${o.fitNote ? `<span class="mirror-fit">Good fit</span>` : ""}
     </div>
@@ -20453,9 +20601,10 @@ function mirrorOfferCardHtml(o, opts) {
     ${price.sub ? `<div class="mirror-sub">${esc(price.sub)}</div>` : ""}
     <div class="mirror-ask">${esc(mirrorAskLine(o))}</div>
     ${o.includes ? `<div class="mirror-line">Included: ${esc(o.includes)}</div>` : ""}
-    ${tr ? `<div class="mirror-track">${tr.visitsHosted} visit${tr.visitsHosted === 1 ? "" : "s"} hosted${tr.creatorsReturned > 0 ? ` · ${tr.creatorsReturned} creator${tr.creatorsReturned === 1 ? "" : "s"} came back` : ""}${tr.onTimePct !== null && tr.onTimePct !== undefined ? ` · ${tr.onTimePct}% of posts on time` : ""}</div>` : ""}
+    ${trackCells ? `<div class="mirror-track">${trackCells}</div>` : ""}
     ${o.spots && spotsLeft > 0 ? `<div class="mirror-spots">${spotsLeft} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left</div>` : ""}
     ${preview ? "" : o.myApplication ? `<div class="mirror-acts"><span class="badge ok">Applied</span><button type="button" class="btn small-btn ghost" onclick="state.crOffersSeg='applied'; return go('dashboard','Offers')">See it in My offers</button></div>` : `<div class="mirror-acts"><button type="button" class="btn small-btn" onclick="findOffersGrab('${o.id}')">Grab this visit</button>${parked ? `<button type="button" class="btn small-btn ghost" onclick="findOffersUnlater('${o.id}')">Move back</button>` : `<button type="button" class="btn small-btn ghost" onclick="findOffersLater('${o.id}')">Save for later</button>`}<button type="button" class="btn small-btn ghost" onclick="findOffersHide('${o.id}')">Not for me</button></div>`}
+    </div>
   </div>`;
 }
 async function loadFindOffers() {
@@ -20493,10 +20642,19 @@ function foClearAll() {
 }
 function foKnowAll() { state.foFit = false; state.foSpots = false; renderFindOffers(); return false; }
 function foCatSet(btn) { state.foCategory = btn.getAttribute("data-cat") || ""; renderFindOffers(); return false; }
+let foQT138 = null;
+function foQInput(el) {
+  state.foQ = el.value;
+  state.foQFocus = true;
+  clearTimeout(foQT138);
+  foQT138 = setTimeout(() => renderFindOffers(), 200);
+}
 function foDistSet(btn) { state.foDistance = btn.getAttribute("data-dist") || ""; renderFindOffers(); return false; }
 function renderFindOffers() {
   const el = document.getElementById("cr-findoffers");
   if (!el) return;
+  const foRefocus = !!state.foQFocus;
+  state.foQFocus = false;
   const all = state.openOffers || [];
   const q = deckQueue("offers", all);
   const kind = state.foKind || "all";
@@ -20515,30 +20673,40 @@ function renderFindOffers() {
   if (dist) list = list.filter((o) => o.distanceBand === dist);
   if (state.foFit) list = list.filter((o) => o.fitNote);
   if (state.foSpots) list = list.filter((o) => (Number(o.spots) || 0) - (Number(o.filledCount) || 0) > 0);
+  const foQ = (state.foQ || "").trim().toLowerCase();
+  if (foQ) list = list.filter((o) => `${o.businessName || ""} ${o.title || ""} ${o.category || ""}`.toLowerCase().includes(foQ));
   if (sort === "value") list = [...list].sort((a, b) => mirrorOfferValue(b) - mirrorOfferValue(a));
   if (sort === "close") { const rank = { "Same neighborhood": 0, "Under 2 miles": 1, "Under 5 miles": 2 }; list = [...list].sort((a, b) => (rank[a.distanceBand] === undefined ? 3 : rank[a.distanceBand]) - (rank[b.distanceBand] === undefined ? 3 : rank[b.distanceBand])); }
   const applied = q.visible.filter((o) => o.myApplication);
   const ea = state.findOffersEarly;
   const sortSel = (cls) => `<label class="fo-selfilter">Sort <select onchange="state.foSort=this.value; renderFindOffers()"><option value="new"${sort === "new" ? " selected" : ""}>Newest first</option>${hasDistance ? `<option value="close"${sort === "close" ? " selected" : ""}>Closest first</option>` : ""}<option value="value"${sort === "value" ? " selected" : ""}>Highest value</option></select></label>`;
   el.innerHTML = `
+  <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-title">Find offers</span><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Visits')">My visits</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Offers')">My offers</button></span></div>
   <div class="shop-layout">
     <aside class="shop-rail${state.foRailOpen ? " open" : ""}" id="fo-rail">
       <div class="rail-head"><strong>Filters</strong><span><button type="button" class="btn small-btn ghost" onclick="return foClearAll()">Clear all</button> <button type="button" class="rail-x" aria-label="Close filters" onclick="state.foRailOpen=false; renderFindOffers()">×</button></span></div>
+      <div class="df-group rail-only-m">
+        <div class="df-label">Sort</div>
+        ${sortSel()}
+      </div>
       <div class="df-group">
         <div class="df-label">The offer</div>
-        <div class="bookseg" role="group" aria-label="The offer">${[["all", "All offers"], ["comp", "Comped visit"], ["paid", "Paid post"], ["coupon", "Coupon"]].map(([v, l]) => `<button type="button" class="bookseg-btn${kind === v ? " on" : ""}" data-fokind="${v}" onclick="state.foKind='${v}'; renderFindOffers()">${l} (${kindCount(v)})</button>`).join("")}</div>
+        ${[["all", "All offers"], ["comp", "Comped visit"], ["paid", "Paid post"], ["coupon", "Coupon"]].map(([v, l]) => `<label class="rail-row"><input type="radio" name="fo-kind" ${kind === v ? "checked" : ""} onchange="state.foKind='${v}'; renderFindOffers()"><span class="rr-tx">${l}</span><span class="rr-count">${kindCount(v)}</span></label>`).join("")}
       </div>
-      ${cats.length ? `<div class="df-group">
+      <div class="df-group">
         <div class="df-label">Category</div>
-        <div class="dcat-row rail-chips"><button type="button" class="dcat-chip${!cat ? " on" : ""}" data-cat="" onclick="return foCatSet(this)">All categories</button>${cats.map((x) => `<button type="button" class="dcat-chip${cat === x ? " on" : ""}" data-cat="${esc(x)}" onclick="return foCatSet(this)">${esc(x)} (${catCount(x)})</button>`).join("")}</div>
-      </div>` : ""}
-      ${hasDistance ? `<div class="df-group">
+        <label class="rail-row"><input type="radio" name="fo-cat" ${!cat ? "checked" : ""} onchange="state.foCategory=''; renderFindOffers()"><span class="rr-tx">All categories</span><span class="rr-count">${base.length}</span></label>
+        ${cats.map((x) => `<label class="rail-row"><input type="radio" name="fo-cat" ${cat === x ? "checked" : ""} onchange="state.foCategory='${esc(x)}'; renderFindOffers()"><span class="rr-tx">${esc(x)}</span><span class="rr-count">${catCount(x)}</span></label>`).join("")}
+      </div>
+      <div class="df-group">
         <div class="df-label">Distance from you</div>
-        <div class="dcat-row rail-chips"><button type="button" class="dcat-chip${!dist ? " on" : ""}" data-dist="" onclick="return foDistSet(this)">Any distance</button>${["Same neighborhood", "Under 2 miles", "Under 5 miles"].map((x) => `<button type="button" class="dcat-chip${dist === x ? " on" : ""}" data-dist="${esc(x)}" onclick="return foDistSet(this)">${esc(x)} (${distCount(x)})</button>`).join("")}</div>
-      </div>` : ""}
+        <label class="rail-row"><input type="radio" name="fo-dist" ${!dist ? "checked" : ""} onchange="state.foDistance=''; renderFindOffers()"><span class="rr-tx">Anywhere in market</span><span class="rr-count">${base.length}</span></label>
+        ${["Same neighborhood", "Under 2 miles", "Under 5 miles"].map((x) => `<label class="rail-row"><input type="radio" name="fo-dist" ${dist === x ? "checked" : ""} onchange="state.foDistance='${x}'; renderFindOffers()"><span class="rr-tx">${x}</span><span class="rr-count">${distCount(x)}</span></label>`).join("")}
+        <p class="rail-note">Bands come from the ZIPs and neighborhoods on file — an offer lands in a band only when both sides shared one.</p>
+      </div>
       <div class="df-group">
         <div class="df-label">Good to know</div>
-        <div class="dcat-row" style="margin-bottom:8px"><button type="button" class="dcat-chip${!state.foFit && !state.foSpots ? " on" : ""}" onclick="return foKnowAll()">All offers</button></div>
+        <label class="rail-row"><input type="radio" name="fo-know" ${!state.foFit && !state.foSpots ? "checked" : ""} onchange="return foKnowAll()"><span class="rr-tx">All offers</span></label>
         <div class="musthave-row">
           <label class="musthave"><span class="mh-tx"><strong>Good fit for me</strong><small>Marked a strong match for you</small></span><input type="checkbox" class="sw" ${state.foFit ? "checked" : ""} onchange="state.foFit=this.checked; renderFindOffers()"></label>
           <label class="musthave"><span class="mh-tx"><strong>Spots still open</strong><small>Room left to apply</small></span><input type="checkbox" class="sw" ${state.foSpots ? "checked" : ""} onchange="state.foSpots=this.checked; renderFindOffers()"></label>
@@ -20547,15 +20715,23 @@ function renderFindOffers() {
       <div class="rail-foot"><button type="button" class="btn" onclick="state.foRailOpen=false; renderFindOffers()">Show ${list.length} result${list.length === 1 ? "" : "s"}</button></div>
     </aside>
     <div class="shop-main">
-    <div class="shop-mbar"><button type="button" class="btn small-btn" id="fo-rail-btn" onclick="state.foRailOpen=!state.foRailOpen; renderFindOffers()">Filters${foActiveCount() ? ` (${foActiveCount()})` : ""}</button>${sortSel()}</div>
+    <div class="shop-searchrow">
+      <span class="sr-q"><input type="search" id="fo-q" placeholder="Search a business, an offer, a category" value="${esc(state.foQ || "")}" oninput="foQInput(this)"></span>
+      <span class="sr-sel">${sortSel()}</span>
+      <button type="button" class="btn small-btn sr-filters" id="fo-rail-btn" onclick="state.foRailOpen=!state.foRailOpen; renderFindOffers()">Filters${foActiveCount() ? ` (${foActiveCount()})` : ""}</button>
+    </div>
+    ${cats.length ? `<div class="shop-chiprow"><button type="button" class="dcat-chip${!cat ? " on" : ""}" data-cat="" onclick="return foCatSet(this)">All</button>${cats.map((x) => `<button type="button" class="dcat-chip${cat === x ? " on" : ""}" data-cat="${esc(x)}" onclick="return foCatSet(this)">${esc(x)}</button>`).join("")}</div>` : ""}
     <p class="fo-count"><strong>${list.length}</strong> open visit${list.length === 1 ? "" : "s"} near you</p>
-    <div class="fo-filters fo-sortrow">${sortSel()}</div>
     ${ea && ea.opensAt ? `<p class="small" style="margin:0 0 10px">A new offer just posted in your market. Charter creators, the founding class (creators approved before their market launched), see new offers first; this one opens to everyone ${esc(fmtDay(ea.opensAt))}.</p>` : ""}
-    ${list.length ? `<div class="mirror-grid">${list.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : `<div class="empty-state"><h3>No open visits match</h3><p>Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets.</p></div>`}
+    ${list.length ? `<div class="mirror-grid">${list.map((o, i) => mirrorOfferCardHtml(o, i === 0 ? { lead: true } : undefined)).join("")}</div>` : `<div class="empty-state"><h3>No open visits match</h3><p>Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets.</p></div>`}
     ${applied.length ? `<h3 style="margin:22px 0 10px">You applied</h3><div class="mirror-grid">${applied.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : ""}
     ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3><div class="mirror-grid">${q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })).join("")}</div>` : ""}
     </div>
   </div>`;
+  if (foRefocus) {
+    const qi = document.getElementById("fo-q");
+    if (qi) { qi.focus(); try { qi.setSelectionRange(qi.value.length, qi.value.length); } catch (e) { /* no-op */ } }
+  }
 }
 async function findOffersGrab(id) { await applyToOffer(id); loadFindOffers(); }
 function findOffersLater(id) { pileLater("offers", id); renderFindOffers(); return false; }
@@ -20739,31 +20915,29 @@ async function loadDiscover() {
   // "See everyone". The mode is only defaulted, never forced.
   const foundingDisc = isFoundingBusiness(u);
   el.innerHTML = `
+    <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-title">Find creators</span><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Favorites')">Your shortlist</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Regulars')">My Regulars</button></span></div>
     ${wsHead("Find creators", { sub: "Shop local creators near you. Invite the ones who fit.", subKey: "biz-discover" })}
-    ${wsTabs([
-      { label: "Browse", on: true, onclick: "return go('dashboard','Discover')" },
-      { label: "My Regulars", on: false, onclick: "return go('dashboard','Regulars')" },
-      { label: "Saved", on: false, onclick: "return go('dashboard','Favorites')" },
-    ])}
     <p class="small" style="margin:10px 0 0"><strong>Ranked by how local their audience is, not by follower count.</strong></p>
     ${foundingDisc ? `<p class="small muted" style="margin:4px 0 0">${esc(foundingBizPlace(u))}'s founding roster is still joining. New creators show up here as they finish their pages.</p>` : ""}
     <div class="shop-layout">
     <aside class="shop-rail" id="disc-rail">
       <div class="rail-head"><strong>Filters</strong><span><button type="button" class="btn small-btn ghost" onclick="return discClearAll()">Clear all</button> <button type="button" class="rail-x" aria-label="Close filters" onclick="return shopRailToggle('disc-rail')">×</button></span></div>
     <div class="disc-filters">
-      <div class="df-group">
-        <div class="df-label">Where</div>
+      <div class="df-group rail-only-m">
+        <div class="df-label">Where &amp; sort</div>
         <div class="filters disc-top">
-          <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
+          <div><label>Market</label><select id="f-market-m" onchange="var m=document.getElementById('f-market'); if(m){m.value=this.value;} runDiscover()">${marketOptions(u.market)}</select></div>
+          <div><label>Sort by</label><select id="f-sort-m" onchange="var m=document.getElementById('f-sort'); if(m){m.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></div>
         </div>
       </div>
       <div class="df-group">
-        <div class="df-label">What kind of creator</div>
-        <div class="dcat-row"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All categories</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
+        <div class="df-label">Category</div>
+        <label class="rail-row"><input type="checkbox" id="disc-cat-all" ${(state.discoverCats || []).length ? "" : "checked"} onchange="return discCatAll()"><span class="rr-tx">All categories</span></label>
+        ${state.boot.creatorCategories.map((c) => `<label class="rail-row"><input type="checkbox" data-dcat-box="${esc(c)}" ${(state.discoverCats || []).includes(c) ? "checked" : ""} onchange="return discCatToggle('${esc(c)}', this.checked)"><span class="rr-tx">${esc(c)}</span><span class="rr-count" data-dcat-count="${esc(c)}"></span></label>`).join("")}
       </div>
       <div class="df-group">
         <div class="df-label">Must-haves</div>
-        <div class="dcat-row" style="margin-bottom:8px"><button type="button" class="dcat-chip${!state.discoverSpanish && !state.discoverMusician ? " on" : ""}" onclick="return discMustAll()">All creators</button></div>
+        <label class="rail-row"><input type="radio" name="disc-must" ${!state.discoverSpanish && !state.discoverMusician ? "checked" : ""} onchange="return discMustAll()"><span class="rr-tx">All creators</span></label>
         <div class="musthave-row">
           <label class="musthave"><span class="mh-tx"><strong>Spanish-speaking creators</strong><small>Makes content in Spanish</small></span><input type="checkbox" class="sw" id="dchip-spanish" ${state.discoverSpanish ? "checked" : ""} onchange="return discoverSpanishSet(this)"></label>
           <label class="musthave"><span class="mh-tx"><strong>Musicians</strong><small>Creators who make music</small></span><input type="checkbox" class="sw" id="dchip-musician" ${state.discoverMusician ? "checked" : ""} onchange="return discoverMusicianSet(this)"></label>
@@ -20776,38 +20950,47 @@ async function loadDiscover() {
           <button type="button" class="bookseg-btn${state.discoverBookMode === "comp" ? " on" : ""}" data-bookmode="comp" onclick="return discoverBookModeSet('comp')">Comped visit</button>
           <button type="button" class="bookseg-btn${state.discoverBookMode === "paid" ? " on" : ""}" data-bookmode="paid" onclick="return discoverBookModeSet('paid')">Paid booking</button>
         </div>
-        <span class="bookmode-rate"><label for="f-rate">Their rate</label><select id="f-rate" onchange="discoverRateSet(this.value)"><option value="any"${(state.discoverRate || "any") === "any" ? " selected" : ""}>Any rate</option><option value="u100"${state.discoverRate === "u100" ? " selected" : ""}>Under ${esc(ownCurrencySymbol())}100</option><option value="m100"${state.discoverRate === "m100" ? " selected" : ""}>${esc(ownCurrencySymbol())}100 to ${esc(ownCurrencySymbol())}200</option><option value="o200"${state.discoverRate === "o200" ? " selected" : ""}>Over ${esc(ownCurrencySymbol())}200</option></select></span>
+      </div>
+      <div class="df-group">
+        <div class="df-label">Their rate</div>
+        ${[["any", "Any rate"], ["u100", `Under ${ownCurrencySymbol()}100`], ["m100", `${ownCurrencySymbol()}100 to ${ownCurrencySymbol()}200`], ["o200", `Over ${ownCurrencySymbol()}200`]].map(([v, l]) => `<label class="rail-row"><input type="radio" name="disc-rate" value="${v}" ${(state.discoverRate || "any") === v ? "checked" : ""} onchange="discoverRateSet('${v}')"><span class="rr-tx">${esc(l)}</span></label>`).join("")}
+      </div>
+      <div class="df-group">
+        <div class="df-label">Their audience lives here</div>
+        ${[["", "Anyone"], ["50", "50% local and up"], ["70", "70% local and up"], ["85", "85% local and up"]].map(([v, l]) => `<label class="rail-row"><input type="radio" name="disc-minlocal" value="${v}" ${String(state.discoverMinLocal || "") === v ? "checked" : ""} onchange="return discMinLocalSet('${v}')"><span class="rr-tx">${esc(l)}</span></label>`).join("")}
+        <input type="hidden" id="f-minlocal" value="${esc(String(state.discoverMinLocal || ""))}">
+      </div>
+      <div class="df-group">
+        <div class="df-label">Tier (their audience size)</div>
+        <div class="filters disc-top"><div><select id="f-tier" onchange="runDiscover()"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div></div>
       </div>
     </div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
-      <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
-      <div><label>University (current students)</label><select id="f-university"><option value="">All universities</option>${state.discoverUniversity ? `<option selected>${esc(state.discoverUniversity)}</option>` : ""}</select></div>
-      <div><label>Would accept as a comped visit</label><select id="f-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>Total audience min</label><input type="number" id="f-fmin" min="0" placeholder="Any"></div>
-      <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
-      <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
+      <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent" onchange="runDiscover()"></div>
+      <div><label>University (current students)</label><select id="f-university" onchange="runDiscover()"><option value="">All universities</option>${state.discoverUniversity ? `<option selected>${esc(state.discoverUniversity)}</option>` : ""}</select></div>
+      <div><label>Would accept as a comped visit</label><select id="f-comp" onchange="runDiscover()"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+      <div><label>Total audience min</label><input type="number" id="f-fmin" min="0" placeholder="Any" onchange="runDiscover()"></div>
+      <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any" onchange="runDiscover()"></div>
+      <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto" onchange="runDiscover()"> Has a paid rate (paid bookings) only</label></div>
     </div>
     </details>
-      <div class="rail-foot"><button type="button" class="btn" onclick="return shopRailToggle('disc-rail')">Show results</button></div>
+      <div class="rail-foot"><button type="button" class="btn" id="disc-show-btn" onclick="return shopRailToggle('disc-rail')">Show results</button></div>
     </aside>
     <div class="shop-main">
-    <div class="shop-mbar"><button type="button" class="btn small-btn" id="disc-rail-btn" onclick="return shopRailToggle('disc-rail')">Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}</button><label class="mbar-sort">Sort <select id="f-sort-m" onchange="var s=document.getElementById('f-sort'); if(s){s.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></label></div>
-    <div class="filters">
-      <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
-      <div><label>Tier (their audience size)</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
-      <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="f-sort"><option value="local" selected>Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></div>
-      <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
+    <div class="shop-searchrow">
+      <span class="sr-q"><input type="search" id="f-q" placeholder="Search name or handle" oninput="discQInput(this)"></span>
+      <span class="sr-sel"><select id="f-market" aria-label="Market" onchange="var m=document.getElementById('f-market-m'); if(m){m.value=this.value;} runDiscover()">${marketOptions(u.market)}</select></span>
+      <span class="sr-sel"><select id="f-sort" aria-label="Sort by" onchange="var m=document.getElementById('f-sort-m'); if(m){m.value=this.value;} runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></span>
+      <button type="button" class="btn small-btn sr-filters" id="disc-rail-btn" onclick="return shopRailToggle('disc-rail')">Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}</button>
     </div>
+    <div class="shop-chiprow"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
     <p id="discover-count" class="disc-count" aria-live="polite"></p>
     <div id="discover-toggle"></div>
-    <div id="biz-wishlist"></div>
     <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>
     </div>
     </div>`;
   runDiscover();
-  loadWishlistSection();
 }
 
 // Campus filter options (U1): the server facet lists the
@@ -20871,6 +21054,14 @@ async function runDiscover() {
       });
     }
     state.discover = data.creators;
+    if (!cats.length) {
+      const cc = {};
+      for (const c of data.creators) for (const x of ((c.profile || {}).categories || [])) cc[x] = (cc[x] || 0) + 1;
+      state.discoverCatCounts = cc;
+    }
+    paintDiscCatCounts();
+    syncDiscoverCatChips();
+    paintDiscCatBoxes();
     syncUniversityOptions(data.universities);
     if (!data.creators.length) {
       setDiscoverCount(0);
@@ -21007,7 +21198,7 @@ function discoverListHtml(list) {
 }
 function discoverStackCard(c) {
   const p = c.profile || {};
-  const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const initial = esc((c.name || "").trim().charAt(0).toUpperCase() || "S");
   const cats = (p.categories || []).slice(0, 3);
   const extra = (p.categories || []).length - cats.length;
   const place = [c.neighborhood, c.city].filter(Boolean).map(esc).join(" &middot; ");
@@ -24029,29 +24220,23 @@ async function adminMsgSendReply(e) {
 async function loadAdminHome137() {
   const el = document.getElementById("admin-home137");
   if (!el) return;
-  const grab = async (path) => { try { return await api("GET", path); } catch (e) { return null; } };
-  const [apps, marketsData, partnersData, totals] = await Promise.all([grab("/admin/applications"), grab("/admin/markets"), grab("/admin/partners"), grab("/admin/platform-totals")]);
-  if (!document.getElementById("admin-home137")) return;
-  const items = adminSigItems(apps, marketsData, partnersData);
-  const counts = adminSummaryCounts121(apps, marketsData, partnersData);
-  const queue = items.map((it) => ({ text: it.text, btn: it.btn, act: () => go("dashboard", it.tab) }));
-  state.sigQueue = queue;
-  state.sigQueueLinks = [];
-  state.sigQueueCount = queue.length;
-  const brief = items.length ? items[0].text : "Nothing needs a decision right now. Approvals, claims, activations, and partners are all caught up.";
+  // Build -138 (speed fix): this home used to await FIVE admin
+  // endpoints in one Promise.all and paint NOTHING until the
+  // slowest returned — on the live store the markets read can
+  // run long, so the landing sat on "Loading your home…"
+  // forever and only a sidebar click (a different tab, a
+  // different loader) ever woke it. The shell now paints
+  // IMMEDIATELY, and each section fills itself as its own data
+  // lands; a section that fails shows its own retry, never a
+  // page-wide stuck loader.
   const hour = localHourNow();
   const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const first = (state.user.name || "").trim().split(" ")[0] || "";
   el.innerHTML = `
     <div class="home-greet"><div class="hg-hi">${greet}${first ? `, ${esc(first)}` : ""}.</div></div>
-    ${sigHero137Html(brief)}
-    ${highlights137Html([
-      { label: "Waiting on your review", value: fmtNum(counts.waiting), tab: "Applications" },
-      { label: "Creators signed up", sub: "across all markets", value: fmtNum((totals && totals.creatorsSignedUp) || 0) },
-      { label: "Total followers", sub: "as reported by creators", value: fmtNum((totals && totals.totalFollowers) || 0) },
-      { label: "Claims today", value: fmtNum(counts.claimsToday), tab: "Applications" },
-    ])}
-    ${nextSteps137Html(queue, [])}
+    <div id="ah-sig">${sigHero137Html("Checking what needs you…")}</div>
+    <div id="ah-highlights">${skelHtml("Loading your numbers…", 1)}</div>
+    <div id="ah-steps"><div class="home-sec138"><div class="home-sec-t">Next steps</div><p class="small muted">Loading…</p></div></div>
     <div class="pv-tabs126" role="group" aria-label="Preview the app as another role">
       <span class="pv-tabs126-label">Preview as</span>
       <button type="button" class="pv-tab126" onclick="enterPreview()">Business</button>
@@ -24059,9 +24244,68 @@ async function loadAdminHome137() {
       <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('partner')">Partner</button>
     </div>
     <p id="pv-note126" class="small muted" role="status" style="margin:2px 0 10px"></p>`;
-  wireSigQueue(el, queue.slice(0, 3), []);
-  loadSigTopNudges();
   renderBottomNav();
+  const grab = async (path) => { try { return await api("GET", path); } catch (e) { return null; } };
+  const pApps = grab("/admin/applications");
+  const pMarkets = grab("/admin/markets");
+  const pPartners = grab("/admin/partners");
+  const pTotals = grab("/admin/platform-totals");
+  const pQueue = grab("/admin/approval-queue");
+  const homeAlive = () => !!document.getElementById("admin-home137");
+  const paintSteps = (apps, marketsData, partnersData, approvalQ) => {
+    const host = document.getElementById("ah-steps");
+    const sigHost = document.getElementById("ah-sig");
+    if (!host || !homeAlive()) return;
+    const items = adminSigItems(apps, marketsData, partnersData);
+    const aqRows = [];
+    if (approvalQ) {
+      if (approvalQ.marketingDrafts > 0) aqRows.push({ text: `${approvalQ.marketingDrafts} marketing email${approvalQ.marketingDrafts === 1 ? " is" : "s are"} waiting for your approval`, btn: "Review", tab: "Marketing" });
+      if (approvalQ.socialDrafts > 0) aqRows.push({ text: `${approvalQ.socialDrafts} social draft${approvalQ.socialDrafts === 1 ? " is" : "s are"} waiting for your approval`, btn: "Review", tab: "Social" });
+      if (approvalQ.teamInvites > 0) aqRows.push({ text: `${approvalQ.teamInvites} team invite${approvalQ.teamInvites === 1 ? " is" : "s are"} out, waiting to be accepted`, btn: "See team", tab: "Team" });
+    }
+    const queue = [...aqRows.map((r) => ({ text: r.text, btn: r.btn, act: () => go("dashboard", r.tab) })), ...items.map((it) => ({ text: it.text, btn: it.btn, act: () => go("dashboard", it.tab) }))];
+    state.sigQueue = queue;
+    state.sigQueueLinks = [];
+    state.sigQueueCount = queue.length;
+    const brief = items.length ? items[0].text : "Nothing needs a decision right now. Approvals, claims, activations, and partners are all caught up.";
+    if (sigHost) sigHost.innerHTML = sigHero137Html(brief);
+    host.innerHTML = nextSteps137Html(queue, []);
+    wireSigQueue(el, queue.slice(0, 3), []);
+  };
+  // Phase A — the decision content (queue + Sig brief) paints
+  // as soon as ITS endpoints land; it never waits on the
+  // heavy counts reads.
+  (async () => {
+    const [apps, partnersData, approvalQ] = await Promise.all([pApps, pPartners, pQueue]);
+    if (!homeAlive()) return;
+    if (!apps && !partnersData && !approvalQ) {
+      const sigHost = document.getElementById("ah-sig");
+      if (sigHost) sigHost.innerHTML = `<div class="panel"><strong>Your home could not load just now.</strong><p class="small muted">The platform did not answer. Nothing is lost — try again.</p><button type="button" class="btn small-btn" onclick="loadAdminHome137()">Retry</button></div>`;
+      const host = document.getElementById("ah-steps");
+      if (host) host.innerHTML = "";
+      return;
+    }
+    paintSteps(apps, null, partnersData, approvalQ);
+    loadSigTopNudges();
+    // Phase B — when the markets read lands, market-shaped
+    // steps join the queue (a re-paint with the full picture).
+    const marketsData = await pMarkets;
+    if (marketsData && homeAlive()) paintSteps(apps, marketsData, partnersData, approvalQ);
+  })();
+  // Highlights fill independently, off the totals + queue reads.
+  (async () => {
+    const [apps, totals] = await Promise.all([pApps, pTotals]);
+    const host = document.getElementById("ah-highlights");
+    if (!host || !homeAlive()) return;
+    if (!apps && !totals) { host.innerHTML = `<p class="small muted">Your numbers could not load just now. <button type="button" class="btn small-btn ghost" onclick="loadAdminHome137()">Retry</button></p>`; return; }
+    const counts = adminSummaryCounts121(apps, null, null);
+    host.innerHTML = highlights137Html([
+      { label: "Waiting on your review", value: fmtNum(counts.waiting), tab: "Applications" },
+      { label: "Creators signed up", sub: "across all markets", value: fmtNum((totals && totals.creatorsSignedUp) || 0) },
+      { label: "Total followers", sub: "as reported by creators", value: fmtNum((totals && totals.totalFollowers) || 0) },
+      { label: "Claims today", value: fmtNum(counts.claimsToday), tab: "Applications" },
+    ]);
+  })();
 }
 
 function renderAdmin() {
@@ -24123,6 +24367,13 @@ function renderAdmin() {
   if (tab === "Compliance") loadCompliance();
   if (tab === "Campaign") loadCampaign();
   if (tab === "Stats") loadStats();
+  // Build -138 rooms.
+  if (tab === "Marketing") loadAdminMarketing138();
+  if (tab === "Learn") loadAdminLearn138();
+  if (tab === "Social") loadAdminSocial138();
+  if (tab === "Automations") loadAdminAutomations138();
+  if (tab === "Templates") loadAdminTemplates138();
+  if (tab === "Team") loadAdminTeam138();
 }
 
 // Admin "Your account" (Build -126): Jeff had no Settings
@@ -24317,6 +24568,664 @@ async function loadAdminSig(hostId) {
 // buttons and the destination rows navigate, and Jeff's taps on
 // those screens remain the only writes. The operator never runs
 // here (sigOpTry already refuses non-business/creator roles).
+// ================= Build -138 Admin rooms =================
+// Automations & connections, Marketing, Social, Team, Templates,
+// Learn. Each room reads its own endpoint; the server enforces
+// every permission again at the data layer, so a control a role
+// cannot use is simply not rendered for them.
+const a138 = { autoEntry: null, tplRef: null, teamMember: null, learnDraft: null, mkCampaign: null };
+function a138Err(el, e) { if (el) el.innerHTML = `<div class="error-box">${esc(e.message || String(e))}</div>`; }
+function a138When(iso) { if (!iso) return "never"; try { return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch (e) { return String(iso); } }
+
+// ---- Automations & connections ----
+async function loadAdminAutomations138() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const [auto, conn] = await Promise.all([api("GET", "/admin/automations"), api("GET", "/admin/connections")]);
+    const srcTag = (r) => r.source === "live" ? `<span class="a138-tag live">Live check</span>` : r.source === "record" ? `<span class="a138-tag">Record</span>` : `<span class="a138-tag note">Note · ${esc(r.asOf || "")}</span>`;
+    const connHtml = (conn.rows || []).map((r) => `<div class="a138-conn">
+      <div class="a138-conn-main"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.doesPlain)}</span>
+      <span class="a138-conn-state">${esc(r.state)}</span>${r.note ? `<span class="small muted">Note (${esc(r.note.asOf || "")}): ${esc(r.note.text)}</span>` : ""}</div>
+      <div class="a138-conn-side">${srcTag(r)}${conn.canManage ? `<button type="button" class="btn small-btn ghost" onclick="return a138ConnNote('${r.id}')">Note</button>` : ""}</div>
+    </div>`).join("");
+    const stateChip = (e) => e.state === "always_on" ? `<span class="a138-tag">Always on</span>` : e.state === "recipient" ? `<span class="a138-tag">On — follows their own settings</span>` : e.state === "off" ? `<span class="a138-tag off">Off</span>` : `<span class="a138-tag live">On</span>`;
+    const groupsHtml = (auto.groups || []).map((g) => `<h3 class="a138-h">${esc(g.name)}</h3>${g.entries.map((e) => `<div class="a138-row">
+      <div class="a138-row-main"><strong>${esc(e.name)}</strong><span class="small muted">${esc(e.trigger)} → ${esc(e.recipient)}</span>
+      ${e.envNote ? `<span class="small muted">${esc(e.envNote)}</span>` : ""}${e.overridden ? `<span class="small muted">Wording edited in Templates</span>` : ""}</div>
+      <div class="a138-row-side">${stateChip(e)}
+      ${e.state === "on" || e.state === "off" || e.state === "recipient" ? `<label class="tgl-row a138-tgl"><input type="checkbox" class="sw" ${e.state === "off" ? "" : "checked"} ${auto.canManage ? "" : "disabled"} onchange="return a138AutoToggle('${e.id}', this.checked)"><span>${e.state === "off" ? "Off" : "On"}</span></label>` : ""}
+      <button type="button" class="btn small-btn ghost" onclick="return a138AutoOpen('${e.id}')">Open</button></div>
+    </div>`).join("")}`).join("");
+    el.innerHTML = `<h3>Automations & connections</h3>
+    <p class="muted">Every email and text SIGNL sends on its own, what sets it off, and its switch. The ones that keep people in their accounts — password reset, sign-in link, approval, account deletion — can never be turned off. Last checked ${a138When(auto.generatedAt)}.</p>
+    <div class="panel"><h4 style="margin-top:0">Connections</h4>${connHtml}</div>
+    <div id="a138-auto-detail"></div>
+    ${groupsHtml}`;
+    if (a138.autoEntry) a138AutoOpen(a138.autoEntry);
+  } catch (e) { a138Err(el, e); }
+}
+async function a138ConnNote(id) {
+  const text = prompt("Dated note for this connection (leave empty to clear):", "");
+  if (text === null) return false;
+  try { await api("POST", `/admin/connections/${id}/note`, { text }); showToast("Note saved"); loadAdminAutomations138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138AutoToggle(id, on) {
+  try { await api("POST", `/admin/automations/${id}/toggle`, { on }); showToast(on ? "Automation on" : "Automation off"); loadAdminAutomations138(); }
+  catch (e) { alert(e.message); loadAdminAutomations138(); }
+  return false;
+}
+async function a138AutoOpen(id) {
+  a138.autoEntry = id;
+  const box = document.getElementById("a138-auto-detail");
+  if (!box) return false;
+  box.innerHTML = `<div class="panel"><p class="muted">Loading…</p></div>`;
+  try {
+    const d = await api("GET", `/admin/automations/${id}`);
+    const e = d.entry;
+    const pv = d.preview || {};
+    box.innerHTML = `<div class="panel a138-detail">
+      <div class="a138-detail-head"><h4 style="margin:0">${esc(e.name)}</h4><button type="button" class="btn small-btn ghost" onclick="a138.autoEntry=null; document.getElementById('a138-auto-detail').innerHTML=''; return false;">Close</button></div>
+      <p class="small muted" style="margin:6px 0">${esc(e.trigger)} → ${esc(e.recipient)} · ${e.lane === "rail" ? "Text + email (notification rail)" : "Email"}</p>
+      ${d.lastSent ? `<p class="small">Last sent ${a138When(d.lastSent.at)}${d.lastSent.to ? ` to ${esc(d.lastSent.to)}` : ""}${d.lastSent.sandbox ? " (sandbox — recorded, not delivered)" : ""}</p>` : `<p class="small muted">No send recorded yet.</p>`}
+      ${pv.note ? `<div class="a138-notebox">${esc(pv.note)}</div>` : `<div class="a138-preview"><div class="a138-pv-k">Subject</div><div class="a138-pv-sub">${esc(pv.subject || "")}</div><div class="a138-pv-k">Email</div><pre class="a138-pv-body">${esc(pv.text || "")}</pre>${pv.sms ? `<div class="a138-pv-k">Text</div><pre class="a138-pv-body">${esc(pv.sms)}</pre>` : ""}</div>`}
+      ${d.overridden || pv.overridden ? `<p class="small muted">Showing the edited wording from Templates (v${pv.overrideVersion || (d.override && d.override.currentVersion) || ""}).</p>` : ""}
+      <div class="a138-actions">
+        ${d.canManage ? `<button type="button" class="btn small-btn" onclick="return a138AutoTest('${e.id}')">Send test to my inbox</button>` : ""}
+        <button type="button" class="btn small-btn ghost" onclick="return a138TplOpen('${e.templateRef}')">Edit wording in Templates</button>
+      </div>
+    </div>`;
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { a138Err(box, e); }
+  return false;
+}
+async function a138AutoTest(id) {
+  try { const r = await api("POST", `/admin/automations/${id}/test`, {}); showToast(r.sent ? `Test sent to ${r.to}` : `Test not sent: ${r.reason || "unknown"}`); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---- Template Studio ----
+async function loadAdminTemplates138() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const d = await api("GET", "/admin/templates");
+    const row = (t) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(t.name)}</strong><span class="small muted">${t.editLevel === "full" ? "Subject + body editable" : t.editLevel === "subject" ? "Subject line editable" : "View only"}${t.overridden ? ` · edited (v${t.currentVersion})` : ""}</span></div><div class="a138-row-side"><button type="button" class="btn small-btn ghost" onclick="return a138TplOpen('${t.refId}')">Open</button></div></div>`;
+    el.innerHTML = `<h3>Templates</h3>
+    <p class="muted">The wording behind SIGNL's emails, texts, posts and platform messages. The moving parts — links, names, booking details — are locked pieces inside the text and can't be edited away; a save that drops one is refused, in plain words.</p>
+    <div id="a138-tpl-detail"></div>
+    ${(d.automation || []).map((g) => `<h3 class="a138-h">${esc(g.name)}</h3>${g.entries.map(row).join("")}`).join("")}
+    <h3 class="a138-h">Your templates</h3>
+    ${(d.custom || []).length ? d.custom.map((t) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(t.name)}</strong><span class="small muted">${esc(t.kind.replace("_", " "))} · v${t.currentVersion}</span></div><div class="a138-row-side"><button type="button" class="btn small-btn ghost" onclick="return a138TplOpen('${t.refId}')">Open</button></div></div>`).join("") : `<p class="muted">None yet.</p>`}
+    ${d.canEdit ? `<div class="panel"><h4 style="margin-top:0">New template</h4>
+      <div class="a138-form"><select id="a138-tpl-kind"><option value="marketing">Marketing email</option><option value="social">Social post</option><option value="platform_message">Platform message</option></select>
+      <input type="text" id="a138-tpl-name" placeholder="Name it, e.g. Nashville spring push">
+      <button type="button" class="btn small-btn" onclick="return a138TplCreate()">Create</button></div>
+      <p class="small muted" style="margin:6px 0 0">A new automatic email can't be created here — those need a trigger built into the app first.</p></div>` : ""}`;
+    if (a138.tplRef) a138TplOpen(a138.tplRef);
+  } catch (e) { a138Err(el, e); }
+}
+async function a138TplCreate() {
+  const kind = document.getElementById("a138-tpl-kind").value;
+  const name = document.getElementById("a138-tpl-name").value;
+  try { const r = await api("POST", "/admin/templates", { kind, name, text: kind === "marketing" ? "Hi {firstName},\n\n\n\n{unsubscribeLine}" : "" }); a138.tplRef = r.template.refId; showToast("Template created"); loadAdminTemplates138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138TplOpen(refId) {
+  if (state.tab !== "Templates") { a138.tplRef = refId; return go("dashboard", "Templates"); }
+  a138.tplRef = refId;
+  const box = document.getElementById("a138-tpl-detail");
+  if (!box) return false;
+  box.innerHTML = `<div class="panel"><p class="muted">Loading…</p></div>`;
+  try {
+    const d = await api("GET", `/admin/templates/${refId}`);
+    const rec = d.record;
+    const cur = rec && rec.versions ? rec.versions.find((v) => v.v === rec.currentVersion) : null;
+    const editLevel = d.entry ? d.entry.editLevel : (rec ? rec.editLevel : "full");
+    const tokens = (d.entry && d.entry.requiredTokens) || (rec && rec.requiredTokens) || [];
+    const pv = d.preview;
+    box.innerHTML = `<div class="panel a138-detail">
+      <div class="a138-detail-head"><h4 style="margin:0">${esc(d.entry ? d.entry.name : (rec ? rec.displayName : refId))}</h4><button type="button" class="btn small-btn ghost" onclick="a138.tplRef=null; document.getElementById('a138-tpl-detail').innerHTML=''; return false;">Close</button></div>
+      ${d.entry && d.entry.lockedLine ? `<div class="a138-lockline">Locked line, always in this email: “${esc(d.entry.lockedLine)}”</div>` : ""}
+      ${tokens.length ? `<p class="small muted">Locked pieces that must stay in the text: ${tokens.map((t) => `<span class="a138-chip">{${t}}</span>`).join(" ")}</p>` : ""}
+      ${editLevel === "view" ? `<div class="a138-notebox">This one is view-only here — its wording is written where it fires in the app.</div>` : `
+      <div class="a138-form col">
+        ${editLevel !== "view" ? `<label class="small muted">Subject line</label><input type="text" id="a138-tpl-subject" value="${esc(cur ? (cur.subject || "") : (pv ? (pv.subject || "") : ""))}">` : ""}
+        ${editLevel === "full" ? `<label class="small muted">Text</label><textarea id="a138-tpl-text" rows="12">${esc(cur ? (cur.text || "") : "")}</textarea>` : `<p class="small muted">Only the subject line is editable for this one — the body is written where it fires, with the real details filled in.</p>`}
+        <label class="small muted">Why this edit (goes in the history)</label><input type="text" id="a138-tpl-note" placeholder="Optional">
+        <div class="a138-actions">
+          ${d.canEdit ? `<button type="button" class="btn small-btn" onclick="return a138TplSave('${refId}', '${editLevel}')">Save as the live wording</button>` : ""}
+          <button type="button" class="btn small-btn ghost" onclick="return a138TplTest('${refId}')">Send test to my inbox</button>
+        </div>
+      </div>`}
+      ${pv && !pv.note ? `<div class="a138-pv-k" style="margin-top:12px">Live preview</div><div class="a138-preview"><div class="a138-pv-sub">${esc(pv.subject || "")}</div><pre class="a138-pv-body">${esc(pv.text || pv.sms || "")}</pre></div>` : pv && pv.note ? `<div class="a138-notebox">${esc(pv.note)}</div>` : ""}
+      ${rec && rec.versions && rec.versions.length ? `<h4>History</h4>${rec.versions.slice().reverse().map((v) => `<div class="a138-row"><div class="a138-row-main"><strong>v${v.v}</strong><span class="small muted">${a138When(v.editedAt)}${v.note ? ` · ${esc(v.note)}` : ""}${v.v === rec.currentVersion ? " · live now" : ""}</span></div><div class="a138-row-side">${v.v !== rec.currentVersion && d.canEdit ? `<button type="button" class="btn small-btn ghost" onclick="return a138TplRollback('${refId}', ${v.v})">Roll back to this</button>` : ""}</div></div>`).join("")}${rec.archivedVersions ? `<p class="small muted">${rec.archivedVersions} older version${rec.archivedVersions === 1 ? "" : "s"} archived past the 25-version cap.</p>` : ""}` : ""}
+    </div>`;
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { a138Err(box, e); }
+  return false;
+}
+async function a138TplSave(refId, editLevel) {
+  const subject = document.getElementById("a138-tpl-subject");
+  const text = document.getElementById("a138-tpl-text");
+  const note = document.getElementById("a138-tpl-note");
+  try {
+    await api("POST", `/admin/templates/${refId}/versions`, { subject: subject ? subject.value : null, text: text ? text.value : "", note: note ? note.value : null });
+    showToast("Saved — that's the wording that sends now");
+    a138TplOpen(refId);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function a138TplRollback(refId, v) {
+  try { await api("POST", `/admin/templates/${refId}/rollback`, { v }); showToast(`Rolled back to v${v}`); a138TplOpen(refId); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138TplTest(refId) {
+  try { const r = await api("POST", `/admin/templates/${refId}/test`, {}); showToast(r.sent ? `Test sent to ${r.to}` : `Test not sent: ${r.reason || "unknown"}`); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---- Marketing ----
+async function loadAdminMarketing138() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const d = await api("GET", "/admin/marketing");
+    const statusLabel = { draft: "Draft", in_review: "Waiting for approval", changes_requested: "Changes requested", approved: "Approved", scheduled: "Scheduled", sending: "Sending", sent: "Sent" };
+    const channelLabel = { email: "Email", platform: "In-app message", sms: "Text message" };
+    const campRow = (c) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(c.subject)}</strong><span class="small muted">${channelLabel[c.channel || "email"]} · ${statusLabel[c.status] || c.status} · by ${esc(c.authorName || "—")}${c.approverName ? ` · approved by ${esc(c.approverName)}` : ""}${c.recipientCount != null ? ` · ${c.recipientCount} recipients` : ""}${c.runAt ? ` · runs ${a138When(c.runAt)}` : ""}${c.sentAt ? ` · sent ${a138When(c.sentAt)}` : ""}</span>
+      ${c.changesNote ? `<span class="small muted">Changes asked: ${esc(c.changesNote)}</span>` : ""}
+      ${c.channel === "sms" && c.status !== "sent" && d.sms && !d.sms.connected ? `<span class="small muted">${esc(d.sms.note)}</span>` : ""}
+      ${c.results ? `<span class="small">Result: ${c.results.sent} sent · ${c.results.failed} failed · ${c.results.excluded} dropped at send time (deleted, unsubscribed or tester)</span>` : ""}</div>
+      <div class="a138-row-side a138-actions">
+        ${(c.status === "draft" || c.status === "changes_requested") && d.canDraft ? `<button type="button" class="btn small-btn ghost" onclick="return a138MkEdit('${c.id}')">Edit</button><button type="button" class="btn small-btn" onclick="return a138MkAct('${c.id}','submit')">Send for approval</button>` : ""}
+        ${c.status === "in_review" && d.canApprove ? `<button type="button" class="btn small-btn" onclick="return a138MkAct('${c.id}','approve')">Approve</button><button type="button" class="btn small-btn ghost" onclick="return a138MkChanges('${c.id}')">Request changes</button>` : ""}
+        ${c.status === "approved" && d.canApprove ? `<button type="button" class="btn small-btn" onclick="return a138MkAct('${c.id}','send')">Send now</button>${c.channel !== "sms" ? `<input type="datetime-local" id="a138-mk-when-${c.id}"><button type="button" class="btn small-btn ghost" onclick="return a138MkSchedule('${c.id}')">Schedule</button>` : ""}` : ""}
+      </div></div>`;
+    el.innerHTML = `<h3>Marketing</h3>
+    <p class="muted">Messages to SIGNL's own lists — email from ${esc(d.from)}, an in-app message in their SIGNL Messages, or a text. The audience can be any market, or any city where sign-ups are gathering before launch. Nothing here sends itself: a person writes it, a second person approves it, and the send button is a human press. Today: ${d.sentToday} emails sent across SIGNL's lists · ceiling ${d.dailyCeiling}. Deleted accounts are erased from SIGNL entirely, so they can never be on a list; ${d.suppressionCount} address${d.suppressionCount === 1 ? "" : "es"} on the suppression list are always left out.</p>
+    <p class="small muted">Looking for the founding outreach campaign? That's its own room: <a href="#" onclick="return go('dashboard','Campaign')">open Campaign</a>.</p>
+    <div id="a138-mk-detail"></div>
+    ${d.canDraft ? `<div class="panel"><h4 style="margin-top:0">Write a campaign</h4>
+      <div class="a138-form col">
+        <label class="small muted">How it reaches them</label>
+        <div class="a138-checks">
+          <label><input type="radio" name="a138-mk-channel" value="email" checked onchange="a138MkChannel()"> Email</label>
+          <label><input type="radio" name="a138-mk-channel" value="platform" onchange="a138MkChannel()"> In-app message (creators)</label>
+          <label><input type="radio" name="a138-mk-channel" value="sms" onchange="a138MkChannel()"> Text message</label>
+        </div>
+        <div class="small muted" id="a138-mk-smsnote" style="display:none">${esc(d.sms ? d.sms.note : "")}</div>
+        <label class="small muted">Who gets it</label>
+        <select id="a138-mk-segment">${(d.segments || []).map((s) => `<option value="${esc(JSON.stringify(s.spec))}">${esc(s.label)} — ${s.count} people</option>`).join("")}</select>
+        <div class="small muted" id="a138-mk-segcount"></div>
+        <div id="a138-mk-subject-row"><label class="small muted">Subject</label><input type="text" id="a138-mk-subject" placeholder="Subject line"></div>
+        <label class="small muted">Message — {firstName} fills itself in per person<span id="a138-mk-unsub-note">; the unsubscribe line is added to emails if you leave it out</span></label>
+        <textarea id="a138-mk-text" rows="9" placeholder="Hi {firstName},&#10;&#10;..."></textarea>
+        <div class="a138-actions"><button type="button" class="btn small-btn" onclick="return a138MkCreate()">Save draft</button></div>
+      </div></div>` : ""}
+    <h3 class="a138-h">Campaigns</h3>
+    ${(d.campaigns || []).length ? d.campaigns.map(campRow).join("") : `<p class="muted">No campaigns yet.</p>`}
+    ${d.canApprove ? `<div class="panel"><h4 style="margin-top:0">Suppression list</h4>
+      <p class="small muted">These addresses never get marketing email, whatever the segment says. Someone lands here when they reply asking to be taken off.</p>
+      <div class="a138-form"><input type="email" id="a138-mk-sup-email" placeholder="address@example.com"><button type="button" class="btn small-btn" onclick="return a138MkSuppress()">Add</button></div>
+      <p class="small muted" style="margin-top:8px">${(d.suppression || []).map(esc).join(", ") || "Empty."}</p></div>` : ""}`;
+    const segSel = document.getElementById("a138-mk-segment");
+    if (segSel) { segSel.addEventListener("change", () => a138MkSegCount()); a138MkSegCount(); }
+    if (a138.mkCampaign) a138MkEdit(a138.mkCampaign);
+  } catch (e) { a138Err(el, e); }
+}
+function a138MkChannel() {
+  const ch = (document.querySelector('input[name="a138-mk-channel"]:checked') || {}).value || "email";
+  const subj = document.getElementById("a138-mk-subject-row");
+  if (subj) subj.style.display = ch === "email" ? "" : "none";
+  const unsub = document.getElementById("a138-mk-unsub-note");
+  if (unsub) unsub.style.display = ch === "email" ? "" : "none";
+  const sms = document.getElementById("a138-mk-smsnote");
+  if (sms) sms.style.display = ch === "sms" ? "" : "none";
+  return false;
+}
+async function a138MkSegCount() {
+  const sel = document.getElementById("a138-mk-segment");
+  const out = document.getElementById("a138-mk-segcount");
+  if (!sel || !out) return;
+  try {
+    const spec = JSON.parse(sel.value);
+    const r = await api("POST", "/admin/marketing/segment-count", { segment: spec });
+    out.textContent = `That list is ${r.count} people after exclusions (${r.suppressed} suppressed, ${r.testers} testers left out).`;
+  } catch (e) { out.textContent = ""; }
+}
+async function a138MkCreate() {
+  const spec = JSON.parse(document.getElementById("a138-mk-segment").value);
+  const channel = (document.querySelector('input[name="a138-mk-channel"]:checked') || {}).value || "email";
+  const subject = document.getElementById("a138-mk-subject").value;
+  const text = document.getElementById("a138-mk-text").value;
+  try { await api("POST", "/admin/marketing/campaigns", { segment: spec, subject, text, channel }); showToast("Draft saved"); loadAdminMarketing138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138MkEdit(id) {
+  a138.mkCampaign = id;
+  const box = document.getElementById("a138-mk-detail");
+  if (!box) return false;
+  try {
+    const d = await api("GET", `/admin/marketing/campaigns/${id}`);
+    const c = d.campaign;
+    const chLabel = { email: "Email", platform: "In-app message", sms: "Text message" }[c.channel || "email"];
+    box.innerHTML = `<div class="panel a138-detail"><div class="a138-detail-head"><h4 style="margin:0">${esc(c.subject)}</h4><button type="button" class="btn small-btn ghost" onclick="a138.mkCampaign=null; document.getElementById('a138-mk-detail').innerHTML=''; return false;">Close</button></div>
+    <p class="small muted" style="margin-top:0">${chLabel}${c.segment && c.segment.cityLabel ? ` · ${esc(c.segment.cityLabel)}` : ""}</p>
+    <div class="a138-form col">
+      ${(c.channel || "email") === "email" ? `<label class="small muted">Subject</label><input type="text" id="a138-mk-e-subject" value="${esc(c.subject)}">` : ""}
+      <label class="small muted">Message</label><textarea id="a138-mk-e-text" rows="10">${esc(c.text)}</textarea>
+      <div class="a138-actions"><button type="button" class="btn small-btn" onclick="return a138MkUpdate('${c.id}')">Save edits</button></div>
+    </div>
+    ${(d.recipients || []).length ? `<h4>Recipients</h4><div class="a138-recips">${d.recipients.map((r) => `<div class="small">${esc(r.email || r.userId)} — ${esc(r.status)}${r.reason ? ` (${esc(r.reason)})` : ""}</div>`).join("")}</div>` : ""}
+    </div>`;
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { a138Err(box, e); }
+  return false;
+}
+async function a138MkUpdate(id) {
+  try {
+    const subjEl = document.getElementById("a138-mk-e-subject");
+    await api("POST", `/admin/marketing/campaigns/${id}/update`, { subject: subjEl ? subjEl.value : undefined, text: document.getElementById("a138-mk-e-text").value });
+    showToast("Saved"); a138.mkCampaign = null; loadAdminMarketing138();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function a138MkAct(id, action) {
+  try { const r = await api("POST", `/admin/marketing/campaigns/${id}/${action}`, {}); if (action === "send") showToast(r.campaign.channel === "platform" ? `Sent: ${r.campaign.results ? r.campaign.results.sent : 0} in-app messages` : `Sent: ${r.campaign.results ? r.campaign.results.sent : 0} emails`); else showToast("Done"); a138.mkCampaign = null; loadAdminMarketing138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138MkChanges(id) {
+  const note = prompt("What needs to change?", "");
+  if (note === null) return false;
+  try { await api("POST", `/admin/marketing/campaigns/${id}/changes`, { note }); showToast("Sent back with your note"); loadAdminMarketing138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138MkSchedule(id) {
+  const when = document.getElementById(`a138-mk-when-${id}`);
+  if (!when || !when.value) { alert("Pick a date and time first."); return false; }
+  try { await api("POST", `/admin/marketing/campaigns/${id}/schedule`, { runAt: new Date(when.value).toISOString() }); showToast("Scheduled"); loadAdminMarketing138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138MkSuppress() {
+  const email = document.getElementById("a138-mk-sup-email").value;
+  try { await api("POST", "/admin/marketing/suppression", { email }); showToast("Added to the suppression list"); loadAdminMarketing138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---- Social ----
+async function loadAdminSocial138() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const d = await api("GET", "/admin/social");
+    const label = { instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn" };
+    const cards = (d.channels || []).map((ch) => {
+      const latest = ch.series && ch.series.length ? ch.series[ch.series.length - 1] : null;
+      return `<div class="a138-card"><h4>${label[ch.platform] || ch.platform}</h4>
+      <div class="a138-bignum">${latest && latest.followers != null ? fmtFull(latest.followers) : "—"}</div><div class="small muted">followers${latest ? ` · as of ${esc(latest.date)} (${esc(latest.source || "manual")})` : ""}</div>
+      <div class="small" style="margin-top:8px">${ch.totals.posts} posts on record · ${fmtFull(ch.totals.likes)} likes · ${fmtFull(ch.totals.comments)} comments · ${fmtFull(ch.totals.shares)} shares${ch.totals.unreported ? `<br><span class="muted">${ch.totals.unreported} post${ch.totals.unreported === 1 ? "" : "s"} where the platform didn't report numbers — counted as nothing, never guessed.</span>` : ""}</div>
+      <p class="small muted" style="margin-top:8px">${esc(ch.sourceNote)}</p></div>`;
+    }).join("");
+    const postRow = (p) => `<div class="a138-row"><div class="a138-row-main"><strong>${label[p.platform] || p.platform}</strong><span class="small muted">${p.postedAt ? a138When(p.postedAt) : "Queued"} · ${esc((p.text || "").slice(0, 140))}</span>
+      <span class="small">${p.metrics && (p.metrics.likes != null || p.metrics.comments != null) ? `${p.metrics.likes ?? "—"} likes · ${p.metrics.comments ?? "—"} comments · ${p.metrics.shares ?? "—"} shares` : "The platform didn't report this"}</span></div>
+      <div class="a138-row-side">${p.url ? `<a class="btn small-btn ghost" href="${esc(p.url)}" target="_blank" rel="noopener">Open</a>` : `<span class="a138-tag">In the queue</span>`}</div></div>`;
+    el.innerHTML = `<h3>Social</h3>
+    <p class="muted">What SIGNL has posted, channel by channel, and what it did. Drafts still need a second person's approval before they join the queue — and the queue still posts nothing without Jeff's say-so at post time.</p>
+    <div class="a138-cards">${cards}</div>
+    ${(d.queued || []).length ? `<h3 class="a138-h">Approved, in the post queue</h3>${d.queued.map(postRow).join("")}` : ""}
+    <h3 class="a138-h">Recent posts</h3>
+    ${(d.recent || []).length ? d.recent.map(postRow).join("") : `<p class="muted">No posts on record.</p>`}
+    ${d.canDraft ? `<div class="panel"><h4 style="margin-top:0">Draft a post</h4><div class="a138-form col">
+      <select id="a138-so-platform"><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="linkedin">LinkedIn</option></select>
+      <textarea id="a138-so-text" rows="4" placeholder="Write the post…"></textarea>
+      <input type="text" id="a138-so-link" placeholder="Link note (optional)">
+      <div class="a138-actions"><button type="button" class="btn small-btn" onclick="return a138SoDraft()">Save draft</button></div></div></div>
+    <div class="panel"><h4 style="margin-top:0">Add a post by hand (LinkedIn, or one the queue missed)</h4><div class="a138-form col">
+      <select id="a138-so-m-platform"><option value="linkedin">LinkedIn</option><option value="instagram">Instagram</option><option value="facebook">Facebook</option></select>
+      <input type="text" id="a138-so-m-url" placeholder="The post's link">
+      <textarea id="a138-so-m-text" rows="2" placeholder="What it said"></textarea>
+      <div class="a138-actions"><button type="button" class="btn small-btn" onclick="return a138SoManualPost()">Add post</button></div></div></div>
+    <div class="panel"><h4 style="margin-top:0">Type in a channel count</h4><div class="a138-form">
+      <select id="a138-so-c-platform"><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="linkedin">LinkedIn</option></select>
+      <input type="date" id="a138-so-c-date"><input type="number" id="a138-so-c-followers" placeholder="Followers">
+      <button type="button" class="btn small-btn" onclick="return a138SoMetric()">Save count</button></div></div>` : ""}
+    ${(d.drafts || []).length ? `<h3 class="a138-h">Drafts waiting</h3>${d.drafts.map((dr) => `<div class="a138-row"><div class="a138-row-main"><strong>${label[dr.platform] || dr.platform}</strong><span class="small muted">${a138When(dr.createdAt)} · by ${esc(dr.authorName || "—")}</span><span class="small">${esc(dr.text)}</span></div><div class="a138-row-side">${d.canApprove ? `<button type="button" class="btn small-btn" onclick="return a138SoApprove('${dr.id}')">Approve into the queue</button>` : ""}</div></div>`).join("")}` : ""}`;
+  } catch (e) { a138Err(el, e); }
+}
+async function a138SoDraft() {
+  try {
+    await api("POST", "/admin/social/drafts", { platform: document.getElementById("a138-so-platform").value, text: document.getElementById("a138-so-text").value, linkNote: document.getElementById("a138-so-link").value });
+    showToast("Draft saved — it needs an approver before it queues"); loadAdminSocial138();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function a138SoApprove(id) {
+  try { await api("POST", `/admin/social/drafts/${id}/approve`, {}); showToast("Approved — it's in the post queue"); loadAdminSocial138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138SoManualPost() {
+  try {
+    await api("POST", "/admin/social/posts", { platform: document.getElementById("a138-so-m-platform").value, url: document.getElementById("a138-so-m-url").value, text: document.getElementById("a138-so-m-text").value });
+    showToast("Post added"); loadAdminSocial138();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function a138SoMetric() {
+  const f = document.getElementById("a138-so-c-followers").value;
+  try {
+    await api("POST", "/admin/social/metrics", { platform: document.getElementById("a138-so-c-platform").value, date: document.getElementById("a138-so-c-date").value, followers: f === "" ? null : Number(f) });
+    showToast("Count saved"); loadAdminSocial138();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---- Team & permissions ----
+async function loadAdminTeam138() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const d = await api("GET", "/admin/team");
+    a138.teamData = d;
+    const memberRow = (m) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(m.name || m.email)}</strong><span class="small muted">${esc(m.email)} · ${esc(m.templateLabel)}${m.super ? "" : ` · ${m.markets ? `Markets: ${m.markets.map(esc).join(", ")}` : "All markets"}`} · last active ${m.lastActiveAt ? a138When(m.lastActiveAt) : "never"}${m.status === "revoked" ? " · REVOKED" : ""}</span></div>
+      <div class="a138-row-side a138-actions">
+        ${!m.super && m.status !== "revoked" ? `<button type="button" class="btn small-btn ghost" onclick="return a138TeamPerms('${m.id}')">Permissions</button><button type="button" class="btn small-btn ghost" onclick="return a138TeamActivity('${m.id}')">Activity</button><button type="button" class="btn small-btn ghost" onclick="return a138TeamAct('${m.id}','resend')">Resend invite</button>${!m.isYou ? `<button type="button" class="btn small-btn ghost" onclick="return a138TeamAct('${m.id}','revoke')">Revoke</button>` : ""}` : ""}
+        ${m.super ? `<span class="a138-tag">Super admin</span>` : ""}
+      </div></div>`;
+    el.innerHTML = `<h3>Team & permissions</h3>
+    <p class="muted">Invite a person, pick the job they do, and they see only those rooms and those markets — everywhere else simply isn't in their account. Money numbers stay Jeff-only unless a role says otherwise. Changing someone takes effect on their next page load; revoking works right now.</p>
+    <div id="a138-team-detail"></div>
+    <h3 class="a138-h">People</h3>
+    ${(d.members || []).map(memberRow).join("")}
+    ${(d.invites || []).length ? `<h3 class="a138-h">Invites out (48 hours to accept)</h3>${d.invites.map((i) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(i.name || i.email)}</strong><span class="small muted">${esc(i.email)} · expires ${a138When(i.expiresAt)}</span></div></div>`).join("")}` : ""}
+    <div class="panel"><h4 style="margin-top:0">Invite a teammate</h4><div class="a138-form col">
+      <input type="text" id="a138-tm-name" placeholder="Their name">
+      <input type="email" id="a138-tm-email" placeholder="Their email">
+      <label class="small muted">Their job</label>
+      <select id="a138-tm-template">${(d.templates || []).map((t) => `<option value="${t.id}">${esc(t.label)} — ${esc(t.blurb)}</option>`).join("")}<option value="">Custom — tick the boxes myself</option></select>
+      <div id="a138-tm-custom" style="display:none">${a138FlagChecks138(d, null)}</div>
+      <label class="small muted">Markets (none ticked = all markets)</label>
+      <div class="a138-checks">${(d.markets || []).map((m) => `<label class="ckrow"><input type="checkbox" class="ckbox" data-tm-market="${esc(m)}"> ${esc(m)}</label>`).join("")}</div>
+      <div class="a138-actions"><button type="button" class="btn small-btn" onclick="return a138TeamInvite()">Send invite</button></div>
+    </div></div>
+    <div class="panel"><h4 style="margin-top:0">Role templates</h4><p class="small muted">The starting points above. Editing one changes future invites only — nobody's current access moves.</p>
+    <div class="a138-form"><select id="a138-tm-tpl-edit">${(d.templates || []).map((t) => `<option value="${t.id}">${esc(t.label)}</option>`).join("")}</select><button type="button" class="btn small-btn ghost" onclick="return a138TeamTplLoad()">Edit this template</button></div>
+    <div id="a138-tm-tpl-box"></div></div>`;
+    const sel = document.getElementById("a138-tm-template");
+    if (sel) sel.addEventListener("change", () => { document.getElementById("a138-tm-custom").style.display = sel.value ? "none" : "block"; });
+  } catch (e) { a138Err(el, e); }
+}
+function a138FlagChecks138(d, current) {
+  const flags = current && current.flags ? current.flags : [];
+  const scopes = current && current.statScopes ? current.statScopes : [];
+  return `<label class="small muted">What they can do</label><div class="a138-checks">${(d.flagReference || []).map((f) => `<label class="ckrow"><input type="checkbox" class="ckbox" data-flag="${esc(f.flag)}" ${flags.includes(f.flag) ? "checked" : ""}> ${esc(f.label)}</label>`).join("")}</div>
+  <label class="small muted">If they can see Stats, which parts</label><div class="a138-checks">${(d.statScopeReference || []).map((s) => `<label class="ckrow"><input type="checkbox" class="ckbox" data-scope="${esc(s.scope)}" ${scopes.includes(s.scope) ? "checked" : ""}> ${esc(s.label)}</label>`).join("")}</div>`;
+}
+function a138ReadChecks138(root) {
+  const flags = [...root.querySelectorAll("[data-flag]:checked")].map((i) => i.getAttribute("data-flag"));
+  const scopes = [...root.querySelectorAll("[data-scope]:checked")].map((i) => i.getAttribute("data-scope"));
+  return { flags, scopes };
+}
+async function a138TeamInvite() {
+  const name = document.getElementById("a138-tm-name").value;
+  const email = document.getElementById("a138-tm-email").value;
+  const template = document.getElementById("a138-tm-template").value;
+  const markets = [...document.querySelectorAll("[data-tm-market]:checked")].map((i) => i.getAttribute("data-tm-market"));
+  const body = { name, email, markets };
+  if (template) body.template = template;
+  else { const c = a138ReadChecks138(document.getElementById("a138-tm-custom")); body.flags = c.flags; body.statScopes = c.scopes; }
+  try { const r = await api("POST", "/admin/team/invite", body); showToast(r.emailSent ? "Invite sent" : "Teammate created — the invite email did not send; use Resend invite"); loadAdminTeam138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138TeamPerms(id) {
+  const d = a138.teamData;
+  const m = (d.members || []).find((x) => x.id === id);
+  const box = document.getElementById("a138-team-detail");
+  if (!m || !box) return false;
+  box.innerHTML = `<div class="panel a138-detail"><div class="a138-detail-head"><h4 style="margin:0">${esc(m.name || m.email)} — permissions</h4><button type="button" class="btn small-btn ghost" onclick="document.getElementById('a138-team-detail').innerHTML=''; return false;">Close</button></div>
+  <div id="a138-tm-perm-box">${a138FlagChecks138(d, m)}</div>
+  <label class="small muted">Markets (none ticked = all markets)</label>
+  <div class="a138-checks">${(d.markets || []).map((mk) => `<label class="ckrow"><input type="checkbox" class="ckbox" data-pm-market="${esc(mk)}" ${m.markets && m.markets.includes(mk) ? "checked" : ""}> ${esc(mk)}</label>`).join("")}</div>
+  <div class="a138-actions"><button type="button" class="btn small-btn" onclick="return a138TeamPermsSave('${id}')">Save permissions</button></div></div>`;
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+  return false;
+}
+async function a138TeamPermsSave(id) {
+  const box = document.getElementById("a138-team-detail");
+  const c = a138ReadChecks138(box);
+  const markets = [...box.querySelectorAll("[data-pm-market]:checked")].map((i) => i.getAttribute("data-pm-market"));
+  try { await api("POST", `/admin/team/${id}/permissions`, { flags: c.flags, statScopes: c.scopes, markets }); showToast("Permissions saved — they apply on their next page load"); loadAdminTeam138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138TeamActivity(id) {
+  const box = document.getElementById("a138-team-detail");
+  if (!box) return false;
+  box.innerHTML = `<div class="panel"><p class="muted">Loading…</p></div>`;
+  try {
+    const d = await api("GET", `/admin/team/${id}/activity`);
+    box.innerHTML = `<div class="panel a138-detail"><div class="a138-detail-head"><h4 style="margin:0">Their recent actions</h4><button type="button" class="btn small-btn ghost" onclick="document.getElementById('a138-team-detail').innerHTML=''; return false;">Close</button></div>
+    ${(d.events || []).length ? d.events.map((e) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(e.type)}</strong><span class="small muted">${a138When(e.at || e.createdAt)}</span></div></div>`).join("") : `<p class="muted">Nothing yet.</p>`}</div>`;
+  } catch (e) { a138Err(box, e); }
+  return false;
+}
+async function a138TeamAct(id, action) {
+  if (action === "revoke" && !confirm("Revoke this person's admin access right now? Their sessions end immediately.")) return false;
+  try { await api("POST", `/admin/team/${id}/${action}`, {}); showToast(action === "revoke" ? "Access revoked" : "Invite resent"); loadAdminTeam138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+function a138TeamTplLoad() {
+  const d = a138.teamData;
+  const id = document.getElementById("a138-tm-tpl-edit").value;
+  const t = (d.templates || []).find((x) => x.id === id);
+  const box = document.getElementById("a138-tm-tpl-box");
+  if (!t || !box) return false;
+  box.innerHTML = `<div id="a138-tm-tpl-form">${a138FlagChecks138(d, t)}</div><div class="a138-actions" style="margin-top:8px"><button type="button" class="btn small-btn" onclick="return a138TeamTplSave('${id}')">Save template</button></div>`;
+  return false;
+}
+async function a138TeamTplSave(id) {
+  const d = a138.teamData;
+  const c = a138ReadChecks138(document.getElementById("a138-tm-tpl-form"));
+  const templates = {};
+  for (const t of d.templates || []) templates[t.id] = { label: t.label, blurb: t.blurb, flags: t.flags, statScopes: t.statScopes };
+  templates[id] = { ...templates[id], flags: c.flags, statScopes: c.scopes };
+  try { await api("PUT", "/admin/team/templates", { templates }); showToast("Template saved — future invites only"); loadAdminTeam138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---- Learn Studio ----
+async function loadAdminLearn138() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const d = await api("GET", "/admin/learn");
+    a138.learnData = d;
+    el.innerHTML = `<h3>Learn studio</h3>
+    <p class="muted">Write for the Learn magazine here; publishing runs the same daily pipeline the magazine already uses — same index builder, same one-article-one-photo rule. Nothing publishes from a draft without the publish step.</p>
+    <div id="a138-ln-detail"></div>
+    ${d.canEdit ? `<div class="a138-actions" style="margin-bottom:10px"><button type="button" class="btn small-btn" onclick="return a138LearnEdit(null)">New article draft</button></div>` : ""}
+    ${(d.drafts || []).length ? `<h3 class="a138-h">Drafts</h3>${d.drafts.map((dr) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(dr.headline || "(untitled)")}</strong><span class="small muted">${esc(dr.status)} · updated ${a138When(dr.updatedAt)}</span></div><div class="a138-row-side a138-actions">${d.canEdit ? `<button type="button" class="btn small-btn ghost" onclick="return a138LearnEdit('${dr.id}')">Edit</button>` : ""}${d.canPublish ? `<button type="button" class="btn small-btn" onclick="return a138LearnPublish('${dr.id}')">Publish</button>` : ""}</div></div>`).join("")}` : ""}
+    ${(d.jobs || []).length ? `<h3 class="a138-h">Publishing</h3>${d.jobs.map((j) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(j.slug)}</strong><span class="small muted">${esc(j.status)}${j.error ? ` · ${esc(j.error)}` : ""}</span></div><div class="a138-row-side">${j.url ? `<a class="btn small-btn ghost" href="${esc(j.url)}" target="_blank" rel="noopener">Open</a>` : ""}</div></div>`).join("")}` : ""}
+    <h3 class="a138-h">The magazine (${(d.articles || []).length})</h3>
+    ${(d.articles || []).map((a) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(a.headline || a.slug)}</strong><span class="small muted">${esc(a.topic || "")} · ${esc(a.audience || "")} · ${esc(a.publishedAt || "")} · photo: ${esc(a.heroImage || "none")}</span></div><div class="a138-row-side">${a.url ? `<a class="btn small-btn ghost" href="${esc(a.url)}" target="_blank" rel="noopener">Read</a>` : ""}</div></div>`).join("")}`;
+    if (a138.learnDraft) a138LearnEdit(a138.learnDraft);
+  } catch (e) { a138Err(el, e); }
+}
+function a138LearnEdit(id) {
+  const d = a138.learnData || { photos: [], photoUsedBy: {}, drafts: [] };
+  const dr = id ? (d.drafts || []).find((x) => x.id === id) : null;
+  a138.learnDraft = id;
+  const box = document.getElementById("a138-ln-detail");
+  if (!box) return false;
+  const sections = dr && dr.sections && dr.sections.length ? dr.sections : [{ heading: "", paragraphs: [""] }];
+  a138.learnSections = sections.map((s) => ({ heading: s.heading || "", text: (s.paragraphs || []).join("\n\n") }));
+  const photoCell = (p) => {
+    const usedBy = (d.photoUsedBy || {})[p];
+    const mine = dr && dr.heroImage === p;
+    return `<button type="button" class="a138-photo${mine ? " on" : ""}" ${usedBy && !mine ? "disabled" : ""} onclick="return a138LearnPhoto('${p}')" title="${esc(p)}${usedBy ? ` — used by ${esc(usedBy)}` : ""}"><img src="https://joinsignl.com/assets/photos/${esc(p)}" alt="${esc(p)}" loading="lazy"><span>${usedBy && !mine ? "In use" : esc(p)}</span></button>`;
+  };
+  box.innerHTML = `<div class="panel a138-detail"><div class="a138-detail-head"><h4 style="margin:0">${dr ? "Edit draft" : "New article draft"}</h4><button type="button" class="btn small-btn ghost" onclick="a138.learnDraft=null; document.getElementById('a138-ln-detail').innerHTML=''; return false;">Close</button></div>
+  <div class="a138-form col">
+    <label class="small muted">Headline</label><input type="text" id="a138-ln-headline" value="${esc(dr ? dr.headline : "")}">
+    <label class="small muted">Dek — the one line under the headline, and its card text</label><input type="text" id="a138-ln-dek" value="${esc(dr ? dr.dek : "")}">
+    <label class="small muted">Lede — the opening paragraph</label><textarea id="a138-ln-lede" rows="3">${esc(dr ? dr.lede : "")}</textarea>
+    <div id="a138-ln-sections">${a138.learnSections.map((s, i) => `<div class="a138-ln-sec"><label class="small muted">Section ${i + 1} heading</label><input type="text" data-ln-sec-h="${i}" value="${esc(s.heading)}"><label class="small muted">Text (blank line between paragraphs)</label><textarea data-ln-sec-t="${i}" rows="5">${esc(s.text)}</textarea></div>`).join("")}</div>
+    <div class="a138-actions"><button type="button" class="btn small-btn ghost" onclick="return a138LearnAddSection()">Add a section</button></div>
+    <label class="small muted">Topic</label><input type="text" id="a138-ln-topic" value="${esc(dr ? dr.topic : "")}" placeholder="rates-and-pay, comped-visits, finding-work, working-with-creators, local-marketing, the-local-scene">
+    <label class="small muted">For</label><select id="a138-ln-audience"><option value="creators" ${dr && dr.audience === "creators" ? "selected" : ""}>Creators</option><option value="businesses" ${dr && dr.audience === "businesses" ? "selected" : ""}>Businesses</option><option value="both" ${dr && dr.audience === "both" ? "selected" : ""}>Both</option></select>
+    <label class="small muted">Byline</label><select id="a138-ln-author"><option value="standing" ${!dr || dr.authorLine !== "named" ? "selected" : ""}>By Jeff, Founder, SIGNL</option><option value="named" ${dr && dr.authorLine === "named" ? "selected" : ""}>By Jeff Rimmer, Founder, SIGNL</option></select>
+    <label class="small muted">Hero photo — every article gets its OWN photo; one already carrying another article can't be picked</label>
+    <input type="hidden" id="a138-ln-hero" value="${esc(dr ? dr.heroImage : "")}">
+    <div class="a138-photos">${(d.photos || []).map(photoCell).join("")}</div>
+    <div class="a138-actions">
+      <button type="button" class="btn small-btn" onclick="return a138LearnSave('${dr ? dr.id : ""}')">Save draft</button>
+      <button type="button" class="btn small-btn ghost" onclick="return a138LearnPreview('${dr ? dr.id : ""}')">Preview</button>
+    </div>
+    <div id="a138-ln-preview"></div>
+  </div></div>`;
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+  return false;
+}
+function a138LearnPhoto(p) {
+  document.getElementById("a138-ln-hero").value = p;
+  document.querySelectorAll(".a138-photo").forEach((b) => b.classList.toggle("on", b.title.startsWith(p)));
+  return false;
+}
+function a138LearnAddSection() {
+  const secs = a138LearnReadSections();
+  secs.push({ heading: "", paragraphs: [""] });
+  a138.learnSections = secs;
+  const cur = a138.learnDraft;
+  const keep = { headline: document.getElementById("a138-ln-headline").value, dek: document.getElementById("a138-ln-dek").value, lede: document.getElementById("a138-ln-lede").value, topic: document.getElementById("a138-ln-topic").value, heroImage: document.getElementById("a138-ln-hero").value };
+  const d = a138.learnData;
+  const drafts = (d.drafts || []).filter((x) => x.id !== cur);
+  drafts.push({ id: cur || "__new", headline: keep.headline, dek: keep.dek, lede: keep.lede, topic: keep.topic, heroImage: keep.heroImage, sections: secs, audience: document.getElementById("a138-ln-audience").value, authorLine: document.getElementById("a138-ln-author").value });
+  d.drafts = drafts;
+  return a138LearnEdit(cur);
+}
+function a138LearnReadSections() {
+  const out = [];
+  document.querySelectorAll("[data-ln-sec-h]").forEach((h) => {
+    const i = h.getAttribute("data-ln-sec-h");
+    const t = document.querySelector(`[data-ln-sec-t="${i}"]`);
+    out.push({ heading: h.value, paragraphs: (t ? t.value : "").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean) });
+  });
+  return out.length ? out : [{ heading: "", paragraphs: [""] }];
+}
+async function a138LearnSave(id) {
+  const body = {
+    id: id || undefined,
+    headline: document.getElementById("a138-ln-headline").value,
+    dek: document.getElementById("a138-ln-dek").value,
+    lede: document.getElementById("a138-ln-lede").value,
+    sections: a138LearnReadSections(),
+    heroImage: document.getElementById("a138-ln-hero").value,
+    topic: document.getElementById("a138-ln-topic").value,
+    audience: document.getElementById("a138-ln-audience").value,
+    authorLine: document.getElementById("a138-ln-author").value,
+  };
+  try { const r = await api("POST", "/admin/learn/drafts", body); a138.learnDraft = r.draft.id; showToast("Draft saved"); loadAdminLearn138(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function a138LearnPreview(id) {
+  if (!id) { alert("Save the draft first, then preview it."); return false; }
+  const box = document.getElementById("a138-ln-preview");
+  try {
+    const r = await api("POST", `/admin/learn/drafts/${id}/preview`, {});
+    box.innerHTML = `<iframe class="a138-frame" title="Article preview" srcdoc="${esc(r.html)}"></iframe>`;
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function a138LearnPublish(id) {
+  try {
+    const r = await api("POST", "/admin/learn/publish", { draftId: id });
+    showToast(`Publishing queued for ${r.job.slug} — the publisher runs it through the magazine pipeline`);
+    loadAdminLearn138();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---- Stats: Website section (Build -138) ----
+function a138IsoDay(d) { return d.toISOString().slice(0, 10); }
+async function loadWebsiteStats138() {
+  const el = document.getElementById("website-stats138");
+  if (!el) return;
+  if (!a138.web) { const now = new Date(); a138.web = { from: a138IsoDay(new Date(now.getTime() - 27 * 864e5)), to: a138IsoDay(now), group: "all", compare: false }; }
+  const w = a138.web;
+  el.innerHTML = `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Website</h3>
+  <p class="small muted" style="margin:0 0 10px">Traffic on joinsignl.com itself — the pages businesses and creators read before they sign up. Its own dates: the platform filters above don't move these numbers.</p>
+  <div class="a138-form">
+    <label class="small muted">From <input type="date" id="a138-web-from" value="${w.from}"></label>
+    <label class="small muted">To <input type="date" id="a138-web-to" value="${w.to}"></label>
+    <label class="small muted">Pages <select id="a138-web-group"><option value="all" ${w.group === "all" ? "selected" : ""}>Whole site</option><option value="marketing" ${w.group === "marketing" ? "selected" : ""}>Marketing pages</option><option value="learn" ${w.group === "learn" ? "selected" : ""}>Learn magazine</option><option value="app" ${w.group === "app" ? "selected" : ""}>The app</option></select></label>
+    <label class="ckrow"><input type="checkbox" class="ckbox" id="a138-web-compare" ${w.compare ? "checked" : ""}> Compare with the period before</label>
+    <button type="button" class="btn small-btn" onclick="return a138WebGo()">Show</button>
+  </div>
+  <div id="a138-web-body"><p class="muted">Loading…</p></div></div>`;
+  await a138WebLoad();
+}
+async function a138WebGo() {
+  a138.web.from = document.getElementById("a138-web-from").value || a138.web.from;
+  a138.web.to = document.getElementById("a138-web-to").value || a138.web.to;
+  a138.web.group = document.getElementById("a138-web-group").value;
+  a138.web.compare = document.getElementById("a138-web-compare").checked;
+  await a138WebLoad();
+  return false;
+}
+async function a138WebLoad() {
+  const box = document.getElementById("a138-web-body");
+  if (!box) return;
+  const w = a138.web;
+  box.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const qs = new URLSearchParams({ from: w.from, to: w.to, group: w.group });
+    if (w.compare) qs.set("compare", "prev");
+    const d = await api("GET", `/admin/stats/website?${qs.toString()}`);
+    if (!d.connected) {
+      box.innerHTML = `<p class="small" style="margin-top:10px">${esc(d.note || "Website numbers aren't connected yet.")}</p>${d.asOf ? `<p class="small muted">As of ${esc(d.asOf)}.</p>` : ""}`;
+      return;
+    }
+    const delta = (key) => {
+      if (!d.deltas || d.deltas[key] == null) return "";
+      const v = d.deltas[key];
+      return `<div class="small ${v >= 0 ? "" : "muted"}">${v >= 0 ? "▲" : "▼"} ${Math.abs(v)}% vs the period before</div>`;
+    };
+    const cell = (label, val, key) => `<div class="stat-cell"><div class="stat-num">${fmtFull(val || 0)}</div><div class="stat-lbl">${label}</div>${delta(key)}</div>`;
+    box.innerHTML = `<div class="stat-band" style="margin-top:10px">${cell("Sessions", d.totals.sessions, "sessions")}${cell("People", d.totals.users, "users")}${cell("New people", d.totals.newUsers, "newUsers")}${cell("Page views", d.totals.pageViews, "pageViews")}${cell("Sign-ups", d.totals.conversions, "conversions")}</div>
+    ${d.totals.conversions === 0 ? `<p class="small muted">No sign-ups recorded in this window yet.</p>` : ""}
+    <div class="a138-2col">
+    <div><h4>Top pages</h4>${(d.topPages || []).length ? d.topPages.map((p) => `<div class="kv"><span>${esc(p.path)}</span><b>${fmtFull(p.views)} views</b></div>`).join("") : `<p class="small muted">No page views recorded in this window yet.</p>`}</div>
+    <div><h4>Where they came from</h4>${(d.topSources || []).length ? d.topSources.map((s) => `<div class="kv"><span>${esc(s.source)}</span><b>${fmtFull(s.sessions)} sessions</b></div>`).join("") : `<p class="small muted">No visits recorded in this window yet.</p>`}</div>
+    </div>
+    <p class="small muted" style="margin-top:8px">From Google Analytics · ${esc(d.from)} to ${esc(d.to)}${d.cached ? " · cached copy" : ""}.</p>`;
+  } catch (e) {
+    if (e && /Website numbers are part of Stats/.test(e.message || "")) box.innerHTML = `<p class="small" style="margin-top:10px">${esc(e.message)}</p>`;
+    else box.innerHTML = `<p class="small" style="margin-top:10px">Could not check just now.</p>`;
+  }
+}
+
 function renderAdminSig() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -25153,7 +26062,20 @@ function renderAdminMarkets() {
           <label class="small" style="display:flex;align-items:center;gap:6px">Group <select id="admin-market-group" onchange="setAdminMarketGroup(this.value)"><option value="none"${group === "none" ? " selected" : ""}>Ungrouped</option><option value="country"${group === "country" ? " selected" : ""}>By country</option><option value="status"${group === "status" ? " selected" : ""}>By status</option></select></label>
         </span>
       </div>
-      ${sections.map((s) => `${s.title ? `<h3 style="margin:18px 0 10px">${esc(s.title)}</h3>` : ""}<div class="mkt-grid">${s.rs.map((r) => adminMarketCardHtml(r.m)).join("")}</div>`).join("")}`;
+      ${sections.map((s) => `${s.title ? `<h3 style="margin:18px 0 10px">${esc(s.title)}</h3>` : ""}<div class="mkt-grid">${s.rs.map((r) => adminMarketCardHtml(r.m)).join("")}</div>`).join("")}
+      ${(data.demand && data.demand.length) ? `
+      <h3 style="margin:26px 0 6px">Demand in cities we haven't listed</h3>
+      <p class="muted small" style="max-width:720px">Signup is open everywhere: people in unlisted cities complete a full sign-up and count exactly like listed-city claims. A city is flagged when two of three tripwires hit — about 150 claimed creators, 40% finished profiles, or any business or partner signal from that city. The flag is a prompt, not a switch: graduating a city stays a manual call (add it as a market, then activate it here).</p>
+      ${data.demand.map((d) => `
+      <div class="a138-row">
+        <div class="a138-row-main">
+          <strong>${esc(d.place)}</strong>
+          <span class="small muted">${fmtNum(d.claims)} claimed creators · ${fmtNum(d.completed)} finished profiles (${d.completionPct}%) · ${fmtNum(d.followers)} combined followers${d.avgLocalPct != null ? ` · ${d.avgLocalPct}% avg local` : ""}</span>
+          <span class="small muted">${fmtNum(d.businessApplications)} business application${d.businessApplications === 1 ? "" : "s"} · ${fmtNum(d.partnerSignals)} partner signal${d.partnerSignals === 1 ? "" : "s"}${d.formRequests ? ` · ${fmtNum(d.formRequests)} old form request${d.formRequests === 1 ? "" : "s"} (from the retired request-my-city form — early demand, not sign-ups${(d.formHandles || []).length ? `: ${(d.formHandles || []).map(esc).join(", ")}` : ""})` : ""}</span>
+          <span class="small">${d.tripwires.creators ? "✓" : "·"} ~150 creators &nbsp; ${d.tripwires.completion ? "✓" : "·"} 40% finished &nbsp; ${d.tripwires.supply ? "✓" : "·"} business/partner signal</span>
+        </div>
+        <div class="a138-row-side">${d.flagged ? `<span class="a138-flag">Crossed the line — graduate?</span>` : `<span class="a138-tag">${d.flagsHit}/3 tripwires</span>`}</div>
+      </div>`).join("")}` : ""}`;
 }
 
 async function toggleBench(market, open) {
@@ -25241,7 +26163,7 @@ function adminUserCardFactsHtml(u) {
       : "";
     const photo = c.hasPhoto
       ? `<img class="admin-card-photo" src="/api/users/${u.id}/photo" alt="" loading="lazy">`
-      : `<span class="admin-card-photo admin-card-mono">${esc((u.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>`;
+      : `<span class="admin-card-photo admin-card-mono">${esc((u.name || "").trim().charAt(0).toUpperCase() || "S")}</span>`;
     const place = u.status === "pending" && u.queuePosition
       ? `Queue #${u.queuePosition} in ${esc(marketDisplayName(u.market))}`
       : u.status === "approved" && u.foundingPriority
@@ -25268,7 +26190,7 @@ function adminUserCardFactsHtml(u) {
   if (u.role === "business" && u.business) {
     const b = u.business;
     const state = businessAccessState(u) === "active" ? "Active" : "Founding list";
-    return `<div class="admin-card-head"><span class="admin-card-photo admin-card-mono">${esc((b.businessName || u.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>
+    return `<div class="admin-card-head"><span class="admin-card-photo admin-card-mono">${esc((b.businessName || u.name || "").trim().charAt(0).toUpperCase() || "S")}</span>
         <div class="admin-card-title"><strong>${esc(b.businessName || u.name)}</strong>
           <div class="muted small">${esc(marketDisplayName(u.market))}${u.city ? ` &middot; ${esc(u.city)}` : ""}</div>
         </div>
@@ -25281,7 +26203,7 @@ function adminUserCardFactsHtml(u) {
         <span><strong>Source:</strong> ${esc(u.signupSource || "Direct signup")}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}</span>
       </div>`;
   }
-  return `<div class="admin-card-head"><span class="admin-card-photo admin-card-mono">${esc((u.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>
+  return `<div class="admin-card-head"><span class="admin-card-photo admin-card-mono">${esc((u.name || "").trim().charAt(0).toUpperCase() || "S")}</span>
       <div class="admin-card-title"><strong>${esc(u.name)}</strong>
         <div class="muted small">${esc(u.role || "")} &middot; ${esc(marketDisplayName(u.market || ""))}</div>
       </div>
@@ -25399,6 +26321,7 @@ async function adminDeckDecide(userId, decision) {
     const sel = document.getElementById("admin-deck-rej-reason");
     reason = sel ? sel.value : "";
   }
+  document.querySelectorAll(".admin-deck-btn").forEach((b) => { b.disabled = true; });
   try {
     await api("POST", "/admin/review", { userId, decision, ...(reason ? { reason } : {}) });
     adminDeckSession.decided += 1;
@@ -25618,9 +26541,9 @@ async function loadApplications() {
     } catch (e) { /* keep prior choices */ }
     const listHtml = `
       <h3>Pending (${pend.length})</h3>
-      ${pend.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${pend.map(row).join("")}</table></div>` : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}
+      ${pend.length ? `<div class="table-wrap panel"><table class="apps-table"><colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:31%"><col style="width:10%"><col style="width:20%"></colgroup><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${pend.map(row).join("")}</table></div>` : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}
       <h3 class="mt">Decided (${dec.length})</h3>
-      ${dec.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${dec.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
+      ${dec.length ? `<div class="table-wrap panel"><table class="apps-table"><colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:31%"><col style="width:10%"><col style="width:20%"></colgroup><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${dec.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
     el.innerHTML = `
       <div id="admin-refile-panel"></div>
       ${adminUserSearchPanelHtml()}
@@ -25820,11 +26743,23 @@ async function loadLeaderboard() {
   loadStaffRecruiters();
 }
 
+const reviewBusy138 = new Set();
 async function reviewApp(userId, decision) {
+  if (reviewBusy138.has(userId)) return;
+  reviewBusy138.add(userId);
+  const btn = window.event && window.event.target ? window.event.target.closest("button") : null;
+  const row = btn ? btn.closest("tr, .app-row, .panel, div") : null;
+  if (btn) { btn.disabled = true; btn.textContent = decision === "approve" ? "Approving…" : "Working…"; }
   try {
     await api("POST", "/admin/review", { userId, decision });
+    toast(decision === "approve" ? "Approved. The list is refreshing." : "Done. The list is refreshing.");
+    reviewBusy138.delete(userId);
     loadApplications();
-  } catch (err) { alert(err.message); }
+  } catch (err) {
+    reviewBusy138.delete(userId);
+    if (btn) { btn.disabled = false; btn.textContent = decision === "approve" ? "Approve" : "Reject"; }
+    alert(err.message);
+  }
 }
 
 // File an unlisted application under the resolver's suggested
@@ -26543,6 +27478,18 @@ async function loadStats() {
       }
       foot.innerHTML = html;
     }
+    // Build -138: the Website section (joinsignl.com traffic,
+    // GA4) sits at the foot of Stats as its own section — its
+    // own dates and group buttons, independent of the platform
+    // filters above.
+    try {
+      if (foot && !document.getElementById("website-stats138")) {
+        const wsec = document.createElement("div");
+        wsec.id = "website-stats138";
+        foot.after(wsec);
+      }
+      loadWebsiteStats138();
+    } catch (e) { /* the Website section never breaks Stats */ }
     await ccShowTab();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;

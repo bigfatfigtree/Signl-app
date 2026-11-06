@@ -70,7 +70,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || "";
-check("stamp is 2026.11.06-137 and identical in build.js + index.html", stamp === "2026.11.06-137" && indexHtml.includes(stamp), String(stamp));
+check("stamp is 2026.11.06-138 and identical in build.js + index.html", stamp === "2026.11.06-138" && indexHtml.includes(stamp), String(stamp));
 check("index.html cache-busts theme-v3 with the rolled stamp (the file changed)",
   indexHtml.includes(`/theme-v3.css?v=${stamp}`) && indexHtml.includes(`/app.js?v=${stamp}`));
 
@@ -138,7 +138,7 @@ check("primary tab sets still match the approved IA map",
 // Inherited -119/120 pins
 part("S2: inherited pins");
 check("design tokens intact (Paper, Ink, Signal, the one gradient)",
-  css.includes("--paper: #FAF7F1") && css.includes("--ink: #171512") && css.includes("--accent: #FF4D00") &&
+  css.includes("--paper: #FFFFFF") /* Build -138: Paper is pure white per Jeff's white rule; the cream token is dead */ && css.includes("--ink: #171512") && css.includes("--accent: #FF4D00") &&
   css.includes("linear-gradient(92deg, #185BFF 0%, #0AA6C2 38%, #00B67A 72%, #22C55E 100%)"));
 check("Momentum naming intact: gloss present, no Standing rename crept back",
   appJs.includes("Momentum — you reply fast and show up. Businesses see it before followers.") &&

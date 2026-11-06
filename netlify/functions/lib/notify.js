@@ -242,7 +242,7 @@ async function notify(user, eventType, payload = {}) {
   const def = EVENT_TYPES[eventType];
   if (!user || !user.id) return { ok: false, reason: "no_recipient", entries: [] };
   if (!def) return { ok: false, reason: "unknown_event", entries: [] };
-  const rendered = render(eventType, payload);
+  let rendered = render(eventType, payload);
   const base = {
     userId: user.id, role: user.role || null, eventType, prefKey: def.prefKey,
     createdAt: new Date().toISOString(),
@@ -262,6 +262,40 @@ async function notify(user, eventType, payload = {}) {
     entries.push(await recordOutbox(mk("email", user.email || null, { subject: rendered.subject, text: rendered.email, status: "suppressed_pref", sandbox: !emailProvider(), transmitted: false, reason: `pref_${def.prefKey}_off` })));
     return { ok: true, suppressed: true, entries };
   }
+
+  // Build -138: the Automations room's off switch + Template
+  // Studio override for this rail type, enforced here at the rail
+  // funnel the same way the router enforces them at deliverEmail —
+  // and AFTER the tester fence and the recipient's own preference
+  // above, so those two keep their exact meanings. A disabled
+  // type writes its outbox rows as "suppressed_admin" (reason
+  // "automation_disabled") and transmits nothing. An override
+  // replaces BOTH channels' wording from its one text. Lazy
+  // requires keep this module's load order untouched; any failure
+  // in the studio layer leaves the rail exactly as it was — the
+  // rail never breaks because an admin surface did.
+  try {
+    const catalog = require("./automations-catalog");
+    const templates = require("./templates");
+    const entry = catalog.entryForRail(eventType);
+    if (entry && !entry.critical) {
+      if ((await templates.disabledEntryIds()).has(entry.id)) {
+        entries.push(await recordOutbox(mk("sms", phoneOf(user) || null, { text: rendered.sms, status: "suppressed_admin", sandbox: !smsConfigured(), transmitted: false, reason: "automation_disabled" })));
+        entries.push(await recordOutbox(mk("email", user.email || null, { subject: rendered.subject, text: rendered.email, status: "suppressed_admin", sandbox: !emailProvider(), transmitted: false, reason: "automation_disabled" })));
+        return { ok: true, suppressed: true, suppressedAdmin: true, entries };
+      }
+      const ov = await templates.currentOverride(entry.templateRef);
+      if (ov && ov.text) {
+        const values = {
+          firstName: String((user && user.name) || "").trim().split(/\s+/)[0] || "there",
+          businessName: payload.businessName || "",
+          market: payload.market || (user && user.market) || "",
+        };
+        const body = templates.substitute(ov.text, values);
+        rendered = { subject: ov.subject ? templates.substitute(ov.subject, values) : rendered.subject, sms: body, email: body };
+      }
+    }
+  } catch (e) { /* the studio layer is advisory; the rail sends its built wording */ }
 
   // SMS leg.
   const phone = phoneOf(user);

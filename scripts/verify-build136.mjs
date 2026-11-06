@@ -39,8 +39,8 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
 // ---------- stamp ----------
-check("stamp is 2026.11.06-137 and identical in build.js + index.html",
-  buildJs.includes('BUILD_ID = "2026.11.06-137"') && indexHtml.includes("2026.11.06-137"));
+check("stamp is 2026.11.06-138 and identical in build.js + index.html",
+  buildJs.includes('BUILD_ID = "2026.11.06-138"') && indexHtml.includes("2026.11.06-138"));
 
 // ---------- the switch component ----------
 const toggle = slice(appJs, "function acceptanceHtml", 2400);
@@ -143,9 +143,15 @@ check("creator setup: the jump-nav covers every form section, in form order, wit
   && appJs.includes('"pf-bio"') && appJs.includes("function profileSegSpyInit"));
 
 // ---------- Scope #3: Find creators filter groups ----------
-const discView = slice(appJs, "async function loadDiscover", 7000);
-check("discover: four labelled groups (Where / What kind of creator / Must-haves / How you want to book)",
-  discView.includes(">Where<") && discView.includes("What kind of creator") && discView.includes("Must-haves") && discView.includes("How you want to book"));
+const discView = slice(appJs, "async function loadDiscover", 12000); // Build -138: the rebuilt rail + chip row runs longer than the -136 slice
+// Build -138 (Jeff's website-parity rebuild): the rail groups are
+// Category / Must-haves / How you want to book / Their rate /
+// Their audience lives here — the -136 Where and What-kind-of-
+// creator groups were folded into the search row and the
+// Category group when the surface was rebuilt to the website
+// layout. This pin follows the current canon.
+check("discover: the -138 rail groups (Category / Must-haves / How you want to book / Their rate / Their audience lives here)",
+  discView.includes(">Category<") && discView.includes("Must-haves") && discView.includes("How you want to book") && discView.includes("Their rate") && discView.includes("Their audience lives here"));
 check("discover: booking type is a segmented control, a different component from the category chips",
   discView.includes('class="bookseg"') && discView.includes('data-bookmode="comp"') && discView.includes('data-bookmode="paid"')
   && discView.includes('class="dcat-chip') && appJs.includes("function discoverBookModeSet"));
@@ -200,7 +206,7 @@ check("shop layout: both surfaces render the rail layout (disc-rail + fo-rail) w
   && themeCss.includes(".shop-layout") && themeCss.includes(".shop-rail.open") && themeCss.includes(".shop-mbar"));
 check("find offers rail: the concept groups — The offer (All first, real counts) / Category / Distance from you / Good to know",
   appJs.includes(">The offer<") && appJs.includes("Distance from you") && appJs.includes("Good to know")
-  && appJs.includes("kindCount") && appJs.includes("All categories") && appJs.includes("Any distance"));
+  && appJs.includes("kindCount") && appJs.includes("All categories") && appJs.includes("Anywhere in market")); // Build -138: the concept's Anywhere option reads "Anywhere in market" (the -136 wording was "Any distance")
 check("all-first: every shopping group leads with its All option (All categories ×2 surfaces, All creators, Either, All tiers, All universities)",
   (appJs.match(/All categories/g) || []).length >= 2 && discView.includes("All creators") && discView.includes(">Either<")
   && discView.includes("All tiers") && discView.includes("All universities") && appJs.includes("function foClearAll") && appJs.includes("function discClearAll"));

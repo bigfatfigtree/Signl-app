@@ -65,7 +65,11 @@ check("partner empty states keep the fills-in voice", appJs.includes("partnerFil
 check("partner Sig presence rides the shared hero stack", chatSurface.includes("sigHeroMediaHtml()"));
 
 // --- admin Sig: existing endpoints only, real-count items
-const adminSig = region("function adminSigItems", "async function loadAdminPartners");
+// Build -138: the six Admin-expansion room loaders sit between
+// loadAdminSig and loadAdminPartners in file order; they are
+// room code, not Sig data sources, so the region now ends at
+// the first of them. The endpoint pin below is unchanged.
+const adminSig = region("function adminSigItems", "async function loadAdminAutomations138");
 check("admin Sig code found", adminSig.length > 500);
 check("admin Sig loads applications", adminSig.includes('"/admin/applications"'));
 check("admin Sig loads markets", adminSig.includes('"/admin/markets"'));

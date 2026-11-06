@@ -59,10 +59,10 @@ const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"
 const css = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || (indexHtml.match(/20\d\d\.\d\d\.\d\d-\d+/) || [])[0];
 check("build stamp present and identical in build.js + index.html", !!stamp && indexHtml.includes(stamp) && buildJs.includes(stamp), String(stamp));
-check("index.html links theme-v3 and the Instrument pairing, warm theme-color",
-  indexHtml.includes("/theme-v3.css") && indexHtml.includes("Instrument+Sans") && indexHtml.includes("Instrument+Serif") && indexHtml.includes("#FAF7F1"));
+check("index.html links theme-v3 and the Instrument pairing, white theme-color (was warm until Build -138)",
+  indexHtml.includes("/theme-v3.css") && indexHtml.includes("Instrument+Sans") && indexHtml.includes("Instrument+Serif") && indexHtml.includes("#FFFFFF")); // Build -138: Jeff killed the warm theme — theme-color is pure white now
 check("theme-v3 carries the design tokens (Paper, Ink, Signal, the one gradient)",
-  css.includes("--paper: #FAF7F1") && css.includes("--ink: #171512") && css.includes("--accent: #FF4D00") &&
+  css.includes("--paper: #FFFFFF") /* Build -138: Paper is pure white per Jeff's white rule; the cream token is dead */ && css.includes("--ink: #171512") && css.includes("--accent: #FF4D00") &&
   css.includes("linear-gradient(92deg, #185BFF 0%, #0AA6C2 38%, #00B67A 72%, #22C55E 100%)"));
 check("theme-v3 carries the shape vocabulary + shell rules",
   [".donut119", ".lbar119", ".ring119", ".bigcode119", ".pilot-fundbar", ".mkt-photo", "#agent-fab"].every((x) => css.includes(x)));
@@ -130,7 +130,7 @@ check("payment gates stay shut: founding Stripe prices still resolve only from u
 // availability / "Standing hours", the creatorStanding account
 // status fields) are preserved byte-for-byte.
 part("S2: Build -120 naming");
-check("stamp is 2026.11.06-137", stamp === "2026.11.06-137", String(stamp));
+check("stamp is 2026.11.06-138", stamp === "2026.11.06-138", String(stamp));
 const ABSENT_120 = ["Standing points", "Your Standing", "your Standing", "Standing trend",
   "Standing moves you up", "How does Standing work", "Standing — you reply fast",
   'wsHead("Standing"', 'kpiCard("Standing"', "Comped visits build your Standing",

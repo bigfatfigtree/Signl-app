@@ -38,7 +38,7 @@ const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
-check("stamp is 2026.11.06-137 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-137"') && indexHtml.includes("2026.11.06-137"));
+check("stamp is 2026.11.06-138 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-138"') && indexHtml.includes("2026.11.06-138"));
 
 // Nav: the Find Offers tab is first-class for creators.
 check("nav: Find Offers is a creator primary tab (phone bar)", appJs.includes('creator: ["Dashboard", "Find Offers", "Sig", "Earnings", "Offers"]'));
@@ -72,7 +72,7 @@ check("public profile: SSR mirror carries the same neighbors line", profileMetaJ
 
 // The Mirror.
 check("mirror: card states the offer like a price and the ask in one line", appJs.includes("function mirrorOfferCardHtml(o, opts)") && appJs.includes("function mirrorPriceLine(o)") && appJs.includes("function mirrorAskLine(o)") && appJs.includes("within 48 hours of the visit"));
-check("mirror: track-record strip renders only when a record exists", appJs.includes("${tr ? `<div class=\"mirror-track\">"));
+check("mirror: track-record strip renders only when a record exists", appJs.includes("${trackCells ? `<div class=\"mirror-track\">")); // Build -138: the strip renders from earned cells (trackCells) — same rule, no empty strip
 check("mirror: filters cover kind, category, distance, sort", appJs.includes("state.foKind") && appJs.includes("state.foCategory") && appJs.includes("state.foDistance") && appJs.includes("state.foSort"));
 check("mirror: Grab rides applyToOffer; piles ride the shared offers deck", appJs.includes("function findOffersGrab(id)") && appJs.includes("await applyToOffer(id)") && appJs.includes("pileLater(\"offers\", id)") && appJs.includes("pileHide(\"offers\", id)"));
 

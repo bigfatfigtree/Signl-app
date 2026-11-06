@@ -26,8 +26,8 @@ const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 
 // ---------- stamp ----------
-check("stamp is 2026.11.06-137 and identical in build.js + index.html",
-  buildJs.includes('BUILD_ID = "2026.11.06-137"') && indexHtml.includes("2026.11.06-137"));
+check("stamp is 2026.11.06-138 and identical in build.js + index.html",
+  buildJs.includes('BUILD_ID = "2026.11.06-138"') && indexHtml.includes("2026.11.06-138"));
 
 // ---------- setup preview: ONE switch (Build -136 supersedes
 // the -134/-135 preview box + sub-toggles, Jeff's ruling) ----------

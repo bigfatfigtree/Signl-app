@@ -28,6 +28,14 @@ const recruiters = require("./recruiters");
 const pilots = require("./pilots");
 const notifyLib = require("./notify");
 const ZIP_CENTROIDS = require("./zip-centroids.json");
+// Build -138 (Admin expansion): the permission layer, the
+// automation catalogue, the Template Studio override store, and
+// the GA4 read path. Permissions are enforced in this file at the
+// data layer (see the admin gate below), never only in the client.
+const perms138 = require("./permissions");
+const automationsCatalog = require("./automations-catalog");
+const templatesLib = require("./templates");
+const gaLib = require("./analytics-ga");
 
 // Staff recruiters (Build -70): the module reads its cross-cutting
 // dependencies through init so it never reaches into this file's
@@ -2281,6 +2289,86 @@ function platformTotals126(users) {
   };
 }
 
+// Build -138 (open signup everywhere, Jeff 2026-11-06): demand
+// in cities SIGNL has not listed. Signup is open in every city —
+// an unlisted-city creator completes a full sign-up and is
+// counted exactly like a listed-city claim — and this is the
+// census Jeff graduates cities from. One row per typed place:
+// claimed creators, finished profiles + completion %, combined
+// followers, average local %, business applications and partner
+// signals from the same place (demand next to supply), plus any
+// preserved records from the retired "request my city" form
+// (labelled as form requests, never counted as sign-ups).
+// Tripwires (Jeff's graduation rule): ~150 claimed creators,
+// ~40% profile completion, any business/partner signal — a row
+// is FLAGGED when two of the three hit. The flag is a prompt to
+// Jeff; nothing here ever lists a city on its own.
+// The demand-row key for a typed place: the same normalization
+// groups sign-ups in the census AND targets them in Marketing
+// segments, so a city Jeff sees in Markets is exactly the city
+// he can message — never two spellings of one place.
+function demandKeyOf138(city, region) {
+  return `${String(city || "Unknown").trim().toLowerCase()}|${String(region || "").trim().toLowerCase()}`;
+}
+
+async function cityDemand138() {
+  const users = await allUsers();
+  const rows = new Map();
+  const keyOf = demandKeyOf138;
+  const rowFor = (city, region) => {
+    const k = keyOf(city, region);
+    if (!rows.has(k)) rows.set(k, {
+      key: k,
+      place: `${city || "Unknown"}${region ? ", " + region : ""}`, city: city || "Unknown", region: region || "",
+      claims: 0, completed: 0, followers: 0, localPctSum: 0, localPctN: 0,
+      businessApplications: 0, partnerSignals: 0, formRequests: 0, formHandles: [],
+    });
+    return rows.get(k);
+  };
+  for (const u of users) {
+    if (!u || u.market !== UNLISTED || u.status === "rejected" || isTester(u)) continue;
+    const region = u.country || u.state || "";
+    if (u.role === "creator") {
+      const r = rowFor(u.city, region);
+      r.claims += 1;
+      if (profileCompleteOf(u)) r.completed += 1;
+      r.followers += audienceTotalOf(u.creator || {}) || (u.creator && (u.creator.totalAudience || u.creator.followerCount)) || 0;
+      const pct = u.creator && typeof u.creator.localAudiencePct === "number" ? u.creator.localAudiencePct : null;
+      if (pct !== null) { r.localPctSum += pct; r.localPctN += 1; }
+    } else if (u.role === "business") {
+      rowFor(u.city, region).businessApplications += 1;
+    } else if (u.role === "partner") {
+      rowFor(u.city, region).partnerSignals += 1;
+    }
+  }
+  // Preserved city-request records from the retired form, when
+  // they exist in the store (cityrequest:{id}). They are early
+  // demand, shown as what they are — never merged into claims.
+  const formRecs = (await store.list("cityrequest:")).map((r) => r.value).filter(Boolean);
+  for (const rec of formRecs) {
+    const r = rowFor(rec.city, rec.region || rec.country || rec.state || "");
+    r.formRequests += 1;
+    if (rec.handle) r.formHandles.push(rec.handle);
+  }
+  const out = [...rows.values()].map((r) => {
+    const completionPct = r.claims ? Math.round((r.completed / r.claims) * 100) : 0;
+    const tripwires = {
+      creators: r.claims >= 150,
+      completion: r.claims > 0 && completionPct >= 40,
+      supply: r.businessApplications > 0 || r.partnerSignals > 0,
+    };
+    const flagsHit = Object.values(tripwires).filter(Boolean).length;
+    return {
+      ...r,
+      completionPct,
+      avgLocalPct: r.localPctN ? Math.round(r.localPctSum / r.localPctN) : null,
+      tripwires, flagsHit, flagged: flagsHit >= 2,
+    };
+  });
+  out.sort((a, b) => (b.flagged - a.flagged) || (b.claims - a.claims));
+  return out;
+}
+
 // The /admin/markets computation, extracted (Build -131) so the
 // read-only checker endpoint returns the SURFACE's own numbers
 // from the same code the Admin Markets tab runs — never a copy
@@ -4040,11 +4128,65 @@ function emailDomainOf(addr) {
   return i >= 0 ? s.slice(i + 1) : "(none)";
 }
 
+// Build -138: the values a Template Studio override can use for
+// this recipient. Structural pieces (the claim link, the reset
+// link) are recovered from the built text itself — the builder
+// already put the real one in — so an override can move them
+// around but can never invent or lose them. If a required piece
+// cannot be recovered, the caller falls back to the built wording
+// rather than ever sending a raw {token} to a real person.
+function automationTokenValues138(user, builtText) {
+  const grab = (re) => { const m = String(builtText || "").match(re); return m ? m[0] : ""; };
+  return {
+    firstName: greetingName(user),
+    name: (user && user.name) || "",
+    market: (user && user.market) || "",
+    handle: (user && user.creator && user.creator.handle) || "",
+    businessName: (user && user.business && user.business.name) || "",
+    claimLink: grab(/https?:\/\/\S*\/claim\?\S*/),
+    resetLink: grab(/https?:\/\/\S*reset\S*/),
+    signinLink: grab(/https?:\/\/\S*(?:sign-in|signin|magic|login)\S*/),
+    postLink: grab(/https?:\/\/\S*\/p\/\S*/),
+    unsubscribeLine: "You are getting this because you have a SIGNL account. Manage your email in Settings in the app.",
+  };
+}
+
 async function deliverEmail(kind, user, subject, text, band, opts) {
   // The sender profile this send will use, resolved the same way
   // sendEmail resolves it, so the event dataset (and therefore
   // GET /api/admin/email-health) can report outcomes per sender.
   const profile = (opts && opts.profile) || (opts && opts.fromMailbox) || "default";
+  // Build -138: the Automations room's off switch and the
+  // Template Studio override layer, enforced HERE — at the one
+  // funnel every lifecycle email passes through — so no call site
+  // can forget either. Critical kinds (password reset, sign-in
+  // link, approval, account deletion) can never be switched off:
+  // the catalogue marks them critical and this check skips them
+  // entirely. A suppressed send writes the kind's usual
+  // *_email_not_sent event with reason "automation_disabled" and
+  // never queues. Overrides apply by edit level: "full" replaces
+  // subject + text (tokens substituted from the built wording),
+  // "subject" replaces the subject line only, "view" never
+  // replaces anything.
+  const autoEntry = automationsCatalog.entryForKind(kind);
+  if (autoEntry && !autoEntry.critical) {
+    if ((await templatesLib.disabledEntryIds()).has(autoEntry.id)) {
+      await logEvent({ type: `${kind}_email_not_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { kind, to: user.email, subject, band: band || null, profile, reason: "automation_disabled" } });
+      return { sent: false, reason: "automation_disabled" };
+    }
+    if (autoEntry.editLevel !== "view") {
+      const ov = await templatesLib.currentOverride(autoEntry.templateRef);
+      if (ov) {
+        const values = automationTokenValues138(user, text);
+        if (autoEntry.editLevel === "full" && ov.text) {
+          const substituted = templatesLib.substitute(ov.text, values);
+          const missing = (autoEntry.requiredTokens || []).find((t) => ov.text.includes(`{${t}}`) && !values[t]);
+          if (!missing) text = substituted;
+        }
+        if (ov.subject) subject = templatesLib.substitute(ov.subject, values);
+      }
+    }
+  }
   const base = { kind, to: user.email, subject, band: band || null, profile };
   await logEvent({ type: `${kind}_email_queued`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
   // Build -114: every transactional email also carries the
@@ -4185,7 +4327,7 @@ function signupConfirmationEmail(user, band) {
     if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. That founding standing never expires.`);
     lines.push(
       "",
-      `SIGNL has not opened in ${place} yet, and your sign-up is how that changes: we open new markets where creator sign-ups pile up. When ${user.city} opens, founding sign-ups there are first in line, and we email you the moment it happens.`,
+      `You're in, and you're early. ${user.city} isn't one of our launch markets yet; it's building right now. We're opening SIGNL city by city, and sign-ups like yours are how we pick what's next: when ${user.city} gets close, founding creators there hear first and get first pick.`,
       "",
       "The deal, as agreed: businesses comp you a meal or service, the goal is to post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
       "",
@@ -4272,7 +4414,7 @@ function claimConfirmationEmail(user, band) {
       "",
       `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on.`,
       "",
-      `SIGNL has not opened in ${place} yet, and your sign-up is how that changes: we open new markets where creator sign-ups pile up. When ${user.city} opens, founding sign-ups there are first in line.`,
+      `${user.city} is building right now, and you're early. Sign-ups and finished founding profiles are how we pick what opens next, and yours counts. When ${user.city} opens, founding sign-ups hear first, and first pick goes to completed founding profiles.`,
       "",
       "The deal, as agreed: businesses comp you a meal or service, the goal is to post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
       "",
@@ -4350,7 +4492,7 @@ function profileCompletionReminderEmail(user) {
     ...(handle ? [`Your public booking page is already live: https://app.joinsignl.com/c/${handle}`] : []),
     "",
     unlisted
-      ? `We open new markets where creator sign-ups pile up, and when ${user.city} opens, founding creators with finished profiles go first.`
+      ? `${user.city} is building right now, and finished founding profiles are one of the counts that moves a city toward opening. Finish yours and you're in the founding circle when it opens, and first pick goes to completed founding profiles.`
       : `${marketTalkName(user.market)} is a founding market, and founding creators with finished profiles get first pick of every offer.`,
     "",
     "National platforms sell reach. We sell regulars.",
@@ -4468,13 +4610,13 @@ function approvalEmail(user, band) {
     const lines = [
       `Hi ${first},`,
       "",
-      `Good news: your application was reviewed and approved. You are a Founding Creator for ${user.city}, and your founding status page is live.`,
+      `Good news: you're approved. You are a Founding Creator for ${user.city}, and your founding status page is live.`,
     ];
     if (band) lines.push(`You are in the first ${band} to sign up in ${user.city}. Founding spots are held in sign-up order, and when ${user.city} opens, founding sign-ups are first in line for offers.`);
     lines.push(
       ...stepLines,
       "",
-      `${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again, founding creators first.`,
+      `${user.city} isn't a launch market yet. It's building right now, and you're early, not late. Finished founding profiles are one of the counts that moves a city toward opening, so finish yours now: you lock your founding-circle place, and you bring ${user.city}'s opening closer. No date promised, but the moment ${user.city} opens, we email you again, founding creators first, and first pick of businesses goes to completed founding profiles.`,
       "",
       CREATOR_FREE_LINE,
       ...inviteLines(user.city),
@@ -4581,7 +4723,7 @@ function recruiterKitEmail(user) {
     "Only if you want to. There is no requirement and no follow-up nagging from me. You are on the founding roster either way, and first pick of offers stays yours.",
     "",
     unlisted
-      ? `${user.city} opens when sign-ups there pile up, and every creator who joins through you makes that happen sooner. The moment it opens, you hear from me.`
+      ? `${user.city} is building right now, and every creator who joins through you brings it closer to opening. When it opens, you hear from me first.`
       : `${marketTalkName(user.market)} is a founding market. The moment it opens to businesses, you hear from me.`,
     "",
     "National platforms sell reach. We sell regulars.",
@@ -9174,6 +9316,12 @@ async function runCampaignSweep(opts = {}) {
     }
     if (fromMailbox !== "default" && cfg.lastError && cfg.lastError.startsWith("Sender mailbox")) cfg.lastError = null;
     if (!campaignWindowOpen(now)) { summary.windowClosed += 1; continue; }
+    // Build -138: the Automations room's off switch covers the
+    // founding outreach templates too. A switched-off campaign
+    // template pauses this campaign's sends (the queue waits,
+    // untouched) until it is switched back on in Admin.
+    const campaignEntryId138 = cfg.id === BUSINESS_CAMPAIGN_ID ? "campaign_business" : cfg.id === CROSSOVER_CAMPAIGN_ID ? "campaign_crossover" : "campaign_creator";
+    if ((await templatesLib.disabledEntryIds()).has(campaignEntryId138)) { summary.automationDisabled = (summary.automationDisabled || 0) + 1; continue; }
     let recipients = await listCampaignRecipients(cfg.id);
     // Tester guard (Jeff, 2026-10-19): an address queued before its
     // account was flagged tester must still never be sent to. Any
@@ -9239,7 +9387,17 @@ async function runCampaignSweep(opts = {}) {
     for (let i = 0; i < batch.length; i++) {
       if (failures > CAMPAIGN_MAX_FAILURES_PER_RUN) break;
       const recipient = batch[i];
-      const mail = campaignEmailFor(cfg.id, recipient);
+      let mail = campaignEmailFor(cfg.id, recipient);
+      // Build -138: a Template Studio override on this campaign's
+      // template is the wording that sends (tokens substituted
+      // from the built mail; the canon line and claim link are
+      // required tokens, so a version missing either was refused
+      // at save time and can never reach this loop).
+      const campaignOv138 = await templatesLib.currentOverride(campaignEntryId138);
+      if (campaignOv138 && campaignOv138.text) {
+        const values138 = automationTokenValues138({ name: recipient.name || "", market: recipient.market || null, role: "creator", creator: { handle: recipient.handle || "" } }, mail.text);
+        mail = { subject: campaignOv138.subject ? templatesLib.substitute(campaignOv138.subject, values138) : mail.subject, text: templatesLib.substitute(campaignOv138.text, values138) };
+      }
       const messageRef = crypto.randomUUID();
       // The default profile path passes no selector at all, so its
       // send call is byte-identical to before profiles existed; a
@@ -9297,6 +9455,10 @@ async function runCampaignSweep(opts = {}) {
     }
     await saveCampaignConfig(cfg);
   }
+  // Build -138: due Marketing campaigns (approved, then scheduled
+  // by a human) fire on this same tick. Best-effort: a marketing
+  // failure never breaks the founding sweep.
+  try { summary.marketingDue = await marketingDuePass138(); } catch (e) { summary.marketingDue = 0; }
   return summary;
 }
 
@@ -18211,6 +18373,529 @@ async function demoShowcaseStatus() {
   };
 }
 
+// ================= Build -138: Admin expansion =================
+// Areas 1–7 of signl-admin-expansion-spec-2026-11-06.md. The
+// helpers live here, above route(); the routes themselves sit at
+// the head of the admin block and in the internal block below.
+
+// ---- permission gate (Area 4) ----
+// Runs for every /admin/* request by a non-super admin. Returns an
+// error response to send, or null to proceed. Rooms the spec
+// phases as Jeff-only in v1 (partner deal edits, view-as preview,
+// demo tools, account deletion, market edits) simply have no flag
+// and fall to the default deny: the room is ABSENT for a teammate,
+// never greyed. The new rooms self-gate per action inside their
+// handlers (draft vs approve are different flags), so the gate
+// passes them through.
+function adminGate138(user, seg, method, query) {
+  if (perms138.isSuper(user)) return null;
+  const deny = (msg) => err(403, msg || "That room is not part of your role on SIGNL. Ask Jeff if it should be.");
+  const need = (flag) => (perms138.hasPerm(user, flag) ? null : deny());
+  switch (seg[1]) {
+    case "automations": case "connections": case "marketing": case "social":
+    case "team": case "templates": case "learn": case "approval-queue":
+      return null; // self-gated per action in their handlers
+    case "stats":
+      if (seg[2] === "website") return null; // scope-checked in the handler
+      return need("stats.view");
+    case "command": {
+      const g = need("stats.view"); if (g) return g;
+      if (["money", "owed", "close"].includes(seg[2]) && !perms138.hasStatScope(user, "money")) {
+        return deny("Money numbers are not part of your role.");
+      }
+      const markets = perms138.scopeMarkets(user);
+      if (Array.isArray(markets)) {
+        if (!query.market) {
+          if (markets.length === 1) query.market = markets[0];
+          else return deny("Choose one of your markets to see its numbers.");
+        } else if (!markets.includes(normalizeMarketName(String(query.market)))) {
+          return deny("That market is not one of yours.");
+        }
+      }
+      return null;
+    }
+    case "applications": case "review": return need("approvals");
+    case "users": {
+      if (seg[3] === "delete-account") return deny("Deleting an account is Jeff's call.");
+      return (perms138.hasPerm(user, "approvals") || perms138.hasPerm(user, "creators.view")) ? null : deny();
+    }
+    case "creators":
+      if (seg[3] === "view") return deny("Previewing accounts is Jeff's tool in this version.");
+      return need("creators.view");
+    case "search": return need("creators.view");
+    case "preview": case "preview-targets": return deny("Previewing accounts is Jeff's tool in this version.");
+    case "platform-messages": case "finish-engine": return need("requests");
+    case "recruiters": case "leaderboard": return need("outreach");
+    case "campaign": return need("campaign");
+    case "partners":
+      if (method === "GET") return need("partners.view");
+      return deny("Partner deals are Jeff's to change in this version.");
+    case "deals": case "audience-offers": return need("partners.view");
+    case "markets":
+      if (method === "GET") return need("markets.view");
+      return deny("Market settings are Jeff's to change in this version.");
+    case "compliance": return need("compliance.view");
+    case "events": return need("events.view");
+    case "email-health": return need("connections.view");
+    case "message-templates": return need("templates.view");
+    case "platform-totals": return null; // the handler scopes its own payload
+    default: return deny();
+  }
+}
+
+// ---- automation previews + test sends (Areas 1 + 6) ----
+// Previews render the REAL builders against fixture people
+// ("Sample Creator" at "Sample Bakery"), so what Jeff reads is
+// the sentence a real recipient would get. Kinds whose wording is
+// written at their call sites (the milestone emails, the internal
+// notices) have no central builder: their preview is the saved
+// override if one exists, else an honest note — never a
+// paraphrase dressed as the real text.
+const FIXTURE_CREATOR_138 = { id: "preview-fixture", name: "Sample Creator", email: "sample@fixtures.dev", role: "creator", market: "Nashville", city: "Nashville", status: "approved", creator: { handle: "samplecreator", tierBand: "Locals", displayName: "Sample Creator", hasPhoto: false } };
+
+function mailShape138(x) {
+  if (!x) return { subject: "", text: "" };
+  if (typeof x === "string") return { subject: "", text: x };
+  return { subject: x.subject || "", text: x.text || x.body || "" };
+}
+
+function automationDefaultPreview138(entry) {
+  try {
+    if (entry.lane === "rail") {
+      const r = notifyLib.render(entry.kind, { businessName: "Sample Bakery", offerTitle: "A free tasting visit", title: "A free tasting visit", creatorName: "Sample Creator", market: "Nashville", count: 3, endsOn: "Friday", deadlineText: "Friday at 5pm ET" });
+      return { subject: r.subject, text: r.email, sms: r.sms, note: null };
+    }
+    const C = FIXTURE_CREATOR_138;
+    switch (entry.id) {
+      case "signup_confirmation": return { ...mailShape138(signupConfirmationEmail(C, null)), sms: null, note: null };
+      case "signup_confirmation_claim": return { ...mailShape138(claimConfirmationEmail(C)), sms: null, note: null };
+      case "approval": return { ...mailShape138(approvalEmail(C, null)), sms: null, note: null };
+      case "rejection": return { ...mailShape138(rejectionEmail(C, "fit")), sms: null, note: null };
+      case "profile_completion_reminder": return { ...mailShape138(profileCompletionReminderEmail(C)), sms: null, note: null };
+      case "recruiter_kit": return { ...mailShape138(recruiterKitEmail(C)), sms: null, note: null };
+      case "password_reset": return { ...mailShape138(passwordResetEmail(C, "https://app.joinsignl.com/?reset=sampletoken")), sms: null, note: null };
+      case "signin_link": return { ...mailShape138(signinLinkEmail(C, "https://app.joinsignl.com/?signinlink=sampletoken")), sms: null, note: null };
+      case "account_deletion": return { ...mailShape138(accountDeletionEmail(C)), sms: null, note: null };
+      case "silent_removal": return { ...mailShape138(silentRemovalEmail(C)), sms: null, note: null };
+      case "consumed_comp_inactive": return { ...mailShape138(consumedCompEmail(C)), sms: null, note: null };
+      case "late_streak_pause": return { ...mailShape138(lateStreakPauseEmail(C)), sms: null, note: null };
+      case "strike_pause": return { ...mailShape138(strikePauseEmail(C)), sms: null, note: null };
+      case "platform_message": return { ...mailShape138(platformMessageEmail(C, "A sample message from the SIGNL team.")), sms: null, note: null };
+      case "campaign_creator": return { ...mailShape138(campaignEmail({ name: "Sample Creator", email: "sample@fixtures.dev", handle: "samplecreator", market: "Nashville" })), sms: null, note: null };
+      case "campaign_crossover": return { ...mailShape138(crossoverEmail({ name: "Sample Creator", email: "sample@fixtures.dev", handle: "samplecreator", market: "Nashville" })), sms: null, note: null };
+      case "campaign_business": return { ...mailShape138(businessWaveEmail({ name: "Sample Owner", email: "owner@fixtures.dev", businessName: "Sample Bakery", market: "Nashville" })), sms: null, note: null };
+    }
+  } catch (e) { /* fall through to the honest note */ }
+  return { subject: "", text: "", sms: null, note: "This email is written where it fires in the app, with the real visit, post, or booking details filled in, so there is no fixed sample to show. Its real sends are in the Event Log." };
+}
+
+async function automationLivePreview138(entry) {
+  const base = automationDefaultPreview138(entry);
+  const ov = await templatesLib.currentOverride(entry.templateRef);
+  if (!ov) return { ...base, overridden: false };
+  const values = automationTokenValues138(FIXTURE_CREATOR_138, base.text || "");
+  if (!values.claimLink) values.claimLink = "https://app.joinsignl.com/claim?handle=samplecreator&market=Nashville&src=email";
+  if (!values.resetLink) values.resetLink = "https://app.joinsignl.com/?reset=sampletoken";
+  if (!values.signinLink) values.signinLink = "https://app.joinsignl.com/?signinlink=sampletoken";
+  const out = { ...base, overridden: true, overrideVersion: ov.v };
+  if (entry.editLevel === "full" && ov.text) {
+    out.text = templatesLib.substitute(ov.text, values);
+    if (entry.lane === "rail") out.sms = out.text;
+  }
+  if (ov.subject) out.subject = templatesLib.substitute(ov.subject, values);
+  return out;
+}
+
+// The test-send fence (Area 1): a test goes to the caller's own
+// inbox, plus the super-admin's — never to a typed-in third
+// address, never to a real recipient. [TEST] in the subject, an
+// event in the log, and it bypasses deliverEmail on purpose: the
+// whole point is checking wording whose automation may be off.
+async function allowedTestRecipients138(adminUser) {
+  const set = new Set();
+  if (adminUser && adminUser.email) set.add(String(adminUser.email).toLowerCase());
+  const users = await allUsers();
+  for (const u of users) {
+    if (u.role === "admin" && perms138.isSuper(u) && u.email) set.add(String(u.email).toLowerCase());
+  }
+  return set;
+}
+
+async function automationLastSent138(entry) {
+  // Derived from the event dataset (newest 1,000): the most recent
+  // real send of this kind, or null. Rail kinds have no *_sent
+  // events; their truth is the outbox (checked by the caller).
+  try {
+    const events = await listEvents({ limit: 1000 });
+    if (entry.lane === "rail") {
+      const outbox = await notifyLib.listOutbox(200);
+      const hit = outbox.find((o) => o.eventType === entry.kind && (o.status === "sent" || o.status === "sandbox"));
+      return hit ? { at: hit.createdAt, to: hit.to || null, sandbox: !!hit.sandbox } : null;
+    }
+    const hit = events.find((e) => e.type === `${entry.kind}_email_sent`);
+    return hit ? { at: hit.at || hit.createdAt || null, to: (hit.data && hit.data.to) || null, sandbox: false } : null;
+  } catch (e) { return null; }
+}
+
+// ---- connections board (Area 1) ----
+// The honesty rule: every row's state is a LIVE read taken during
+// this request, a RECORD (a fact about how the thing is set up),
+// or a dated NOTE. A failed live read renders "Could not check
+// just now" — never a stale value dressed as current. Dated notes
+// are editable in the room (connections.manage) and live in
+// config:connections.
+async function connectionsBoard138() {
+  const rec = (await store.get("config:connections")) || { notes: {} };
+  const notes = rec.notes || {};
+  const ps = notifyLib.providerStatus();
+  const rows = [];
+  const push = (id, name, doesPlain, state, source, asOf) => {
+    rows.push({ id, name, doesPlain, state, source, asOf: asOf || null, note: notes[id] || null });
+  };
+  const liveOrStale = (fn) => { try { return fn(); } catch (e) { return "Could not check just now"; } };
+  push("smtp_default", "Email — hello@joinsignl.com", "Sends account and lifecycle email from the main SIGNL mailbox.",
+    liveOrStale(() => (senderProfile("default").available ? "Sending" : "Not sending — its mailbox credentials are not set")), "live");
+  push("smtp_creators", "Email — creators@signlteam.com", "The founding-outreach mailbox on the signlteam domain.",
+    liveOrStale(() => (senderProfileAvailable("creators@signlteam.com") ? "Sending" : "Down — its last checks failed; sends from it are paused")), "live");
+  push("twilio", "Texts — Twilio", "Sends the notification rail's text messages.",
+    liveOrStale(() => (ps.sms !== "sandbox" ? "Live" : "Sandbox — texts are recorded in the outbox, not sent")), "live");
+  push("twilio_a2p", "Texts — A2P registration", "The carrier registration that lets SIGNL text US numbers.",
+    "In review when last checked: brand submitted as low-volume; the campaign filing comes next.", "note", "2026-11-05");
+  push("resend", "Texts & email — Resend (rail email)", "Sends the notification rail's email leg when configured.",
+    liveOrStale(() => (ps.email !== "sandbox" ? `Live via ${ps.email}` : "Sandbox — rail email is recorded in the outbox, not sent")), "live");
+  push("stripe_billing", "Stripe — business billing", "Would charge businesses their plan. Deliberately off until Jeff's go-live call.",
+    liveOrStale(() => (stripe.billingConfigured() ? "Connected — a key is present" : "Off — no secret key in the app, so no business can be charged")), "live");
+  push("stripe_connect", "Stripe Connect — creator payouts", "Would pay creators their 97% on paid bookings.",
+    liveOrStale(() => (connect.connectConfigured() ? "Connected" : "Off — payouts are not wired to a live key yet")), "live");
+  push("ga4", "Google Analytics — website numbers", "Reads joinsignl.com traffic for the Stats room's Website section.",
+    liveOrStale(() => (gaLib.configured() ? "Connected" : "Not connected yet — needs the Google service-account hookup")), "live");
+  push("google_signin", "Google — sign-in and YouTube connect", "Powers Continue with Google and creator YouTube linking.",
+    liveOrStale(() => (googleAuth.googleConfigured() ? "Keys present" : "Off — the Google keys are not in the app yet")), "live");
+  push("klaviyo", "Klaviyo", "Email marketing tool, connected outside this app.",
+    "Managed outside the app — the Klaviyo account is connected to Muse, not to this app. Nothing in the app reads or sends through it, and the app never will for product notifications (the rail rule).", "record");
+  push("meta_app", "Meta — the SIGNL app", "Would power Instagram connect and metric sync for creators.",
+    "In development. Access Verification has been in review since Oct 18; App Review not submitted yet.", "note", "2026-11-06");
+  push("instagram_connect", "Instagram — creator connect", "Lets a creator link Instagram so their numbers sync.",
+    "Built, but stays dark until Meta approves the app. YouTube linking is the one live lane today.", "note", "2026-11-06");
+  push("square", "Square — register reads", "Reads a business's register so visits can be counted.",
+    "Connected in sandbox (proven Nov 3). The production swap is still owed.", "record");
+  push("learn_pipeline", "Learn — the daily article flow", "Publishes the daily Learn article and keeps the magazine index honest.",
+    "Runs outside the app on the ops side. The Learn studio in Admin writes drafts into this same pipeline — it does not fork it.", "record");
+  return rows;
+}
+
+// ---- marketing (Area 2) ----
+// Segments resolve from real user records at read time, then the
+// exclusions apply in a fixed order: testers (never counted),
+// Jeff's suppression list (config:unsubscribes), and anyone
+// outside the reader's market scope. Deleted accounts are erased
+// from the store entirely (Build -132), so they cannot appear in
+// any list — that is stated on the surface rather than counted.
+const MARKETING_UNSUB_LINE_138 = "You're getting this because you have a SIGNL account. Don't want marketing email from SIGNL? Reply to this email and we'll take you off the list.";
+
+async function marketingSuppression138() {
+  const rec = (await store.get("config:unsubscribes")) || { emails: [] };
+  return new Set((rec.emails || []).map((e) => String(e).toLowerCase()));
+}
+
+function marketingSpecMatches138(u, spec) {
+  if (!spec || !spec.audience) return false;
+  // A demand-city segment (Jeff, 2026-11-06): the audience is
+  // everyone whose sign-up sits in one unlisted typed city —
+  // the same rows the Markets demand census counts.
+  if (spec.demandCity) {
+    if (u.market !== UNLISTED) return false;
+    if (demandKeyOf138(u.city, u.country || u.state || "") !== spec.demandCity) return false;
+  }
+  if (spec.audience === "creators") {
+    if (u.role !== "creator" || u.status !== "approved") return false;
+    if (spec.market && normalizeMarketName(u.market) !== spec.market) return false;
+    if (spec.tier && normalizeTierBand(u.creator && u.creator.tierBand) !== spec.tier) return false;
+    if (spec.complete === "complete" && !profileCompleteOf(u)) return false;
+    if (spec.complete === "incomplete" && profileCompleteOf(u)) return false;
+    return true;
+  }
+  if (spec.audience === "businesses") {
+    if (u.role !== "business" || u.status !== "approved") return false;
+    if (spec.market && normalizeMarketName(u.market) !== spec.market) return false;
+    // (demandCity gate applied above, before the audience branch)
+    if (spec.plan) {
+      const b = u.business || {};
+      const planVal = b.planId || b.plan || "";
+      const plan = PLANS.find((p) => p.id === spec.plan);
+      if (planVal !== spec.plan && (!plan || planVal !== plan.name)) return false;
+    }
+    return true;
+  }
+  if (spec.audience === "partners") {
+    if (u.role !== "partner" || u.status !== "approved") return false;
+    if (spec.market && normalizeMarketName(u.market) !== spec.market) return false;
+    return true;
+  }
+  return false;
+}
+
+async function marketingResolveSegment138(spec, adminUser) {
+  const suppressed = await marketingSuppression138();
+  const users = await allUsers();
+  const matched = [];
+  let testerCount = 0, suppressedCount = 0, scopeCount = 0;
+  for (const u of users) {
+    if (!marketingSpecMatches138(u, spec)) continue;
+    if (isTester(u)) { testerCount += 1; continue; }
+    if (u.email && suppressed.has(String(u.email).toLowerCase())) { suppressedCount += 1; continue; }
+    if (!perms138.inMarketScope(adminUser, u.market)) { scopeCount += 1; continue; }
+    matched.push(u);
+  }
+  return { matched, testerCount, suppressedCount, scopeCount };
+}
+
+function marketingSegmentDefs138() {
+  const defs = [
+    { id: "creators_all", label: "All creators", spec: { audience: "creators" } },
+    { id: "creators_complete", label: "Creators with finished profiles", spec: { audience: "creators", complete: "complete" } },
+    { id: "creators_incomplete", label: "Creators whose profiles aren't finished", spec: { audience: "creators", complete: "incomplete" } },
+  ];
+  for (const t of ["Neighbors", "Locals", "Headliners"]) {
+    defs.push({ id: `creators_tier_${t}`, label: `Creators — ${t} tier`, spec: { audience: "creators", tier: t } });
+  }
+  for (const m of MARKETS) {
+    defs.push({ id: `creators_market_${m.name}`, label: `Creators in ${m.name}`, spec: { audience: "creators", market: m.name } });
+  }
+  defs.push({ id: "businesses_all", label: "All businesses", spec: { audience: "businesses" } });
+  for (const p of PLANS) {
+    defs.push({ id: `businesses_plan_${p.id}`, label: `Businesses on ${p.name}`, spec: { audience: "businesses", plan: p.id } });
+  }
+  defs.push({ id: "partners_all", label: "All partners", spec: { audience: "partners" } });
+  return defs;
+}
+
+// Message by market (Jeff, 2026-11-06): every unlisted demand
+// city from the Markets census joins the audience builder as a
+// first-class segment, so one city's people can be messaged on
+// their own — the launch-day move ("your city is opening").
+// The defs resolve from the same cityDemand138 rows the census
+// renders, keyed identically, so the count Jeff sees in Markets
+// is the count he messages here.
+async function marketingSegmentDefs138Async() {
+  const defs = marketingSegmentDefs138();
+  const demand = await cityDemand138();
+  for (const r of demand) {
+    if (r.claims > 0) defs.push({ id: `creators_demand_${r.key}`, label: `Creators in ${r.place} — not a launch market yet`, spec: { audience: "creators", demandCity: r.key, cityLabel: r.place } });
+    if (r.businessApplications > 0) defs.push({ id: `businesses_demand_${r.key}`, label: `Businesses in ${r.place} — not a launch market yet`, spec: { audience: "businesses", demandCity: r.key, cityLabel: r.place } });
+  }
+  return defs;
+}
+
+// The market a campaign belongs to for scope checks: its listed
+// market, or the unlisted pool for a demand-city campaign.
+function campaignScopeMarket138(segment) {
+  if (!segment) return null;
+  if (segment.market) return segment.market;
+  if (segment.demandCity) return UNLISTED;
+  return null;
+}
+
+// The texting rail's honest state. Connected means every piece
+// is in the app's env: account keys, the messaging service, and
+// the approved A2P campaign. Until then the SMS channel builds
+// audiences and drafts like the others and says plainly why it
+// cannot send — it never fakes a send.
+function smsRailState138() {
+  const connected = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_MESSAGING_SERVICE_SID && process.env.TWILIO_A2P_CAMPAIGN_SID);
+  return {
+    connected,
+    note: connected
+      ? "Twilio is connected."
+      : "Texts switch on when Twilio finishes connecting: the carrier registration is still in review and the texting keys aren't wired into the app yet. Build the audience and draft the text now; sending unlocks the moment the rail connects.",
+  };
+}
+
+async function marketingSentToday138(now) {
+  const dayKey = campaignDayKey(now || new Date());
+  const rows = await store.list("mkrecipient:");
+  let n = 0;
+  for (const r of rows) {
+    const v = r.value;
+    // The ceiling is an EMAIL ceiling: in-app messages never
+    // count against it.
+    if (v && v.status === "sent" && (!v.channel || v.channel === "email") && v.sentAt && campaignDayKey(new Date(v.sentAt)) === dayKey) n += 1;
+  }
+  return n;
+}
+
+// The send itself. Recipients are the list frozen at approval;
+// exclusions re-apply at send time (an account deleted or
+// unsubscribed since approval drops out, counted, never silently).
+// No caller runs this without a human pressing send or a schedule
+// an approver set — there is no autonomous path to this function.
+async function marketingSend138(campaign, senderAdmin) {
+  const suppressed = await marketingSuppression138();
+  const now = new Date();
+  let sent = 0, failed = 0, excluded = 0;
+  const failures = [];
+  for (const userId of campaign.recipientIds || []) {
+    const u = await store.get(`user:${userId}`);
+    const recId = `${campaign.id}:${userId}`;
+    if (!u || isTester(u) || (u.email && suppressed.has(String(u.email).toLowerCase()))) {
+      excluded += 1;
+      await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u ? u.email : null, channel: "email", status: "excluded", reason: !u ? "account_deleted" : isTester(u) ? "tester_account" : "unsubscribed", at: nowIso() });
+      continue;
+    }
+    const values = automationTokenValues138(u, campaign.text);
+    values.unsubscribeLine = MARKETING_UNSUB_LINE_138;
+    let text = templatesLib.substitute(campaign.text, values);
+    if (!text.includes("take you off the list")) text = `${text}\n\n${MARKETING_UNSUB_LINE_138}`;
+    const subject = templatesLib.substitute(campaign.subject || "", values);
+    const result = await sendEmail({ to: u.email, subject, text, html: brandedEmailHtml(text), listUnsubscribe: true });
+    if (result.sent) {
+      sent += 1;
+      await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u.email, channel: "email", status: "sent", sentAt: nowIso() });
+    } else {
+      failed += 1;
+      failures.push({ email: u.email, reason: result.reason || "send_failed" });
+      await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u.email, channel: "email", status: "failed", reason: result.reason || "send_failed", at: nowIso() });
+    }
+  }
+  campaign.status = "sent";
+  campaign.sentAt = nowIso();
+  campaign.sentBy = senderAdmin ? senderAdmin.id : null;
+  campaign.results = { sent, failed, excluded, failures: failures.slice(0, 20), channel: "email" };
+  campaign.updatedAt = nowIso();
+  await store.set(`mkcampaign:${campaign.id}`, campaign);
+  await logEvent({ type: "marketing_campaign_sent", actorId: senderAdmin ? senderAdmin.id : null, actorRole: "admin", subjectId: campaign.id, market: campaignScopeMarket138(campaign.segment), data: { sent, failed, excluded, channel: "email", subject: campaign.subject, city: (campaign.segment && campaign.segment.cityLabel) || null } });
+  return campaign;
+}
+
+// The in-app send. Same frozen list, same send-time exclusions
+// as email (deleted, tester, suppressed — the suppression list
+// is honoured on every channel), delivered through the existing
+// platform-message rail: one message in each creator's own
+// SIGNL thread, written as the SIGNL team, with the rail's own
+// email knock riding behind it. Creators only — the rail's
+// threads are creator threads, and the create/update guards
+// keep other audiences off this channel.
+async function marketingSendPlatform138(campaign, senderAdmin) {
+  const suppressed = await marketingSuppression138();
+  let sent = 0, failed = 0, excluded = 0;
+  const failures = [];
+  const segmentLabel = (campaign.segment && (campaign.segment.cityLabel || campaign.segment.market)) || null;
+  for (const userId of campaign.recipientIds || []) {
+    const u = await store.get(`user:${userId}`);
+    const recId = `${campaign.id}:${userId}`;
+    if (!u || isTester(u) || (u.email && suppressed.has(String(u.email).toLowerCase()))) {
+      excluded += 1;
+      await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u ? u.email : null, channel: "platform", status: "excluded", reason: !u ? "account_deleted" : isTester(u) ? "tester_account" : "unsubscribed", at: nowIso() });
+      continue;
+    }
+    try {
+      const text = templatesLib.substitute(campaign.text, automationTokenValues138(u, campaign.text));
+      const r = await sendPlatformMessage(senderAdmin, u, text, { scope: "segment", segmentMarket: segmentLabel });
+      sent += 1;
+      await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u.email, channel: "platform", status: "sent", sentAt: nowIso(), emailPing: r && r.email ? (r.email.sent ? "sent" : "not_sent") : "unknown" });
+    } catch (e) {
+      failed += 1;
+      failures.push({ email: u.email, reason: String(e && e.message || e).slice(0, 120) });
+      await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u.email, channel: "platform", status: "failed", reason: "platform_send_failed", at: nowIso() });
+    }
+  }
+  campaign.status = "sent";
+  campaign.sentAt = nowIso();
+  campaign.sentBy = senderAdmin ? senderAdmin.id : null;
+  campaign.results = { sent, failed, excluded, failures: failures.slice(0, 20), channel: "platform" };
+  campaign.updatedAt = nowIso();
+  await store.set(`mkcampaign:${campaign.id}`, campaign);
+  await logEvent({ type: "marketing_campaign_sent", actorId: senderAdmin ? senderAdmin.id : null, actorRole: "admin", subjectId: campaign.id, market: campaignScopeMarket138(campaign.segment), data: { sent, failed, excluded, channel: "platform", city: segmentLabel } });
+  return campaign;
+}
+
+// Scheduled campaigns whose time has come, fired from the
+// campaign sweep's tick (the same claim-throttled pass ops already
+// runs). Only campaigns an approver approved AND scheduled can be
+// here — the status machine has no other road to "scheduled".
+async function marketingDuePass138() {
+  const rows = await store.list("mkcampaign:");
+  const now = Date.now();
+  let fired = 0;
+  for (const r of rows) {
+    const c = r.value;
+    if (!c || c.status !== "scheduled" || !c.approvedBy || !c.runAt) continue;
+    if (Date.parse(c.runAt) > now) continue;
+    // A text campaign can never be scheduled in v1 (the schedule
+    // guard refuses while the rail is dark); this skip is the
+    // belt to that suspender — the sweep never texts anyone.
+    if ((c.channel || "email") === "sms") continue;
+    const approver = await store.get(`user:${c.approvedBy}`);
+    if ((c.channel || "email") === "platform") await marketingSendPlatform138(c, approver || null);
+    else await marketingSend138(c, approver || null);
+    fired += 1;
+  }
+  return fired;
+}
+
+// ---- social + learn seeds (Areas 3 + 7) ----
+// Both rooms seed lazily from build-time snapshots of the ops
+// records, once, behind a config flag — the app never re-imports
+// over records a person has since edited in the room.
+async function socialEnsureSeeded138() {
+  if (await store.get("config:social-seeded")) return;
+  let seed = { posts: [] };
+  try { seed = require("./social-seed.json"); } catch (e) { seed = { posts: [] }; }
+  for (const p of seed.posts || []) {
+    await store.set(`socialpost:${p.platform}:${p.externalId}`, p);
+  }
+  await store.set("socialmetric:instagram:2026-11-06", { platform: "instagram", date: "2026-11-06", followers: 1016, following: 256, posts: 19, source: "import", note: "From the daily account check, 2026-11-06." });
+  await store.set("config:social-seeded", { at: nowIso(), posts: (seed.posts || []).length });
+}
+
+async function learnEnsureSeeded138() {
+  if (await store.get("config:learn-seeded")) return;
+  let seed = { articles: [] };
+  try { seed = require("./learn-seed.json"); } catch (e) { seed = { articles: [] }; }
+  for (const a of seed.articles || []) {
+    if (!a || !a.slug) continue;
+    await store.set(`learnarticle:${a.slug}`, {
+      slug: a.slug, headline: a.title || a.headline || "", topic: a.topic || "", audience: a.audience || "",
+      heroImage: a.image || a.heroImage || "", status: "live", url: `https://joinsignl.com/learn/${a.slug}.html`,
+      publishedAt: a.date || null, source: "import", updatedAt: nowIso(),
+    });
+  }
+  await store.set("config:learn-seeded", { at: nowIso(), articles: (seed.articles || []).length });
+}
+
+function learnPhotos138() {
+  try {
+    const seed = require("./learn-seed.json");
+    return Array.isArray(seed.photos) ? seed.photos : [];
+  } catch (e) { return []; }
+}
+
+// ---- approval queue (Area 4, growth) ----
+// The counts behind Admin Home's "Needs your approval" strip.
+// Each count exists only when the reader holds the flag that can
+// act on it, and each is computed inside the reader's own scope.
+async function approvalQueue138(adminUser) {
+  const out = { applications: 0, marketingDrafts: 0, socialDrafts: 0, teamInvites: 0 };
+  if (perms138.hasPerm(adminUser, "approvals")) {
+    const users = await allUsers();
+    out.applications = users.filter((u) => (u.role === "creator" || u.role === "business") && u.status === "pending" && perms138.inMarketScope(adminUser, u.market)).length;
+  }
+  if (perms138.hasPerm(adminUser, "marketing.approve")) {
+    const rows = await store.list("mkcampaign:");
+    out.marketingDrafts = rows.map((r) => r.value).filter((c) => c && c.status === "in_review" && c.authorId !== adminUser.id && perms138.inMarketScope(adminUser, c.segment && c.segment.market)).length;
+  }
+  if (perms138.hasPerm(adminUser, "social.approve")) {
+    const rows = await store.list("socialdraft:");
+    out.socialDrafts = rows.map((r) => r.value).filter((d) => d && d.status === "draft" && d.authorId !== adminUser.id).length;
+  }
+  if (perms138.hasPerm(adminUser, "team.manage")) {
+    const rows = await store.list("teaminvite:");
+    const now = Date.now();
+    out.teamInvites = rows.map((r) => r.value).filter((i) => i && !i.usedAt && Date.parse(i.expiresAt) > now).length;
+  }
+  return out;
+}
+
 async function route(event) {
   const method = event.httpMethod || "GET";
   let path = event.path || "/";
@@ -18274,6 +18959,28 @@ async function route(event) {
   const ctx = await getAuthUser(event);
   const user = ctx.user;
 
+  // Build -138: admin permission migration + activity stamp. An
+  // admin record with no adminPerms predates the permission layer
+  // (in practice Jeff's own account): stamp the explicit
+  // super-admin snapshot once, here, so the legacy path is a
+  // migration and not a permanent back door. Teammates are always
+  // created WITH a snapshot and never pass through this branch.
+  // lastActiveAt is stamped at most every five minutes, for the
+  // Team room's "last active" line. Best-effort: a store hiccup
+  // here never breaks the request.
+  if (user && user.role === "admin") {
+    try {
+      let dirty = false;
+      if (!user.adminPerms) {
+        user.adminPerms = { super: true, flags: {}, markets: null, statScopes: perms138.STAT_SCOPES.slice(), template: null, grantedBy: "build138-migration", grantedAt: nowIso() };
+        dirty = true;
+      }
+      const lastMs = user.lastActiveAt ? Date.parse(user.lastActiveAt) : 0;
+      if (!Number.isFinite(lastMs) || Date.now() - lastMs > 5 * 60 * 1000) { user.lastActiveAt = nowIso(); dirty = true; }
+      if (dirty) await store.set(`user:${user.id}`, user);
+    } catch (e) { /* best-effort stamp; the request proceeds */ }
+  }
+
   // View-as read-only gate (Build -67): on a view session the
   // signed-in user IS the business being viewed, so every read
   // below renders their real account unchanged. Writes are another
@@ -18307,6 +19014,61 @@ async function route(event) {
   // token opens nothing else anywhere in this router.
   if (seg[0] === "verify" && seg[1] === "counts" && seg.length === 2) {
     return handleVerifyCounts(event);
+  }
+
+  // Build -138: the Learn publisher's machine door. The ops-side
+  // runner (scripts/learn-publish-runner.mjs) polls for queued
+  // publish jobs, claims one under the single-writer lock, does
+  // the repo steps (article file, meta, index rebuilds, push,
+  // live check), and reports the result back. Gated by the same
+  // checker key as /api/verify/counts — the token opens nothing
+  // else. The app's half of publishing ends at the queue: nothing
+  // here touches the site repo.
+  if (seg[0] === "internal" && seg[1] === "learn-jobs") {
+    if (!verifyTokenOk(event)) return err(403, "Bad checker key");
+    if (method === "GET" && seg.length === 2) {
+      const jobs = (await store.list("learnpublish:")).map((r) => r.value).filter(Boolean)
+        .filter((j) => j.status === "queued" || j.status === "running")
+        .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+      return json(200, { jobs });
+    }
+    const job = seg.length >= 3 ? await store.get(`learnpublish:${seg[2]}`) : null;
+    if (!job) return err(404, "Publish job not found");
+    if (method === "POST" && seg.length === 4 && seg[3] === "claim") {
+      const lock = await store.get("learn:publish-lock");
+      if (lock && lock.jobId !== job.id && Date.parse(lock.expiresAt) > Date.now()) {
+        return json(200, { ok: false, locked: true, heldBy: lock.jobId });
+      }
+      await store.set("learn:publish-lock", { jobId: job.id, at: nowIso(), expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() });
+      job.status = "running"; job.claimedAt = nowIso();
+      await store.set(`learnpublish:${job.id}`, job);
+      return json(200, { ok: true, job });
+    }
+    if (method === "POST" && seg.length === 4 && seg[3] === "result") {
+      const b = parseBody(event);
+      const lock = await store.get("learn:publish-lock");
+      if (lock && lock.jobId === job.id) await store.del("learn:publish-lock");
+      if (b.ok) {
+        job.status = "live"; job.url = String(b.url || `https://joinsignl.com/learn/${job.slug}.html`); job.completedAt = nowIso();
+        await store.set(`learnpublish:${job.id}`, job);
+        await store.set(`learnarticle:${job.slug}`, {
+          slug: job.slug, headline: job.article.headline, topic: job.article.topic || "", audience: job.article.audience || "",
+          heroImage: job.article.heroImage || "", status: "live", url: job.url, publishedAt: job.article.date || new Date().toISOString().slice(0, 10),
+          source: "studio", updatedAt: nowIso(),
+        });
+        const draft = await store.get(`learndraft:${job.draftId}`);
+        if (draft) { draft.status = "published"; draft.updatedAt = nowIso(); await store.set(`learndraft:${draft.id}`, draft); }
+        await logEvent({ type: "learn_published", actorId: job.createdBy || null, actorRole: "admin", subjectId: job.id, market: null, data: { slug: job.slug, url: job.url, via: "runner" } });
+        return json(200, { ok: true });
+      }
+      job.status = "failed"; job.error = String(b.error || "The publisher reported a failure.").slice(0, 400); job.completedAt = nowIso();
+      await store.set(`learnpublish:${job.id}`, job);
+      const draft = await store.get(`learndraft:${job.draftId}`);
+      if (draft) { draft.status = "draft"; draft.updatedAt = nowIso(); await store.set(`learndraft:${draft.id}`, draft); }
+      await logEvent({ type: "learn_publish_failed", actorId: job.createdBy || null, actorRole: "admin", subjectId: job.id, market: null, data: { slug: job.slug, error: job.error } });
+      return json(200, { ok: true });
+    }
+    return err(404, "Route not found");
   }
 
   // Public bootstrap: static config plus the launch state. Deliberately
@@ -18793,6 +19555,11 @@ async function route(event) {
     const token = process.env.SIGNL_SWEEP_TOKEN;
     const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
     if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    // Build -138: a signed-in teammate triggers the sweep only
+    // with the campaign flag (the sweep tick also fires due
+    // Marketing campaigns). The token path (the scheduler) is
+    // unchanged.
+    if (!tokenOk && user && !perms138.hasPerm(user, "campaign")) return err(403, "The campaign sweep is not part of your role.");
     const b = parseBody(event);
     const opts = {};
     if (TEST_MODE && b.now) {
@@ -20688,6 +21455,692 @@ async function route(event) {
   if (seg[0] === "admin") {
     if (user.role !== "admin") return err(403, "Admin only");
 
+    // Build -138: the permission gate. Jeff (super-admin) passes
+    // everything; a teammate's request is checked against the
+    // flags on their record BEFORE any handler runs, and scoped
+    // handlers below filter their payloads to the teammate's
+    // markets at the data layer.
+    const gate138 = adminGate138(user, seg, method, query);
+    if (gate138) return gate138;
+
+    // ---- Build -138: Automations & connections (Area 1) ----
+    if (seg[1] === "automations") {
+      if (!perms138.hasPerm(user, "connections.view") && !perms138.hasPerm(user, "automations.manage")) {
+        return err(403, "Automations are not part of your role on SIGNL.");
+      }
+      if (method === "GET" && seg.length === 2) {
+        const disabled = await templatesLib.disabledEntryIds();
+        const overrideRecs = await templatesLib.listRecords();
+        const overriddenRefs = new Set(overrideRecs.filter((r) => r.currentVersion >= 1).map((r) => r.refId));
+        const ps = notifyLib.providerStatus();
+        const groups = automationsCatalog.GROUPS.map((name) => ({ name, entries: [] }));
+        for (const entry of automationsCatalog.ENTRIES) {
+          const g = groups.find((x) => x.name === entry.group);
+          const row = {
+            ...entry,
+            state: entry.critical ? "always_on" : disabled.has(entry.id) ? "off" : entry.prefGate ? "recipient" : "on",
+            overridden: overriddenRefs.has(entry.templateRef),
+            envNote: entry.lane === "rail" && ps.sandbox ? "Texts and rail email are in sandbox: they record to the outbox instead of sending, until the provider keys are in." : null,
+          };
+          (g ? g.entries : groups[0].entries).push(row);
+        }
+        return json(200, { groups, canManage: perms138.hasPerm(user, "automations.manage"), generatedAt: nowIso() });
+      }
+      const entry = automationsCatalog.byId(seg[2]);
+      if (!entry) return err(404, "That automation is not in the catalogue.");
+      if (method === "GET" && seg.length === 3) {
+        const preview = await automationLivePreview138(entry);
+        const rec = await templatesLib.getRecord(entry.templateRef);
+        return json(200, {
+          entry: { ...entry, state: entry.critical ? "always_on" : (await templatesLib.disabledEntryIds()).has(entry.id) ? "off" : entry.prefGate ? "recipient" : "on" },
+          preview, lastSent: await automationLastSent138(entry),
+          override: rec ? { currentVersion: rec.currentVersion, versions: rec.versions.map((v) => ({ v: v.v, editedBy: v.editedBy, editedAt: v.editedAt, note: v.note })), updatedAt: rec.updatedAt } : null,
+          canManage: perms138.hasPerm(user, "automations.manage"),
+        });
+      }
+      if (method === "POST" && seg.length === 4 && seg[3] === "toggle") {
+        if (!perms138.hasPerm(user, "automations.manage")) return err(403, "Turning automations off or on is not part of your role.");
+        if (entry.critical) return err(400, "This one can't be turned off. If it stops, people get locked out of their accounts.");
+        // A pref-gated automation can still be switched off here:
+        // the person's own preference and this switch are separate
+        // gates, and either one stops the send (spec: the toggle is
+        // refused only for critical mail).
+        const b = parseBody(event);
+        const on = !!b.on;
+        const rec = (await store.get("config:automations")) || { disabled: {} };
+        rec.disabled = rec.disabled || {};
+        if (on) delete rec.disabled[entry.id]; else rec.disabled[entry.id] = true;
+        rec.updatedBy = user.id; rec.updatedAt = nowIso();
+        await store.set("config:automations", rec);
+        templatesLib.invalidate();
+        await logEvent({ type: "automation_toggled", actorId: user.id, actorRole: "admin", subjectId: entry.id, market: null, data: { entryId: entry.id, on } });
+        return json(200, { ok: true, state: on ? "on" : "off" });
+      }
+      if (method === "POST" && seg.length === 4 && seg[3] === "test") {
+        if (!perms138.hasPerm(user, "automations.manage")) return err(403, "Test sends are not part of your role.");
+        const b = parseBody(event);
+        const allowed = await allowedTestRecipients138(user);
+        const to = String(b.to || user.email || "").toLowerCase();
+        if (!allowed.has(to)) return err(403, "Test emails go to your own inbox only.");
+        const preview = await automationLivePreview138(entry);
+        if (!preview.text && !preview.sms) return err(400, preview.note || "There is no sendable sample for this one.");
+        let bodyText = preview.text || preview.sms;
+        if (preview.sms && preview.text) bodyText += "\n\n--- The text-message version ---\n" + preview.sms;
+        const result = await sendEmail({ to, subject: `[TEST] ${preview.subject || entry.name}`, text: bodyText, html: brandedEmailHtml(bodyText) });
+        await logEvent({ type: "automation_test_sent", actorId: user.id, actorRole: "admin", subjectId: entry.id, market: null, data: { entryId: entry.id, to, sent: !!result.sent } });
+        return json(200, { sent: !!result.sent, reason: result.sent ? null : (result.reason || "send_failed"), to });
+      }
+      return err(404, "Route not found");
+    }
+
+    // ---- Build -138: connections board (Area 1) ----
+    if (seg[1] === "connections") {
+      if (method === "GET" && seg.length === 2) {
+        if (!perms138.hasPerm(user, "connections.view") && !perms138.hasPerm(user, "connections.manage")) return err(403, "Connections are not part of your role on SIGNL.");
+        return json(200, { rows: await connectionsBoard138(), canManage: perms138.hasPerm(user, "connections.manage") });
+      }
+      if (method === "POST" && seg.length === 4 && seg[3] === "note") {
+        if (!perms138.hasPerm(user, "connections.manage")) return err(403, "Writing connection notes is not part of your role.");
+        const b = parseBody(event);
+        const rec = (await store.get("config:connections")) || { notes: {} };
+        rec.notes = rec.notes || {};
+        const text = String(b.text || "").trim();
+        if (text) rec.notes[seg[2]] = { text, asOf: new Date().toISOString().slice(0, 10), by: user.id };
+        else delete rec.notes[seg[2]];
+        await store.set("config:connections", rec);
+        await logEvent({ type: "connection_note_updated", actorId: user.id, actorRole: "admin", subjectId: seg[2], market: null, data: { rowId: seg[2], cleared: !text } });
+        return json(200, { ok: true, rows: await connectionsBoard138() });
+      }
+      return err(404, "Route not found");
+    }
+
+    // ---- Build -138: Template Studio (Area 6) ----
+    if (seg[1] === "templates") {
+      const canViewT = perms138.hasPerm(user, "templates.view") || perms138.hasPerm(user, "templates.edit");
+      if (!canViewT) return err(403, "Templates are not part of your role on SIGNL.");
+      const canEditT = perms138.hasPerm(user, "templates.edit");
+      if (method === "GET" && seg.length === 2) {
+        const recs = await templatesLib.listRecords();
+        const byRef = new Map(recs.map((r) => [r.refId, r]));
+        const automation = automationsCatalog.GROUPS.map((name) => ({ name, entries: [] }));
+        for (const entry of automationsCatalog.ENTRIES) {
+          const g = automation.find((x) => x.name === entry.group);
+          const rec = byRef.get(entry.templateRef);
+          (g ? g.entries : automation[0].entries).push({ refId: entry.templateRef, name: entry.name, editLevel: entry.editLevel, overridden: !!(rec && rec.currentVersion >= 1), currentVersion: rec ? rec.currentVersion : 0 });
+          byRef.delete(entry.templateRef);
+        }
+        const custom = [...byRef.values()].map((r) => ({ refId: r.refId, name: r.displayName, kind: r.kind, editLevel: r.editLevel, currentVersion: r.currentVersion, updatedAt: r.updatedAt }));
+        return json(200, { automation, custom, canEdit: canEditT });
+      }
+      if (method === "POST" && seg.length === 2) {
+        if (!canEditT) return err(403, "Editing templates is not part of your role.");
+        const b = parseBody(event);
+        const kind = String(b.kind || "");
+        if (!["marketing", "social", "platform_message"].includes(kind)) return err(400, "New templates here are marketing, social, or platform-message templates. A new automatic email needs a trigger built into the app first.");
+        const name = String(b.name || "").trim();
+        if (!name) return err(400, "Give the template a name.");
+        const refId = `custom-${kind}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40)}-${crypto.randomUUID().slice(0, 4)}`;
+        try {
+          const rec = await templatesLib.createTemplate({ refId, kind, displayName: name, subject: b.subject || null, text: b.text || "", createdBy: user.id });
+          await logEvent({ type: "template_created", actorId: user.id, actorRole: "admin", subjectId: refId, market: null, data: { refId, kind } });
+          return json(201, { template: rec });
+        } catch (e) { return err(400, String(e && e.message || e)); }
+      }
+      const refId = seg[2];
+      const entry = automationsCatalog.byId(refId);
+      if (method === "GET" && seg.length === 3) {
+        const rec = await templatesLib.getRecord(refId);
+        if (!rec && !entry) return err(404, "That template does not exist.");
+        return json(200, {
+          refId,
+          entry: entry ? { id: entry.id, name: entry.name, editLevel: entry.editLevel, requiredTokens: entry.requiredTokens, lockedLine: entry.lockedLine || null, lane: entry.lane } : null,
+          record: rec,
+          preview: entry ? await automationLivePreview138(entry) : null,
+          canEdit: canEditT,
+        });
+      }
+      if (method === "POST" && seg.length === 4 && (seg[3] === "versions" || seg[3] === "rollback" || seg[3] === "test")) {
+        if (!canEditT) return err(403, "Editing templates is not part of your role.");
+        if (entry && !perms138.hasPerm(user, "automations.manage")) return err(403, "This template drives an automation — editing it also needs the automations permission.");
+        const b = parseBody(event);
+        if (seg[3] === "test") {
+          const allowed = await allowedTestRecipients138(user);
+          const to = String(b.to || user.email || "").toLowerCase();
+          if (!allowed.has(to)) return err(403, "Test emails go to your own inbox only.");
+          let subject = "", bodyText = "";
+          if (entry) {
+            const preview = await automationLivePreview138(entry);
+            if (!preview.text && !preview.sms) return err(400, preview.note || "There is no sendable sample for this one.");
+            subject = preview.subject || entry.name; bodyText = preview.text || preview.sms;
+            if (preview.sms && preview.text) bodyText += "\n\n--- The text-message version ---\n" + preview.sms;
+          } else {
+            const rec = await templatesLib.getRecord(refId);
+            const ov = rec ? await templatesLib.currentOverride(refId) : null;
+            if (!ov || !ov.text) return err(400, "This template has no saved wording to test yet.");
+            const values = automationTokenValues138(FIXTURE_CREATOR_138, ov.text);
+            values.unsubscribeLine = MARKETING_UNSUB_LINE_138;
+            subject = ov.subject ? templatesLib.substitute(ov.subject, values) : rec.displayName;
+            bodyText = templatesLib.substitute(ov.text, values);
+          }
+          const result = await sendEmail({ to, subject: `[TEST] ${subject}`, text: bodyText, html: brandedEmailHtml(bodyText) });
+          await logEvent({ type: "automation_test_sent", actorId: user.id, actorRole: "admin", subjectId: refId, market: null, data: { entryId: refId, to, sent: !!result.sent, via: "templates" } });
+          return json(200, { sent: !!result.sent, reason: result.sent ? null : (result.reason || "send_failed"), to });
+        }
+        if (entry && entry.editLevel === "view" && seg[3] === "versions") return err(400, "This one is view-only here — its wording is written where it fires in the app.");
+        try {
+          if (seg[3] === "versions") {
+            const isSubjectOnly = entry && entry.editLevel === "subject";
+            // A subject-level save stores the built body alongside
+            // (the funnel ignores it for subject-level entries) so
+            // the record's required pieces stay honestly present.
+            const rec = await templatesLib.saveVersion(refId, {
+              subject: b.subject != null ? String(b.subject) : null,
+              text: isSubjectOnly ? (automationDefaultPreview138(entry).text || "") : String(b.text || ""),
+              editedBy: user.id,
+              note: b.note ? String(b.note) : null,
+              meta: entry ? { kind: entry.lane === "rail" ? "automation_sms" : "automation_email", displayName: entry.name, editLevel: entry.editLevel, requiredTokens: entry.requiredTokens || [], createdBy: user.id } : undefined,
+            });
+            await logEvent({ type: "template_saved", actorId: user.id, actorRole: "admin", subjectId: refId, market: null, data: { refId, v: rec.currentVersion } });
+            return json(200, { template: rec });
+          }
+          const rec = await templatesLib.rollback(refId, Number(b.v), user.id);
+          await logEvent({ type: "template_rolled_back", actorId: user.id, actorRole: "admin", subjectId: refId, market: null, data: { refId, v: rec.currentVersion } });
+          return json(200, { template: rec });
+        } catch (e) { return err(400, String(e && e.message || e)); }
+      }
+      return err(404, "Route not found");
+    }
+
+    // ---- Build -138: Marketing (Area 2) ----
+    if (seg[1] === "marketing") {
+      const canDraftM = perms138.hasPerm(user, "marketing.draft");
+      const canApproveM = perms138.hasPerm(user, "marketing.approve");
+      if (!canDraftM && !canApproveM) return err(403, "Marketing is not part of your role on SIGNL.");
+      if (method === "GET" && seg.length === 2) {
+        const suppressedSet = await marketingSuppression138();
+        const all = await allUsers();
+        const eligible = all.filter((u) => !isTester(u) && !(u.email && suppressedSet.has(String(u.email).toLowerCase())) && perms138.inMarketScope(user, u.market));
+        const defs = (await marketingSegmentDefs138Async()).map((d) => ({ ...d, count: eligible.filter((u) => marketingSpecMatches138(u, d.spec)).length }));
+        const rows = (await store.list("mkcampaign:")).map((r) => r.value).filter(Boolean)
+          .filter((c) => perms138.inMarketScope(user, campaignScopeMarket138(c.segment)))
+          .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+        const campaigns = [];
+        for (const c of rows) {
+          const author = c.authorId ? await store.get(`user:${c.authorId}`) : null;
+          const approver = c.approvedBy ? await store.get(`user:${c.approvedBy}`) : null;
+          campaigns.push({ id: c.id, subject: c.subject, channel: c.channel || "email", status: c.status, segment: c.segment, templateRefId: c.templateRefId || null, authorName: author ? author.name : null, authorId: c.authorId, approverName: approver ? approver.name : null, recipientCount: Array.isArray(c.recipientIds) ? c.recipientIds.length : null, runAt: c.runAt || null, sentAt: c.sentAt || null, results: c.results || null, createdAt: c.createdAt, changesNote: c.changesNote || null });
+        }
+        const sentTodayTotal = (await campaignSentToday(new Date())) + (await marketingSentToday138(new Date()));
+        return json(200, {
+          segments: defs, campaigns, canDraft: canDraftM, canApprove: canApproveM,
+          from: "hello@joinsignl.com",
+          dailyCeiling: campaignDailyCeiling(), sentToday: sentTodayTotal,
+          sms: smsRailState138(),
+          suppression: canApproveM ? [...suppressedSet] : undefined, suppressionCount: suppressedSet.size,
+        });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "segment-count") {
+        const b = parseBody(event);
+        const r = await marketingResolveSegment138(b.segment || {}, user);
+        return json(200, { count: r.matched.length, suppressed: r.suppressedCount, testers: r.testerCount, outOfScope: r.scopeCount });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "suppression") {
+        if (!canApproveM) return err(403, "The suppression list is kept by whoever can send.");
+        const b = parseBody(event);
+        const email = String(b.email || "").trim().toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return err(400, "That doesn't look like an email address.");
+        const rec = (await store.get("config:unsubscribes")) || { emails: [] };
+        rec.emails = [...new Set([...(rec.emails || []), email])];
+        await store.set("config:unsubscribes", rec);
+        await logEvent({ type: "marketing_suppression_added", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { email } });
+        return json(200, { ok: true, suppression: rec.emails });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "campaigns") {
+        if (!canDraftM) return err(403, "Writing marketing drafts is not part of your role.");
+        const b = parseBody(event);
+        const channel = ["email", "platform", "sms"].includes(b.channel) ? b.channel : "email";
+        const subject = String(b.subject || "").trim();
+        const text = String(b.text || "").trim();
+        if (!text) return err(400, channel === "email" ? "A campaign email needs a subject and a body." : "Write the message first.");
+        if (channel === "email" && !subject) return err(400, "A campaign email needs a subject and a body.");
+        if (!b.segment || !b.segment.audience) return err(400, "Pick who this goes to first.");
+        if (channel === "platform" && b.segment.audience !== "creators") return err(400, "In-app messages go to creators — their SIGNL Messages thread is the one thread the team writes in. Businesses and partners get email.");
+        const campaign = { id: crypto.randomUUID(), authorId: user.id, channel, subject: subject || text.slice(0, 60), text, segment: b.segment, templateRefId: b.templateRefId || null, status: "draft", recipientIds: null, createdAt: nowIso(), updatedAt: nowIso() };
+        await store.set(`mkcampaign:${campaign.id}`, campaign);
+        await logEvent({ type: "marketing_draft_created", actorId: user.id, actorRole: "admin", subjectId: campaign.id, market: campaignScopeMarket138(b.segment), data: { subject: campaign.subject, channel, city: (b.segment && b.segment.cityLabel) || null } });
+        return json(201, { campaign });
+      }
+      const mc = (seg.length >= 4 && seg[2] === "campaigns") ? await store.get(`mkcampaign:${seg[3]}`) : null;
+      if (seg.length === 4 && method === "GET" && mc) {
+        if (!perms138.inMarketScope(user, campaignScopeMarket138(mc.segment))) return err(404, "Campaign not found");
+        const recipients = mc.status === "sent" ? (await store.list(`mkrecipient:${mc.id}:`)).map((r) => r.value).filter(Boolean) : [];
+        return json(200, { campaign: mc, recipients });
+      }
+      if (seg.length === 5 && method === "POST" && mc) {
+        if (!perms138.inMarketScope(user, campaignScopeMarket138(mc.segment))) return err(404, "Campaign not found");
+        const b = parseBody(event);
+        if (seg[4] === "update") {
+          if (!canDraftM) return err(403, "Writing marketing drafts is not part of your role.");
+          if (!["draft", "changes_requested"].includes(mc.status)) return err(400, "Only a draft can be edited — this one has moved on.");
+          if (b.subject) mc.subject = String(b.subject).trim();
+          if (b.text) mc.text = String(b.text).trim();
+          if (b.segment) mc.segment = b.segment;
+          if (b.channel && ["email", "platform", "sms"].includes(b.channel)) {
+            if (b.channel === "platform" && mc.segment && mc.segment.audience !== "creators") return err(400, "In-app messages go to creators — their SIGNL Messages thread is the one thread the team writes in. Businesses and partners get email.");
+            mc.channel = b.channel;
+          }
+          mc.updatedAt = nowIso();
+          await store.set(`mkcampaign:${mc.id}`, mc);
+          return json(200, { campaign: mc });
+        }
+        if (seg[4] === "submit") {
+          if (!canDraftM) return err(403, "Writing marketing drafts is not part of your role.");
+          if (!["draft", "changes_requested"].includes(mc.status)) return err(400, "This campaign is not a draft anymore.");
+          mc.status = "in_review"; mc.updatedAt = nowIso();
+          await store.set(`mkcampaign:${mc.id}`, mc);
+          await logEvent({ type: "marketing_submitted", actorId: user.id, actorRole: "admin", subjectId: mc.id, market: null, data: {} });
+          return json(200, { campaign: mc });
+        }
+        if (seg[4] === "approve") {
+          if (!canApproveM) return err(403, "Approving marketing email is not part of your role.");
+          if (mc.status !== "in_review") return err(400, "Only a campaign waiting in review can be approved.");
+          if (mc.authorId === user.id && !perms138.isSuper(user)) return err(400, "You wrote this one, so someone else approves it. That's the rule that keeps a tired brain from emailing everybody.");
+          const r = await marketingResolveSegment138(mc.segment, user);
+          mc.recipientIds = r.matched.map((u) => u.id);
+          mc.recipientCount = r.matched.length;
+          mc.recipientCountAtApproval = r.matched.length;
+          mc.approvedBy = user.id; mc.approvedAt = nowIso(); mc.status = "approved"; mc.updatedAt = nowIso();
+          await store.set(`mkcampaign:${mc.id}`, mc);
+          await logEvent({ type: "marketing_approved", actorId: user.id, actorRole: "admin", subjectId: mc.id, market: null, data: { recipients: r.matched.length } });
+          return json(200, { campaign: mc });
+        }
+        if (seg[4] === "changes") {
+          if (!canApproveM) return err(403, "Approving marketing email is not part of your role.");
+          if (mc.status !== "in_review") return err(400, "Only a campaign waiting in review can be sent back.");
+          mc.status = "changes_requested"; mc.changesNote = String(b.note || "").trim(); mc.updatedAt = nowIso();
+          await store.set(`mkcampaign:${mc.id}`, mc);
+          await logEvent({ type: "marketing_changes_requested", actorId: user.id, actorRole: "admin", subjectId: mc.id, market: null, data: { note: mc.changesNote } });
+          return json(200, { campaign: mc });
+        }
+        if (seg[4] === "schedule") {
+          if (!canApproveM) return err(403, "Scheduling marketing email is not part of your role.");
+          if (mc.status !== "approved") return err(400, "Approve the campaign first, then schedule it.");
+          if ((mc.channel || "email") === "sms") return err(400, smsRailState138().note);
+          const runAt = Date.parse(b.runAt || "");
+          if (!Number.isFinite(runAt) || runAt <= Date.now()) return err(400, "Pick a time in the future.");
+          mc.status = "scheduled"; mc.runAt = new Date(runAt).toISOString(); mc.updatedAt = nowIso();
+          await store.set(`mkcampaign:${mc.id}`, mc);
+          await logEvent({ type: "marketing_scheduled", actorId: user.id, actorRole: "admin", subjectId: mc.id, market: null, data: { runAt: mc.runAt } });
+          return json(200, { campaign: mc });
+        }
+        if (seg[4] === "send") {
+          if (!canApproveM) return err(403, "Sending marketing email is not part of your role.");
+          if (mc.status !== "approved") return err(400, "This campaign is not approved. An unapproved campaign can never send.");
+          const channel = mc.channel || "email";
+          if (channel === "sms") {
+            // Honest state, never a fake send: the audience and
+            // the draft are real; the rail is not connected yet.
+            const sms = smsRailState138();
+            if (!sms.connected) return err(400, sms.note);
+            return err(400, "The Twilio keys are in the app, but the in-app texting lane is not switched on in this build yet — nothing was sent.");
+          }
+          if (channel === "platform") {
+            mc.status = "sending"; mc.updatedAt = nowIso();
+            await store.set(`mkcampaign:${mc.id}`, mc);
+            const doneP = await marketingSendPlatform138(mc, user);
+            return json(200, { campaign: doneP });
+          }
+          const sentTodayTotal = (await campaignSentToday(new Date())) + (await marketingSentToday138(new Date()));
+          const remaining = campaignDailyCeiling() - sentTodayTotal;
+          if ((mc.recipientIds || []).length > remaining) {
+            return err(400, `That send would pass today's sending ceiling: ${sentTodayTotal} already sent today across SIGNL's lists, the ceiling is ${campaignDailyCeiling()}, and this list is ${(mc.recipientIds || []).length}. It can go tomorrow, or to a smaller segment today.`);
+          }
+          mc.status = "sending"; mc.updatedAt = nowIso();
+          await store.set(`mkcampaign:${mc.id}`, mc);
+          const done = await marketingSend138(mc, user);
+          return json(200, { campaign: done });
+        }
+        return err(404, "Route not found");
+      }
+      return err(404, "Route not found");
+    }
+
+    // ---- Build -138: Social (Area 3) ----
+    if (seg[1] === "social") {
+      const canViewS = perms138.hasPerm(user, "social.view") || perms138.hasPerm(user, "social.draft") || perms138.hasPerm(user, "social.approve");
+      if (!canViewS) return err(403, "Social is not part of your role on SIGNL.");
+      const canDraftS = perms138.hasPerm(user, "social.draft");
+      const canApproveS = perms138.hasPerm(user, "social.approve");
+      if (method === "GET" && seg.length === 2) {
+        await socialEnsureSeeded138();
+        const posts = (await store.list("socialpost:")).map((r) => r.value).filter(Boolean);
+        const metrics = (await store.list("socialmetric:")).map((r) => r.value).filter(Boolean);
+        const channels = [];
+        for (const platform of ["instagram", "facebook", "linkedin"]) {
+          const mine = posts.filter((p) => p.platform === platform && p.status !== "queued");
+          const totals = { posts: mine.length, likes: 0, comments: 0, shares: 0, unreported: 0 };
+          for (const p of mine) {
+            const m = p.metrics || {};
+            if (typeof m.likes === "number") totals.likes += m.likes; else totals.unreported += 1;
+            if (typeof m.comments === "number") totals.comments += m.comments;
+            if (typeof m.shares === "number") totals.shares += m.shares;
+          }
+          const series = metrics.filter((m) => m.platform === platform).sort((a, b) => (a.date < b.date ? -1 : 1));
+          channels.push({
+            platform, totals, series,
+            sourceNote: platform === "linkedin" ? "LinkedIn numbers are typed in by hand in this version — the page is run outside the app." : "Post history imported from the posting queue. Follower counts are typed in from the daily account check until Meta approves the app.",
+          });
+        }
+        const recent = posts.filter((p) => p.status !== "queued").sort((a, b) => String(b.postedAt || "") < String(a.postedAt || "") ? -1 : 1).slice(0, 30);
+        const queued = posts.filter((p) => p.status === "queued").sort((a, b) => String(a.createdAt || "") < String(b.createdAt || "") ? -1 : 1);
+        const drafts = (await store.list("socialdraft:")).map((r) => r.value).filter(Boolean).filter((d) => d.status === "draft").sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+        return json(200, { channels, recent, queued, drafts, canDraft: canDraftS, canApprove: canApproveS });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "drafts") {
+        if (!canDraftS) return err(403, "Drafting social posts is not part of your role.");
+        const b = parseBody(event);
+        if (!["instagram", "facebook", "linkedin"].includes(b.platform)) return err(400, "Pick the channel first.");
+        const text = String(b.text || "").trim();
+        if (!text) return err(400, "Write the post first.");
+        const draft = { id: crypto.randomUUID(), platform: b.platform, text, linkNote: String(b.linkNote || ""), status: "draft", authorId: user.id, authorName: user.name || null, createdAt: nowIso() };
+        await store.set(`socialdraft:${draft.id}`, draft);
+        await logEvent({ type: "social_draft_created", actorId: user.id, actorRole: "admin", subjectId: draft.id, market: null, data: { platform: draft.platform } });
+        return json(201, { draft });
+      }
+      if (method === "POST" && seg.length === 5 && seg[2] === "drafts" && seg[4] === "approve") {
+        if (!canApproveS) return err(403, "Approving social posts is not part of your role.");
+        const draft = await store.get(`socialdraft:${seg[3]}`);
+        if (!draft || draft.status !== "draft") return err(404, "Draft not found");
+        if (draft.authorId === user.id && !perms138.isSuper(user)) return err(400, "You wrote this one, so someone else approves it.");
+        draft.status = "queued"; draft.approvedBy = user.id; draft.approvedAt = nowIso();
+        await store.set(`socialdraft:${draft.id}`, draft);
+        await store.set(`socialpost:${draft.platform}:queued-${draft.id}`, { platform: draft.platform, externalId: `queued-${draft.id}`, text: draft.text, url: null, status: "queued", source: "app", postedAt: null, createdAt: nowIso(), metrics: { likes: null, comments: null, shares: null } });
+        await logEvent({ type: "social_draft_approved", actorId: user.id, actorRole: "admin", subjectId: draft.id, market: null, data: { platform: draft.platform } });
+        return json(200, { ok: true });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "posts") {
+        if (!canDraftS) return err(403, "Adding posts by hand is not part of your role.");
+        const b = parseBody(event);
+        if (!["instagram", "facebook", "linkedin"].includes(b.platform)) return err(400, "Pick the channel first.");
+        if (!b.url) return err(400, "A hand-added post needs its link.");
+        const externalId = `manual-${crypto.randomUUID().slice(0, 8)}`;
+        const post = { platform: b.platform, externalId, url: String(b.url), text: String(b.text || ""), status: "posted", source: "manual", postedAt: b.postedAt || nowIso(), createdAt: nowIso(), metrics: { likes: typeof b.likes === "number" ? b.likes : null, comments: typeof b.comments === "number" ? b.comments : null, shares: typeof b.shares === "number" ? b.shares : null } };
+        await store.set(`socialpost:${post.platform}:${externalId}`, post);
+        await logEvent({ type: "social_post_added", actorId: user.id, actorRole: "admin", subjectId: externalId, market: null, data: { platform: post.platform } });
+        return json(201, { post });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "metrics") {
+        if (!canDraftS) return err(403, "Typing in channel numbers is not part of your role.");
+        const b = parseBody(event);
+        if (!["instagram", "facebook", "linkedin"].includes(b.platform)) return err(400, "Pick the channel first.");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date || ""))) return err(400, "Give the day as YYYY-MM-DD.");
+        const row = { platform: b.platform, date: String(b.date), followers: typeof b.followers === "number" ? b.followers : null, following: typeof b.following === "number" ? b.following : null, posts: typeof b.posts === "number" ? b.posts : null, source: "manual", note: String(b.note || ""), by: user.id, at: nowIso() };
+        await store.set(`socialmetric:${row.platform}:${row.date}`, row);
+        return json(201, { metric: row });
+      }
+      return err(404, "Route not found");
+    }
+
+    // ---- Build -138: Team & permissions (Area 4) ----
+    if (seg[1] === "team") {
+      if (!perms138.hasPerm(user, "team.manage")) return err(403, "Team is not part of your role on SIGNL.");
+      if (method === "GET" && seg.length === 2) {
+        const admins = (await allUsers()).filter((u) => u.role === "admin");
+        const members = admins.map((u) => {
+          const p = perms138.permsOf(u);
+          return {
+            id: u.id, name: u.name || "", email: u.email || "", status: u.status || "approved",
+            isYou: u.id === user.id, super: !!(p && p.super),
+            template: p ? p.template : null,
+            templateLabel: p && p.template && perms138.ROLE_TEMPLATES[p.template] ? perms138.ROLE_TEMPLATES[p.template].label : (p && p.super ? "Super admin" : "Custom"),
+            flags: p && !p.super ? Object.keys(p.flags || {}).filter((f) => p.flags[f]) : [],
+            markets: p ? p.markets : null, statScopes: p ? p.statScopes : [],
+            lastActiveAt: u.lastActiveAt || null, createdAt: u.createdAt || null,
+          };
+        }).sort((a, b) => (a.super === b.super ? String(a.name).localeCompare(String(b.name)) : a.super ? -1 : 1));
+        const now = Date.now();
+        const invites = (await store.list("teaminvite:")).map((r) => r.value).filter(Boolean)
+          .filter((i) => !i.usedAt && Date.parse(i.expiresAt) > now)
+          .map((i) => ({ email: i.email, name: i.name, template: i.template, expiresAt: i.expiresAt, invitedBy: i.invitedBy }));
+        const storedTemplates = (await store.get("config:team-templates")) || {};
+        const templates = Object.entries(perms138.ROLE_TEMPLATES).map(([id, t]) => {
+          const o = storedTemplates[id];
+          return { id, label: (o && o.label) || t.label, blurb: (o && o.blurb) || t.blurb, flags: o && Array.isArray(o.flags) ? o.flags : t.flags, statScopes: o && Array.isArray(o.statScopes) ? o.statScopes : t.statScopes };
+        });
+        return json(200, {
+          members, invites, templates,
+          flagReference: perms138.FLAGS.map((f) => ({ flag: f, label: perms138.FLAG_LABELS[f] })),
+          statScopeReference: perms138.STAT_SCOPES.map((s) => ({ scope: s, label: perms138.STAT_SCOPE_LABELS[s] })),
+          markets: MARKETS.map((m) => m.name),
+        });
+      }
+      if (method === "PUT" && seg.length === 3 && seg[2] === "templates") {
+        const b = parseBody(event);
+        const incoming = (b && b.templates) || {};
+        const clean = {};
+        for (const [id, t] of Object.entries(incoming)) {
+          if (!perms138.ROLE_TEMPLATES[id] || !t) continue;
+          clean[id] = {
+            label: String(t.label || perms138.ROLE_TEMPLATES[id].label).slice(0, 60),
+            blurb: String(t.blurb || perms138.ROLE_TEMPLATES[id].blurb).slice(0, 200),
+            flags: (Array.isArray(t.flags) ? t.flags : []).filter((f) => perms138.FLAGS.includes(f)),
+            statScopes: (Array.isArray(t.statScopes) ? t.statScopes : []).filter((s) => perms138.STAT_SCOPES.includes(s)),
+          };
+        }
+        await store.set("config:team-templates", clean);
+        await logEvent({ type: "team_templates_updated", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { templates: Object.keys(clean) } });
+        return json(200, { ok: true });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "invite") {
+        const b = parseBody(event);
+        const email = String(b.email || "").trim().toLowerCase();
+        const name = String(b.name || "").trim();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return err(400, "That doesn't look like an email address.");
+        if (!name) return err(400, "Give the person a name.");
+        if (await store.get(`email:${email}`)) return err(409, "That email already has a SIGNL account.");
+        let snapshot;
+        let templateId = null;
+        if (b.template && perms138.ROLE_TEMPLATES[b.template]) {
+          templateId = b.template;
+          const storedTemplates = (await store.get("config:team-templates")) || {};
+          const o = storedTemplates[templateId];
+          const flagsArr = o && Array.isArray(o.flags) ? o.flags : perms138.ROLE_TEMPLATES[templateId].flags;
+          const scopesArr = o && Array.isArray(o.statScopes) ? o.statScopes : perms138.ROLE_TEMPLATES[templateId].statScopes;
+          snapshot = { flags: Object.fromEntries(flagsArr.map((f) => [f, true])), statScopes: scopesArr.slice() };
+        } else {
+          snapshot = {
+            flags: Object.fromEntries((Array.isArray(b.flags) ? b.flags : []).filter((f) => perms138.FLAGS.includes(f)).map((f) => [f, true])),
+            statScopes: (Array.isArray(b.statScopes) ? b.statScopes : []).filter((s) => perms138.STAT_SCOPES.includes(s)),
+          };
+        }
+        const markets = Array.isArray(b.markets) && b.markets.length ? b.markets.map((m) => normalizeMarketName(String(m))).filter((m) => MARKETS.some((x) => x.name === m)) : null;
+        const id = crypto.randomUUID();
+        const member = {
+          id, role: "admin", name, email, status: "approved", passwordHash: null, salt: null,
+          adminPerms: { super: false, flags: snapshot.flags, markets, statScopes: snapshot.statScopes, template: templateId, grantedBy: user.id, grantedAt: nowIso() },
+          invitedBy: user.id, createdAt: nowIso(), updatedAt: nowIso(),
+        };
+        await store.set(`user:${id}`, member);
+        await store.set(`email:${email}`, { userId: id });
+        const token = crypto.randomBytes(32).toString("hex");
+        const hash = crypto.createHash("sha256").update(token).digest("hex");
+        const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+        await store.set(`pwreset:${hash}`, { userId: id, email, createdAt: nowIso(), expiresAt });
+        await store.set(`pwreset-user:${id}`, { tokenHash: hash, createdAt: nowIso() });
+        await store.set(`teaminvite:${hash}`, { userId: id, email, name, template: templateId, invitedBy: user.id, createdAt: nowIso(), expiresAt, usedAt: null });
+        const base = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+        const mail = {
+          subject: "You're invited to the SIGNL admin team",
+          text: [
+            `Hi ${name.split(/\s+/)[0]},`,
+            "",
+            `${user.name || "Jeff"} added you to the SIGNL admin team. Your role covers only the rooms and markets in your invite — nothing else is in your account.`,
+            "",
+            "Set your password here (the link works once and expires in 48 hours):",
+            `${base}/?reset=${token}`,
+            "",
+            "Then sign in at app.joinsignl.com and you'll land on your home: Sig up top, your numbers, and your next steps. Anything you can't see isn't part of your role — if that ever looks wrong, ask Jeff.",
+            "",
+            "The SIGNL team",
+            "hello@joinsignl.com",
+          ].join("\n"),
+        };
+        const emailResult = await deliverEmail("team_invite", member, mail.subject, mail.text, null);
+        await logEvent({ type: "team_invited", actorId: user.id, actorRole: "admin", subjectId: id, market: null, data: { email, template: templateId, emailSent: !!emailResult.sent } });
+        return json(201, { ok: true, member: { id, name, email }, emailSent: !!emailResult.sent });
+      }
+      const target = seg.length >= 3 ? await store.get(`user:${seg[2]}`) : null;
+      if (seg.length === 4 && method === "GET" && seg[3] === "activity" && target) {
+        const events = await listEvents({ limit: 1000 });
+        const mine = events.filter((e) => e.actorId === target.id).slice(0, 50);
+        return json(200, { events: mine, total: mine.length });
+      }
+      if (seg.length === 4 && method === "POST" && target && target.role === "admin") {
+        const b = parseBody(event);
+        if (seg[3] === "permissions") {
+          if (perms138.isSuper(target)) return err(400, "The super-admin's permissions are the account itself — they can't be edited.");
+          const p = perms138.permsOf(target) || { flags: {}, statScopes: [], markets: null, template: null };
+          const changed = [];
+          if (Array.isArray(b.flags)) { p.flags = Object.fromEntries(b.flags.filter((f) => perms138.FLAGS.includes(f)).map((f) => [f, true])); changed.push("flags"); }
+          if (Array.isArray(b.statScopes)) { p.statScopes = b.statScopes.filter((s) => perms138.STAT_SCOPES.includes(s)); changed.push("statScopes"); }
+          if (b.markets !== undefined) { p.markets = Array.isArray(b.markets) && b.markets.length ? b.markets.map((m) => normalizeMarketName(String(m))).filter((m) => MARKETS.some((x) => x.name === m)) : null; changed.push("markets"); }
+          if (b.template !== undefined) { p.template = b.template && perms138.ROLE_TEMPLATES[b.template] ? b.template : null; changed.push("template"); }
+          p.super = false; p.grantedBy = user.id; p.grantedAt = nowIso();
+          target.adminPerms = p; target.updatedAt = nowIso();
+          await store.set(`user:${target.id}`, target);
+          await logEvent({ type: "team_permissions_changed", actorId: user.id, actorRole: "admin", subjectId: target.id, market: null, data: { fields: changed, flags: Object.keys(p.flags || {}) } });
+          return json(200, { ok: true });
+        }
+        if (seg[3] === "revoke") {
+          if (target.id === user.id) return err(400, "You can't revoke yourself.");
+          if (perms138.isSuper(target)) return err(400, "The super-admin can't be revoked.");
+          target.adminPerms = { super: false, flags: {}, markets: [], statScopes: [], template: null, revokedAt: nowIso(), revokedBy: user.id };
+          target.status = "revoked"; target.updatedAt = nowIso();
+          await store.set(`user:${target.id}`, target);
+          await auth.revokeSessionsForUser(target.id);
+          const prev = await store.get(`pwreset-user:${target.id}`);
+          if (prev && prev.tokenHash) { await store.del(`pwreset:${prev.tokenHash}`); await store.del(`teaminvite:${prev.tokenHash}`); await store.del(`pwreset-user:${target.id}`); }
+          await logEvent({ type: "team_revoked", actorId: user.id, actorRole: "admin", subjectId: target.id, market: null, data: {} });
+          return json(200, { ok: true });
+        }
+        if (seg[3] === "resend") {
+          if (target.status === "revoked") return err(400, "That seat was revoked — invite them fresh instead.");
+          const prev = await store.get(`pwreset-user:${target.id}`);
+          if (prev && prev.tokenHash) { await store.del(`pwreset:${prev.tokenHash}`); await store.del(`teaminvite:${prev.tokenHash}`); }
+          const token = crypto.randomBytes(32).toString("hex");
+          const hash = crypto.createHash("sha256").update(token).digest("hex");
+          const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+          await store.set(`pwreset:${hash}`, { userId: target.id, email: target.email, createdAt: nowIso(), expiresAt });
+          await store.set(`pwreset-user:${target.id}`, { tokenHash: hash, createdAt: nowIso() });
+          await store.set(`teaminvite:${hash}`, { userId: target.id, email: target.email, name: target.name, template: target.adminPerms ? target.adminPerms.template : null, invitedBy: user.id, createdAt: nowIso(), expiresAt, usedAt: null });
+          const base = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+          const mail = {
+            subject: "Your SIGNL admin invite link (fresh copy)",
+            text: [`Hi ${(target.name || "").split(/\s+/)[0] || "there"},`, "", "Here's a fresh copy of your SIGNL admin invite link — the old one no longer works. It expires in 48 hours:", `${base}/?reset=${token}`, "", "The SIGNL team", "hello@joinsignl.com"].join("\n"),
+          };
+          const emailResult = await deliverEmail("team_invite", target, mail.subject, mail.text, null);
+          await logEvent({ type: "team_invite_resent", actorId: user.id, actorRole: "admin", subjectId: target.id, market: null, data: { emailSent: !!emailResult.sent } });
+          return json(200, { ok: true, emailSent: !!emailResult.sent });
+        }
+      }
+      return err(404, "Route not found");
+    }
+
+    // ---- Build -138: Learn Studio (Area 7) ----
+    if (seg[1] === "learn") {
+      const canViewL = perms138.hasPerm(user, "learn.view") || perms138.hasPerm(user, "learn.edit") || perms138.hasPerm(user, "learn.publish");
+      if (!canViewL) return err(403, "The Learn studio is not part of your role on SIGNL.");
+      const canEditL = perms138.hasPerm(user, "learn.edit");
+      const canPublishL = perms138.hasPerm(user, "learn.publish");
+      if (method === "GET" && seg.length === 2) {
+        await learnEnsureSeeded138();
+        const articles = (await store.list("learnarticle:")).map((r) => r.value).filter(Boolean)
+          .sort((a, b) => String(b.publishedAt || "") < String(a.publishedAt || "") ? -1 : 1);
+        const drafts = (await store.list("learndraft:")).map((r) => r.value).filter(Boolean)
+          .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+        const usedBy = {};
+        for (const a of articles) if (a.heroImage) usedBy[a.heroImage] = a.slug;
+        const jobs = (await store.list("learnpublish:")).map((r) => r.value).filter(Boolean)
+          .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 10)
+          .map((j) => ({ id: j.id, slug: j.slug, status: j.status, url: j.url || null, error: j.error || null, createdAt: j.createdAt }));
+        return json(200, { articles, drafts, photos: learnPhotos138(), photoUsedBy: usedBy, jobs, canEdit: canEditL, canPublish: canPublishL });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "drafts") {
+        if (!canEditL) return err(403, "Writing Learn drafts is not part of your role.");
+        const b = parseBody(event);
+        const headline = String(b.headline || "").trim();
+        if (!headline) return err(400, "The draft needs a headline.");
+        let draft = b.id ? await store.get(`learndraft:${b.id}`) : null;
+        if (!draft) {
+          let slug = headline.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "article";
+          if ((await store.get(`learnarticle:${slug}`)) || (await store.get(`learndraft-by-slug:${slug}`))) slug = `${slug}-${crypto.randomUUID().slice(0, 4)}`;
+          draft = { id: crypto.randomUUID(), slug, status: "draft", authorId: user.id, createdAt: nowIso() };
+          await store.set(`learndraft-by-slug:${slug}`, { draftId: draft.id });
+        }
+        draft.headline = headline;
+        draft.dek = String(b.dek || "");
+        draft.lede = String(b.lede || "");
+        draft.sections = Array.isArray(b.sections) ? b.sections.map((s) => ({ heading: String((s && s.heading) || ""), paragraphs: Array.isArray(s && s.paragraphs) ? s.paragraphs.map((p) => String(p)) : [] })) : [];
+        draft.heroImage = String(b.heroImage || "");
+        draft.topic = String(b.topic || "");
+        draft.audience = ["creators", "businesses", "both"].includes(b.audience) ? b.audience : "both";
+        draft.authorLine = b.authorLine === "named" ? "named" : "standing";
+        draft.updatedAt = nowIso(); draft.updatedBy = user.id;
+        await store.set(`learndraft:${draft.id}`, draft);
+        await logEvent({ type: "learn_draft_saved", actorId: user.id, actorRole: "admin", subjectId: draft.id, market: null, data: { slug: draft.slug } });
+        return json(200, { draft });
+      }
+      if (method === "POST" && seg.length === 5 && seg[2] === "drafts" && seg[4] === "preview") {
+        const draft = await store.get(`learndraft:${seg[3]}`);
+        if (!draft) return err(404, "Draft not found");
+        const hero = draft.heroImage ? `https://joinsignl.com/assets/photos/${draft.heroImage}` : "";
+        const escHtml = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const sectionsHtml = (draft.sections || []).map((s) => `${s.heading ? `<h2>${escHtml(s.heading)}</h2>` : ""}${(s.paragraphs || []).map((p) => `<p>${escHtml(p)}</p>`).join("")}`).join("");
+        const byline = draft.authorLine === "named" ? "By Jeff Rimmer, Founder, SIGNL" : "By Jeff, Founder, SIGNL";
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(draft.headline)}</title><style>body{font-family:Georgia,serif;max-width:680px;margin:40px auto;padding:0 20px;line-height:1.65;color:#141414}h1{font-size:34px;line-height:1.2}.dek{font-size:19px;color:#444}.byline{color:#777;font-size:14px}img{width:100%;border-radius:12px}</style></head><body><p class="byline">SIGNL Learn — draft preview</p><h1>${escHtml(draft.headline)}</h1><p class="dek">${escHtml(draft.dek)}</p><p class="byline">${byline}</p>${hero ? `<img src="${hero}" alt="">` : ""}<p>${escHtml(draft.lede)}</p>${sectionsHtml}</body></html>`;
+        return json(200, { html });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "publish") {
+        if (!canPublishL) return err(403, "Publishing Learn articles is not part of your role.");
+        const b = parseBody(event);
+        const draft = b.draftId ? await store.get(`learndraft:${b.draftId}`) : null;
+        if (!draft) return err(404, "Draft not found");
+        if (!draft.headline || !(draft.sections || []).length) return err(400, "The draft needs a headline and at least one written section before it can publish.");
+        if (draft.heroImage) {
+          const clash = (await store.list("learnarticle:")).map((r) => r.value).find((a) => a && a.status === "live" && a.heroImage === draft.heroImage && a.slug !== draft.slug);
+          if (clash) return err(400, `That photo is already the face of "${clash.headline || clash.slug}". Every article gets its own photo — pick another.`);
+        }
+        const job = {
+          id: crypto.randomUUID(), draftId: draft.id, slug: draft.slug, status: "queued",
+          article: { slug: draft.slug, headline: draft.headline, dek: draft.dek, lede: draft.lede, sections: draft.sections, heroImage: draft.heroImage, topic: draft.topic, audience: draft.audience, authorLine: draft.authorLine, date: new Date().toISOString().slice(0, 10) },
+          createdBy: user.id, createdAt: nowIso(),
+        };
+        await store.set(`learnpublish:${job.id}`, job);
+        draft.status = "in_publish_queue"; draft.updatedAt = nowIso();
+        await store.set(`learndraft:${draft.id}`, draft);
+        await logEvent({ type: "learn_publish_queued", actorId: user.id, actorRole: "admin", subjectId: job.id, market: null, data: { slug: draft.slug } });
+        return json(202, { job: { id: job.id, slug: job.slug, status: job.status } });
+      }
+      if (method === "GET" && seg.length === 4 && seg[2] === "publish") {
+        const job = await store.get(`learnpublish:${seg[3]}`);
+        if (!job) return err(404, "Publish job not found");
+        return json(200, { job: { id: job.id, slug: job.slug, status: job.status, url: job.url || null, error: job.error || null } });
+      }
+      return err(404, "Route not found");
+    }
+
+    // ---- Build -138: approval queue + GA website stats ----
+    if (seg[1] === "approval-queue" && method === "GET" && seg.length === 2) {
+      return json(200, await approvalQueue138(user));
+    }
+    if (seg[1] === "stats" && seg[2] === "website" && method === "GET") {
+      if (!perms138.hasStatScope(user, "website")) return err(403, "Website numbers are not part of your role.");
+      const to = /^\d{4}-\d{2}-\d{2}$/.test(query.to || "") ? query.to : new Date().toISOString().slice(0, 10);
+      const from = /^\d{4}-\d{2}-\d{2}$/.test(query.from || "") ? query.from : new Date(Date.now() - 27 * 86400000).toISOString().slice(0, 10);
+      const report = await gaLib.getWebsiteReport({ from, to, compare: query.compare === "prev" ? "prev" : "none", group: ["all", "marketing", "learn", "app"].includes(query.group) ? query.group : "all" });
+      return json(200, report);
+    }
+
     // Staff recruiters (Build -70): invite + per-recruiter rollups.
     if (seg[1] === "recruiters") {
       return recruiters.handleAdminRecruiters({ user, seg, method, event });
@@ -20728,7 +22181,11 @@ async function route(event) {
     // market they are listed in.
     if (seg[1] === "platform-totals" && seg.length === 2 && method === "GET") {
       const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
-      return json(200, platformTotals126(users));
+      // Build -138: a market-scoped teammate's totals are computed
+      // from their markets' records only — the platform-wide
+      // numbers never enter their payload.
+      const scoped = perms138.isSuper(user) ? users : users.filter((u) => perms138.inMarketScope(user, u.market));
+      return json(200, platformTotals126(scoped));
     }
 
     // Preview targets (Build -126): Admin home's Creator and
@@ -21234,7 +22691,18 @@ async function route(event) {
     // is an Event Log record (platform_message_sent per recipient;
     // platform_message_segment for the fan-out itself).
     if (method === "GET" && seg[1] === "message-templates") {
-      return json(200, { templates: MESSAGE_TEMPLATES });
+      // Build -138: platform-message templates saved in the
+      // Template Studio ride this same list, so the Requests
+      // composer picks from one family. Stored ones carry their
+      // current version's body.
+      const stored = await templatesLib.listRecords();
+      const extra = [];
+      for (const r of stored) {
+        if (r.kind !== "platform_message" || !(r.currentVersion >= 1)) continue;
+        const ov = await templatesLib.currentOverride(r.refId);
+        if (ov && ov.text) extra.push({ id: r.refId, label: r.displayName, body: ov.text });
+      }
+      return json(200, { templates: [...MESSAGE_TEMPLATES, ...extra] });
     }
     if (method === "GET" && seg[1] === "platform-messages" && seg.length === 2) {
       const rows = await store.list("message:");
@@ -21382,7 +22850,10 @@ async function route(event) {
     if (method === "GET" && seg[1] === "applications") {
       const all = await allUsers();
       await ensureBusinessAnchors(all);
-      const users = all.filter((u) => u.role !== "admin");
+      // Build -138: a market-scoped reviewer's queue contains
+      // their markets' records only — lists AND counts derive
+      // from the scoped set below.
+      const users = all.filter((u) => u.role !== "admin" && perms138.inMarketScope(user, u.market));
       const { approvedRank, pendingRank } = creatorRanks(all);
       const [allBk, allPo, allRv, allBz] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
       const momentum = createMomentum({ users: all, bookings: allBk, posts: allPo, reviews: allRv, bizReviews: allBz });
@@ -21508,6 +22979,10 @@ async function route(event) {
       const matches = [];
       for (const u of all) {
         if (!u || u.role === "admin") continue;
+        // Build -138: search results stay inside the reader's
+        // market scope — an out-of-market account is not findable
+        // by a scoped teammate, even by exact email.
+        if (!perms138.inMarketScope(user, u.market)) continue;
         const handle = u.creator && u.creator.handle ? String(u.creator.handle).toLowerCase() : "";
         const bizName = u.business && u.business.businessName ? String(u.business.businessName).toLowerCase() : "";
         const nameHit = String(u.name || "").toLowerCase().includes(q) || bizName.includes(q);
@@ -21599,7 +23074,11 @@ async function route(event) {
     }
     if (method === "GET" && seg[1] === "markets") {
       const out = await adminMarketRows();
-      return json(200, { markets: out, testMode: TEST_MODE });
+      // Build -138: the demand census rides the same payload.
+      // Unlisted places belong to no one's market scope, so the
+      // section goes only to an unscoped reader (Jeff).
+      const demand = perms138.scopeMarkets(user) === null ? await cityDemand138() : [];
+      return json(200, { markets: out, testMode: TEST_MODE, demand });
     }
     if (method === "POST" && seg[1] === "markets" && seg[2] === "toggle") {
       const b = parseBody(event);
@@ -21640,6 +23119,10 @@ async function route(event) {
       const b = parseBody(event);
       const target = await store.get(`user:${b.userId}`);
       if (!target || target.role === "admin") return err(404, "Application not found");
+      // Build -138: market scoping is complete on Applications —
+      // a scoped approver cannot decide an application outside
+      // their markets, even by id.
+      if (!perms138.isSuper(user) && !perms138.inMarketScope(user, target)) return err(403, "That application is outside your markets.");
       if (b.decision !== "approve" && b.decision !== "reject") return err(400, "decision must be approve or reject");
       // A human rejection of a creator may carry one reason
       // category from the fixed list (audit F4): it is stored on
@@ -21685,24 +23168,37 @@ async function route(event) {
         } catch (e) { /* email is best-effort */ }
       }
       if (b.decision === "approve" && target.role === "creator") {
-        // Staff recruiter credit (Build -70): an approval flips the
-        // credited recruiter prospect to approved, exactly once.
-        if (b.decision === "approve" && target.role === "creator") {
-          try { await recruiters.onCreatorApproved(target); } catch (e) { /* best-effort */ }
-        }
-
-        // Approval email auto-triggers (Jeff, 2026-10-18): queued as an
-        // event always, sent when the SMTP transport is configured.
-        try {
-          const { approvedRank } = creatorRanks(await allUsers());
-          const band = foundingBand(approvedRank.get(target.id));
-          const mail = approvalEmail(target, band);
-          await deliverEmail("approval", target, mail.subject, mail.text, band);
-        } catch (e) { /* email is best-effort */ }
-        // Build -91: approving a creator whose profile is already
-        // finished is the moment they become roster-visible — the
-        // roster drop lands here when the finish came first.
-        try { await recordRosterDrop(target, "approval"); } catch (e) { /* best-effort */ }
+        // Build -138 (speed): the decision itself is committed
+        // above; everything below is downstream fan-out (recruiter
+        // credit, the approval email with its founding-band rank
+        // read, the roster drop with its wishlist alerts). These
+        // three chains are independent, so they run CONCURRENTLY
+        // instead of one after another — the response now waits
+        // for the slowest single chain, not the sum of all three.
+        // Every chain keeps its own best-effort guard, exactly as
+        // when they ran in sequence.
+        await Promise.all([
+          // Staff recruiter credit (Build -70): an approval flips
+          // the credited recruiter prospect to approved, exactly
+          // once.
+          (async () => { try { await recruiters.onCreatorApproved(target); } catch (e) { /* best-effort */ } })(),
+          // Approval email auto-triggers (Jeff, 2026-10-18):
+          // queued as an event always, sent when the SMTP
+          // transport is configured.
+          (async () => {
+            try {
+              const { approvedRank } = creatorRanks(await allUsers());
+              const band = foundingBand(approvedRank.get(target.id));
+              const mail = approvalEmail(target, band);
+              await deliverEmail("approval", target, mail.subject, mail.text, band);
+            } catch (e) { /* email is best-effort */ }
+          })(),
+          // Build -91: approving a creator whose profile is
+          // already finished is the moment they become
+          // roster-visible — the roster drop lands here when the
+          // finish came first.
+          (async () => { try { await recordRosterDrop(target, "approval"); } catch (e) { /* best-effort */ } })(),
+        ]);
       }
       return json(200, { user: publicUser(target) });
     }
@@ -21947,7 +23443,10 @@ async function route(event) {
       // the backstop, not the fix.
       try {
         const events = await listEvents({ limit: Math.min(2000, parseInt(query.limit, 10) || 500) });
-        const filtered = query.type ? events.filter((e) => e.type === query.type) : events;
+        // Build -138: ?actor=<userId> narrows to one person's
+        // actions (the Team room's per-person activity view rides
+        // the same parameter).
+        const filtered = events.filter((e) => (!query.type || e.type === query.type) && (!query.actor || e.actorId === query.actor));
         return json(200, { events: filtered, total: filtered.length });
       } catch (e) {
         console.error("SIGNL admin events read failed (rendering empty, degraded):", e);

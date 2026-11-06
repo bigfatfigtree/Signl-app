@@ -83,7 +83,7 @@ try {
   const squareSrc = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/square.js"), "utf8");
   const buildSrc = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"), "utf8");
   const indexSrc = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
-  check("stamp is -132 on both sides", /2026\.11\.06-137/.test(buildSrc) && /2026\.11\.06-137/.test(indexSrc));
+  check("stamp is -132 on both sides", /2026\.11\.06-138/.test(buildSrc) && /2026\.11\.06-138/.test(indexSrc));
   const spfStart = routerSrc.indexOf("function stripePriceForPlan");
   const spf = routerSrc.slice(spfStart, routerSrc.indexOf("\n}\n", spfStart));
   check("price resolution is founding-only (no legacy fallthrough in stripePriceForPlan)", spf.includes("FOUNDING_STRIPE_PRICES") && !/STRIPE_PLAN_PRICES/.test(spf), spf.slice(0, 200));
