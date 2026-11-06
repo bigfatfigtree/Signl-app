@@ -70,7 +70,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || "";
-check("stamp is 2026.11.05-133 and identical in build.js + index.html", stamp === "2026.11.05-133" && indexHtml.includes(stamp), String(stamp));
+check("stamp is 2026.11.06-134 and identical in build.js + index.html", stamp === "2026.11.06-134" && indexHtml.includes(stamp), String(stamp));
 check("index.html cache-busts theme-v3 with the rolled stamp (the file changed)",
   indexHtml.includes(`/theme-v3.css?v=${stamp}`) && indexHtml.includes(`/app.js?v=${stamp}`));
 
@@ -130,7 +130,7 @@ for (const t of ADMIN_TABS) {
 }
 check("primary tab sets still match the approved IA map",
   appJs.includes('business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"]') &&
-  appJs.includes('creator: ["Dashboard", "Offers", "My Visits", "Messages", "Earnings"]') &&
+  appJs.includes('creator: ["Dashboard", "Offers", "Find Offers", "My Visits", "Messages", "Earnings"]') &&
   appJs.includes('partner: ["Home", "Businesses", "Earnings", "Performance"]') &&
   appJs.includes('pilot: ["Overview", "Businesses", "Results", "Report"]') &&
   appJs.includes('recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"]'));

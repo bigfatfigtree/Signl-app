@@ -304,7 +304,7 @@ console.log("== Source: one surface, the moved connect, canon locks ==");
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   const sigdataJs = fs.readFileSync(path.join(root, "netlify/functions/lib/sigdata.js"), "utf8");
-  check("stamp is 2026.11.05-133 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.05-133") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-133"));
+  check("stamp is 2026.11.06-134 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.06-134") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-134"));
   check("server: the checklist builder + endpoint + home payload + Sig facts feed",
     routerJs.includes("async function setupChecklistFor") && routerJs.includes('seg[1] === "setup-checklist"')
     && routerJs.includes("setupChecklist: await setupChecklistFor(user)"));

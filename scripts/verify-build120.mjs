@@ -68,7 +68,7 @@ check("theme-v3 carries the shape vocabulary + shell rules",
   [".donut119", ".lbar119", ".ring119", ".bigcode119", ".pilot-fundbar", ".mkt-photo", "#agent-fab"].every((x) => css.includes(x)));
 check("primary tab sets match the approved IA map",
   appJs.includes('business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"]') &&
-  appJs.includes('creator: ["Dashboard", "Offers", "My Visits", "Messages", "Earnings"]') &&
+  appJs.includes('creator: ["Dashboard", "Offers", "Find Offers", "My Visits", "Messages", "Earnings"]') &&
   appJs.includes('partner: ["Home", "Businesses", "Earnings", "Performance"]') &&
   appJs.includes('pilot: ["Overview", "Businesses", "Results", "Report"]') &&
   appJs.includes('recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"]'));
@@ -130,7 +130,7 @@ check("payment gates stay shut: founding Stripe prices still resolve only from u
 // availability / "Standing hours", the creatorStanding account
 // status fields) are preserved byte-for-byte.
 part("S2: Build -120 naming");
-check("stamp is 2026.11.05-133", stamp === "2026.11.05-133", String(stamp));
+check("stamp is 2026.11.06-134", stamp === "2026.11.06-134", String(stamp));
 const ABSENT_120 = ["Standing points", "Your Standing", "your Standing", "Standing trend",
   "Standing moves you up", "How does Standing work", "Standing — you reply fast",
   'wsHead("Standing"', 'kpiCard("Standing"', "Comped visits build your Standing",

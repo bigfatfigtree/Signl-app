@@ -5606,6 +5606,30 @@ async function creatorHistory(creatorUserId) {
   return summarizeHistory(bookings, posts);
 }
 
+// Build -134: a business's track record for creator-facing
+// offer cards (the Mirror), computed from the same stored
+// bookings and posts as creator track records: visits hosted =
+// bookings actually redeemed, creators who came back = creators
+// with two or more redeemed visits, on-time % from delivered
+// posts. Null when the business has hosted nothing yet, so the
+// card renders no strip rather than a row of zeros.
+function businessTrackRecordFor(businessId, bookings, posts) {
+  const visited = bookings.filter((b) => b.businessId === businessId && b.redeemedAt && !b.honorReportedAt);
+  if (!visited.length) return null;
+  const ids = new Set(visited.map((b) => b.id));
+  const myPosts = posts.filter((p) => ids.has(p.bookingId));
+  const onTime = myPosts.filter((p) => p.onTime).length;
+  const perCreator = {};
+  for (const b of visited) perCreator[b.creatorId] = (perCreator[b.creatorId] || 0) + 1;
+  const returned = Object.values(perCreator).filter((n) => n >= 2).length;
+  return {
+    visitsHosted: visited.length,
+    postsDelivered: myPosts.length,
+    onTimePct: myPosts.length ? Math.round((onTime / myPosts.length) * 100) : null,
+    creatorsReturned: returned,
+  };
+}
+
 // ---------- SIGNL track record + business reviews ----------
 // The track record is the differentiator (Jeff, 2026-10-19: profiles
 // must be detailed and robust, because the platform sells the
@@ -24648,6 +24672,8 @@ async function route(event) {
     const offers = await allOffers();
     const apps = await allApplications();
     const bookings = await allBookings();
+    const posts = await allPosts();
+    const bizTrackCache = {};
     const tier = normalizeTierBand(user.creator ? user.creator.tierBand : "");
     const now = Date.now();
     const out = [];
@@ -24707,6 +24733,14 @@ async function route(event) {
         businessAbout: biz && biz.business ? (biz.business.about || "") : "",
         businessAvailability: biz && biz.business ? standingAvailabilitySummary(biz.business.standingAvailability) : null,
         businessNeighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
+        // Build -134 (the Mirror): where the business is, how
+        // far it reads from this creator, and its track record
+        // strip — present only when the business has hosted a
+        // redeemed visit (businessTrackRecordFor returns null
+        // before that, and the card renders no strip).
+        businessCity: biz ? (biz.city || "") : "",
+        distanceBand: biz ? proximityBandFor(biz, user) : null,
+        businessTrackRecord: biz ? (bizTrackCache[biz.id] !== undefined ? bizTrackCache[biz.id] : (bizTrackCache[biz.id] = businessTrackRecordFor(biz.id, bookings, posts))) : null,
         paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
         // Build -84: the coupon in one plain line (the coupon
         // object and deliverables ride the spread above).

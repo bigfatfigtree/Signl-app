@@ -819,7 +819,7 @@ async function renderPublicProfile() {
       <div class="cc-local">
         ${view.pct === null || view.pct === undefined
           ? `<div class="lbl">Local audience not reported yet</div>`
-          : `<div class="big">${view.pct}%</div><div class="lbl">of their audience is local to ${esc(view.market)}</div>${followersForPct(view.pct, total) ? `<div style="font-weight:800;margin-top:2px">${followersForPct(view.pct, total)} followers</div>` : ""}<div class="src">${bd && bd.segments && bd.segments.some((s) => s.market === view.market && s.verified) ? `<span class="badge ok">Verified from Instagram</span>` : (p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
+          : `<div class="big">${view.pct}%</div><div class="lbl">of their audience is local to ${esc(view.market)}</div>${followersForPct(view.pct, total) ? `<div style="font-weight:800;margin-top:2px">${followersForPct(view.pct, total)} followers</div>` : ""}${total > 0 ? `<div class="cc-neighbors">That&rsquo;s about ${fmtFull(Math.round((view.pct / 100) * total))} neighbors who could actually walk through your door.</div>` : ""}<div class="src">${bd && bd.segments && bd.segments.some((s) => s.market === view.market && s.verified) ? `<span class="badge ok">Verified from Instagram</span>` : (p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
       </div>
       ${breakdownHtml}
       ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real SIGNL visits, counted by SIGNL, not claimed by the creator.</p></div>` : ""}
@@ -2333,6 +2333,9 @@ RAIL_SHORT["Campaign Setup"] = "Setup";
 // because comps and store value are not cash. Earnings and
 // Plan both read "Wallet" now.
 RAIL_SHORT["Discover"] = "Creators";
+// Build -134: the creator Find Offers tab (the Mirror) — the
+// 72px phone rail shows its one-word form.
+RAIL_SHORT["Find Offers"] = "Find";
 RAIL_SHORT["Earnings"] = "Wallet";
 RAIL_SHORT["Plan"] = "Wallet";
 RAIL_SHORT["My Visits"] = "Visits";
@@ -2380,8 +2383,9 @@ function tabItemsFor() {
     return [
       { icon: "home", label: "Home", tab: "Dashboard", on: t === "Dashboard" || !t },
       { icon: "deck", label: "Offers", tab: "Offers", on: t === "Offers", badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) },
+      { icon: "search", label: "Find offers", tab: "Find Offers", on: t === "Find Offers" },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
-      ...extra(["Dashboard", "Offers", "Sig"]),
+      ...extra(["Dashboard", "Offers", "Find Offers", "Sig"]),
     ];
   }
   if (u.role === "partner" && !state.pilotScopeId) {
@@ -2517,7 +2521,7 @@ function moreRowsFor() {
 // creator bar gains Messages (a daily stop) in its place.
 const PRIMARY_TABS_125 = {
   business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"],
-  creator: ["Dashboard", "Offers", "My Visits", "Messages", "Earnings"],
+  creator: ["Dashboard", "Offers", "Find Offers", "My Visits", "Messages", "Earnings"],
   partner: ["Home", "Businesses", "Earnings", "Performance"],
   pilot: ["Overview", "Businesses", "Results", "Report"],
   recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"],
@@ -2530,7 +2534,7 @@ function primaryTabs125() {
 }
 // The bar's one-word display labels (design): the internal
 // tab ids stay stable; only what the person reads changes.
-const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Creators", "My Offers": "Campaigns", Performance: "Reports", Businesses: "Business" };
+const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Creators", "My Offers": "Campaigns", Performance: "Reports", Businesses: "Business", "Find Offers": "Find" };
 // Where the identity row (photo + name) lands per role: the
 // person's own home base — the creator's real profile, the
 // business's page, the partner's account. (Build -125: it
@@ -5036,8 +5040,11 @@ function wireSigThread(root) {
   root.querySelectorAll("[data-sigoffer]").forEach((el) => {
     el.onclick = (ev) => {
       if (ev.target.closest("[data-sigcard]")) return;
-      if (el.getAttribute("data-sigoffer") === "accept") state.crOffersSeg = "invited";
-      go("dashboard", "Offers");
+      // Build -134: an open offer's home is Find Offers (the
+      // Mirror); a direct invite's home stays the Offers tab's
+      // Invited segment.
+      if (el.getAttribute("data-sigoffer") === "accept") { state.crOffersSeg = "invited"; go("dashboard", "Offers"); }
+      else go("dashboard", "Find Offers");
     };
   });
   // Sig Operator action chips: a turn's actions are closures
@@ -6722,6 +6729,7 @@ function sigCreatorCardHtml(c, ti, ci) {
       ${c.userId ? `<span class="sig-ccard-view">${ST("View profile", "Ver perfil")}</span>` : ""}
     </div>
     <div class="sig-ccard-local">${pct === null ? `<span class="sig-ccard-nopct">${ST("Local audience not reported yet", "Audiencia local aún no reportada")}</span>` : `${pct}% <span>${ST("local audience", "audiencia local")}</span>`}</div>
+    ${pct !== null && Number(c.totalAudience) > 0 ? `<div class="sig-ccard-sub">${ST(`about ${fmtFull(Math.round((pct / 100) * Number(c.totalAudience)))} of their followers live in ${marketDisplayName(cardLocalMarket(c) || c.market || "")}`, `unas ${fmtFull(Math.round((pct / 100) * Number(c.totalAudience)))} de sus seguidoras viven en ${marketDisplayName(cardLocalMarket(c) || c.market || "")}`)}</div>` : ""}
     <div class="sig-ccard-meta">${fmtNum(c.totalAudience || 0)} ${ST("total followers", "seguidores en total")}${cats ? ` · ${esc(cats)}` : ""} · ${p.paidRate ? `$${fmtPrice(p.paidRate)} ${ST("paid rate", "tarifa pagada")}` : ST("comp visits", "visitas de cortesía")}</div>
     ${photos.length > 1 ? `<div class="sig-ccard-thumbs">${photos.slice(1, 3).map((src) => `<img src="${esc(src)}" alt="">`).join("")}</div>` : ""}
     ${why ? `<div class="sig-ccard-why">${esc(why)}</div>` : ""}
@@ -6743,6 +6751,8 @@ function sigOfferCardHtml(p, ti, ci) {
     <div class="sig-ccard-name">${esc(o.title || "")}</div>
     <div class="sig-ccard-handle">${esc(o.businessName || "")}${o.market ? ` · ${esc(o.market)}` : ""}</div>
     <div class="sig-ccard-meta">${money} · <span class="sig-ccard-view">${ST("View offer", "Ver oferta")}</span></div>
+    ${o.businessNeighborhood || o.distanceBand ? `<div class="sig-ccard-meta">${esc([o.businessNeighborhood, o.distanceBand].filter(Boolean).join(" · "))}</div>` : ""}
+    <div class="sig-ccard-meta">${esc(mirrorAskLine(o))}</div>
     <div class="sig-ccard-why">${esc(why)}</div>
     <div class="sig-ccard-acts">
       <button type="button" class="btn small-btn" data-sigcard="${ti}:${ci}:apply">${p.mode === "accept" ? ST("Accept", "Aceptar") : ST("Apply", "Aplicar")}</button>
@@ -7431,7 +7441,7 @@ async function sigB2Run(crit) {
     },
   }));
   const acts = [
-    { label: ST("See them in Discover", "Verlos en Descubrir"), run: async () => {
+    { label: ST("See them in Find creators", "Verlos en Find creators"), run: async () => {
       if (crit.category) state.discoverCats = [crit.category];
       if (crit.spanish) state.discoverSpanish = true;
       state.sigFlow = null;
@@ -10929,11 +10939,8 @@ function creatorProfileDetailHtml(c, preview, opts) {
           </div>
         </div>
         <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${p.spanishContent ? ` <span class="badge">Spanish content</span>` : ""}${p.musician ? ` <span class="badge">Musician</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
-        <div class="cc-local">
-          ${p.localAudiencePct === null || p.localAudiencePct === undefined
-            ? `<div class="lbl">Local audience not reported yet</div>`
-            : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div>${lbarHtml119(p.localAudiencePct)}<div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
-        </div>
+        ${momentumExplainerHtml(c)}
+        ${pdpLocalHeroHtml(c)}
         <div class="cc-meta">
           <div><div class="k">Total audience (all platforms)</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
           <div><div class="k">Typical views</div><div class="v">${fmtNum(p.avgViews)}</div></div>
@@ -10943,7 +10950,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
     </div>
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">Greyed out in search and unable to take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. Offers can still be sent; accepting reopens next week.</span></p>` : ""}
-    ${visitIncludesHtml(c.visitIncludes)}
+    ${whatYouGetHtml(c)}
     ${c.marketContext ? `<p class="small">You are browsing <strong>${esc(c.marketContext.market)}</strong>: ${c.marketContext.pct}% of their audience is there, and that is the local number on this card. They are based in ${esc(marketDisplayName(c.marketContext.homeMarket))} and listed in ${esc(c.marketContext.market)} on that audience.</p>` : ""}
     ${(c.listedMarkets || []).filter((m) => !m.home).length ? `<p class="small muted">Also listed in: ${(c.listedMarkets || []).filter((m) => !m.home).map((m) => `${esc(m.market)} ${m.pct}%`).join(" &middot; ")}</p>` : ""}
     ${c.scoreComponents ? `<p class="small muted">Local Impact Score, in the open: local audience ${c.scoreComponents.localAudiencePct}% &middot; reliability ${c.scoreComponents.reliability} (${esc(c.scoreComponents.reliabilityBasis)}) &middot; engagement ${c.scoreComponents.engagement}.</p>` : ""}
@@ -10955,12 +10962,18 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
     <p class="small">${socialLinksHtml(p)}</p>
     ${creatorShowcaseHtml(c)}
-    ${adminView ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn ghost" onclick="adminBackToRequests()">Back to Applications</button></div>` : `<div class="cta-row" style="justify-content:flex-start">
-      ${preview
-        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""}`
-        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button> <button class="btn ghost" onclick="openDealSheet('${c.userId}')">Make an offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
-      <button class="btn small-btn ghost" onclick="profileLater('${c.userId}', ${preview ? "true" : "false"})">Later</button>
-      <button class="btn small-btn ghost" onclick="profileNotFit('${c.userId}', ${preview ? "true" : "false"})">Not a fit</button>
+    ${audienceSpecsHtml(c)}
+    ${similarCreatorsHtml(c)}
+    ${adminView ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn ghost" onclick="adminBackToRequests()">Back to Applications</button></div>` : preview ? `<div class="cta-row" style="justify-content:flex-start">
+      <button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""}
+      <button class="btn small-btn ghost" onclick="profileLater('${c.userId}', true)">Later</button>
+      <button class="btn small-btn ghost" onclick="profileNotFit('${c.userId}', true)">Not a fit</button>
+    </div>
+    <div id="deal-sheet-host"></div>` : `${buyBoxHtml(c)}
+    <div class="cta-row" style="justify-content:flex-start">
+      <button class="btn ghost" onclick="startOffer('${c.userId}')">Send a direct offer</button> <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>
+      <button class="btn small-btn ghost" onclick="profileLater('${c.userId}', false)">Later</button>
+      <button class="btn small-btn ghost" onclick="profileNotFit('${c.userId}', false)">Not a fit</button>
     </div>
     <div id="deal-sheet-host"></div>`}
     ${p.paidRate ? `<p class="small muted">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
@@ -11082,14 +11095,14 @@ function creatorCard(c, viewer, opts) {
 
 // ---------- creator ----------
 
-const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages", "Earnings", "Momentum", "Numbers", "Settings", "Help", "Sig", "Bench"];
+const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "Find Offers", "My Visits", "Messages", "Earnings", "Momentum", "Numbers", "Settings", "Help", "Sig", "Bench"];
 // V4.1: founding creators get the SAME tab set as live ones.
 // The old founding whitelist hid Offers / My Visits / Earnings
 // until the market launched — paired with the old 2-item tab
 // bar, a founding creator (Jeff's own account) had no way to
 // even see the explore door. The screens themselves carry the
 // honest pre-launch states (completion gate, empty decks).
-const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "My Visits", "Earnings", "Sig", "Bench"];
+const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "Find Offers", "My Visits", "Earnings", "Sig", "Bench"];
 
 function renderCreatorDash() {
   const u = state.user;
@@ -11101,14 +11114,16 @@ function renderCreatorDash() {
   if (tab !== "Dashboard") stopHomeCountdown();
   let body = "";
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
+  if (tab === "Find Offers") body = wsHead("Find offers", { sub: "Open visits from businesses in your markets, stated like prices. Grab the ones that fit.", subKey: "cr-findoffers" }) + `<div id="cr-findoffers">${skelHtml("Loading open offers...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u);
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
   if (tab === "Dashboard") loadCreatorHome();
-  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(loadConnectedAccounts, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(loadConnectedAccounts, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); creatorPreviewRefresh(); }, 10); }
   if (tab === "Offers") loadCreatorOffers();
+  if (tab === "Find Offers") loadFindOffers();
   if (tab === "My Visits") loadMyVisits("creator");
   if (tab === "Messages") loadThreads();
   if (tab === "Earnings") renderEarningsTab();
@@ -11148,6 +11163,7 @@ function renderFoundingHome() {
   const placeBadge = u.market === unlistedLabel() ? esc(u.city || u.market) : esc(marketDisplayName(u.market));
   let body = "";
   if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
+  if (tab === "Find Offers") body = wsHead("Find offers", { sub: "Open visits from businesses in your markets, stated like prices. Grab the ones that fit.", subKey: "cr-findoffers" }) + `<div id="cr-findoffers">${skelHtml("Loading open offers...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div><div id="founding-buzz"></div><div id="founding-depth"></div>`;
   if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u);
@@ -11157,7 +11173,8 @@ function renderFoundingHome() {
     <div id="tab-body">${body}</div></div>`;
   if (tab === "Dashboard") loadFoundingDashboard();
   if (tab === "Status") loadFoundingStatus();
-  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(loadConnectedAccounts, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(loadConnectedAccounts, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); creatorPreviewRefresh(); }, 10); }
+  if (tab === "Find Offers") loadFindOffers();
   if (tab === "Momentum") renderMomentumTab();
   if (tab === "Numbers") renderCreatorNumbers();
   if (tab === "Messages") loadThreads();
@@ -14471,7 +14488,7 @@ function creatorProfileHtml(u) {
     return `<div class="field"><label>${label}</label><input type="number" id="${inputId}" min="0" value="${stackVal(id)}" oninput="syncStackTotal()"${sync && sync.verified === true ? " disabled" : ""}>${note}</div>`;
   };
   return `
-  <div class="panel">
+  <div class="panel" oninput="creatorPreviewRefresh()" onchange="creatorPreviewRefresh()">
     <div class="flex-between">
       <div>
         <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(c.handle || "")}</span></h3>
@@ -14480,6 +14497,15 @@ function creatorProfileHtml(u) {
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
     <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on SIGNL. Both scores run 0 to 100. Reliability starts at a neutral 50 before you have any visits; your real visits move it from there. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available: self-reported means it is your own number, typed by you, not yet checked against Instagram.</p>
+    <div class="preview-panel" id="profile-preview-panel">
+      <div class="flex-between"><strong>Live preview</strong><span class="badge info">Updates as you type</span></div>
+      <p class="small muted" style="margin:6px 0 10px">Your card in Find creators and the top of your creator page, drawn from the fields on this page. Change a field and this changes with it. There is nothing separate to fill in.</p>
+      <div class="chip-row" style="margin-bottom:10px">
+        <button type="button" class="chip pv-chip on" data-pv="business" onclick="return creatorPreviewSetView('business')">See it as a business</button>
+        <button type="button" class="chip pv-chip" data-pv="public" onclick="return creatorPreviewSetView('public')">See your public page top</button>
+      </div>
+      <div id="profile-preview-host"></div>
+    </div>
     <div class="field" style="margin:12px 0">
       <label>${T("Your market", "Tu mercado")}</label>
       ${marketFlash ? `<div class="notice blue" style="margin:0 0 8px">${esc(marketFlash)}</div>` : ""}
@@ -14984,6 +15010,7 @@ function dealProposalCardHtml(deal, role) {
     <div class="lrow"><span>${role === "creator" ? "You get" : "They get"}</span><strong>${dealAmountLine(t, role)}</strong></div>
     <div class="lrow"><span>${role === "creator" ? "You post" : "They post"}</span><strong>${esc(dealDeliverablesLine(t.deliverables))}</strong></div>
     <div class="lrow"><span>When</span><strong>${dealPostingLine(t.postingTerms)}</strong></div>
+    ${t.note ? `<div class="lrow"><span>Note</span><strong>${esc(t.note)}</strong></div>` : ""}
     <div class="lrow"><span>Rights</span><strong>${t.kind === "paid" || t.kind === "mix" ? "One standard licence included: 90 days of repost + ad use. Fixed — never longer." : "Native share only. Licensing this post is a separate request at the creator's fee, approved per use."}</strong></div>
     <div class="lrow"><span>Money</span><strong>${t.kind === "paid" || t.kind === "mix" ? "SIGNL holds the payment when the deal is accepted and releases it when the post is live." : "No money moves on this deal."}</strong></div>`;
   let actions = "";
@@ -15131,6 +15158,7 @@ function openDealSheet(creatorId) {
       <div class="field"><label>Posting terms</label><select id="ds-pttype"><option value="standard">Standard — post within 7 days of the visit</option><option value="bydate">Post by a date</option></select></div>
       <div class="field"><label>Post by (only for "by a date")</label><input type="date" id="ds-ptdate"></div>
       <div class="field"><label>The deal stays open</label><select id="ds-expiry"><option value="48">48 hours</option><option value="24">24 hours</option></select></div>
+      <div class="field"><label>Note for the creator (optional)</label><input id="ds-notefield" maxlength="280" placeholder="For example: Preferred visit day: Saturday"></div>
     </div>
     <button class="btn" onclick="sendDeal('${creatorId}')">Send the deal</button> <span id="ds-note" class="saved"></span>
   </div>`;
@@ -15148,6 +15176,8 @@ async function sendDeal(creatorId) {
   const note = document.getElementById("ds-note");
   const k = document.getElementById("ds-kind").value;
   const body = { creatorId, kind: k, title: document.getElementById("ds-title").value || undefined, expiresInHours: Number(document.getElementById("ds-expiry").value || 48) };
+  const dsNote = document.getElementById("ds-notefield");
+  if (dsNote && dsNote.value.trim()) body.note = dsNote.value.trim();
   if (k === "paid") body.cashRate = Number(document.getElementById("ds-rate").value);
   if (k === "comp") { body.dollarCap = Number(document.getElementById("ds-cap").value); body.whatComped = document.getElementById("ds-what").value; }
   if (k === "coupon" || k === "mix") {
@@ -19648,6 +19678,442 @@ async function setupTestRedeem(btn) {
   return false;
 }
 
+// ---------- Build -134: the shopping surfaces (Jeff, 2026-11-06) ----------
+// The approved shopping experience, built on the surfaces that
+// already existed: Discover becomes the Shelf (business Find
+// creators), the creator page leads with the local-% hero block,
+// a new creator tab (Find Offers) renders the Mirror, and both
+// setup flows carry a live preview drawn with these same
+// components. Standing rule from this build (the empty-section
+// rule): any section with no content does not render — no proof
+// strip, no past posts, no similar rail, no track record —
+// nothing renders as a blank box.
+function fmtFull(n) { return Math.round(Number(n) || 0).toLocaleString("en-US"); }
+// The local number a business is looking at: the browsed
+// market's share when the card carries one, else the home share.
+function cardLocalPct(c) {
+  if (c && c.marketContext && typeof c.marketContext.pct === "number") return c.marketContext.pct;
+  const p = (c && c.profile) || {};
+  return p.localAudiencePct === null || p.localAudiencePct === undefined ? null : Number(p.localAudiencePct);
+}
+function cardLocalMarket(c) {
+  const raw = (c && c.marketContext && c.marketContext.market) || (c && c.market) || "";
+  return String(raw).replace(/\s*\([^)]*\)\s*$/, "");
+}
+function cardLocalCount(c) {
+  const pct = cardLocalPct(c);
+  const total = totalAudienceOf(c);
+  if (pct === null || !(total > 0)) return null;
+  return Math.round((pct / 100) * total);
+}
+function shelfPriceLine(c) {
+  const p = (c && c.profile) || {};
+  const sym = currencySymbolForMarket(c && c.market);
+  if (p.paidRate) return { main: `${sym}${fmtPrice(p.paidRate)}`, sub: "paid booking, per post" };
+  if (p.compOpen !== false) return { main: "Comped visit", sub: "no cash: the experience is the payment" };
+  return { main: "Paid bookings only", sub: "" };
+}
+function shelfProofLine(c) {
+  const tr = c && c.trackRecord;
+  if (!tr || tr.isNew) return "New to SIGNL: no visits yet";
+  const bits = [];
+  if (tr.visitsCompleted) bits.push(`${tr.visitsCompleted} visit${tr.visitsCompleted === 1 ? "" : "s"} done`);
+  if (tr.postsDelivered) bits.push(`${tr.postsDelivered} post${tr.postsDelivered === 1 ? "" : "s"} delivered`);
+  if (tr.postsDelivered && tr.onTimePct !== null && tr.onTimePct !== undefined) bits.push(`${tr.onTimePct}% on time`);
+  return bits.length ? bits.join(" · ") : "New to SIGNL: no visits yet";
+}
+// One Shelf tile (business Find creators). In preview mode the
+// actions are inert and the proof line renders only when a real
+// track record rides the card (a setup preview has none to show).
+function shelfTileHtml(c, opts) {
+  const preview = !!(opts && opts.preview);
+  const topMatch = !!(opts && opts.topMatch);
+  const p = c.profile || {};
+  const pct = cardLocalPct(c);
+  const count = cardLocalCount(c);
+  const market = cardLocalMarket(c);
+  const price = shelfPriceLine(c);
+  const cats = (p.categories || []).slice(0, 2).join(" · ");
+  const place = [c.neighborhood, c.city].filter(Boolean).join(", ");
+  const tap = preview ? "" : ` onclick="openCreatorProfile('${c.userId}')"`;
+  return `<div class="shelf-tile${topMatch ? " top-match" : ""}">
+    ${topMatch ? `<span class="top-match-tag">Top match</span>` : ""}
+    <div class="shelf-photo"${tap}>
+      ${avatarHtml(c, "shelf-photo-img")}
+      <span class="shelf-badges">${p.tierBand ? `<span class="shelf-badge">${esc(p.tierBand)}</span>` : ""}${c.foundingBand ? `<span class="shelf-badge">Founding</span>` : ""}</span>
+      ${preview ? "" : `<button type="button" class="shelf-save${c.isFavorite ? " on" : ""}" onclick="event.stopPropagation(); shelfToggleFav('${c.userId}')" aria-label="Save ${esc(c.name || "creator")}">${c.isFavorite ? "Saved" : "Save"}</button>`}
+    </div>
+    <div class="shelf-body">
+      <div class="shelf-name"${tap}>${esc(c.name || "")}</div>
+      <div class="shelf-meta">${esc(place || marketDisplayName(market))}${cats ? ` · ${esc(cats)}` : ""}</div>
+      ${pct === null ? `<div class="shelf-local-none">Local audience not reported yet</div>` : `<div class="shelf-local"><span class="shelf-pct">${pct}%</span><span class="shelf-local-tx">of their followers live in ${esc(marketDisplayName(market))}${count !== null ? `<br><strong>about ${fmtFull(count)} local followers</strong>` : ""}</span></div><div class="shelf-bar"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>`}
+      <div class="shelf-price">${esc(price.main)}${price.sub ? ` <span>${esc(price.sub)}</span>` : ""}</div>
+      ${preview && !c.trackRecord ? "" : `<div class="shelf-proof">${esc(shelfProofLine(c))}</div>`}
+      <div class="shelf-quiet">${fmtNum(totalAudienceOf(c))} followers total${p.avgViews ? ` · about ${fmtNum(p.avgViews)} views a post` : ""}</div>
+      ${preview ? "" : `<div class="shelf-acts">
+        <button type="button" class="btn small-btn" onclick="startOffer('${c.userId}')">Book</button>
+        <button type="button" class="btn small-btn ghost" onclick="openCreatorProfile('${c.userId}')">View</button>
+      </div>`}
+    </div>
+  </div>`;
+}
+async function shelfToggleFav(userId) {
+  const c = (state.discover || []).find((x) => x.userId === userId);
+  if (!c) return;
+  const was = !!c.isFavorite;
+  c.isFavorite = !was;
+  renderDiscoverResults();
+  try {
+    const d = await api("POST", "/favorites", { creatorId: userId });
+    if (d && typeof d.isFavorite === "boolean") c.isFavorite = d.isFavorite;
+    showToast(c.isFavorite ? "Saved to your shortlist" : "Removed from your shortlist");
+  } catch (e) { c.isFavorite = was; alert(e.message); }
+  renderDiscoverResults();
+}
+// The Shelf's client-side filters (booking kind + rate range)
+// run over the loaded result set, so the count and the grid
+// answer instantly; the server filters (market, category,
+// neighborhood, local %) still ride runDiscover.
+function shelfClientFilter(list) {
+  const mode = state.discoverBookMode || "any";
+  const rate = state.discoverRate || "any";
+  return (list || []).filter((c) => {
+    const p = c.profile || {};
+    if (mode === "comp" && p.compOpen === false) return false;
+    if (mode === "paid" && !(Number(p.paidRate) > 0)) return false;
+    if (rate === "u100" && !(Number(p.paidRate) > 0 && Number(p.paidRate) < 100)) return false;
+    if (rate === "m100" && !(Number(p.paidRate) >= 100 && Number(p.paidRate) <= 200)) return false;
+    if (rate === "o200" && !(Number(p.paidRate) > 200)) return false;
+    return true;
+  });
+}
+function discoverBookModeSet(mode) {
+  state.discoverBookMode = mode;
+  document.querySelectorAll("[data-bookmode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-bookmode") === mode));
+  renderDiscoverResults();
+  return false;
+}
+function discoverRateSet(v) { state.discoverRate = v; renderDiscoverResults(); }
+function setDiscoverCount(n) {
+  const el = document.getElementById("discover-count");
+  if (!el) return;
+  const sel = document.getElementById("f-market");
+  const mkt = sel && sel.selectedOptions && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : "";
+  el.innerHTML = `<strong>${n}</strong> creator${n === 1 ? "" : "s"}${mkt ? ` in ${esc(mkt)}` : " near you"}`;
+}
+// The shortlist compare tray: saved creators from the current
+// result set, side by side on the numbers a business compares.
+// Under two saved, there is nothing to compare and no tray.
+function shelfTrayHtml() {
+  const saved = (state.discover || []).filter((c) => c.isFavorite);
+  if (saved.length < 2) return "";
+  const shown = saved.slice(0, 4);
+  const best = shown.reduce((a, b) => ((cardLocalPct(b) ?? -1) > (cardLocalPct(a) ?? -1) ? b : a));
+  return `<div class="shelf-tray">
+    <div class="shelf-tray-head"><strong>Your shortlist, side by side</strong><span class="small muted">${saved.length} saved</span><button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Favorites')">See all saved</button></div>
+    <div class="shelf-tray-grid">${shown.map((c) => { const pct = cardLocalPct(c); const count = cardLocalCount(c); return `<div class="shelf-tray-col${c === best ? " top-match" : ""}">
+      ${c === best ? `<span class="top-match-tag">Top match</span>` : ""}
+      <div class="shelf-tray-name">${esc(c.name || "")}</div>
+      <div class="shelf-tray-pct">${pct === null ? "—" : `${pct}% local`}</div>
+      <div class="shelf-tray-line">${count !== null ? `about ${fmtFull(count)} local followers` : "local count not reported"}</div>
+      <div class="shelf-tray-line">${esc(shelfPriceLine(c).main)}</div>
+      <div class="shelf-tray-line">${esc(shelfProofLine(c))}</div>
+      <button type="button" class="btn small-btn" onclick="startOffer('${c.userId}')">Book</button>
+    </div>`; }).join("")}</div>
+  </div>`;
+}
+// The creator page's hero block (Build -134: it sits UP TOP,
+// per Jeff's screenshot callout): the giant local % and the
+// spelled-out neighbor count. No % on record renders the honest
+// not-reported line instead — never a zero, never a blank box.
+function pdpLocalHeroHtml(c) {
+  const pct = cardLocalPct(c);
+  const p = (c && c.profile) || {};
+  if (pct === null) return `<div class="pdp-hero pdp-hero-none"><div class="lbl">Local audience not reported yet</div></div>`;
+  const count = cardLocalCount(c);
+  const market = cardLocalMarket(c);
+  const first = (c.name || "their").trim().split(" ")[0] || "their";
+  return `<div class="pdp-hero">
+    <div class="pdp-hero-pct">${pct}%</div>
+    <div class="pdp-hero-tx">of ${esc(first)}&rsquo;s followers live in ${esc(marketDisplayName(market))}.${count !== null ? `<br><strong>That&rsquo;s about ${fmtFull(count)} neighbors</strong> who could actually walk through your door, not strangers three states away.` : ""}</div>
+    <div class="pdp-hero-src">${esc(p.localAudienceSource || "Self-reported")} · ${fmtNum(totalAudienceOf(c))} followers in total</div>
+  </div>`;
+}
+function whatYouGetHtml(c) {
+  const p = (c && c.profile) || {};
+  const sym = currencySymbolForMarket(c && c.market);
+  return `<div class="pdp-block">
+    <h4>What you get</h4>
+    <ul class="pdp-get">
+      <li><strong>1 post + 1 story</strong>, in their own words. Honest posts only: nobody can require a positive one.</li>
+      <li><strong>Posted within 48 hours</strong> of the visit. That is the goal every creator on SIGNL is held to.</li>
+      <li><strong>Counted, not guessed.</strong> SIGNL counts the customers who come in with the visit code, so you see what the visit did.</li>
+      ${p.paidRate ? `<li><strong>A paid booking at ${sym}${fmtPrice(p.paidRate)}</strong> includes one standard licence: repost the post and run it as an ad for 90 days.</li>` : `<li><strong>Comped visits are native share only.</strong> Running the post as an ad is a separate licence at the creator&rsquo;s fee, with their approval.</li>`}
+    </ul>
+    ${c.visitIncludes ? `<p class="small muted" style="margin:8px 0 0">The visit itself, in the creator&rsquo;s words: ${esc(c.visitIncludes)}</p>` : ""}
+  </div>`;
+}
+function momentumExplainerHtml(c) {
+  if (!c || !c.momentum || !c.momentum.points) return "";
+  return `<p class="small muted" style="margin:2px 0 10px">Momentum (${c.momentum.points} pts) is a reliability score: creators earn it by showing up, posting on time and getting invited back. The higher it is, the safer the booking.</p>`;
+}
+function audienceSpecsHtml(c) {
+  const p = (c && c.profile) || {};
+  const rows = [];
+  const total = totalAudienceOf(c);
+  if (total > 0) rows.push(`<div class="pdp-spec"><span>Total audience</span><strong>${fmtFull(total)} followers</strong></div>`);
+  for (const s of stackList(c)) rows.push(`<div class="pdp-spec"><span>${esc(s.label)}</span><strong>${fmtFull(s.count)}${s.synced ? " · synced" : ""}</strong></div>`);
+  if (p.avgViews) rows.push(`<div class="pdp-spec"><span>Typical views</span><strong>about ${fmtFull(p.avgViews)} a post</strong></div>`);
+  if (p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined) rows.push(`<div class="pdp-spec"><span>Spanish-speaking audience</span><strong>${p.spanishAudiencePct}%</strong></div>`);
+  if (p.topAudienceCities && p.topAudienceCities.length) rows.push(`<div class="pdp-spec"><span>Top audience cities</span><strong>${p.topAudienceCities.map(esc).join(", ")}</strong></div>`);
+  for (const m of (c.listedMarkets || []).filter((x) => !x.home)) rows.push(`<div class="pdp-spec"><span>Local to ${esc(m.market)}</span><strong>${m.pct}%</strong></div>`);
+  if (!rows.length) return "";
+  return `<div class="pdp-block"><h4>The audience, in numbers</h4><div class="pdp-specs">${rows.join("")}</div><p class="small muted" style="margin:6px 0 0">Local shares are ${esc(String(p.localAudienceSource || "self-reported").toLowerCase())} by the creator.</p></div>`;
+}
+function similarCreatorsHtml(c) {
+  const p = (c && c.profile) || {};
+  const mine = new Set(p.categories || []);
+  const pool = (state.discover || []).filter((x) => x.userId !== c.userId && (((x.profile || {}).categories || []).some((cat) => mine.has(cat)) || x.market === c.market));
+  const ranked = pool.sort((a, b) => (cardLocalPct(b) ?? -1) - (cardLocalPct(a) ?? -1)).slice(0, 3);
+  if (!ranked.length) return "";
+  return `<div class="pdp-block"><h4>Similar creators nearby</h4><div class="pdp-similar">${ranked.map((x) => { const pct = cardLocalPct(x); return `<button type="button" class="pdp-sim" onclick="openCreatorProfile('${x.userId}')">${avatarHtml(x, "pdp-sim-img")}<span class="pdp-sim-name">${esc(x.name || "")}</span><span class="pdp-sim-meta">${pct === null ? "Local % not reported" : `${pct}% local`} · ${esc(shelfPriceLine(x).main)}</span></button>`; }).join("")}</div></div>`;
+}
+// The buy box: lane + day picker, sending into the existing
+// Offer Card flow (openDealSheet) with the lane preset and the
+// picked day carried in the deal's note, which the creator sees
+// on the proposal card.
+function pdpDays() {
+  const out = [];
+  const now = new Date();
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    out.push({ label: i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" }), date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), full: d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }) });
+  }
+  return out;
+}
+function buyBoxHtml(c) {
+  const p = (c && c.profile) || {};
+  const sym = currencySymbolForMarket(c && c.market);
+  const first = (c.name || "this creator").trim().split(" ")[0] || "this creator";
+  return `<div class="pdp-buy" id="pdp-buy">
+    <div class="pdp-buy-h">Book ${esc(first)}</div>
+    ${p.paidRate ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="paid" checked><span><strong>Paid booking — ${sym}${fmtPrice(p.paidRate)}</strong><small>You pay the rate + 3%. They keep 97%. SIGNL holds the money until the post is live.</small></span></label>` : ""}
+    ${p.compOpen !== false ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="comp"${p.paidRate ? "" : " checked"}><span><strong>Comped visit — ${sym}0</strong><small>The experience is the payment: 1 post + 1 story, native share only.</small></span></label>` : ""}
+    <div class="pdp-days"><span class="pdp-days-l">Pick a day</span><div class="pdp-dayrow">${pdpDays().map((d, i) => `<button type="button" class="pdp-day${i === 0 ? " on" : ""}" data-full="${esc(d.full)}" onclick="pdpPickDay(this)">${esc(d.label)}<small>${esc(d.date)}</small></button>`).join("")}</div></div>
+    <button type="button" class="btn pdp-send" onclick="pdpSendOffer('${c.userId}')">Send offer</button>
+    <p class="small muted" style="margin:8px 0 0">Your offer opens with these terms filled in. The creator can accept, counter once, or decline with a reason.</p>
+  </div>`;
+}
+function pdpPickDay(btn) {
+  document.querySelectorAll(".pdp-day").forEach((b) => b.classList.toggle("on", b === btn));
+  return false;
+}
+function pdpSendOffer(userId) {
+  const lane = (document.querySelector("input[name='pdp-lane']:checked") || {}).value || "comp";
+  const dayBtn = document.querySelector(".pdp-day.on");
+  openDealSheet(userId);
+  const kindSel = document.getElementById("ds-kind");
+  if (kindSel) { kindSel.value = lane === "paid" ? "paid" : "comp"; dealSheetKind(); }
+  const note = document.getElementById("ds-notefield");
+  if (note && dayBtn) note.value = `Preferred visit day: ${dayBtn.getAttribute("data-full")}.`;
+  return false;
+}
+// ---------- The Mirror: Find offers (creator, Build -134) ----------
+// Offer cards stated like prices over the same /open-offers
+// payload the Offers board reads; Grab rides applyToOffer, the
+// piles ride the shared offers deck state.
+function mirrorPriceLine(o) {
+  if (!o) return { main: "", sub: "" };
+  if (o.kind === "paid") return { main: `$${fmtPrice(o.cashRate)} paid`, sub: "a paid booking: you keep 97%" };
+  if (o.kind === "coupon") return { main: o.couponSummary || couponSummaryClient(o.coupon, o.businessName), sub: "the coupon is the payment for the post" };
+  if (o.whatComped) {
+    const thing = String(o.whatComped).replace(/^(a|an|the)\s+/i, "").replace(/^./, (ch) => ch.toLowerCase());
+    return { main: `Comped ${thing}`, sub: "the experience is the payment" };
+  }
+  return { main: "Comped visit", sub: "the experience is the payment" };
+}
+function mirrorAskLine(o) {
+  const d = deliverablesOfClient(o || {});
+  const ask = `${d.posts} post${d.posts === 1 ? "" : "s"}${d.story ? " + 1 story" : ""}`;
+  return o && o.kind === "paid" ? `The ask: ${ask}, on the posting terms written on the offer.` : `The ask: ${ask} within 48 hours of the visit.`;
+}
+function mirrorOfferValue(o) { return Number(o && o.cashRate) || Number(o && o.dollarCap) || 0; }
+function mirrorOfferCardHtml(o, opts) {
+  const preview = !!(opts && opts.preview);
+  const parked = !!(opts && opts.parked);
+  const price = mirrorPriceLine(o);
+  const place = [o.businessNeighborhood, o.businessCity].filter(Boolean).join(", ");
+  const spotsLeft = (Number(o.spots) || 0) - (Number(o.filledCount) || 0);
+  const tr = o.businessTrackRecord;
+  return `<div class="mirror-card">
+    <div class="mirror-top">
+      <span class="mirror-mono">${esc((o.businessName || "?").trim().charAt(0).toUpperCase() || "?")}</span>
+      <div class="mirror-id"><div class="mirror-biz">${esc(o.businessName || "")}</div><div class="mirror-meta">${esc(o.category || "")}${place ? ` · ${esc(place)}` : ""}${o.distanceBand ? ` · ${esc(o.distanceBand)}` : ""}</div></div>
+      ${o.fitNote ? `<span class="mirror-fit">Good fit</span>` : ""}
+    </div>
+    <div class="mirror-price">${esc(price.main)}</div>
+    <div class="mirror-title">${esc(o.title || "")}</div>
+    ${price.sub ? `<div class="mirror-sub">${esc(price.sub)}</div>` : ""}
+    <div class="mirror-ask">${esc(mirrorAskLine(o))}</div>
+    ${o.includes ? `<div class="mirror-line">Included: ${esc(o.includes)}</div>` : ""}
+    ${tr ? `<div class="mirror-track">${tr.visitsHosted} visit${tr.visitsHosted === 1 ? "" : "s"} hosted${tr.creatorsReturned > 0 ? ` · ${tr.creatorsReturned} creator${tr.creatorsReturned === 1 ? "" : "s"} came back` : ""}${tr.onTimePct !== null && tr.onTimePct !== undefined ? ` · ${tr.onTimePct}% of posts on time` : ""}</div>` : ""}
+    ${o.spots && spotsLeft > 0 ? `<div class="mirror-spots">${spotsLeft} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left</div>` : ""}
+    ${preview ? "" : o.myApplication ? `<div class="mirror-acts"><span class="badge ok">Applied</span><button type="button" class="btn small-btn ghost" onclick="state.crOffersSeg='applied'; return go('dashboard','Offers')">See it in Offers</button></div>` : `<div class="mirror-acts"><button type="button" class="btn small-btn" onclick="findOffersGrab('${o.id}')">Grab this visit</button>${parked ? `<button type="button" class="btn small-btn ghost" onclick="findOffersUnlater('${o.id}')">Move back</button>` : `<button type="button" class="btn small-btn ghost" onclick="findOffersLater('${o.id}')">Save for later</button>`}<button type="button" class="btn small-btn ghost" onclick="findOffersHide('${o.id}')">Not for me</button></div>`}
+  </div>`;
+}
+async function loadFindOffers() {
+  const el = document.getElementById("cr-findoffers");
+  if (!el) return;
+  await ensureDeckState();
+  try {
+    const data = await api("GET", "/open-offers");
+    if (!document.getElementById("cr-findoffers")) return;
+    state.openOffers = data.offers || [];
+    state.findOffersEarly = data.earlyAccess || null;
+    renderFindOffers();
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+function renderFindOffers() {
+  const el = document.getElementById("cr-findoffers");
+  if (!el) return;
+  const all = state.openOffers || [];
+  const q = deckQueue("offers", all);
+  const kind = state.foKind || "all";
+  const cat = state.foCategory || "";
+  const dist = state.foDistance || "";
+  const sort = state.foSort || "new";
+  const cats = [...new Set(all.map((o) => o.category).filter(Boolean))].sort();
+  const hasDistance = all.some((o) => o.distanceBand);
+  let list = q.visible.filter((o) => !o.myApplication);
+  if (kind !== "all") list = list.filter((o) => o.kind === kind);
+  if (cat) list = list.filter((o) => o.category === cat);
+  if (dist) list = list.filter((o) => o.distanceBand === dist);
+  if (sort === "value") list = [...list].sort((a, b) => mirrorOfferValue(b) - mirrorOfferValue(a));
+  if (sort === "close") { const rank = { "Same neighborhood": 0, "Under 2 miles": 1, "Under 5 miles": 2 }; list = [...list].sort((a, b) => (rank[a.distanceBand] === undefined ? 3 : rank[a.distanceBand]) - (rank[b.distanceBand] === undefined ? 3 : rank[b.distanceBand])); }
+  const applied = q.visible.filter((o) => o.myApplication);
+  const ea = state.findOffersEarly;
+  el.innerHTML = `
+    <p class="fo-count"><strong>${list.length}</strong> open visit${list.length === 1 ? "" : "s"} near you</p>
+    <div class="fo-filters">
+      <div class="chip-row">${[["all", "All offers"], ["comp", "Comped"], ["paid", "Paid"], ["coupon", "Coupon"]].map(([v, l]) => `<button type="button" class="chip${kind === v ? " on" : ""}" onclick="state.foKind='${v}'; renderFindOffers()">${l}</button>`).join("")}</div>
+      ${cats.length > 1 ? `<label class="fo-selfilter">Category <select onchange="state.foCategory=this.value; renderFindOffers()"><option value="">All categories</option>${cats.map((x) => `<option value="${esc(x)}"${cat === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></label>` : ""}
+      ${hasDistance ? `<label class="fo-selfilter">Distance <select onchange="state.foDistance=this.value; renderFindOffers()"><option value="">Any distance</option>${["Same neighborhood", "Under 2 miles", "Under 5 miles"].map((x) => `<option value="${esc(x)}"${dist === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></label>` : ""}
+      <label class="fo-selfilter">Sort <select onchange="state.foSort=this.value; renderFindOffers()"><option value="new"${sort === "new" ? " selected" : ""}>Newest first</option>${hasDistance ? `<option value="close"${sort === "close" ? " selected" : ""}>Closest first</option>` : ""}<option value="value"${sort === "value" ? " selected" : ""}>Highest value</option></select></label>
+    </div>
+    ${ea && ea.opensAt ? `<p class="small" style="margin:0 0 10px">A new offer just posted in your market. Charter creators, the founding class, see new offers first; this one opens to everyone ${esc(fmtDay(ea.opensAt))}.</p>` : ""}
+    ${list.length ? `<div class="mirror-grid">${list.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : `<div class="empty-state"><h3>No open visits match</h3><p>Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets.</p></div>`}
+    ${applied.length ? `<h3 style="margin:22px 0 10px">You applied</h3><div class="mirror-grid">${applied.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : ""}
+    ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3><div class="mirror-grid">${q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })).join("")}</div>` : ""}`;
+}
+async function findOffersGrab(id) { await applyToOffer(id); loadFindOffers(); }
+function findOffersLater(id) { pileLater("offers", id); renderFindOffers(); return false; }
+function findOffersUnlater(id) { pileUnlater("offers", id); renderFindOffers(); return false; }
+function findOffersHide(id) { pileHide("offers", id); renderFindOffers(); return false; }
+// ---------- Setup live previews (Build -134) ----------
+// The creator preview card is built from the live form fields,
+// falling back to the saved record for anything not on screen,
+// and rendered with the Shelf tile + hero block themselves.
+function previewTierFor(total) {
+  const t = Number(total) || 0;
+  if (t >= 15000) return "Headliners";
+  if (t >= 2000) return "Locals";
+  if (t >= 500) return "Neighbors";
+  return "";
+}
+function creatorPreviewCard() {
+  const u = state.user || {};
+  const c0 = u.creator || {};
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  const num = (id, fb) => { const v = parseFloat(val(id)); return Number.isFinite(v) ? v : fb; };
+  const stackIds = [["instagram", "p-followers"], ["tiktok", "p-stack-tiktok"], ["facebook", "p-stack-facebook"], ["x", "p-stack-x"], ["linkedin", "p-stack-linkedin"], ["youtube", "p-stack-youtube"], ["snapchat", "p-stack-snapchat"]];
+  const stack = {};
+  let total = 0;
+  for (const [k, id] of stackIds) { const v = num(id, (c0.audienceStack || {})[k] || (k === "instagram" ? c0.followerCount || 0 : 0)) || 0; stack[k] = v; total += v; }
+  const pctRaw = val("p-localpct");
+  const pct = pctRaw === undefined || pctRaw === "" ? (c0.localAudiencePct === undefined ? null : c0.localAudiencePct) : Number(pctRaw);
+  const paidOn = document.getElementById("lane-paid");
+  const rate = paidOn ? (paidOn.checked ? (parseFloat((document.getElementById("lane-rate") || {}).value) || null) : null) : (c0.paidRate || null);
+  const compEl = document.getElementById("lane-comp");
+  const marketSel = document.getElementById("p-market");
+  const citySel = document.getElementById("p-market-city") || document.getElementById("p-city");
+  const cats = [...document.querySelectorAll("input[name='p-cat']:checked")].map((x) => x.value);
+  const comps = [...document.querySelectorAll("input[name='p-comp']:checked")].map((x) => x.value);
+  const topCities = (val("p-topcities") || "");
+  return {
+    userId: u.id || "preview",
+    name: (val("p-name") || u.name || "").trim() || u.name || "",
+    market: (marketSel && marketSel.value) || u.market || "",
+    city: (citySel && citySel.value) || u.city || "",
+    neighborhood: val("p-neighborhood") !== undefined ? val("p-neighborhood") : (c0.neighborhood || ""),
+    photoUrl: u.photoUrl || null,
+    photos: [],
+    profile: {
+      handle: (val("p-handle") || c0.handle || "").replace(/^@/, ""),
+      categories: cats.length ? cats : (c0.categories || []),
+      compCategories: comps.length ? comps : (c0.compCategories || []),
+      localAudiencePct: pct === null || pct === undefined || Number.isNaN(Number(pct)) ? null : Number(pct),
+      localAudienceSource: c0.localAudienceSource || "Self-reported",
+      paidRate: rate,
+      compOpen: compEl ? !!compEl.checked : c0.compOpen !== false,
+      tierBand: previewTierFor(total) || c0.tierBand || "",
+      avgViews: num("p-avgviews", c0.avgViews || 0) || null,
+      audienceStack: stack,
+      followerCount: stack.instagram || 0,
+      bio: val("p-bio") !== undefined ? val("p-bio") : (c0.bio || ""),
+      topAudienceCities: topCities ? topCities.split(",").map((s) => s.trim()).filter(Boolean) : (c0.topAudienceCities || []),
+    },
+    totalAudience: total,
+    momentum: u.momentum || null,
+    foundingBand: null,
+    badges: [],
+  };
+}
+function creatorPreviewRefresh() {
+  const host = document.getElementById("profile-preview-host");
+  if (!host) return;
+  const view = state.creatorPreviewView || "business";
+  document.querySelectorAll(".pv-chip").forEach((b) => b.classList.toggle("on", b.getAttribute("data-pv") === view));
+  const card = creatorPreviewCard();
+  host.innerHTML = view === "public"
+    ? `<div class="prev-public">${pdpLocalHeroHtml(card)}<p class="small" style="margin:8px 0 0"><strong>${esc(card.name)}</strong>${card.profile.handle ? ` · @${esc(card.profile.handle)}` : ""} · ${esc(shelfPriceLine(card).main)}</p></div>`
+    : `<div class="prev-shelf">${shelfTileHtml(card, { preview: true })}</div>${pdpLocalHeroHtml(card)}`;
+}
+function creatorPreviewSetView(v) { state.creatorPreviewView = v; creatorPreviewRefresh(); return false; }
+// The business preview offer is built from the composer draft
+// and rendered with the Mirror card itself.
+function offerPreviewOffer() {
+  const d = state.offerDraft || {};
+  const u = state.user || {};
+  const biz = u.business || {};
+  const kind = d.kind || "comp";
+  const o = {
+    id: "preview", businessId: u.id || "preview", businessName: biz.businessName || u.name || "Your business",
+    category: biz.category || "", businessNeighborhood: biz.neighborhood || "", businessCity: u.city || "",
+    market: u.market || "", kind, title: d.title || "Your offer title",
+    whatComped: d.comped || "", dollarCap: Number(d.cap) || 0, cashRate: Number(d.rate) || 0,
+    covers: Number(d.covers) || 2, spots: Number(d.spots) || 1, filledCount: 0,
+    includes: d.includes || "", experience: d.experience || "",
+    coupon: kind === "coupon" ? { type: d.ctype || "store_credit", amount: Number(d.camount) || 0, percent: Number(d.cpercent) || 0, cap: Number(d.ccap) || 0, appliesTo: d.capplies || "" } : null,
+    deliverables: { posts: Number(d.dposts) || 1, story: d.dstory !== false, windowHours: 48 },
+    businessAbout: biz.about || "",
+  };
+  if (kind === "coupon") o.couponSummary = couponSummaryClient(o.coupon, o.businessName);
+  return o;
+}
+function offerPreviewRefresh() {
+  const host = document.getElementById("offer-preview-host");
+  if (!host) return;
+  const view = state.offerPreviewView || "creator";
+  document.querySelectorAll(".opv-chip").forEach((b) => b.classList.toggle("on", b.getAttribute("data-opv") === view));
+  const o = offerPreviewOffer();
+  host.innerHTML = view === "business"
+    ? `<div class="prev-biz"><div class="mirror-title">${esc(o.title)}</div><p class="small muted" style="margin:4px 0 0">${esc(mirrorPriceLine(o).main)} · ${o.spots} spot${o.spots === 1 ? "" : "s"} · this is the draft you are building; it goes out when you post it or when your market opens.</p></div>`
+    : mirrorOfferCardHtml(o, { preview: true });
+}
+function offerPreviewSetView(v) { state.offerPreviewView = v; offerPreviewRefresh(); return false; }
+
 async function loadDiscover() {
   const el = document.getElementById("tab-body");
   const u = state.user;
@@ -19658,7 +20124,7 @@ async function loadDiscover() {
   // "See everyone". The mode is only defaulted, never forced.
   const foundingDisc = isFoundingBusiness(u);
   el.innerHTML = `
-    ${wsHead("Find creators", { sub: "Flip through micro-influencers near you. Invite the ones who fit.", subKey: "biz-discover" })}
+    ${wsHead("Find creators", { sub: "Shop local creators near you. Invite the ones who fit.", subKey: "biz-discover" })}
     ${wsTabs([
       { label: "Browse", on: true, onclick: "return go('dashboard','Discover')" },
       { label: "My Regulars", on: false, onclick: "return go('dashboard','Regulars')" },
@@ -19671,11 +20137,17 @@ async function loadDiscover() {
     </div>
     <div class="dspan-row"><button type="button" id="dchip-spanish" class="dspan-toggle${state.discoverSpanish ? " on" : ""}" aria-pressed="${state.discoverSpanish ? "true" : "false"}" onclick="return discoverSpanishChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Spanish-speaking creators only</span><span class="dspan-sub">Makes content in Spanish</span></button><button type="button" id="dchip-musician" class="dspan-toggle${state.discoverMusician ? " on" : ""}" style="margin-left:8px" aria-pressed="${state.discoverMusician ? "true" : "false"}" onclick="return discoverMusicianChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Musicians only</span><span class="dspan-sub">Creators who make music</span></button></div>
     <div class="dcat-row"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
+    <div class="bookmode-row" role="group" aria-label="How you want to book">
+      <button type="button" class="rchip${(state.discoverBookMode || "any") === "any" ? " on" : ""}" data-bookmode="any" onclick="return discoverBookModeSet('any')">Any booking</button>
+      <button type="button" class="rchip${state.discoverBookMode === "comp" ? " on" : ""}" data-bookmode="comp" onclick="return discoverBookModeSet('comp')">Comped visits</button>
+      <button type="button" class="rchip${state.discoverBookMode === "paid" ? " on" : ""}" data-bookmode="paid" onclick="return discoverBookModeSet('paid')">Paid bookings</button>
+      <span class="bookmode-rate"><label for="f-rate">Their rate</label><select id="f-rate" onchange="discoverRateSet(this.value)"><option value="any"${(state.discoverRate || "any") === "any" ? " selected" : ""}>Any rate</option><option value="u100"${state.discoverRate === "u100" ? " selected" : ""}>Under ${esc(ownCurrencySymbol())}100</option><option value="m100"${state.discoverRate === "m100" ? " selected" : ""}>${esc(ownCurrencySymbol())}100 to ${esc(ownCurrencySymbol())}200</option><option value="o200"${state.discoverRate === "o200" ? " selected" : ""}>Over ${esc(ownCurrencySymbol())}200</option></select></span>
+    </div>
     <div class="filters">
       <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
       <div><label>Tier</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
       <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="f-sort"><option value="local" selected>Local % first</option><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum</option><option value="fit">Best fit</option></select></div>
+      <div><label>Sort by</label><select id="f-sort"><option value="local" selected>Best local fit</option><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum</option><option value="fit">Best fit for my business</option></select></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
     <details class="filters-fold"><summary>More filters</summary>
@@ -19688,6 +20160,7 @@ async function loadDiscover() {
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
     </div>
     </details>
+    <p id="discover-count" class="disc-count" aria-live="polite"></p>
     <div id="discover-toggle"></div>
     <div id="biz-wishlist"></div>
     <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>`;
@@ -19758,6 +20231,7 @@ async function runDiscover() {
     state.discover = data.creators;
     syncUniversityOptions(data.universities);
     if (!data.creators.length) {
+      setDiscoverCount(0);
       el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>SIGNL is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
       return;
     }
@@ -19776,8 +20250,8 @@ async function runDiscover() {
 // in the business's Later pile. Cards is the default; List renders
 // the exact card grid Discover has always rendered.
 function discoverModeToggleHtml() {
-  const mode = state.discoverMode || "cards";
-  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setDiscoverMode('list')">See everyone</button></div>${deckChromeHtml("discover")}<span class="stack-pos" data-stackpos="discover"></span></div>${deckTeachHtml("discover")}`;
+  const mode = state.discoverMode || "shelf";
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "shelf" ? " on" : ""}" onclick="setDiscoverMode('shelf')">Shelf</button><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setDiscoverMode('list')">See everyone</button></div>${deckChromeHtml("discover")}<span class="stack-pos" data-stackpos="discover"></span></div>${deckTeachHtml("discover")}`;
 }
 // Build -74 deck save: the same favorites store the grid's
 // heart writes (POST /favorites toggles server-side), so a
@@ -19813,11 +20287,32 @@ function renderDiscoverResults() {
   if (!q.visible.length) {
     const pos = document.querySelector('[data-stackpos="discover"]');
     if (pos) pos.textContent = "";
+    setDiscoverCount(0);
     el.innerHTML = `<div class="stk-end"><h3>Nothing new in this search</h3><p class="small muted">Everyone here is parked in your Later pile or hidden.</p><div class="stk-end-actions">${q.parked.length ? `<button type="button" class="btn ghost" onclick="openLaterPile('discover')">Review Later${q.parked.length >= 10 ? ` (${q.parked.length})` : ""}</button>` : ""}<button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
     syncDeckChrome("discover");
     return;
   }
-  if ((state.discoverMode || "cards") === "list") {
+  // Build -134: the Shelf is the default Find creators view —
+  // the full roster as tiles, local % first, with the shortlist
+  // compare tray under the grid.
+  if ((state.discoverMode || "shelf") === "shelf") {
+    const pos = document.querySelector('[data-stackpos="discover"]');
+    if (pos) pos.textContent = "";
+    const vis = shelfClientFilter(q.visible);
+    setDiscoverCount(vis.length);
+    if (!vis.length) {
+      el.innerHTML = `<div class="stk-end"><h3>No creators match those filters</h3><p class="small muted">Loosen the booking or rate filters, or clear everything and start again.</p><div class="stk-end-actions"><button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
+      syncDeckChrome("discover");
+      return;
+    }
+    const sortSel = document.getElementById("f-sort");
+    const localSort = !sortSel || !sortSel.value || sortSel.value === "local";
+    el.innerHTML = `<div class="shelf-grid">${vis.map((c, i) => shelfTileHtml(c, { topMatch: i === 0 && localSort })).join("")}</div>` + shelfTrayHtml();
+    syncDeckChrome("discover");
+    return;
+  }
+  setDiscoverCount(q.visible.length);
+  if ((state.discoverMode || "shelf") === "list") {
     const pos = document.querySelector('[data-stackpos="discover"]');
     if (pos) pos.textContent = "";
     el.innerHTML = discoverListHtml(q.visible);
@@ -19913,6 +20408,11 @@ function discoverClearFilters() {
   if (sortEl) sortEl.value = "local";
   const paid = document.getElementById("f-paid");
   if (paid) paid.checked = false;
+  state.discoverBookMode = "any";
+  document.querySelectorAll("[data-bookmode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-bookmode") === "any"));
+  state.discoverRate = "any";
+  const rateSel = document.getElementById("f-rate");
+  if (rateSel) rateSel.value = "any";
   state.discoverUniversity = "";
   const uniSel = document.getElementById("f-university");
   if (uniSel) uniSel.value = "";
@@ -20213,6 +20713,7 @@ function offerDraftSync() {
   if (document.querySelector("input[name='o2-tier']")) d.tiers = [...document.querySelectorAll("input[name='o2-tier']:checked")].map((x) => x.value);
   const spanish = document.getElementById("o2-spanish");
   if (spanish) d.spanish = !!spanish.checked;
+  offerPreviewRefresh();
 }
 
 // Packaged plays (Sig Operator refinement R1, Jeff, 2026-10-28):
@@ -21176,6 +21677,15 @@ async function loadCampaignSetup() {
         ? `<p class="small muted">${esc(foundingBizPlace(state.user))} has not opened yet. This saves ready to go. Nothing is sent to creators until your market opens.</p>`
         : marketLive ? "" : `<p class="small muted">Market not open yet — offers save as drafts until it does.</p>`}
     </form>
+  </div>
+  <div class="panel preview-panel" id="offer-preview-panel" style="margin-top:18px">
+    <div class="flex-between"><strong>Live preview</strong><span class="badge info">Updates as you type</span></div>
+    <p class="small muted" style="margin:6px 0 10px">Your offer card in Find offers, drawn from the form above. Change a field and this changes with it.</p>
+    <div class="chip-row" style="margin-bottom:10px">
+      <button type="button" class="chip opv-chip on" data-opv="creator" onclick="return offerPreviewSetView('creator')">See it as a creator</button>
+      <button type="button" class="chip opv-chip" data-opv="business" onclick="return offerPreviewSetView('business')">See it as a business</button>
+    </div>
+    <div id="offer-preview-host"></div>
   </div>
   </div>
   <div class="wcard" style="margin-top:18px"><h3 style="margin-top:0">Already made one?</h3><p class="small muted" style="margin:0">Current and past campaigns, who applied, and what they did live in Your campaigns.</p><p style="margin:10px 0 0"><button type="button" class="btn ghost" onclick="return go('dashboard','My Offers')">Open Your campaigns</button></p></div>
