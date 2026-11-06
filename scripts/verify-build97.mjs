@@ -203,12 +203,12 @@ console.log("== Source checks ==");
   const sigaiJs = fs.readFileSync(path.join(root, "netlify/functions/lib/sigai.js"), "utf8");
   check("two views: separate tabs in the business shell, both wired in renderBusinessDash",
     appJs.includes('"Campaign Setup", "My Offers"') && appJs.includes('if (tab === "Campaign Setup") loadCampaignSetup();') && appJs.includes('if (tab === "My Offers") loadMyOffers();'));
-  check("rail: two rows, Set up a campaign then Your campaigns, following the Regulars pattern",
-    appJs.includes('label: "Set up a campaign", sub: "Build a new campaign, step by step or with Sig.", tab: "Campaign Setup"')
+  check("rail: two rows, Start a campaign then Your campaigns, following the Regulars pattern",
+    appJs.includes('label: "Start a campaign", sub: "Build a new campaign, step by step or with Sig.", tab: "Campaign Setup"')
     && appJs.includes('label: "Your campaigns", sub: "Current and past campaigns, who applied, and what they did.", tab: "My Offers"')
-    && appJs.includes('RAIL_SHORT["Campaign Setup"] = "Setup"'));
+    && appJs.includes('RAIL_SHORT["Campaign Setup"] = "Start"'));
   check("setup view: its own head, the composer, and no tracking list; tracking view: its own head, no composer",
-    appJs.includes('wsHead("Set up a campaign"') && appJs.includes('id="offer-composer"')
+    appJs.includes('wsHead("Start a campaign"') && appJs.includes('id="offer-composer"')
     && appJs.slice(appJs.indexOf("async function loadMyOffers()"), appJs.indexOf("async function loadMyOffers()") + 3200).includes('wsHead("Your campaigns"')
     && !appJs.slice(appJs.indexOf("async function loadMyOffers()"), appJs.indexOf("async function loadMyOffers()") + 3200).includes("offer-composer"));
   check("deep-link target for the item-12 checklist: go('dashboard','Campaign Setup') via the biz-setup Sig link",
@@ -240,10 +240,10 @@ console.log("== Source checks ==");
   check("sigai canon: the two-views line", sigaiJs.includes("Campaign setup and tracking are two separate views."));
   check("canon locks untouched: founding Stripe prices stay env-or-empty (no market live for money)",
     routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'));
-  check("no em dashes in the new copy", ["Set up a campaign", "Build a new campaign, step by step or with Sig.", "Current and past campaigns, who applied, and what they did.", "Tell Sig what you want", "Nothing is saved until you tap Save this draft", "Partway through the month,"].every((l) => !l.includes("—") && !l.includes("–")));
-  check("build stamp is 2026.11.06-135 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.06-135"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.06-135"'), "");
+  check("no em dashes in the new copy", ["Start a campaign", "Build a new campaign, step by step or with Sig.", "Current and past campaigns, who applied, and what they did.", "Tell Sig what you want", "Nothing is saved until you tap Save this draft", "Partway through the month,"].every((l) => !l.includes("—") && !l.includes("–")));
+  check("build stamp is 2026.11.06-137 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.06-137"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.06-137"'), "");
 }
 
 console.log(`\nBuild -97 verify: ${passed} passed, ${failed} failed`);

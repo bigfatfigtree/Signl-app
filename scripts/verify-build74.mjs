@@ -231,7 +231,7 @@ console.log("== Source checks ==");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
   const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
-  check("stamp is 2026.11.06-135", buildJs.includes('BUILD_ID = "2026.11.06-135"'));
+  check("stamp is 2026.11.06-137", buildJs.includes('BUILD_ID = "2026.11.06-137"'));
   check("sample route exists and is fenced by demoShowcaseVisibleTo", routerJs.includes('seg[1] === "sample-results"') && routerJs.includes("function sampleResultsFor(viewer)") && routerJs.includes("if (!demoShowcaseVisibleTo(viewer)) return null;"));
   check("sample builder stores nothing", !/store\.set/.test(routerJs.slice(routerJs.indexOf("function sampleResultsFor"), routerJs.indexOf("function sampleResultsFor") + 2600)));
   check("demo loader reads the shipped demo assets", routerJs.includes("/assets/demo-creators/${spec.handle}-1.jpg"));
@@ -239,14 +239,14 @@ console.log("== Source checks ==");
   // the start-here cards retired into the ONE setup checklist.
   // Its save-creators and campaign moves are checklist items.
   check("Start-here retired into the ONE setup checklist", appJs.includes("function setupChecklistHtml") && appJs.includes("Get the most from SIGNL") && routerJs.includes("Save or invite your first creators") && !appJs.includes("function startHereSteps"));
-  check("the setup checklist mounts on founding and active Home", appJs.includes('id="biz-setup-checklist"') && appJs.includes("d.setupChecklist ? setupChecklistHtml(d.setupChecklist)") && appJs.includes("/me/setup-checklist"));
+  check("the setup checklist mounts on founding and active Home", appJs.includes('id="biz-setup-checklist"') && appJs.includes("d.setupChecklist && !d.setupChecklist.allDone ? setupChecklistHtml(d.setupChecklist)") && appJs.includes("/me/setup-checklist"));
   check("sample story + preview renderers exist with the plain SAMPLE line", appJs.includes("Sample results — what yours will look like") && appJs.includes("function sampleStoryHtml") && appJs.includes("function samplePreviewHtml") && appJs.includes("loadSampleResultsInto"));
   check("sample mounts on founding Results and Analytics", (appJs.split('id="biz-sample"').length - 1) >= 3);
   check("deck: Next label, Save wiring, See everyone toggle", appJs.includes('passLabel: "Next"') && appJs.includes("deckToggleFav") && appJs.includes("See everyone"));
   check("deck card carries post thumbnails", appJs.includes("deck2-thumbs"));
   check("deck is local-% ranked", appJs.includes("localAudiencePct") && appJs.includes("ranked"));
   check("Campaigns tracking leads with the setup action and headed lists (Build -97 split of the -74 sections) [re-aimed Build -119: section titles are the design's Live / Done]",
-  appJs.includes("+ Set up a campaign") && appJs.includes('<h3 class="camp-h">${title}</h3>') && appJs.includes('title = "Live"') && appJs.includes('title = "Done"') && appJs.includes("No campaigns running yet"));
+  appJs.includes("+ Start a campaign") && appJs.includes('<h3 class="camp-h">${title}</h3>') && appJs.includes('title = "Live"') && appJs.includes('title = "Done"') && appJs.includes("No campaigns running yet"));
   check("founding no longer defaults to the grid", !appJs.includes('state.discoverMode = "list"'));
   check("package.json wires verify-build74", pkg.includes("verify-build74"));
 }

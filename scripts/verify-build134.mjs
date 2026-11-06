@@ -38,17 +38,17 @@ const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
-check("stamp is 2026.11.06-135 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-135"') && indexHtml.includes("2026.11.06-135"));
+check("stamp is 2026.11.06-137 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-137"') && indexHtml.includes("2026.11.06-137"));
 
 // Nav: the Find Offers tab is first-class for creators.
-check("nav: Find Offers is a creator primary tab (phone bar)", appJs.includes('creator: ["Dashboard", "Offers", "Find Offers", "My Visits", "Messages", "Earnings"]'));
+check("nav: Find Offers is a creator primary tab (phone bar)", appJs.includes('creator: ["Dashboard", "Find Offers", "Sig", "Earnings", "Offers"]'));
 check("nav: Find Offers carries the one-word bar label", appJs.includes('"Find Offers": "Find"'));
 check("nav: Find Offers is a labelled rail destination in tabItemsFor", appJs.includes('label: "Find offers", tab: "Find Offers"'));
 check("nav: both creator tab whitelists admit Find Offers", appJs.includes('const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "Find Offers"') && appJs.includes('"Help", "Offers", "Find Offers", "My Visits"'));
 check("nav: both creator shells dispatch Find Offers to its loader", (appJs.match(/loadFindOffers\(\)/g) || []).length >= 3 && appJs.includes('id="cr-findoffers"'));
 
 // The Shelf.
-check("shelf: the tile component exists with the local hero + spelled-out count", appJs.includes("function shelfTileHtml(c, opts)") && appJs.includes("of their followers live in") && appJs.includes("local followers</strong>"));
+check("shelf: the tile component exists with the local hero + spelled-out count (highlighted chip under the % block, Build -136)", appJs.includes("function shelfTileHtml(c, opts)") && appJs.includes("of their followers live in") && appJs.includes('class="shelf-localcount"') && appJs.includes("local followers</div>"));
 check("shelf: Discover defaults to the Shelf view", appJs.includes('state.discoverMode || "shelf"') && appJs.includes("setDiscoverMode('shelf')"));
 check("shelf: booking-kind + rate filters are wired", appJs.includes("function discoverBookModeSet(mode)") && appJs.includes("function discoverRateSet(v)") && appJs.includes("function shelfClientFilter(list)"));
 check("shelf: live result count renders", appJs.includes('id="discover-count"') && appJs.includes("function setDiscoverCount(n)"));
@@ -77,9 +77,9 @@ check("mirror: filters cover kind, category, distance, sort", appJs.includes("st
 check("mirror: Grab rides applyToOffer; piles ride the shared offers deck", appJs.includes("function findOffersGrab(id)") && appJs.includes("await applyToOffer(id)") && appJs.includes("pileLater(\"offers\", id)") && appJs.includes("pileHide(\"offers\", id)"));
 
 // Setup live previews.
-check("preview: creator setup carries the live preview panel + the plain-words view toggles (Build -135)", appJs.includes('id="profile-preview-host"') && appJs.includes(">Your card</button>") && appJs.includes(">Top of your page</button>") && !appJs.includes("See your public page top") && appJs.includes('oninput="creatorPreviewRefresh()"'));
+check("preview: creator setup carries the ONE peek switch (Build -136 replaces the -134/-135 preview box + sub-toggles)", appJs.includes('id="profile-peek-sw"') && appJs.includes("<strong>See how businesses view you</strong>") && appJs.includes('id="profile-peek"') && appJs.includes('id="profile-edit-wrap"') && !appJs.includes('id="profile-preview-host"') && !appJs.includes(">Top of your page</button>") && appJs.includes('oninput="creatorPreviewRefresh()"'));
 check("preview: creator preview builds its card from the live form and renders the real components", appJs.includes("function creatorPreviewCard()") && appJs.includes("shelfTileHtml(card, { preview: true })"));
-check("preview: business setup carries the live preview panel + the creator-view toggle", appJs.includes('id="offer-preview-host"') && appJs.includes("See it as a creator") && appJs.includes("mirrorOfferCardHtml(o, { preview: true })"));
+check("preview: business setup carries the ONE peek switch (Build -136)", appJs.includes('id="offer-peek-sw"') && appJs.includes("<strong>See how creators view you</strong>") && appJs.includes('id="offer-peek"') && !appJs.includes('id="offer-preview-host"') && !appJs.includes("offerPreviewSetView") && appJs.includes("mirrorOfferCardHtml(offerPreviewOffer(), { preview: true })"));
 check("preview: the composer refreshes its preview from the draft sync", appJs.includes("function offerPreviewRefresh()") && appJs.includes("offerPreviewRefresh();"));
 check("preview: no new required setup fields were added (Required tags: 11 at -133, still 11)", (appJs.match(/req-tag">Required/g) || []).length === 11, String((appJs.match(/req-tag">Required/g) || []).length));
 

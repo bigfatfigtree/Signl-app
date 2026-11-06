@@ -195,7 +195,7 @@ try {
   // long explainer label and detached rate box were replaced by the
   // shared live lane control; its short status lines are the pinned
   // copy now.
-  check("client ships the lane control comp lines", appJs.text.includes("on. Businesses can comp you for honest posts.") && appJs.text.includes("off. You're paid-only — always fine."), "");
+  check("client ships the lane control comp lines", appJs.text.includes("on. Businesses can offer you a comped meal, service, or experience instead of cash.") && appJs.text.includes("off. You're paid-only — always fine."), "");
   check("client ships the lane control paid lines", appJs.text.includes("not set. Flip the switch and set a rate (min $50).") && appJs.text.includes("Business pays $"), "");
   check("client ships the review pages block and the paid badges", appJs.text.includes("Their review pages") && appJs.text.includes("Paid bookings:") && appJs.text.includes("Book paid visit"), "");
   check("client ships the creator home paid lane panel with the honest hold copy (no card charged, releases 48 hours after proof)", appJs.text.includes("homePaidLaneHtml") && appJs.text.includes("no card charged") && appJs.text.includes("released 48h after proof"), "");

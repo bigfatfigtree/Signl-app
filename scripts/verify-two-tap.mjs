@@ -168,7 +168,7 @@ try {
   const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 
   part("source: prefill wiring");
-  check("startOffer prefills from the tapped creator", appJs.includes("prefillDirectDraft((state.discover || []).find((x) => x.userId === creatorId))"));
+  check("startOffer prefills from the tapped creator", appJs.includes("return openBookingFlow(creatorId);") && appJs.includes("const c = (state.discover || []).find((x) => x.userId === creatorId);"));
   check("prefill fills title + comped + cap from the tier's lead suggestion and sets the comp lane", appJs.includes("state.offerDraft.title = s.label") && appJs.includes("state.offerDraft.comped = s.comp") && appJs.includes("state.offerDraft.cap = String(s.cap)") && appJs.includes('state.offerDraft.kind = "comp"'));
   check("the lead suggestions are the pinned defaults (Neighbors: Meal for one $50; Locals: Meal for two $100; Headliners: Experience for two $175)",
     appJs.includes('label: "Meal for one", comp: "Meal for one, on us", cap: 50') &&

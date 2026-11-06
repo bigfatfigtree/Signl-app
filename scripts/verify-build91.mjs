@@ -91,7 +91,7 @@ async function waitUp(base) {
 console.log("== Source: the -91 surfaces exist, the rail and stamp are untouched ==");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
-check("stamp is 2026.11.06-135 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.06-135") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-135"));
+check("stamp is 2026.11.06-137 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.06-137") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-137"));
 check("wishlist section lives inside Find creators (no 13th rail item)", appJs.includes('id="biz-wishlist"') && appJs.includes("loadWishlistSection()") && appJs.includes("Your wishlist"));
 check("wishlist copy states the privacy rule in plain words", appJs.includes("Your notes stay yours: creators never see them"));
 check("counter card copy present", appJs.includes("First time in? How'd you hear about us?"));
@@ -100,7 +100,7 @@ check("counter card copy present", appJs.includes("First time in? How'd you hear
 // items in the ONE setup checklist on Home, rendered from the
 // business-home payload (active) and the checklist host
 // (founding); Results renders no setup card.
-check("the merged setup checklist renders on Home; no proof-kit card remains", appJs.includes("d.setupChecklist ? setupChecklistHtml(d.setupChecklist)") && appJs.includes('id="biz-setup-checklist"') && appJs.includes("Get the most from SIGNL") && !appJs.includes("proofKitHtml"));
+check("the merged setup checklist renders on Home; no proof-kit card remains", appJs.includes("d.setupChecklist && !d.setupChecklist.allDone ? setupChecklistHtml(d.setupChecklist)") && appJs.includes('id="biz-setup-checklist"') && appJs.includes("Get the most from SIGNL") && !appJs.includes("proofKitHtml"));
 check("server: wishlist records + roster drop + digest + proof kit", routerJs.includes("wishlist:") && routerJs.includes("rosterdrop:") && routerJs.includes("async function recordRosterDrop") && routerJs.includes("async function runRosterDigestSweep") && routerJs.includes("async function proofKitFor"));
 check("server: test redemption is fenced in the redeem path", routerJs.includes("if (!booking.test)") && routerJs.includes('test: booking.test === true'));
 

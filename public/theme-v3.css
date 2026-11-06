@@ -335,10 +335,11 @@ body.v3-on #agent-fab.show, body.v3-slim #agent-fab.show { display: flex !import
   /* Build -125: the phone bar reads in the design's order —
      Review · Creators · Markets · Wallet — regardless of the
      desktop rail's section order. */
-  body.rail-on #rail .rail-p-applications { order: 1; }
-  body.rail-on #rail .rail-p-creators { order: 2; }
-  body.rail-on #rail .rail-p-markets { order: 3; }
+  body.rail-on #rail .rail-p-home { order: 1; }
+  body.rail-on #rail .rail-p-applications { order: 2; }
+  body.rail-on #rail .rail-p-sig { order: 3; }
   body.rail-on #rail .rail-p-stats { order: 4; }
+  body.rail-on #rail .rail-p-markets { order: 5; }
   body.rail-on #rail .rail-label { font-size: .62rem; }
   body.rail-on #rail .rail-badge { top: 0; right: 4px; }
 }
@@ -814,6 +815,76 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .shelf-tray-name { font-weight: 700; }
 .shelf-tray-pct { font-size: 1.25rem; font-weight: 800; }
 .shelf-tray-line { font-size: .82rem; color: var(--ink2); }
+/* Build -136: the accepts-comps switch + highlighted local count
+   (Jeff's card rulings). The switch mirrors the app's real .sw
+   switch language: mint fill + knob right when ON. */
+.shelf-price-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.shelf-price-row .shelf-price { margin-top: 4px; }
+.comp-sw { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; padding: 3px 9px 3px 4px; margin-top: 4px; }
+.comp-sw-track { width: 34px; height: 19px; border-radius: 999px; background: #D9E9DE; position: relative; flex: none; }
+.comp-sw-knob { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.comp-sw-lbl { font-size: .8rem; font-weight: 600; color: var(--ink2); white-space: nowrap; }
+.comp-sw.on { background: var(--mint-b); }
+.comp-sw.on .comp-sw-track { background: var(--mint-soft); }
+.comp-sw.on .comp-sw-knob { left: 17px; }
+.comp-sw.on .comp-sw-lbl { color: var(--ink); font-weight: 800; }
+.shelf-localcount { display: inline-block; background: var(--mint-b); color: var(--ink); font-weight: 800; font-size: .92rem; padding: 3px 11px; border-radius: 999px; margin-top: 7px; }
+.acc-row { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.shelf-tray-acc { margin: 2px 0; }
+/* Build -136: the setup peek (See how businesses / creators
+   view you) keeps the shelf card at card width. */
+.peek-shelf { max-width: 340px; grid-template-columns: 1fr; }
+/* Build -136: Find creators filter groups — one labelled job
+   per group. Categories ride ONE scrollable row of uniform
+   chips; must-haves are real switch rows; booking type is a
+   segmented control, a different visual language from chips
+   on purpose, so it can never be mistaken for a category. */
+.disc-filters { margin-top: 12px; }
+.df-group { margin-bottom: 14px; }
+.df-label { font-size: .78rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--ink2); margin-bottom: 7px; }
+.disc-filters .filters.disc-top { margin: 0; }
+.disc-filters .dcat-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; padding-bottom: 2px; margin: 0; }
+.disc-filters .dcat-row::-webkit-scrollbar { display: none; }
+.disc-filters .dcat-chip { flex: 0 0 auto; display: inline-flex; align-items: center; }
+.musthave-row { display: grid; gap: 8px; }
+@media (min-width: 720px) { .musthave-row { grid-template-columns: 1fr 1fr; } }
+.musthave { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; margin: 0; }
+.musthave .mh-tx { display: flex; flex-direction: column; gap: 1px; }
+.musthave .mh-tx small { color: var(--ink2); font-size: .82rem; }
+.bookseg { display: flex; border: 1.5px solid var(--ink); border-radius: 12px; overflow: hidden; background: var(--card); }
+.bookseg-btn { flex: 1; border: none; background: transparent; font: inherit; font-weight: 700; padding: 11px 6px; cursor: pointer; color: var(--ink); }
+.bookseg-btn + .bookseg-btn { border-left: 1px solid var(--line); }
+.bookseg-btn.on { background: var(--ink); color: #fff; }
+.disc-filters .bookmode-rate { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; }
+.fo-kind { margin-bottom: 12px; }
+.mirror-cover { display: block; width: 100%; height: 160px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; }
+.cg-starters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+/* Build -136 (Scopes #7/#8): the shop layout — left filter
+   rail + big cards on desktop; on a phone the rail becomes
+   the Filters sheet behind a sticky Sort + Filters bar. The
+   rail's head/foot and the mobile bar exist only where they
+   belong, so nothing is duplicated or renamed between
+   viewports. */
+.rail-head, .rail-foot, .shop-mbar { display: none; }
+.rail-chips { flex-wrap: wrap; overflow: visible; }
+@media (min-width: 900px) {
+  .shop-layout { display: grid; grid-template-columns: 272px 1fr; gap: 22px; align-items: start; }
+  .shop-rail { position: sticky; top: 12px; }
+  .shop-rail .dcat-row { flex-wrap: wrap; overflow: visible; }
+  .shop-rail .musthave-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 899px) {
+  .shop-rail { display: none; }
+  .shop-rail.open { display: block; position: fixed; inset: 0; z-index: 90; background: var(--paper); overflow-y: auto; padding: 16px; }
+  .rail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; font-size: 1.05rem; }
+  .rail-foot { display: block; margin-top: 16px; }
+  .rail-foot .btn { width: 100%; }
+  .shop-mbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 40; background: var(--paper); padding: 8px 0; }
+  .fo-sortrow { display: none; }
+}
+.rail-x { background: none; border: none; font-size: 1.5rem; line-height: 1; cursor: pointer; color: var(--ink); padding: 2px 6px; }
+.mbar-sort select, .shop-mbar select { margin-left: 6px; }
+.shelf-tray-count { display: inline-block; align-self: flex-start; background: var(--mint-b); color: var(--ink); font-weight: 800; font-size: .85rem; padding: 2px 9px; border-radius: 999px; }
 .shelf-tray-col .btn { margin-top: 8px; }
 .pdp-hero { display: flex; gap: 16px; align-items: center; background: var(--paper2); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 14px 0 4px; }
 .pdp-hero-pct { font-size: 3.6rem; font-weight: 800; line-height: .95; letter-spacing: -.03em; color: var(--ink); }
@@ -833,7 +904,8 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .pdp-sim-name { font-weight: 700; margin-top: 6px; }
 .pdp-sim-meta { font-size: .82rem; color: var(--ink2); }
 .pdp-buy { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 18px; margin: 20px 0 6px; }
-.pdp-buy-h { font-weight: 800; font-size: 1.1rem; margin-bottom: 10px; }
+.pdp-buy-h { font-weight: 800; font-size: 1.1rem; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pdp-buy-h .comp-sw { margin-top: 0; }
 .pdp-lane { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 0 0 10px; cursor: pointer; }
 .pdp-lane:has(input:checked) { border-color: var(--ink); }
 .pdp-lane input { margin-top: 3px; width: auto; }
@@ -887,3 +959,87 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
   .pdp-hero-pct { font-size: 3rem; }
   .bookmode-rate { margin-left: 0; }
 }
+
+/* ============================================================
+   Build -137 (Jeff, 2026-11-06): the approved dashboard
+   redesign — Sig hero + Quick highlights + Next steps homes,
+   the top-right hamburger, the Sig sheet, the mobile bars.
+   ============================================================ */
+
+/* --- Sig hero (Home) --- */
+.sighero137 { background: #fff; border: 2px solid var(--ink); border-radius: 26px; padding: 22px 24px 18px; margin: 0 0 14px; box-shadow: 0 10px 30px rgba(23,21,18,.08); }
+.sighero137-head { display: flex; align-items: center; gap: 12px; }
+.sighero137-head .sigbox-orb { width: 56px; height: 56px; }
+.sighero137-head strong { font-size: 1.25rem; }
+.sighero137 .sigbox130 { margin: 14px 0 4px; }
+.sighero137 .sigbox-head, .sigsheet137 .sigbox-head { display: none; }
+.sig-brief137 { margin-top: 14px; font-size: 1rem; line-height: 1.5; background: var(--paper2); border: 1px solid var(--line2); border-radius: 14px; padding: 12px 14px; }
+.sighero137 .sigtop-nudges { margin-bottom: 2px; }
+
+/* --- Quick highlights + Next steps cards --- */
+.hl137, .ns137 { background: #fff; padding: 18px 22px 10px; margin: 0 0 14px; }
+.hl137-k { font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+.hl137-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; width: 100%; padding: 11px 0; border-bottom: 1px solid var(--line2); background: none; border-top: 0; border-left: 0; border-right: 0; font: inherit; text-align: left; }
+.hl137-row:last-child { border-bottom: 0; }
+.hl137-lab { font-size: .92rem; font-weight: 700; color: var(--ink2); }
+.hl137-lab span { display: block; font-size: .8rem; font-weight: 600; color: var(--ink3); margin-top: 1px; }
+.hl137-num { font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; color: var(--ink); }
+.hl137-door { cursor: pointer; }
+.hl137-door:hover .hl137-num { color: var(--accent); }
+.hl137-go { flex: none; font-size: 1.15rem; font-weight: 800; color: var(--ink3); margin-left: -8px; }
+.ns137 .nx-row:first-of-type { border-top: 0; }
+.ns137-caught { color: var(--ink2); font-size: .92rem; margin: 8px 0 10px; }
+
+/* --- Hamburger (top right, phones): the full destination set --- */
+.ham137-overlay { position: fixed; inset: 0; z-index: 130; background: rgba(23,21,18,.38); }
+.ham137-panel { background: var(--paper); overflow-y: auto; padding: 18px; }
+.ham137-head { display: flex; align-items: center; gap: 11px; padding: 2px 2px 12px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.ham137-head .linklike { margin-left: auto; font-size: 1rem; }
+@media (max-width: 767.98px) {
+  .ham137-panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 88vh; border-radius: 22px 22px 0 0; padding-bottom: calc(18px + env(safe-area-inset-bottom)); animation: vxSheetUp .38s cubic-bezier(.22,.8,.3,1) both; }
+}
+@media (min-width: 768px) {
+  .ham137-panel { position: absolute; top: 14px; right: 14px; width: 400px; max-width: calc(100vw - 28px); max-height: calc(100vh - 28px); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 60px rgba(23,21,18,.22); }
+}
+
+/* --- Sig sheet: bottom sheet on phones, panel on desktop --- */
+.sigsheet137-overlay { position: fixed; inset: 0; z-index: 131; background: rgba(23,21,18,.38); }
+.sigsheet137 { background: var(--card, #fff); overflow-y: auto; padding: 20px; }
+.sigsheet137-head { display: flex; align-items: center; gap: 11px; }
+.sigsheet137-head .sigbox-orb { width: 44px; height: 44px; }
+.sigsheet137-htext { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.sigsheet137-htext strong { font-size: 1.05rem; }
+.sigsheet137-htext span { color: var(--ink2); font-size: .82rem; }
+.sigsheet137-head .linklike { margin-left: auto; font-size: 1rem; }
+.sigsheet137 .sigbox130 { margin: 12px 0 4px; }
+.sigsheet137-steps { margin-top: 12px; border-top: 1px solid var(--line2); padding-top: 6px; }
+.sigsheet137-slabel { font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink3); margin: 6px 0 2px; }
+@media (max-width: 767.98px) {
+  .sigsheet137 { position: absolute; left: 0; right: 0; bottom: 0; max-height: 88vh; border-radius: 26px 26px 0 0; padding-bottom: calc(18px + env(safe-area-inset-bottom)); animation: vxSheetUp .38s cubic-bezier(.22,.8,.3,1) both; }
+}
+@media (min-width: 768px) {
+  .sigsheet137 { position: absolute; right: 24px; bottom: 24px; width: 404px; max-width: calc(100vw - 48px); max-height: calc(100vh - 48px); border: 2px solid var(--ink); border-radius: 26px; box-shadow: 0 24px 60px rgba(23,21,18,.28); }
+}
+
+/* --- Mobile bars: sequence by the bar order, Sig orb centered --- */
+@media (max-width: 767.98px) {
+  body.v3-on #tabbar .tab-item.tab-bar137 { order: var(--bar-ord, 0) !important; }
+  body.v3-on #tabbar .tab-item.tab-sig137 .tab-sig-img { width: 27px; height: 27px; border-radius: 50%; border: 2px solid var(--ink); box-shadow: 0 0 0 3px var(--mint); background: var(--ink); }
+  /* Sig lives in the bar's center slot on phones: no floating orb. */
+  /* (The .show variant is spelled out too: its rule carries an
+     extra class, so it outranks the plainer selector — Build
+     -137 QA caught the pill floating over mobile homes.) */
+  body.v3-on #agent-fab, body.v3-on #agent-fab.show, body.admin-on #agent-fab, body.admin-on #agent-fab.show { display: none !important; }
+}
+@media (min-width: 768px) {
+  .tab-menu137 { display: none !important; }
+  #tabbar .tab-item.tab-sig137 .tab-sig-img { width: 22px; height: 22px; border-radius: 50%; }
+}
+
+/* --- Booking -137: timing windows + propose-your-terms --- */
+.twin137 { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.twin137 .pdp-day { align-items: flex-start; text-align: left; }
+.twin137 .pdp-day small { display: block; }
+.pdp-propose { margin-top: 14px; border-top: 1px solid var(--line2); padding-top: 12px; }
+.pdp-propose summary { font-weight: 700; cursor: pointer; font-size: .95rem; }
+.pdp-propose .field { margin-top: 10px; }

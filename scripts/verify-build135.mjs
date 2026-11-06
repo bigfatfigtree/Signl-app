@@ -26,20 +26,19 @@ const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 
 // ---------- stamp ----------
-check("stamp is 2026.11.06-135 and identical in build.js + index.html",
-  buildJs.includes('BUILD_ID = "2026.11.06-135"') && indexHtml.includes("2026.11.06-135"));
+check("stamp is 2026.11.06-137 and identical in build.js + index.html",
+  buildJs.includes('BUILD_ID = "2026.11.06-137"') && indexHtml.includes("2026.11.06-137"));
 
-// ---------- setup preview toggles ----------
-check("creator preview toggles read in plain words: Your card / Top of your page",
-  appJs.includes("creatorPreviewSetView('business')\">Your card</button>") &&
-  appJs.includes("creatorPreviewSetView('public')\">Top of your page</button>"));
+// ---------- setup preview: ONE switch (Build -136 supersedes
+// the -134/-135 preview box + sub-toggles, Jeff's ruling) ----------
+check("creator preview is one switch at the top: See how businesses view you (box + sub-toggles gone)",
+  appJs.includes('id="profile-peek-sw"') && appJs.includes("<strong>See how businesses view you</strong>")
+  && !appJs.includes("creatorPreviewSetView") && !appJs.includes(">Top of your page</button>") && !appJs.includes('id="profile-preview-host"'));
 check("creator preview: the confusing 'See your public page top' is gone",
   !appJs.includes("See your public page top"));
-check("creator preview helper says what businesses see, in plain words",
-  appJs.includes("This is what businesses see, drawn from the fields on this page"));
-check("business preview toggles keep the parallel pair (See it as a creator / See it as a business)",
-  appJs.includes("offerPreviewSetView('creator')\">See it as a creator</button>") &&
-  appJs.includes("offerPreviewSetView('business')\">See it as a business</button>"));
+check("business preview is one switch at the top: See how creators view you (See-it-as pair gone)",
+  appJs.includes('id="offer-peek-sw"') && appJs.includes("<strong>See how creators view you</strong>")
+  && !appJs.includes("offerPreviewSetView") && !appJs.includes('id="offer-preview-host"'));
 
 // ---------- Shelf header + filters ----------
 check("shelf sort: every option is plain words a stranger can read",

@@ -72,7 +72,7 @@ const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.06-135 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-135"') && indexHtml.includes("2026.11.06-135"));
+check("stamp is 2026.11.06-137 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-137"') && indexHtml.includes("2026.11.06-137"));
 check("orb: SIG_ART names the orb folder, zero retired-face references in the client", appJs.includes('const SIG_ART = "/assets/sig-orb";') && !appJs.includes("/assets/sig-a") && !appJs.includes("head-idle") && !appJs.includes("still-celebrate"));
 check("orb assets ship in the bundle", fs.existsSync(path.join(root, "public/assets/sig-orb/orb.webp")) && fs.existsSync(path.join(root, "public/assets/sig-orb/orb.mp4")) && !fs.existsSync(path.join(root, "public/assets/sig-a")));
 check("server: platform totals compute avg % local + local followers off audienceShareInMarket", routerJs.includes("avgLocalPct") && routerJs.includes("localFollowers") && routerJs.includes("audienceShareInMarket(u, u.market)"));
@@ -103,11 +103,11 @@ check("photo mechanism: id-based path + gradient layered underneath as the fallb
 // ---------- S3: desktop nav (Part 6), Sig chat boxes (Part 7), mobile top bar (Part 8) ----------
 part("S3: nav + Sig boxes + top bar");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
-check("Part 6: the rail composes every destination — non-primary tabs ride as secondaries under a More label", appJs.includes("const secondary = items.filter") && appJs.includes('<div class="tab-grouplabel">More</div>') && appJs.includes('...secondary.map((it) => btnHtml(it, "tab-secondary"))'));
+check("Part 6: the rail composes every destination — Build -137 lists them all directly in order (no More label for creator/business)", appJs.includes("order:${ix}") && appJs.includes("redesigned137") && appJs.includes("function tabBarHtml"));
 check("Part 6: desktop hides the Everything triggers (panel itself stays for phones)", themeCss.includes(".tab-ev125, .tr-ev125 { display: none !important; }") && appJs.includes("function openEverything125()"));
 check("Part 6: the desktop rail scrolls as far as it needs", themeCss.includes("body.v3-on #tabbar .tab-main { overflow-y: auto;"));
 check("Part 7: the working chat box exists (orb + type-in + sigAsk wiring)", appJs.includes("function sigChatBoxHtml(key, opts)") && appJs.includes("async function sigBoxSend(ev, key)") && appJs.includes("await sigAsk(text)") && appJs.includes("sigbox-input-"));
-check("Part 7: every role home opens with the Sig home-top (chat box + reminders)", (appJs.match(/sigHomeTopHtml\(\)\}/g) || []).length >= 6 && appJs.includes("function sigHomeTopHtml()") && appJs.includes("async function loadSigTopNudges()"));
+check("Part 7: every role home opens with the Sig hero (chat box + brief) — Build -137 form of the home-top", (appJs.match(/sigHero137Html\(/g) || []).length >= 5 && appJs.includes("function sigHero137Html(") && appJs.includes('sigChatBoxHtml("home")'));
 check("Part 7: the old Sig doors are working boxes now (card + foot + sheet)", appJs.includes('return sigChatBoxHtml("card", { still: true });') && appJs.includes('return sigChatBoxHtml("foot", { still: true });') && appJs.includes('sigChatBoxHtml("sheet", { still: true'));
 check("Part 7: no passive Sig avatar heads the Next list anymore", !appJs.includes('nx-head">${SIG_AVATAR_HTML}'));
 check("Part 8: mobile top bars carry the hamburger, help beside the name", appJs.includes('tb2-help130') && appJs.includes('${bnIcon("menu")}') && themeCss.includes(".tr-right { display: contents; }"));

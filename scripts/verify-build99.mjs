@@ -304,12 +304,12 @@ console.log("== Source: one surface, the moved connect, canon locks ==");
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   const sigdataJs = fs.readFileSync(path.join(root, "netlify/functions/lib/sigdata.js"), "utf8");
-  check("stamp is 2026.11.06-135 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.06-135") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-135"));
+  check("stamp is 2026.11.06-137 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.06-137") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-137"));
   check("server: the checklist builder + endpoint + home payload + Sig facts feed",
     routerJs.includes("async function setupChecklistFor") && routerJs.includes('seg[1] === "setup-checklist"')
     && routerJs.includes("setupChecklist: await setupChecklistFor(user)"));
   check("the merged surface renders once on active Home and once on founding Home",
-    appJs.includes("d.setupChecklist ? setupChecklistHtml(d.setupChecklist)") && appJs.includes('id="biz-setup-checklist"')
+    appJs.includes("d.setupChecklist && !d.setupChecklist.allDone ? setupChecklistHtml(d.setupChecklist)") && appJs.includes('id="biz-setup-checklist"')
     && (appJs.match(/id="setup-checklist"/g) || []).length === 1);
   check("no leftover start-here or proof-kit cards anywhere in the client",
     !appJs.includes("startHereHtml") && !appJs.includes("proofKitHtml") && !appJs.includes('id="proof-kit"') && !appJs.includes('id="biz-start-here"'));

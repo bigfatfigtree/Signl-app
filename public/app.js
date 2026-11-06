@@ -2323,7 +2323,7 @@ RAIL_SHORT["Regulars"] = "Regulars";
 // the 72px phone rail shows its compact form. The tracking
 // tab keeps the "Campaigns" short form it has carried since
 // Build -68.
-RAIL_SHORT["Campaign Setup"] = "Setup";
+RAIL_SHORT["Campaign Setup"] = "Start";
 // Build -119 (Jeff, 2026-11-04, the approved redesign): the
 // phone bottom bar carries the design's one-word labels —
 // Discover reads "Creators", Visits reads "Visits" — while
@@ -2358,6 +2358,14 @@ function railRowItems() {
       badge: r.badge || 0,
     }));
 }
+// Build -137: pick rail rows in an explicit order (the
+// approved desktop rail order), with any row not named riding
+// after, in its natural order — nothing is ever dropped.
+function extraIn137(rows, order, lead) {
+  const picked = order.map((tb) => rows.find((r) => r.tab === tb)).filter(Boolean);
+  const used = new Set([...(lead || []), ...order]);
+  return [...picked, ...rows.filter((r) => !used.has(r.tab))];
+}
 function tabItemsFor() {
   const u = state.user;
   if (!u) return [];
@@ -2372,20 +2380,26 @@ function tabItemsFor() {
     // Home, front and center, for pre-launch and active
     // businesses alike — same prominence the creator rail
     // gives it.
+    // Build -137 rail order: Home · Sig · Find creators ·
+    // Start a campaign · Your campaigns · Visits · Business
+    // profile · Wallet · Stats · the rest in natural order.
     return [
       { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
       { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
-      ...extra(["Home", "Sig", "Discover"]),
+      ...extraIn137(rows, ["Campaign Setup", "My Offers", "Visits & Posts", "Profile", "Plan", "Analytics", "Regulars", "Content", "Favorites", "Messages", "Settings", "Help"], ["Home", "Sig", "Discover"]),
     ];
   }
   if (u.role === "creator") {
+    // Build -137 rail order: Home · Sig · Find offers · My
+    // offers · Wallet · Visits · My profile · Stats ·
+    // Momentum · Bench · Messages · Settings · Help.
     return [
       { icon: "home", label: "Home", tab: "Dashboard", on: t === "Dashboard" || !t },
-      { icon: "deck", label: "Offers", tab: "Offers", on: t === "Offers", badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) },
-      { icon: "search", label: "Find offers", tab: "Find Offers", on: t === "Find Offers" },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
-      ...extra(["Dashboard", "Offers", "Find Offers", "Sig"]),
+      { icon: "search", label: "Find offers", tab: "Find Offers", on: t === "Find Offers" },
+      { icon: "deck", label: "My offers", tab: "Offers", on: t === "Offers", badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) },
+      ...extraIn137(rows, ["Earnings", "My Visits", "Profile", "Numbers", "Momentum", "Bench", "Messages", "Settings", "Help"], ["Dashboard", "Sig", "Find Offers", "Offers"]),
     ];
   }
   if (u.role === "partner" && !state.pilotScopeId) {
@@ -2448,11 +2462,12 @@ function moreRowsFor() {
   }
   if (u.role === "business") {
     return [
-      { icon: "notice", label: "Set up a campaign", sub: "Build a new campaign, step by step or with Sig.", tab: "Campaign Setup" },
+      { icon: "notice", label: "Start a campaign", sub: "Build a new campaign, step by step or with Sig.", tab: "Campaign Setup" },
       { icon: "bars", label: "Your campaigns", sub: "Current and past campaigns, who applied, and what they did.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
       { icon: "calendar", label: "Visits", sub: "Visits and posts. The counter is inside.", tab: "Visits & Posts", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
       { icon: "users", label: "My Regulars", sub: "Creators who visited you. Book them again.", tab: "Regulars" },
-      { icon: "bars", label: "Results", sub: "What your campaigns did.", tab: "Analytics" },
+      { icon: "heart", label: "Saved creators", sub: "Your shortlist.", tab: "Favorites" },
+      { icon: "bars", label: "Stats", sub: "What your campaigns did.", tab: "Analytics" },
       { icon: "play", label: "Posts & licenses", sub: "Every post about you, and the ones you can reuse.", tab: "Content" },
       { icon: "receipt", label: "Plan & billing", sub: "Your plan, your visits, your billing.", tab: "Plan" },
       { icon: "person", label: "Your business page", sub: "How creators see your business.", tab: "Profile" },
@@ -2466,7 +2481,7 @@ function moreRowsFor() {
       { icon: "calendar", label: "Visits", sub: "Your visits and post deadlines.", tab: "My Visits", badge: wc.crVisits != null ? wc.crVisits : (b.visits || 0) },
       { icon: "banknote", label: "Wallet", sub: "Cash, comps and history, kept separate.", tab: "Earnings", badge: wc.crLicense || 0 },
       { icon: "person", label: "My profile", sub: "What businesses see, your rate, your links.", tab: "Profile" },
-      { icon: "bars", label: "Your numbers", sub: "What your posts and visits did.", tab: "Numbers" },
+      { icon: "bars", label: "Stats", sub: "What your posts and visits did.", tab: "Numbers" },
       { icon: "bolt", label: "Momentum", sub: "You reply fast and show up. Businesses see it before followers.", tab: "Momentum" },
       { icon: "users", label: "Bench", sub: "Creators in your market.", tab: "Bench" },
       { icon: "bubble", label: "Messages", sub: "Talk to a business about a visit or an offer.", tab: "Messages", badge: b.messages || 0 },
@@ -2519,10 +2534,20 @@ function moreRowsFor() {
 // leaves the bar entirely: it is the real profile only now,
 // reached from Everything → You or the identity row. The
 // creator bar gains Messages (a daily stop) in its place.
+// Build -137 (Jeff, 2026-11-06, the approved dashboard
+// redesign): this list is now the MOBILE BOTTOM BAR per role —
+// the daily stops in bar order, Sig in the middle where the
+// role's bar carries it. Creator: Home · Find · Sig · Wallet ·
+// Offers. Business: Home · Find · Sig · Wallet · Start.
+// Partner stays as Jeff held it (Home · Business · Sig ·
+// Stats · Menu; "__menu137" is the bar's Menu slot, which
+// opens the full hamburger). The desktop rail no longer
+// derives its order from this list: it lists the full
+// destination set in tabItemsFor() order (see tabBarHtml).
 const PRIMARY_TABS_125 = {
-  business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"],
-  creator: ["Dashboard", "Offers", "Find Offers", "My Visits", "Messages", "Earnings"],
-  partner: ["Home", "Businesses", "Earnings", "Performance"],
+  business: ["Home", "Discover", "Sig", "Plan", "Campaign Setup"],
+  creator: ["Dashboard", "Find Offers", "Sig", "Earnings", "Offers"],
+  partner: ["Home", "Businesses", "Sig", "Performance", "__menu137"],
   pilot: ["Overview", "Businesses", "Results", "Report"],
   recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"],
 };
@@ -2534,7 +2559,7 @@ function primaryTabs125() {
 }
 // The bar's one-word display labels (design): the internal
 // tab ids stay stable; only what the person reads changes.
-const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Creators", "My Offers": "Campaigns", Performance: "Reports", Businesses: "Business", "Find Offers": "Find" };
+const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Find", "My Offers": "Campaigns", Performance: "Stats", Businesses: "Business", "Find Offers": "Find", Offers: "Offers" };
 // Where the identity row (photo + name) lands per role: the
 // person's own home base — the creator's real profile, the
 // business's page, the partner's account. (Build -125: it
@@ -2617,7 +2642,7 @@ function everythingGroups125() {
         R("pin", "Hours & locations", "On your business profile", "Profile"),
       ] },
       { title: "Grow", rows: [
-        R("notice", "Set up a campaign", "Build a new campaign", "Campaign Setup"),
+        R("notice", "Start a campaign", "Build a new campaign", "Campaign Setup"),
         R("heart", "Saved creators", "Your shortlist", "Favorites", { badge: wc.bizSaved || 0 }),
         R("users", "My Regulars", "Creators who visited you", "Regulars"),
         R("play", "License library", "Posts you can reuse", "Content"),
@@ -2646,6 +2671,7 @@ function everythingGroups125() {
       { title: "Account", rows: [
         R("sliders", "Account", "Your partner profile and agreement", "Account"),
         R("help", "Help", "How your share works, in plain words", "Help"),
+        { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
       ] },
     ];
   }
@@ -2696,6 +2722,242 @@ function closeEverything125() {
   const el = document.getElementById("everything-panel125");
   if (el) el.remove();
   return false;
+}
+
+// ---------- Build -137: hamburger, Sig sheet, home blocks ----------
+// The approved redesign's shared pieces. The hamburger
+// (top right on phones) carries the role's FULL destination
+// set, grouped — it is composed here, per role, from the
+// same destinations the desktop rail lists, so the two can
+// be set-compared by verify-navparity. The Sig sheet is the
+// live Sig chat (the same sigChatBox machinery, key "sheet")
+// over whatever screen you are on, led by your own brief.
+// The home blocks are the simple Home: Sig hero, one Quick
+// highlights card, Next steps, stop.
+function hamburgerGroups137() {
+  const u = state.user;
+  if (!u) return [];
+  const b = state.badges || {};
+  const wc = state.waitCounts || {};
+  const R = (icon, label, sub, tab, extra) => Object.assign({ icon, label, sub, tab }, extra || {});
+  if (u.role === "creator") {
+    const lvl = standingLevelName((u.momentum && u.momentum.points) || (u.creator && u.creator.momentumPoints) || 0);
+    const founding = !(u.founding && u.founding.marketLive);
+    return [
+      { title: "Your work", rows: [
+        R("home", "Home", "Sig, your highlights, your next steps", "Dashboard"),
+        R("search", "Find offers", "Open visits near you", "Find Offers"),
+        R("deck", "My offers", "Invites and deals you are working on", "Offers", { badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) }),
+        R("calendar", "Visits", "Your visits and post deadlines", "My Visits", { badge: wc.crVisits || 0 }),
+      ] },
+      { title: "Money & page", rows: [
+        R("banknote", "Wallet", "Cash, comps and history, kept separate", "Earnings", { badge: wc.crLicense || 0 }),
+        R("person", "My profile", "What businesses see, your rate, your links", "Profile"),
+      ] },
+      { title: "Standing", rows: [
+        R("bars", "Stats", "What your posts and visits did", "Numbers"),
+        R("bolt", "Momentum", "", "Momentum", { status: lvl }),
+        R("users", "Bench", "Creators in your market", "Bench"),
+      ] },
+      { title: "Account", rows: [
+        R("bubble", "Messages", "Talk to a business about a visit or an offer", "Messages", { badge: b.messages || 0 }),
+        ...(founding ? [R("status", "Founding status", "Where your enrollment stands", "Status")] : []),
+        R("sliders", "Settings", "Account and notifications", "Settings"),
+        R("help", "Help", "How SIGNL works, in plain words", "Help"),
+        { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
+      ] },
+    ];
+  }
+  if (u.role === "business") {
+    return [
+      { title: "Sell", rows: [
+        R("home", "Home", "Sig, your highlights, your next steps", "Home"),
+        R("deck", "Find creators", "Shop local creators near you", "Discover"),
+        R("notice", "Start a campaign", "Build a new campaign, step by step or with Sig", "Campaign Setup"),
+        R("bars", "Your campaigns", "Current and past campaigns, who applied, and what they did", "My Offers", { badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) }),
+        R("heart", "Saved creators", "Your shortlist", "Favorites", { badge: wc.bizSaved || 0 }),
+      ] },
+      { title: "Run", rows: [
+        R("calendar", "Visits", "Visits and posts. The counter is inside", "Visits & Posts", { badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) }),
+        R("users", "My Regulars", "Creators who visited you. Book them again", "Regulars"),
+        R("play", "Posts & licenses", "Every post about you, and the ones you can reuse", "Content"),
+        R("bubble", "Messages", "Talk to a creator about a visit or an offer", "Messages", { badge: b.messages || 0 }),
+      ] },
+      { title: "Account", rows: [
+        R("person", "Business profile", "What creators see", "Profile"),
+        R("receipt", "Wallet", "Your plan, your visits, your billing", "Plan"),
+        R("bars", "Stats", "What your campaigns did", "Analytics"),
+        R("sliders", "Settings", "Account, staff PIN, notifications", "Settings"),
+        R("help", "Help", "How SIGNL works, in plain words", "Help"),
+        { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
+      ] },
+    ];
+  }
+  if (u.role === "partner" && !state.pilotScopeId) {
+    return [
+      { title: "Start", rows: [
+        R("home", "Home", "Sig, your highlights, your next steps", "Home"),
+        R("sig", "Sig", "Your numbers and next moves, in plain sentences", "Sig"),
+      ] },
+      { title: "Your market", rows: [
+        R("pin", "Markets", "Each market's funnel, end to end", "Markets"),
+        R("person", "Creators", "The bench your links brought in", "Creators"),
+        R("deck", "Businesses", "Businesses your links brought in", "Businesses"),
+      ] },
+      { title: "Money", rows: [
+        R("banknote", "Wallet", "Money & packs: fund terms and the payout schedule live inside", "Earnings"),
+        R("bars", "Reports", "Visits, posts, and what they earned", "Performance"),
+      ] },
+      { title: "Grow", rows: [
+        R("play", "Links & assets", "Your tracked links, QR codes, and the one-pager", "Links"),
+        ...(u.partner && u.partner.teamAdmin ? [R("users", "Team", "Your people's seats: invite, resend, revoke", "Team")] : []),
+      ] },
+      { title: "Account", rows: [
+        R("sliders", "Account", "Your partner profile and agreement", "Account"),
+        R("help", "Help", "How your share works, in plain words", "Help"),
+        { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
+      ] },
+    ];
+  }
+  if (u.role === "admin") {
+    return [
+      { title: "Start", rows: [
+        R("home", "Home", "Sig, your highlights, your next steps", "Home"),
+        R("sig", "Sig", "Your attention list", "Sig"),
+      ] },
+      { title: "Review & people", rows: [
+        R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
+        R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
+        R("users", "Creators", "Every creator, with the local numbers", "Creators"),
+        R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
+        R("building", "Partners", "Media partners and their deals", "Partners"),
+        R("users", "Outreach", "Campaigns and sends", "Outreach"),
+        R("users", "Campaign", "The current campaign", "Campaign"),
+      ] },
+      { title: "Watch", rows: [
+        R("pin", "Markets", "Every market, ranked", "Markets"),
+        R("stats", "Stats", "Charts, money and the books", "Stats"),
+        R("list", "Event Log", "Everything that happened", "Event Log"),
+        R("shield", "Compliance", "Posts, deadlines and strikes", "Compliance"),
+      ] },
+      { title: "System", rows: [
+        { icon: "building", label: "Preview as business", sub: "Walk the app as a business", act: "return enterPreview()" },
+        { icon: "building", label: "Business dashboard", sub: "The founding business view", act: "return enterPreviewDashboard()" },
+        R("person", "Your account", "Your settings: sign-in, email and password", "Account"),
+        { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
+      ] },
+    ];
+  }
+  return [];
+}
+function hamburgerRowHtml137(r) {
+  const inner = `<span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
+  if (r.href) return `<a class="more-row ev125-row" href="${esc(r.href)}" onclick="closeHamburger137()">${inner}</a>`;
+  const act = r.act || `return go('dashboard','${r.tab}')`;
+  return `<button type="button" class="more-row ev125-row" onclick="closeHamburger137(); ${act}">${inner}</button>`;
+}
+function openHamburger137() {
+  closeHamburger137();
+  closeEverything125();
+  closeIdentityMenu126();
+  closeMoreSheet();
+  const u = state.user;
+  const groups = hamburgerGroups137();
+  if (!u || !groups.length) return false;
+  const name = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
+  const photo = selfAvatarUrl122(u);
+  const initial = String(name || "?").trim().charAt(0).toUpperCase() || "S";
+  const roleWord = u.role === "admin" ? "Admin" : u.role === "creator" ? "Creator" : u.role === "business" ? "Business" : "Partner";
+  const el = document.createElement("div");
+  el.id = "hamburger137";
+  el.className = "ham137-overlay";
+  el.innerHTML = `
+  <div class="ham137-panel" role="dialog" aria-label="Menu">
+    <div class="ham137-head">${avaHtml122("idm126-ava", "idm126-ava", photo, initial)}<span class="idm126-who"><span class="idm126-name">${esc(name || "")}</span><span class="idm126-sub">${esc(roleWord)}</span></span><button type="button" class="linklike" onclick="closeHamburger137()" aria-label="Close">✕</button></div>
+    ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(hamburgerRowHtml137).join("")}</div>`).join("")}
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeHamburger137(); });
+  document.body.appendChild(el);
+  return false;
+}
+function closeHamburger137() {
+  const el = document.getElementById("hamburger137");
+  if (el) el.remove();
+  return false;
+}
+// The bar's Sig slot: on phones it opens the Sig sheet over
+// the current screen; on desktop it opens the Sig tab (the
+// floating orb opens the sheet there).
+function sigBarGo137() {
+  if (window.matchMedia && window.matchMedia("(max-width: 767.98px)").matches) return openSigSheet137();
+  // Admin lives in its own shell: its Sig tab is the admin one.
+  if (state.view === "admin") return go("admin", "Sig");
+  return go("dashboard", "Sig");
+}
+function openSigSheet137() {
+  closeSigSheet137();
+  closeHamburger137();
+  closeEverything125();
+  closeIdentityMenu126();
+  const u = state.user;
+  if (!u) return false;
+  const q = (state.sigQueue || []).slice(0, 3);
+  const brief = state.sigQueue && state.sigQueue.length ? state.sigQueue[0].text : "";
+  const el = document.createElement("div");
+  el.id = "sig-sheet137";
+  el.className = "sigsheet137-overlay";
+  el.innerHTML = `
+  <div class="sigsheet137" role="dialog" aria-label="Sig">
+    <div class="sigsheet137-head">${sigOrbMedia130(false)}<div class="sigsheet137-htext"><strong>Sig</strong><span>Your helper — she works from your real numbers, not guesses.</span></div><button type="button" class="linklike" onclick="closeSigSheet137()" aria-label="Close">✕</button></div>
+    ${brief ? `<div class="sig-brief137">${esc(brief)}</div>` : ""}
+    ${sigChatBoxHtml("sheet")}
+    ${q.length ? `<div class="sigsheet137-steps"><div class="sigsheet137-slabel">Next steps</div>${q.map((r, i) => `<div class="nx-row"><div class="nx-tx">${esc(r.short || r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}</div>`).join("")}</div>` : ""}
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeSigSheet137(); });
+  document.body.appendChild(el);
+  const wrapped = q.map((r) => ({ ...r, act: r.act ? (btn) => { closeSigSheet137(); r.act(btn); } : null }));
+  wireSigQueue(el, wrapped, []);
+  return false;
+}
+function closeSigSheet137() {
+  const el = document.getElementById("sig-sheet137");
+  if (el) el.remove();
+  return false;
+}
+// The Sig hero at the top of every redesigned Home: Sig's
+// head, her brief from your live state, the OPEN chat box,
+// and her noticed chips underneath (loadSigTopNudges fills
+// them from GET /sig/home; nothing renders when she has
+// nothing true to say). The chat box's own head is hidden in
+// this context — the hero carries it.
+function sigHero137Html(brief) {
+  return `<section class="sighero137 panel">
+    <div class="sighero137-head">${sigOrbMedia130(false)}<div class="sigbox-htext"><strong>Sig</strong><span>Your helper — she works from your real numbers, not guesses.</span></div></div>
+    ${brief ? `<div class="sig-brief137">${esc(brief)}</div>` : ""}
+    ${sigChatBoxHtml("home")}
+    <div class="sigtop-nudges" id="sigtop-nudges"></div>
+  </section>`;
+}
+// One card, 3–4 plain number rows. A row with a tab is a
+// door: it reads as a number and taps through (the Wallet
+// row is how money shows on Home without a bar slot fight).
+function highlights137Html(rows) {
+  if (!rows || !rows.length) return "";
+  return `<div class="hl137 panel"><div class="hl137-k">Quick highlights</div>${rows.map((r) => {
+    const inner = `<span class="hl137-lab">${esc(r.label)}${r.sub ? `<span>${esc(r.sub)}</span>` : ""}</span><span class="hl137-num">${esc(r.value)}</span>${r.tab ? `<span class="hl137-go">›</span>` : ""}`;
+    return r.tab ? `<button type="button" class="hl137-row hl137-door" onclick="return go('dashboard','${r.tab}')">${inner}</button>` : `<div class="hl137-row">${inner}</div>`;
+  }).join("")}</div>`;
+}
+// Next steps: at most three queue items, one line and one
+// button each, wired by wireSigQueue against the SAME slice.
+function nextSteps137Html(items, links) {
+  const q = (items || []).slice(0, 3);
+  const lk = links || [];
+  if (!q.length && !lk.length) return `<div class="ns137 panel"><div class="hl137-k">Next steps</div><p class="ns137-caught">You're all caught up.</p></div>`;
+  return `<div class="ns137 panel"><div class="hl137-k">Next steps</div>
+  ${q.map((r, i) => `<div class="nx-row"><div class="nx-tx">${esc(r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss">&times;</button>` : ""}</div>`).join("")}
+  ${!q.length ? lk.map((l, i) => `<div class="nx-row"><div class="nx-tx">${esc(l.label)}</div><button type="button" class="btn small-btn" data-sq="L${i}">Open</button></div>`).join("") : ""}
+  </div>`;
 }
 
 // ---------- Build -126: the identity menu ----------
@@ -2822,46 +3084,53 @@ function tabBarHtml() {
   // opens the panel holding everything else. The full item
   // list still comes from tabItemsFor()/moreRowsFor() — one
   // source — this function now chooses what the bar shows.
+  // Build -137 (the approved redesign): ONE list, two
+  // readings. The DESKTOP rail lists every destination
+  // directly in tabItemsFor() order (the approved rail
+  // order) — no Everything button, no "More" group label.
+  // The PHONE bar shows only the role's daily stops
+  // (PRIMARY_TABS_125, now the bar set), sequenced by the
+  // --bar-ord custom property the mobile CSS reads; every
+  // other item is a secondary (rail-only). Sig's item is the
+  // orb: for creator/business, sigBarGo137 opens the Sig
+  // sheet on phones and the Sig tab on desktop. Partner
+  // keeps its Everything rail button (Jeff's hold) and gains
+  // the bar's Menu slot, which opens the hamburger.
   const prim = primaryTabs125();
-  const byTab = {};
-  for (const it of items) if (!byTab[it.tab]) byTab[it.tab] = it;
-  const ordered = prim.map((t) => byTab[t]).filter(Boolean);
-  const sigIt = byTab["Sig"] && !prim.includes("Sig") ? byTab["Sig"] : null;
-  const exitIt = byTab["__partner_scope_exit"] || null;
-  // Build -130 Part 6 (Jeff, 2026-11-05): on DESKTOP the
-  // Everything panel is gone — the left rail lists EVERY
-  // destination directly. The non-primary destinations ride
-  // as secondary rail items under a "More" group label (the
-  // -119 form); the existing CSS orders them below the daily
-  // stops and hides them (and the label) on phones, where the
-  // bottom bar + Everything panel stay exactly as they were.
-  const primSet = new Set(prim);
-  const seenSec = new Set();
-  const secondary = items.filter((it) => {
-    if (primSet.has(it.tab) || it.tab === "Sig" || it.tab === "__partner_scope_exit") return false;
-    if (seenSec.has(it.tab)) return false;
-    seenSec.add(it.tab);
-    return true;
-  });
-  const btnHtml = (it, cls) => {
+  const barIdx = {};
+  prim.forEach((tb, i) => { barIdx[tb] = i; });
+  const redesigned137 = u.role === "creator" || u.role === "business";
+  const btnHtml = (it, cls, ix) => {
     // Build -125 display names ride the -41 dual-span mechanism:
     // the full label on the wide rail, the design's one-word
     // label on the phone bar (NAV_LABEL_125 / RAIL_SHORT).
     const full = it.tab === "Plan" && u.role === "business" ? "Wallet" : it.label;
     const short = NAV_LABEL_125[it.tab] || RAIL_SHORT[it.tab] || full;
+    const isSig = it.tab === "Sig";
+    const bi = barIdx[it.tab];
+    const click = isSig && redesigned137 ? "return sigBarGo137()" : `return go('dashboard','${it.tab}')`;
+    // Build -137: for the redesigned roles the desktop rail
+    // lists destinations in tabItemsFor order — an inline
+    // order (the item's list position) beats the -125
+    // primary/secondary order classes; on phones the bar
+    // re-sequences by --bar-ord (CSS !important there).
+    const style137 = redesigned137 ? ` style="${bi != null ? `--bar-ord:${bi};` : ""}order:${ix}"` : (bi != null ? ` style="--bar-ord:${bi}"` : "");
     return `
-    <button type="button" class="tab-item ${cls} ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(full)}">
+    <button type="button" class="tab-item ${cls}${bi != null ? " tab-bar137" : ""}${isSig ? " tab-sig137" : ""} ${it.on ? "on" : ""}"${style137} onclick="${click}" aria-label="${esc(full)}">
       <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
       <span class="tab-label"><span class="lbl-full">${esc(full)}</span><span class="lbl-short">${esc(short)}</span></span>
     </button>`;
   };
+  const seen137 = new Set();
+  const menuBtn137 = u.role === "partner" && !state.pilotScopeId ? `
+    <button type="button" class="tab-item tab-bar137 tab-menu137" style="--bar-ord:${barIdx["__menu137"] != null ? barIdx["__menu137"] : 4}" onclick="return openHamburger137()" aria-label="Menu — all sections">
+      <span class="tab-ic">${bnIcon("menu")}</span>
+      <span class="tab-label"><span class="lbl-full">Menu</span><span class="lbl-short">Menu</span></span>
+    </button>` : "";
   const btns = [
-    `<button type="button" class="tab-item tab-ev125" onclick="return openEverything125()" aria-label="Everything — all sections"><span class="tab-ic">${bnIcon("more")}</span><span class="tab-label">Everything</span></button>`,
-    ...(exitIt ? [btnHtml(exitIt, "tab-secondary")] : []),
-    ...ordered.map((it) => btnHtml(it, "tab-primary")),
-    ...(secondary.length ? [`<div class="tab-grouplabel">More</div>`] : []),
-    ...secondary.map((it) => btnHtml(it, "tab-secondary")),
-    ...(sigIt ? [btnHtml(sigIt, "tab-secondary tab-sigpin")] : []),
+    ...(redesigned137 ? [] : [`<button type="button" class="tab-item tab-ev125" onclick="return openEverything125()" aria-label="Everything — all sections"><span class="tab-ic">${bnIcon("more")}</span><span class="tab-label">Everything</span></button>`]),
+    ...items.filter((it) => { if (seen137.has(it.tab)) return false; seen137.add(it.tab); return true; }).map((it, ix) => btnHtml(it, barIdx[it.tab] != null ? "tab-primary" : "tab-secondary", ix)),
+    menuBtn137,
   ].join("");
   // Sign out rides directly under the last destination, below
   // a hairline (Jeff, 2026-10-28): an action, not a
@@ -2909,7 +3178,7 @@ function renderTopBar2(full) {
     ${full ? `<button type="button" class="tb2-btn tb2-help130" onclick="return go('dashboard','Help')" aria-label="Help">${bnIcon("help")}</button>` : `<a class="tb2-btn tb2-help130" href="mailto:hello@joinsignl.com" aria-label="Help">${bnIcon("help")}</a>`}
     <span class="tb2-actions">
       ${full && (live || u.role === "creator") ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Messages')" aria-label="Messages">${bnIcon("bubble")}${b.messages ? `<span class="tab-badge">${b.messages > 99 ? "99+" : b.messages}</span>` : ""}</button>` : ""}
-      <button type="button" class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button>
+      ${(u.role === "creator" || u.role === "business" || (u.role === "partner" && !state.pilotScopeId)) ? `<button type="button" class="tb2-btn tb2-burger137" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>` : `<button type="button" class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button>`}
     </span>
   </div>`;
 }
@@ -3135,7 +3404,10 @@ function railItems() {
     // Recruiters, Partners, Event Log, Compliance, Campaign,
     // Stats, Sig. Every item navigates by the same
     // go('dashboard', tab).
-    add("a", "inbox", "Applications", "return go('dashboard','Applications')", t === "Applications" || !t);
+    // Build -137: Admin gains a Home (the Sig-first landing);
+    // Applications keeps its queue, first in its group.
+    add("a", "home", "Home", "return go('dashboard','Home')", t === "Home" || !t);
+    add("a", "inbox", "Applications", "return go('dashboard','Applications')", t === "Applications");
     add("a", "requests", "Requests", "return go('dashboard','Requests')", t === "Requests");
     add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
     add("a", "users", "Creators", "return go('dashboard','Creators')", t === "Creators");
@@ -3160,7 +3432,7 @@ function railItems() {
       add("a", "profile", "Profile", "return go('dashboard','Profile')", t === "Profile");
       add("a", "status", "Status", "return go('dashboard','Status')", t === "Status");
     } else {
-      add("a", "offers", "Offers", "return go('dashboard','Offers')", t === "Offers", b.offers);
+      add("a", "offers", "My offers", "return go('dashboard','Offers')", t === "Offers", b.offers);
       add("a", "visits", "My Visits", "return go('dashboard','My Visits')", t === "My Visits", b.visits);
       add("b", "chat", "Messages", "return go('dashboard','Messages')", t === "Messages", b.messages);
       add("b", "profile", "Profile", "return go('dashboard','Profile')", t === "Profile");
@@ -3213,7 +3485,10 @@ function renderRail() {
   // Markets · Stats — Creators is its own tab now and Admin
   // has no Wallet anywhere (the money views live in Stats).
   const railLabel119 = (label) => label === "Applications" ? "Review" : label;
-  const ADMIN_RAIL_PRIMARY_125 = ["Applications", "Creators", "Markets", "Stats"];
+  // Build -137: the phone bar is Home · Review · Sig ·
+  // Stats · Markets (Jeff's ruling). Creators leaves the
+  // bar; it stays in the rail, the section bar and the menu.
+  const ADMIN_RAIL_PRIMARY_125 = ["Home", "Applications", "Sig", "Stats", "Markets"];
   const railItems125 = items.slice();
   const rows = railItems125.map((it) => {
     const sec = lastSec && it.sec !== lastSec ? `<div class="rail-sep"></div>` : "";
@@ -3221,7 +3496,8 @@ function renderRail() {
     const disp = railLabel119(it.label);
     const active = it.active;
     const labelHtml = `<span class="rail-label">${esc(disp)}</span>`;
-    return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_125.includes(it.label) ? `rail-primary rail-p-${it.label.toLowerCase()}` : ""} ${active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
+    const oc = it.label === "Sig" ? "return sigBarGo137()" : it.onclick;
+    return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_125.includes(it.label) ? `rail-primary rail-p-${it.label.toLowerCase()}` : ""} ${active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${oc}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
   }).join("");
   rail.innerHTML = `
     <button type="button" class="rail-brand" title="SIGNL" aria-label="SIGNL home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="SIGNL"></button>
@@ -3276,12 +3552,12 @@ function renderTopRow() {
   const name = u.role === "business" && u.business ? u.business.businessName : u.name;
   const initial = String(name || u.name || "?").trim().charAt(0).toUpperCase() || "S";
   const photo = selfAvatarUrl122(u);
-  const statsGo = u.role === "business" ? "return go('dashboard','Analytics')" : "return go('dashboard')";
+  const statsGo = u.role === "business" ? "return go('dashboard','Analytics')" : u.role === "admin" ? "return go('dashboard','Stats')" : "return go('dashboard')";
   // Build -126: the identity is a menu button (Profile /
   // Settings / Sign out), and the spelled-out controls are
   // icons — Everything keeps its name as the panel's title and
   // this button's title/aria-label; help is a help icon.
-  el.innerHTML = `<div class="wrap tr-in"><button type="button" class="tr-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span></button><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button><a class="tr-help126" href="mailto:hello@joinsignl.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a></span></div>`;
+  el.innerHTML = `<div class="wrap tr-in"><button type="button" class="tr-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span></button><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button><a class="tr-help126" href="mailto:hello@joinsignl.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a></span></div>`;
 }
 
 // Build -119: the greeting hour comes from the user's own
@@ -3317,12 +3593,18 @@ function renderAgentFab() {
   const fab = document.getElementById("agent-fab");
   if (!fab) return;
   const q = state.agentQueue;
-  const inAppShell = !!state.user && !state.preview && state.view === "dashboard"
+  // Build -137 fix: the signed-in shell renders with
+  // state.view === "home" (the dashboard lives inside it), so
+  // keying on the view name kept the orb hidden for everyone.
+  // The v3 shell classes are the real "inside the app" test.
+  const inAppShell = !!state.user && !state.preview
     && (document.body.classList.contains("v3-on") || document.body.classList.contains("v3-slim"));
   if (!state.user || state.preview || (!q && !inAppShell)) { fab.classList.remove("show"); fab.innerHTML = ""; fab.onclick = null; return; }
   fab.classList.add("show");
   fab.innerHTML = `<img src="/assets/sig-orb/orb.webp" alt=""><span class="fab-dot" aria-hidden="true"></span>Sig${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
-  fab.onclick = q ? openAgentSheet : () => go("dashboard", "Sig");
+  // Build -137: the orb opens the Sig SHEET (her brief +
+  // the live chat) over the current screen, at every width.
+  fab.onclick = openSigSheet137;
 }
 // Overhaul V2: the ready-for-you card is the Grin agent card —
 // a soft accent-tint card, the agent's avatar, one bold line
@@ -3584,10 +3866,15 @@ async function loadBizWalletBookings125() {
     host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
+// Build -136: the strip is a complete jump-nav — every real
+// section of the form gets a pill with the section's own name,
+// in form order. Scrolling keeps the active pill honest (spy).
+const PROFILE_SEGS_136 = [["basics", "Basics", "pf-basics"], ["about", "About you", "pf-about"], ["photos", "Photos", "pf-photos"], ["links", "Your links", "pf-links"], ["audience", "Your audience", "pf-audience"], ["create", "What you create", "pf-create"], ["rates", "Rates", "lane-controls"], ["bio", "Bio", "pf-bio"]];
 function profileSegStrip119() {
+  profileSegSpyInit();
   const seg = state.profileSeg119 || "basics";
   const item = (id, label) => ({ label, on: seg === id, onclick: `return profileSegGo119('${id}')` });
-  return wsTabs([item("basics", "Basics"), item("photos", "Photos"), item("rates", "Rates")]);
+  return wsTabs(PROFILE_SEGS_136.map(([id, label]) => item(id, label)));
 }
 function profileSegGo119(id) {
   state.profileSeg119 = id;
@@ -3596,10 +3883,31 @@ function profileSegGo119(id) {
     const strip = host.querySelector(".ws-tabs");
     if (strip) strip.outerHTML = profileSegStrip119();
   }
-  const map = { basics: "pf-basics", photos: "pf-photos", rates: "lane-controls" };
-  const t = document.getElementById(map[id] || "pf-basics");
+  const row = PROFILE_SEGS_136.find(([x]) => x === id);
+  const t = document.getElementById(row ? row[2] : "pf-basics");
   if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
   return false;
+}
+let profileSpyOn136 = false;
+function profileSegSpyInit() {
+  if (profileSpyOn136) return;
+  profileSpyOn136 = true;
+  window.addEventListener("scroll", () => {
+    if (!document.getElementById("pf-basics")) return;
+    const sw = document.getElementById("profile-peek-sw");
+    if (sw && sw.checked) return;
+    let cur = "basics";
+    for (let i = PROFILE_SEGS_136.length - 1; i >= 0; i--) {
+      const el = document.getElementById(PROFILE_SEGS_136[i][2]);
+      if (el && el.getBoundingClientRect().top <= 140) { cur = PROFILE_SEGS_136[i][0]; break; }
+    }
+    if (cur !== (state.profileSeg119 || "basics")) {
+      state.profileSeg119 = cur;
+      const host = document.getElementById("tab-body");
+      const strip = host && host.querySelector(".ws-tabs");
+      if (strip) strip.outerHTML = profileSegStrip119();
+    }
+  }, { passive: true });
 }
 
 // Build -125: the appended "More" link lists (which rode the
@@ -4495,7 +4803,7 @@ function sigFlowsFor() {
     flow("See your results", ["result", "analytics", "how am i doing", "numbers", "roas"], () => go("dashboard", "Analytics")),
   ];
   if (live) return [
-    flow("See offers near you", ["offer", "offers near", "see offers"], () => go("dashboard", "Offers")),
+    flow("See offers near you", ["offer", "offers near", "see offers"], () => go("dashboard", "Find Offers")),
     flow("Answer an invite", ["invite", "invited", "answer an"], () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); }),
     flow("Add a post link", ["post link", "add a post", "submit post", "post is live", "deliver"], () => { state.visitsSeg = "needs"; go("dashboard", "My Visits"); }),
     flow("Fix the ad label", ["ad label", "#ad", "fix the ad"], () => { state.visitsSeg = "done"; go("dashboard", "My Visits"); }),
@@ -6297,7 +6605,7 @@ function sigOpHomeActions() {
   const u = state.user;
   if (!u) return [];
   if (u.role === "business") return [
-    { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+    { label: ST("Start a campaign", "Iniciar una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
     { label: ST("Find creators", "Buscar creadores"), run: async () => { sigB2Start(); sigOpPaint(); } },
     { label: ST("My Regulars", "Mis clientes habituales"), run: async () => { await sigB95Regulars(); sigOpPaint(); } },
     { label: ST("Licences ending soon", "Licencias por vencer"), run: async () => { await sigB95Licences(); sigOpPaint(); } },
@@ -6324,7 +6632,7 @@ function sigOpCapabilities() {
   if (!u) return [];
   if (u.role === "business") return [
     ST("Set you up from your Instagram handle: profile, asset packet and a first play, after one summary.", "Configurarte desde tu usuario de Instagram: perfil, paquete y una primera jugada, tras un resumen."),
-    ST("Set up a campaign here, brief included. I confirm before anything posts.", "Crear una campaña aquí, con el brief incluido. Confirmas antes de que se publique nada."),
+    ST("Start a campaign here, brief included. I confirm before anything posts.", "Iniciar una campaña aquí, con el brief incluido. Confirmas antes de que se publique nada."),
     ST("Find micro-influencers by category, local reach, Spanish content, musicians, and more.", "Buscar microinfluencers por categoría, alcance local, contenido en español, músicos y más."),
     ST("Track your campaigns: visits, posts, day 7 / 14 / 30 numbers, redemptions, and one clear next move.", "Seguir tus campañas: visitas, publicaciones, números al día 7 / 14 / 30, canjes y un siguiente paso claro."),
     ST("Build your asset packet: logo link, key links, talking points, handle, hashtags.", "Crear tu paquete: enlace del logo, enlaces clave, puntos de conversación, usuario y hashtags."),
@@ -6993,9 +7301,16 @@ function sigB1AskWindowDays() {
 function sigB1AskWindowMode() {
   const f = state.sigFlow;
   f.step = "windowmode";
+  // Build -137: Sig offers the same flexible timing windows
+  // as the booking flow — a window, not an appointment, and a
+  // specific day only as the last option (typed as a date).
+  const pick = (label, tw, wm) => ({ label, primary: tw === "week", run: () => sigOpPick(label, async () => { f.data.timingWindow = tw; f.data.windowMode = wm; if (tw === "day") { f.step = "windowday"; sigOpAsk(ST("Which day? Type it like Dec 12.", "¿Qué día? Escríbelo como 12 de diciembre.")); } else sigB1AskWindowNote(); }) });
   sigOpAsk(ST("When should the visit happen?", "¿Cuándo debe ser la visita?"), [
-    { label: ST("Within 7 days", "En 7 días"), primary: true, run: () => sigOpPick(ST("Within 7 days", "En 7 días"), async () => { f.data.windowMode = "7days"; sigB1AskWindowNote(); }) },
-    { label: ST("This week", "Esta semana"), run: () => sigOpPick(ST("This week", "Esta semana"), async () => { f.data.windowMode = "thisweek"; sigB1AskWindowNote(); }) },
+    pick(ST("Within the next week", "En la próxima semana"), "week", "7days"),
+    pick(ST("This week", "Esta semana"), "thisweek", "thisweek"),
+    pick(ST("Next week", "La próxima semana"), "nextweek", "7days"),
+    pick(ST("Two weeks", "Dos semanas"), "twoweeks", "7days"),
+    pick(ST("A specific day", "Un día específico"), "day", "7days"),
   ]);
 }
 function sigB1AskWindowNote() {
@@ -7093,7 +7408,7 @@ function sigB1SummaryText() {
     `${ST("Deliverables", "Entregas")}: ${deliverablePhraseClient({ kind: d.kind, deliverables: sigB1DeliverablesOf() })}${d.kind === "paid" ? "" : ` · ${ST("post within", "publicar en")} ${windowPhraseClient(sigB1DeliverablesOf().windowHours)}`}${d.kind === "paid" ? ST(" · standard license included (90 days)", " · licencia estándar incluida (noventa días)") : ST(" · native share only", " · solo compartir nativo")}`,
     ...(d.kind === "paid" ? [`${postingTermsLineClient({ postingTerms: d.postingTerms || { type: "standard" } })}`] : []),
     `${ST("Spots", "Cupos")}: ${d.spots}${d.lane === "open" && (d.tiers || []).length ? ` · ${ST("tiers", "niveles")}: ${d.tiers.join(", ")}` : ""}`,
-    d.lane === "open" ? `${ST("Timing", "Tiempo")}: ${ST("applications", "aplicaciones")} ${d.applyDays || 3}d · ${ST("visits within", "visitas en")} ${d.windowDays || 7}d` : `${ST("Timing", "Tiempo")}: ${d.windowMode === "thisweek" ? ST("this week", "esta semana") : ST("within 7 days", "en 7 días")}`,
+    d.lane === "open" ? `${ST("Timing", "Tiempo")}: ${ST("applications", "aplicaciones")} ${d.applyDays || 3}d · ${ST("visits within", "visitas en")} ${d.windowDays || 7}d` : `${ST("Timing", "Tiempo")}: ${d.timingWindow ? timingLabel137(d.timingWindow, d.visitDate) : (d.windowMode === "thisweek" ? ST("this week", "esta semana") : ST("within 7 days", "en 7 días"))}`,
     ...(d.paidBrief ? [`${ST("Key points", "Puntos clave")}: ${d.paidBrief}`] : []),
     `${ST("Brief", "Brief")}: ${d.briefGoal ? briefGoalLabel(d.briefGoal) + " · " : ""}${d.briefHook || ""}${(d.briefMust || []).length ? ` · ${ST("must mention", "debe mencionar")}: ${d.briefMust.join(" · ")}` : ""}`,
     `${ST("Asset packet", "Paquete")}: ${d.packetAttach ? ST("attached", "adjunto") : ST("not attached", "no adjunto")}`,
@@ -7158,6 +7473,9 @@ async function sigB1Commit() {
     payload.windowDays = d.windowDays || 7;
   } else {
     payload.windowMode = d.windowMode || "7days";
+    // Build -137: the flexible timing window rides the offer.
+    payload.timingWindow = d.timingWindow || (d.windowMode === "thisweek" ? "thisweek" : "week");
+    if (d.timingWindow === "day" && d.visitDate) payload.visitDate = d.visitDate;
   }
   try {
     const res = await api("POST", "/offers", payload);
@@ -7212,6 +7530,15 @@ async function sigB1Step(f, text, norm) {
   const d = f.data;
   const t = String(text || "").trim();
   switch (f.step) {
+    case "windowday": {
+      const ms = Date.parse(t);
+      if (!Number.isFinite(ms)) { sigOpAsk(ST("I could not read that date. Try a date like Dec 12.", "No pude leer esa fecha. Prueba con una fecha como 12 de diciembre.")); return; }
+      const dt = new Date(ms);
+      d.timingWindow = "day";
+      d.visitDate = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+      sigB1AskWindowNote();
+      return;
+    }
     case "title":
       if (!t) { sigOpAsk(ST("Give the offer a title first: name the experience.", "Ponle un título primero: nombra la experiencia.")); return; }
       d.title = t.slice(0, 120);
@@ -7465,7 +7792,7 @@ async function sigB3Run() {
     sigOpSay(ST(`Your funnel fills in once your campaigns are live. No completed visits yet${openCount ? `, and you have ${openCount} open offer${openCount === 1 ? "" : "s"} working` : ""}. The next best action: ${openCount ? "invite a creator directly so the first visit lands sooner" : "post your first offer"}.`, `Tu embudo se llena cuando tus campañas estén activas. Aún no hay visitas completadas${openCount ? `, y tienes ${openCount} oferta${openCount === 1 ? "" : "s"} abierta${openCount === 1 ? "" : "s"}` : ""}. El mejor siguiente paso: ${openCount ? "invita a un creador directamente para que la primera visita llegue antes" : "publica tu primera oferta"}.`), [
       openCount
         ? { label: ST("Find creators", "Buscar creadores"), primary: true, run: async () => { sigB2Start(); sigOpPaint(); } }
-        : { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+        : { label: ST("Start a campaign", "Iniciar una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
       { label: ST("See Analytics", "Ver Analíticas"), run: async () => go("dashboard", "Analytics") },
     ]);
     return;
@@ -7493,7 +7820,7 @@ async function sigB3Run() {
   }
   acts.push({ label: ST("See Results", "Ver Resultados"), run: async () => go("dashboard", "Analytics") });
   acts.push({ label: ST("Open the Performance card", "Abrir la tarjeta de Rendimiento"), run: async () => go("dashboard", "Home") });
-  acts.push({ label: ST("Set up a campaign", "Crear una campaña"), run: async () => { sigB1Start(); sigOpPaint(); } });
+  acts.push({ label: ST("Start a campaign", "Iniciar una campaña"), run: async () => { sigB1Start(); sigOpPaint(); } });
   sigOpSay(lines.join("\n"), acts);
 }
 
@@ -7528,7 +7855,7 @@ async function sigRepeatClone(rec) {
   try { const res = await api("GET", "/offers"); offer = (res.offers || []).find((o) => o.id === rec.offerId) || null; } catch (e) { /* handled below */ }
   if (!offer) {
     sigOpSay(ST("That offer is no longer on your list, so there is nothing to clone. Start a fresh campaign and I will rebuild it with you.", "Esa oferta ya no está en tu lista, así que no hay nada que clonar. Crea una campaña nueva y la reconstruimos juntos."), [
-      { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+      { label: ST("Start a campaign", "Iniciar una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
     ]);
     return;
   }
@@ -7690,7 +8017,7 @@ async function sigPacketCommit() {
       return;
     }
     sigOpSay(ST("Packet saved. It now rides with your paid offers by default, and you can attach it to any offer from the composer or right here.", "Paquete guardado. Ahora viaja con tus ofertas pagadas por defecto, y puedes adjuntarlo a cualquier oferta desde el compositor o aquí."), [
-      { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+      { label: ST("Start a campaign", "Iniciar una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
     ]);
   } catch (err) {
     f.step = "summary";
@@ -7928,7 +8255,7 @@ async function sigSetupSuggest(signals) {
   state.sigFlow = null;
   if (!sug || !sigPlay(sug.play)) {
     sigOpSay(ST("You are set up. When you are ready, say set up a campaign and we build your first offer together.", "Ya estás configurado. Cuando quieras, di crear una campaña y armamos tu primera oferta juntos."), [
-      { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+      { label: ST("Start a campaign", "Iniciar una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
     ]);
     return;
   }
@@ -8135,7 +8462,10 @@ async function sigC1Commit() {
       await api("POST", `/offers/${o.id}/accept`, sigRules);
       visitRulesMarkAttested(sigRules);
     }
-    else await api("POST", "/applications", { offerId: o.id });
+    // Build -137 wiring fix: the canonical apply route is
+    // POST /offers/:id/apply (the old POST /applications call
+    // matched no route, so a Sig-guided apply could only fail).
+    else await api("POST", `/offers/${o.id}/apply`, poSelectedFor(o.id));
     state.sigFlow = null;
     refreshBadges();
     sigOpSay(p.mode === "accept"
@@ -11201,6 +11531,12 @@ async function loadFoundingDashboard() {
     const p = card.profile || {};
     state.user.founding = f;
     const u = state.user;
+    // Build -137: the founding Home's Wallet row reads the
+    // creator's real bookings, like the live Home does.
+    let fBk = { bookings: [] };
+    try { fBk = await api("GET", "/bookings"); } catch (e) { /* no bookings yet: the wallet reads zero */ }
+    const fMoney = homeMoney(fBk.bookings || []);
+    const fVisitsDone = (fBk.bookings || []).filter((b) => b.redeemedAt).length;
     const isUnl = !!f.unlisted;
     const place = isUnl ? esc(unlistedPlace(f)) : esc(marketTalkNameClient(f.market));
     const hour = localHourNow();
@@ -11260,29 +11596,21 @@ async function loadFoundingDashboard() {
       { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!(u.creator && u.creator.paidRate), optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
       { label: "Apply to your first offer", sub: "Offers open when your market launches. The Offers tab shows how they work.", info: "Opens at launch" },
     ];
-    // Build -119: same treatment as the live Home — greeting,
-    // ONE Next list (queue + founding steps merged), then the
-    // shapes row (your local reach as the donut card: the full
-    // sentence stays, it is the ranking explanation), roster
-    // and paid-lane blocks as before.
+    // Build -137 home: Sig hero, Quick highlights, Next
+    // steps, stop (the founding roster line rides under).
     el.innerHTML = `
-    ${wsHead("Home", { sub: "Start here. One list, in the order things need you.", subKey: "cr-home" })}
+    ${wsHead("Home", { sub: "Start here.", subKey: "cr-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
-    ${sigHomeTopHtml()}
-    ${nextStepsHtml(queueItems, fSteps, { caughtUp: sigQueueHtml([], { links: [], askBox: true }) })}
-    <div class="wcard">
-      <div style="display:flex;gap:16px;align-items:center">${pctSet ? donutHtml119(p.localAudiencePct) : ""}<div><div class="kpi-label">Your local reach</div>
-      <div class="kpi-num" style="font-size:2.4rem">${localReach === null ? "Not set" : fmtNum(localReach)}</div></div></div>
-      <div class="kpi-sub" style="margin-top:10px">${pctSet ? `${p.localAudiencePct}% of your ${fmtNum(totalAud)} audience is local. Businesses rank creators by this number, not by follower count.` : "Add your local audience % in your profile and this fills in."}</div>
-      ${pctSet ? "" : `<p style="margin:12px 0 0"><button class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Add your local %</button></p>`}
-      <p class="small" style="margin:12px 0 0"><strong>Momentum: ${esc(standingLevelName(momPts))}${momPts ? ` · ${fmtNum(momPts)} pts` : ""}.</strong> ${esc(MOMENTUM_GLOSS.split("—")[1].trim())}</p>
-    </div>
-    <p class="small" style="margin:10px 2px 0">${listedMarketsLineHtml(card)}</p>
-    ${homePaidLaneSummaryHtml(u.creator)}
-    ${growRosterHtml(u)}
-    <p class="small muted" style="margin:14px 2px 0">Your Charter card, founding class, points, and full status live under <a class="tlink" href="#" onclick="return go('dashboard','Status')">Status</a> and <a class="tlink" href="#" onclick="return go('dashboard','Momentum')">Momentum</a>.</p>
-    ${askSigRowHtml()}`;
-    wireNextSteps(el, queueItems, fSteps, []);
+    ${sigHero137Html(queueItems.length ? queueItems[0].text : "You are on the founding roster.")}
+    ${highlights137Html([
+      { label: "Momentum", sub: standingLevelName(momPts), value: `${fmtNum(momPts)} pts` },
+      { label: "Your local reach", sub: pctSet ? `${p.localAudiencePct}% of your audience is local` : "Add your local % on your profile", value: localReach === null ? "Not set" : fmtNum(localReach) },
+      { label: "Visits completed", sub: "Visits you showed up for", value: String(fVisitsDone) },
+      { label: "Wallet", sub: fMoney.held > 0 ? `$${fmtMoney(fMoney.held)} held until the post is live` : "Ready to pay out", value: `$${fmtMoney(fMoney.released || 0)}`, tab: "Earnings" },
+    ])}
+    ${nextSteps137Html(queueItems.slice(0, 3), [])}
+    <p class="small" style="margin:10px 2px 0">${listedMarketsLineHtml(card)}</p>`;
+    wireSigQueue(el, queueItems.slice(0, 3), []);
     loadSigTopNudges();
     renderBottomNav();
   } catch (err) {
@@ -13188,7 +13516,14 @@ function homeOpportunitiesHtml(offers, u, bookings, applications) {
     <p class="small muted">Best fits land here first.</p>
   </section>`;
   }
-  const cards = ranked.slice(0, 3).map((o) => {
+  // Build -136: home cards are only what is already yours —
+  // invites sent directly to you, offers you have applied to,
+  // and bookings. Un-applied open offers are browsed in ONE
+  // place (Find offers); here they get a signpost row, not
+  // cards, so open offers are never listed on two surfaces.
+  const mine = ranked.filter((o) => o.creatorId === u.id || bookedOfferIds.has(o.id) || appliedOfferIds.has(o.id));
+  const openCount = ranked.length - mine.length;
+  const cards = mine.slice(0, 3).map((o) => {
     const rights = o.visitRights || rightsForVisit(o.kind);
     const left = Math.max(0, (o.spots || 0) - (o.bookedCount || 0));
     const actions = bookedOfferIds.has(o.id)
@@ -13223,9 +13558,10 @@ function homeOpportunitiesHtml(offers, u, bookings, applications) {
   return `
   <section class="panel">
     <p class="ui-kicker">Opportunities picked for you</p>
-    <h3 class="home-h">Open offers in ${esc(marketTalkNameClient(u.market))}</h3>
+    <h3 class="home-h">${mine.length ? "Your invites and deals" : `Open offers in ${esc(marketTalkNameClient(u.market))}`}</h3>
     ${cards}
-    ${ranked.length > 3 ? `<div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Offers')">See all ${ranked.length} offers</button></div>` : ""}
+    ${mine.length > 3 ? `<div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Offers')">See all in My offers</button></div>` : ""}
+    ${openCount ? `<div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Find Offers')">${openCount} open offer${openCount === 1 ? "" : "s"} — see them in Find offers</button></div>` : ""}
   </section>`;
 }
 
@@ -13333,7 +13669,10 @@ function brandName(brand) {
   return b.charAt(0).toUpperCase() + b.slice(1);
 }
 function laneCompLine(c) {
-  return c && c.compOpen === false ? "off. You're paid-only — always fine." : "on. Businesses can comp you for honest posts.";
+  return c && c.compOpen === false ? "off. You're paid-only — always fine." : "on. Businesses can offer you a comped meal, service, or experience instead of cash.";
+}
+function laneCouponLine(c) {
+  return c && c.couponOpen === false ? "off. No coupon or store-credit offers." : "on. Businesses can pay you with a coupon or store credit instead of cash.";
 }
 function lanePaidLine(c) {
   const rate = laneRateOf(c || {});
@@ -13544,7 +13883,8 @@ function laneControlsHtml(c) {
   return `<div class="lane-ctl" id="lane-controls">
     ${!rate || !fee ? `<p class="small" id="lane-starting-line" style="margin:0 0 10px">${esc(rateStartingLine(c || {}))}</p>` : ""}
     ${compOn && rate ? "" : `<div class="lane-bothrow"><button type="button" class="btn small-btn" onclick="return laneBothOn()">Turn both on</button></div>`}
-    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-comp" ${compOn ? "checked" : ""} onchange="laneToggleComp(this)"><div><label class="lname" for="lane-comp">Comp visits</label> <span class="lline" id="lane-comp-line">— ${esc(laneCompLine(c || {}))}</span></div></div>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-comp" ${compOn ? "checked" : ""} onchange="laneToggleComp(this)"><div><label class="lname" for="lane-comp">I accept comped visits</label> <span class="lline" id="lane-comp-line">— ${esc(laneCompLine(c || {}))}</span></div></div>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-coupon" ${!c || c.couponOpen !== false ? "checked" : ""} onchange="laneToggleCoupon(this)"><div><label class="lname" for="lane-coupon">I accept coupons / store credit</label> <span class="lline" id="lane-coupon-line">— ${esc(laneCouponLine(c || {}))}</span></div></div>
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-paid" ${rate ? "checked" : ""} onchange="laneTogglePaid(this)"><div><label class="lname" for="lane-paid">Paid bookings</label> <span class="lline" id="lane-paid-line">— ${esc(lanePaidLine(c || {}))}</span></div></div>
     <div class="lane-rate" id="lane-rate-row" style="display:${rate ? "block" : "none"}">
       <label for="lane-rate">Your paid rate (min ${ownCurrencySymbol()}${ownPaidFloor()})</label>
@@ -13959,6 +14299,10 @@ function laneToggleComp(input) {
   laneSave({ compOpen: !!input.checked });
   return true;
 }
+function laneToggleCoupon(input) {
+  laneSave({ couponOpen: !!input.checked });
+  return true;
+}
 function laneTypedRate() {
   const inp = document.getElementById("lane-rate");
   const v = inp ? Number(inp.value) : NaN;
@@ -14253,7 +14597,7 @@ async function loadCreatorHome() {
       // newest offer's business carries the line instead.
       const newest = (freshOffers[0] || openOffers[0]) || {};
       const namedLine = `An offer is open near you: ${newest.businessName || "a local business"} is booking${newest.title ? ` (${newest.title})` : ""}.`;
-      add(3, now, n === 1 ? namedLine : (seenMark ? `${n} new offers near you.` : `${openOffers.length} offers open near you in ${u.city || marketTalkNameClient(u.market)}.`), "See offers", () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); }, n === 1 ? "New offer near you" : `${n} new offer${n === 1 ? "" : "s"} near you`);
+      add(3, now, n === 1 ? namedLine : (seenMark ? `${n} new offers near you.` : `${openOffers.length} offers open near you in ${u.city || marketTalkNameClient(u.market)}.`), "See offers", () => go("dashboard", "Find Offers"), n === 1 ? "New offer near you" : `${n} new offer${n === 1 ? "" : "s"} near you`);
     }
     // Build -42: Sig's introduction rides the queue at class 3.
     // One named creator, correct at any roster size; dismissal
@@ -14328,7 +14672,7 @@ async function loadCreatorHome() {
       { label: "Claim your profile", sub: "You are on the roster.", done: true },
       { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: gateDone, btn: "Finish profile", act: () => goFinishProfile() },
       { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!paidRate, optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
-      { label: "Apply to your first offer", sub: "Flip through offers near you.", done: applications.length > 0 || bookings.length > 0, btn: "See offers", act: () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); } },
+      { label: "Apply to your first offer", sub: "Flip through offers near you.", done: applications.length > 0 || bookings.length > 0, btn: "See offers", act: () => go("dashboard", "Find Offers") },
     ];
     const greetLine = !gateDone ? "Let's finish your profile so businesses can find you." : (queue.length ? queue[0].text : "You're all caught up.");
     const greetDup = gateDone && queue.length > 0;
@@ -14364,7 +14708,7 @@ async function loadCreatorHome() {
     state.crFeedActs = state.crFeed.map((f) => f.act || null);
     crFeedKind = "all";
     const caughtLinks = [
-      { label: "See offers near you", act: () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); } },
+      { label: "See offers near you", act: () => go("dashboard", "Find Offers") },
       { label: "Check your Momentum", act: () => go("dashboard", "Momentum") },
     ];
     // V4.1: the Sig tab renders this same queue and badges its
@@ -14377,34 +14721,29 @@ async function loadCreatorHome() {
     // the shapes row (earned, local donut, Momentum), then
     // Activity. The old snapshot strip and Momentum card are
     // folded into the shapes row; nothing they carried is lost.
-    const earnedSeries = (() => {
-      const out = [];
-      const nowM = new Date(); nowM.setDate(1); nowM.setHours(0, 0, 0, 0);
-      for (let i = 5; i >= 0; i--) {
-        const t0 = new Date(nowM.getFullYear(), nowM.getMonth() - i, 1).getTime();
-        const t1 = new Date(nowM.getFullYear(), nowM.getMonth() - i + 1, 1).getTime();
-        let sum = 0;
-        for (const b of bookings) {
-          if (b.paidLane && b.paidLane.escrowState === "released" && b.post) {
-            const at = Date.parse(b.post.firstAt || b.post.submittedAt || "");
-            if (at >= t0 && at < t1) sum += Number(b.paidLane.creatorNet) || 0;
-          }
-        }
-        out.push(Math.round(sum * 100) / 100);
-      }
-      return out;
-    })();
+    // Build -137 home: Sig hero, Quick highlights, Next
+    // steps, stop. The queue, money and streak all come from
+    // the same real records the old home read.
+    const crPosts = bookings.filter((b) => b.post);
+    const crOnTime = crPosts.filter((b) => b.post && b.post.onTime).length;
+    const crVisitsDone = bookings.filter((b) => b.redeemedAt).length;
+    const momPts = m.points || 0;
+    const momNext = [100, 300, 750].find((x) => momPts < x);
+    const brief137 = queue.length ? queue[0].text : "You're all caught up. Nothing needs you right now.";
+    const q3 = queue.slice(0, 3);
     el.innerHTML = `
-    ${wsHead("Home", { sub: "Start here. One list, in the order things need you.", subKey: "cr-home" })}
-    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greetLine)}</div></div>
+    ${wsHead("Home", { sub: "Start here.", subKey: "cr-home" })}
+    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}.</div></div>
     ${strikeStatusHtml(u)}
-    ${sigHomeTopHtml()}
-    ${nextStepsHtml(queue, steps, { caughtUp: sigQueueHtml([], { links: caughtLinks, askBox: true }) })}
-    ${gateDone ? creatorShapesHtml119({ earned: money.released || 0, earnedSeries, localPct: pctSet ? Number(cprof.localAudiencePct) : null, points: m.points || 0 }) : ""}
-    <h3 style="margin:20px 0 0">Activity</h3>
-    <div id="cr-feed">${crFeedHtml()}</div>
-    ${askSigRowHtml()}`;
-    wireNextSteps(el, queue, steps, caughtLinks);
+    ${sigHero137Html(brief137)}
+    ${highlights137Html([
+      { label: "Momentum", sub: momNext ? `${standingLevelName(momPts)} \u00b7 ${fmtNum(momNext - momPts)} pts to ${standingLevelName(momNext)}` : `${standingLevelName(momPts)} \u00b7 top level`, value: `${fmtNum(momPts)} pts` },
+      { label: "Visits completed", sub: "Visits you showed up for", value: String(crVisitsDone) },
+      { label: "Posts on time", sub: "Posts live inside the goal window", value: crPosts.length ? `${crOnTime} of ${crPosts.length}` : "0" },
+      { label: "Wallet", sub: money.held > 0 ? `$${fmtMoney(money.held)} held until the post is live` : "Ready to pay out", value: `$${fmtMoney(money.released || 0)}`, tab: "Earnings" },
+    ])}
+    ${nextSteps137Html(q3, caughtLinks)}`;
+    wireSigQueue(el, q3, caughtLinks);
     loadSigTopNudges();
     renderBottomNav();
   } catch (err) {
@@ -14497,15 +14836,11 @@ function creatorProfileHtml(u) {
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
     <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on SIGNL. Both scores run 0 to 100. Reliability starts at a neutral 50 before you have any visits; your real visits move it from there. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available: self-reported means it is your own number, typed by you, not yet checked against Instagram.</p>
-    <div class="preview-panel" id="profile-preview-panel">
-      <div class="flex-between"><strong>Live preview</strong><span class="badge info">Updates as you type</span></div>
-      <p class="small muted" style="margin:6px 0 10px">This is what businesses see, drawn from the fields on this page: your card in Find creators, and the top of your page. Change a field and this changes with it. There is nothing separate to fill in.</p>
-      <div class="chip-row" style="margin-bottom:10px">
-        <button type="button" class="chip pv-chip on" data-pv="business" onclick="return creatorPreviewSetView('business')">Your card</button>
-        <button type="button" class="chip pv-chip" data-pv="public" onclick="return creatorPreviewSetView('public')">Top of your page</button>
-      </div>
-      <div id="profile-preview-host"></div>
+    <div class="field" style="margin:12px 0">
+      <label class="tgl-row"><input type="checkbox" class="sw" id="profile-peek-sw" onchange="return profilePeekToggle(this)"><span><strong>See how businesses view you</strong> — your card in Find creators and your full page, exactly as a business sees them, drawn from the values on this page. There is nothing separate to fill in.</span></label>
     </div>
+    <div id="profile-peek" style="display:none"></div>
+    <div id="profile-edit-wrap">
     <div class="field" style="margin:12px 0">
       <label>${T("Your market", "Tu mercado")}</label>
       ${marketFlash ? `<div class="notice blue" style="margin:0 0 8px">${esc(marketFlash)}</div>` : ""}
@@ -14552,7 +14887,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
       </div>
-      <div class="fgroup tint">
+      <div class="fgroup tint" id="pf-about">
       <p class="fg-kicker">${T("About you", "Sobre ti")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="field"><label>${T("Your name", "Tu nombre")}</label><input id="p-name" value="${esc(u.name || "")}"><p class="small muted">${T("Shown to businesses next to your handle. A quick claim starts with your handle here; put your real name in.", "Se muestra a los negocios junto a tu usuario. Un reclamo rápido empieza con tu usuario aquí; pon tu nombre real.")}</p></div>
       <div class="field"><label>${T("Your pronouns (optional)", "Tus pronombres (opcional)")}</label><input id="p-pronouns" value="${esc(c.pronouns || "")}" placeholder="${T("For example: she/her", "Por ejemplo: ella")}" maxlength="40"><p class="small muted">${T("Shown next to your first name on your public profile, only if you set it. Your first name is what the public page shows; never your surname.", "Se muestra junto a tu primer nombre en tu perfil público, solo si lo pones. Tu perfil público muestra tu primer nombre; nunca tu apellido.")}</p></div>
@@ -14581,7 +14916,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("Your university (if you are a student now)", "Tu universidad (si eres estudiante ahora)")}</label><input id="p-university" value="${esc(c.university || u.university || "")}" placeholder="${T("Start typing your school", "Empieza a escribir tu universidad")}" maxlength="120"><div class="uni-results" id="p-university-results"></div><p class="small muted">${T("Adding your school groups same-school referrals into your campus crew.", "Agregar tu universidad agrupa a tus referidos de la misma escuela en tu grupo de campus.")}${(c.university || u.university) && (c.universityStatus || u.universityStatus) === "current_student" ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
       <div class="field"><label>${T("Student status (optional)", "Estado de estudiante (opcional)")}</label>${universityStatusChipsHtml("p-university-status", c.universityStatus || u.universityStatus || "")}<p class="small muted">${T("The campus badge is for current students only, so it shows while your status is Current student.", "La insignia de campus es solo para estudiantes actuales, así que se muestra mientras tu estado sea Estudiante actual.")}</p></div>
       </div>
-      <div class="fgroup">
+      <div class="fgroup" id="pf-links">
       <p class="fg-kicker">${T("Your links", "Tus enlaces")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="form-2col">
         <div class="field"><label>${T("TikTok handle", "Usuario de TikTok")}</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="${T("Optional", "Opcional")}"></div>
@@ -14593,7 +14928,7 @@ function creatorProfileHtml(u) {
       </div>
       <div class="field"><label>${T("LinkedIn profile URL", "URL de tu perfil de LinkedIn")}</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="${T("Optional", "Opcional")}"></div>
       </div>
-      <div class="fgroup tint">
+      <div class="fgroup tint" id="pf-audience">
       <p class="fg-kicker">${T("Your audience", "Tu audiencia")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="field"><label>${T("Your tier band", "Tu nivel")}</label><p style="margin:6px 0"><strong id="p-tier-band">${esc(c.tierBand || "")}</strong></p><p class="small muted">${T("Set automatically from your total audience across platforms. It updates itself when your counts below change; nobody picks their own band.", "Se fija solo, según tu audiencia total en todas las plataformas. Se actualiza cuando cambian tus conteos de abajo; nadie elige su propio nivel.")}</p></div>
       <div class="field"><label>${T("Max visits per week", "Visitas máximas por semana")}</label>${dragBarHtml("p-maxvisits", 1, 7, `value="${c.maxVisitsPerWeek || 3}"`)}<p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
@@ -14605,7 +14940,7 @@ function creatorProfileHtml(u) {
         <button type="button" class="btn small-btn ghost" id="p-am-add" onclick="return amAddRow()"${(c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)).length >= 5 ? ' style="display:none"' : ""}>${T("Add another market", "Agregar otro mercado")}</button>
       </div>
       </div>
-      <div class="fgroup">
+      <div class="fgroup" id="pf-create">
       <p class="fg-kicker">${T("What you create", "Lo que creas")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="field"><label>${T("Comps you would accept", "Cortesías que aceptarías")}</label><div class="checkrow">${comps}</div></div>
       <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Headliners" ? "" : "none"}">
@@ -14624,13 +14959,14 @@ function creatorProfileHtml(u) {
         ${[0, 1, 2].map((i) => `<input id="p-work-${i}" type="url" placeholder="https://www.instagram.com/reel/... or a TikTok or YouTube link" value="${esc((c.bestWork || [])[i] || "")}" style="margin-bottom:8px">`).join("")}
         <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
       </div>
-      <div class="field"><label>${T("Bio", "Biografía")}</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
+      <div class="field" id="pf-bio"><label>${T("Bio", "Biografía")}</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
       <div class="field"><label>${T("Your pitch line", "Tu línea de presentación")}</label><input id="p-pitch" value="${esc(c.pitchLine || "")}" maxlength="200" placeholder="${T("One line that introduces you, at the top of your profile", "Una línea que te presenta, arriba de tu perfil")}"><p class="small muted">${T("Sig can draft it from your real profile: your categories, your local percentage, your streets. Accept it, edit it, or write your own.", "Sig puede redactarla desde tu perfil real: tus categorías, tu porcentaje local, tus calles. Acéptala, edítala o escribe la tuya.")}</p><button type="button" class="btn small-btn ghost" onclick="return pitchDraftFill()">${T("Draft it with Sig", "Redactarla con Sig")}</button> <span id="p-pitch-note" class="small muted"></span></div>
       </div>
       <div class="save-bar"><div id="save-warn"></div><button class="btn" type="submit">${T("Save profile", "Guardar perfil")}</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span></div>
     </form>
     ${accountHtml(u)}
     <div id="my-showcase"></div>
+    </div>
   </div>`;
 }
 
@@ -14897,6 +15233,14 @@ function crOffersSetSeg(seg) {
   loadCreatorOffers();
   return false;
 }
+// Build -136: open offers live in exactly one place — Find
+// offers (the Mirror). This view (My offers) is the creator's
+// invites and deal pipeline; the old embedded open-offer deck
+// under the invites duplicated Find offers in a second style,
+// so it is gone. This card is the signpost where the deck sat.
+function openOffersPointerHtml() {
+  return `<div class="empty-card" style="margin-top:22px"><div class="ec-t">Looking for offers open to every creator in your market?</div><div class="ec-s">They live in Find offers — browse what businesses near you are offering and grab the ones that fit.</div><div style="margin-top:12px"><button type="button" class="btn" onclick="return go('dashboard','Find Offers')">Go to Find offers</button></div></div>`;
+}
 async function loadCreatorOffers() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -14905,7 +15249,7 @@ async function loadCreatorOffers() {
   // basics are done (spec §6.2): a creator businesses cannot
   // find yet does not see offers.
   if (u.profileCompletion && !u.profileCompletion.complete) {
-    el.innerHTML = `${wsHead("Offers", { sub: "Flip through offers near you. Apply to the ones you want.", subKey: "cr-offers" })}${gateCardHtml(u)}`;
+    el.innerHTML = `${wsHead("My offers", { sub: "Invites sent to you, and every deal you are working on.", subKey: "cr-offers" })}${gateCardHtml(u)}`;
     return;
   }
   try { localStorage.setItem("signl-offers-seen", String(Date.now())); } catch (e) { /* private mode */ }
@@ -14917,7 +15261,7 @@ async function loadCreatorOffers() {
   // itself is never rewritten here.
   const seg = ({ foryou: "new", invited: "new", waiting: "booked" })[state.crOffersSeg] || state.crOffersSeg;
   el.innerHTML = `
-    ${wsHead("Offers", { sub: "Flip through offers near you. Apply to the ones you want.", subKey: "cr-offers" })}
+    ${wsHead("My offers", { sub: "Invites sent to you, and every deal you are working on.", subKey: "cr-offers" })}
     <div id="cr-offers-segs"></div>
     <div id="cr-seg-body">${skelHtml("Loading offers...", 2)}</div>
     <div id="aud-block"></div>`;
@@ -14951,9 +15295,8 @@ async function loadCreatorOffers() {
   const body = document.getElementById("cr-seg-body");
   if (!body) return;
   if (seg === "new") {
-    body.innerHTML = `<div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div><h3 style="margin:22px 0 0">Open offers</h3><div id="open-board"></div>`;
+    body.innerHTML = `<div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div>${openOffersPointerHtml()}`;
     loadDirectOffers();
-    loadOpenBoard();
   } else if (seg === "deals") {
     body.innerHTML = `<div id="cr-deals">${skelHtml("Loading your deals...", 1)}</div>`;
     loadDealsInto("cr-deals", "creator");
@@ -15010,6 +15353,8 @@ function dealProposalCardHtml(deal, role) {
     <div class="lrow"><span>${role === "creator" ? "You get" : "They get"}</span><strong>${dealAmountLine(t, role)}</strong></div>
     <div class="lrow"><span>${role === "creator" ? "You post" : "They post"}</span><strong>${esc(dealDeliverablesLine(t.deliverables))}</strong></div>
     <div class="lrow"><span>When</span><strong>${dealPostingLine(t.postingTerms)}</strong></div>
+    ${t.timingWindow ? `<div class="lrow"><span>Visit timing</span><strong>${esc(timingLabel137(t.timingWindow, t.visitDate))}</strong></div>` : ""}
+    ${t.includes ? `<div class="lrow"><span>Included</span><strong>${esc(t.includes)}</strong></div>` : ""}
     ${t.note ? `<div class="lrow"><span>Note</span><strong>${esc(t.note)}</strong></div>` : ""}
     <div class="lrow"><span>Rights</span><strong>${t.kind === "paid" || t.kind === "mix" ? "One standard licence included: 90 days of repost + ad use. Fixed — never longer." : "Native share only. Licensing this post is a separate request at the creator's fee, approved per use."}</strong></div>
     <div class="lrow"><span>Money</span><strong>${t.kind === "paid" || t.kind === "mix" ? "SIGNL holds the payment when the deal is accepted and releases it when the post is live." : "No money moves on this deal."}</strong></div>`;
@@ -15066,6 +15411,7 @@ function dealCounterFormHtml(deal, role) {
       <div class="field"><label>Include a story that shares the post?</label><select id="dc-story-${deal.id}"><option value="1" ${!t.deliverables || t.deliverables.story !== false ? "selected" : ""}>Yes — 1 post + 1 story</option><option value="0" ${t.deliverables && t.deliverables.story === false ? "selected" : ""}>Post only</option></select></div>
       <div class="field"><label>Answer window</label><select id="dc-expiry-${deal.id}"><option value="48">48 hours</option><option value="24">24 hours</option></select></div>
     </div>
+    <div class="field"><label>Visit timing</label>${timingPickerHtml(`dc-${deal.id}`, t.timingWindow || "week", t.visitDate || "")}</div>
     <button class="btn" onclick="dealRespond('${deal.id}','counter')">Send counter</button>
   </div>`;
 }
@@ -15084,6 +15430,11 @@ async function dealRespond(dealId, action) {
     if (what) terms.whatComped = what.value;
     if (topup) terms.cashTopUp = Number(topup.value);
     terms.deliverables = { posts: Number((document.getElementById(`dc-posts-${dealId}`) || {}).value || 1), story: (document.getElementById(`dc-story-${dealId}`) || {}).value === "1" };
+    // Build -137: a counter can move the visit timing too.
+    const ct137 = timingRead137(`dc-${dealId}`);
+    if (ct137.timingWindow === "day" && !ct137.visitDate) { if (note) note.textContent = "Pick the specific day, or choose a timing window instead."; return; }
+    terms.timingWindow = ct137.timingWindow;
+    if (ct137.visitDate) terms.visitDate = ct137.visitDate;
     body.terms = terms;
     body.expiresInHours = Number((document.getElementById(`dc-expiry-${dealId}`) || {}).value || 48);
   }
@@ -15152,6 +15503,8 @@ function openDealSheet(creatorId) {
       <div class="field"><label>What it applies to</label><input id="ds-capplies" placeholder="Anything on the menu"></div>
     </div>
     <div id="ds-mix" style="display:none"><div class="field"><label>Cash on top ($)</label><input type="number" id="ds-topup" min="0" step="1"></div></div>
+    <div class="field"><label>What's included (optional)</label><input id="ds-includes" maxlength="200" placeholder="Mats, towels and the smoothie after are on us"><p class="small muted" style="margin:4px 0 0">Spell out what's included — specific offers get grabbed first. The creator sees this line word for word.</p></div>
+    <div class="field"><label>When should the visit happen?</label>${timingPickerHtml("ds", "week")}<p class="small muted" style="margin:4px 0 0">A window, not an appointment: inside it, the creator picks the day. Nothing is charged until you both agree on the terms.</p></div>
     <div class="form-2col">
       <div class="field"><label>Posts</label><input type="number" id="ds-posts" min="1" max="5" step="1" value="1"></div>
       <div class="field"><label>Story that shares the post?</label><select id="ds-story"><option value="1">Yes — the standard: 1 post + 1 story</option><option value="0">Post only</option></select></div>
@@ -15178,6 +15531,13 @@ async function sendDeal(creatorId) {
   const body = { creatorId, kind: k, title: document.getElementById("ds-title").value || undefined, expiresInHours: Number(document.getElementById("ds-expiry").value || 48) };
   const dsNote = document.getElementById("ds-notefield");
   if (dsNote && dsNote.value.trim()) body.note = dsNote.value.trim();
+  const dsInc = document.getElementById("ds-includes");
+  if (dsInc && dsInc.value.trim()) body.includes = dsInc.value.trim();
+  // Build -137: the agreed timing window rides the deal terms.
+  const t137 = timingRead137("ds");
+  if (t137.timingWindow === "day" && !t137.visitDate) { if (note) note.textContent = "Pick the specific day, or choose a timing window instead."; return; }
+  body.timingWindow = t137.timingWindow;
+  if (t137.visitDate) body.visitDate = t137.visitDate;
   if (k === "paid") body.cashRate = Number(document.getElementById("ds-rate").value);
   if (k === "comp") { body.dollarCap = Number(document.getElementById("ds-cap").value); body.whatComped = document.getElementById("ds-what").value; }
   if (k === "coupon" || k === "mix") {
@@ -15213,7 +15573,7 @@ async function loadDirectOffers() {
     const bookedOfferIds = new Set((bkData.bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
     const mine = (data.offers || []).filter((o) => o.lane !== "open");
     if (!mine.length) {
-      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No invites yet</h3><p>When a business sends an offer straight to you, it lands here. Offers open to every creator in your market are right below, under Open offers.</p></div>`;
+      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No invites yet</h3><p>When a business sends an offer straight to you, it lands here. Offers open to every creator in your market live in Find offers.</p></div>`;
       return;
     }
     direct.innerHTML = `<div class="vx-stagger">` + mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); const booked = bookedOfferIds.has(o.id); return `
@@ -15237,7 +15597,7 @@ async function loadDirectOffers() {
         ${musicOpenBlockHtml(o.businessMusicOpen)}
         ${studentOpenBlockHtml(o.businessStudentOpen)}
         ${referralProgramBlockHtml(o.businessReferralProgram)}
-        <p class="small muted">${o.windowMode === "thisweek" ? "Redeem this week — ends Sunday" : "Redeem within 7 days of accepting"} &middot; no appointment needed.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
+        <p class="small muted">${offerTimingLine137(o) || `${o.windowMode === "thisweek" ? "Redeem this week — ends Sunday" : "Redeem within 7 days of accepting"} &middot; no appointment needed.`}${o.visitWindow && !o.timingWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         </div>
         <div class="slot-foot">
           <div class="slot-actions">
@@ -16865,12 +17225,21 @@ async function loadFoundingBusinessHome() {
   const el = document.getElementById("tab-body");
   if (!el) return;
   const u = state.user;
+  // Build -137 home: Sig hero, Quick highlights, Next steps,
+  // stop. The founding facts (spot held, plan, credit) ride
+  // the hero brief and the Wallet row; the setup checklist
+  // stays while unfinished, its editors live nowhere else.
+  const bz137 = u.business || {};
+  const plan137f = foundingPlan();
+  const credit137f = plan137f && typeof plan137f.foundingCredit === "number" ? plan137f.foundingCredit : 100;
   el.innerHTML = `
-  ${sigHomeTopHtml()}
-  ${foundingStatusCardHtml(u)}
+  ${wsHead("Home", { sub: "Start here.", subKey: "biz-home" })}
+  <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz137.businessName || u.name || "")}</div><div class="hg-line serif-line">Your founding spot is held. ${esc(foundingBizPlace(u))} opens soon, and we email you the day it does.</div></div>
+  ${sigHero137Html(`You are on the founding roster for ${foundingBizPlace(u)}. Nothing is due and nothing is charged. Get your page ready and draft your first campaign now; it goes out the day your market opens.`)}
+  ${bizGuideStartersHtml()}
   ${sqNoticeHtml()}
+  <div id="fbz-highlights"></div>
   <div id="biz-setup-checklist"></div>
-  ${foundingFirstMonthCardHtml(u)}
   <div id="fbz-sig-queue" style="margin-top:14px"></div>`;
   loadSigTopNudges();
   // Sig's queue for a founding business: the two things worth
@@ -16898,7 +17267,8 @@ async function loadFoundingBusinessHome() {
   try {
     const od = await api("GET", "/offers");
     const myOffers = (od && od.offers) || [];
-    if (!myOffers.length) items.push({ text: "No campaign drafts yet. Set one up now, with Sig or step by step, and it is ready for opening day.", btn: "Set up a campaign", act: () => go("dashboard", "Campaign Setup") });
+    state._fbzOfferCount = myOffers.length;
+    if (!myOffers.length) items.push({ text: "No campaign drafts yet. Set one up now, with Sig or step by step, and it is ready for opening day.", btn: "Start a campaign", act: () => go("dashboard", "Campaign Setup") });
   } catch (e) { /* the queue is a nudge, never a blocker */ }
   // Build -99: the ONE setup checklist renders on this Home
   // too, and its register item joins the queue when Square is
@@ -16916,16 +17286,23 @@ async function loadFoundingBusinessHome() {
   state.sigQueue = items;
   state.sigQueueLinks = [];
   state.sigQueueCount = items.length;
+  // Build -137: fill the Quick highlights from real records
+  // (drafts saved, visits counted at the counter, the plan).
+  let fbzBk = [];
+  try { const bd137 = await api("GET", "/bookings"); fbzBk = bd137.bookings || []; } catch (e) { /* no bookings yet */ }
+  const hlHost = document.getElementById("fbz-highlights");
+  if (hlHost) hlHost.innerHTML = highlights137Html([
+    { label: "Campaign drafts", sub: "Saved for opening day", value: String(state._fbzOfferCount || 0) },
+    { label: "Visits counted", sub: "Counted at your counter", value: String(fbzBk.filter((b) => b.redeemedAt).length) },
+    { label: "Wallet", sub: `$${fmtPrice(credit137f)} founding credit banked`, value: (plan137f ? plan137f.name : null) || bz137.planName || "Founding", tab: "Plan" },
+  ]);
   const host = document.getElementById("fbz-sig-queue");
-  if (host && items.length) {
-    // Build -119: the founding queue renders as the same ONE
-    // Next list; the register item leaves it whenever the
-    // setup checklist card above carries the same task.
+  if (host && document.getElementById("tab-body")) {
     const clF = state._setupChecklist;
     const nxItems = items.filter((it) => !(clF && !clF.allDone && (it.text || "").indexOf("Your register isn't connected yet") === 0));
     if (nxItems.length) {
-      host.innerHTML = nextStepsHtml(nxItems, [], {});
-      wireNextSteps(host, nxItems, [], []);
+      host.innerHTML = nextSteps137Html(nxItems.slice(0, 3), []);
+      wireSigQueue(host, nxItems.slice(0, 3), []);
     }
     renderNav();
   }
@@ -17059,7 +17436,7 @@ function renderBusinessDash() {
   let tab = state.tab || "Home";
   if (!BUSINESS_TABS.includes(tab)) tab = "Home";
   // A "Send offer" from Discover lands on the composer, which
-  // lives in Set up a campaign since Build -97.
+  // lives in Start a campaign since Build -97.
   if (state.offerTarget) tab = "Campaign Setup";
   // V3: Requests is the Applicants segment of Offers (§5.2).
   if (tab === "Requests") { state.offersSeg = "applicants"; tab = "My Offers"; }
@@ -17156,7 +17533,7 @@ function renderPartnerTab(tab) {
   const el = document.getElementById("tab-body");
   if (!el || !state.partnerData) return;
   const d = state.partnerData;
-  if (tab === "Home") { el.innerHTML = partnerHomeHtml(d); loadSigTopNudges(); }
+  if (tab === "Home") { el.innerHTML = partnerHomeHtml(d); wireSigQueue(el, [], state.sigQueueLinks || []); loadSigTopNudges(); }
   if (tab === "Markets") el.innerHTML = partnerMarketsHtml(d);
   if (tab === "Creators") el.innerHTML = partnerCreatorsHtml(d);
   if (tab === "Businesses") el.innerHTML = partnerBusinessesHtml(d);
@@ -17351,36 +17728,31 @@ function partnerHomeHtml(d) {
   const t = d.totals;
   const cs = d.creators.stages;
   const bs = d.businesses.stages;
-  const empty = t.creatorsAttributed === 0 && t.businessesAttributed === 0;
+  const e = d.earnings;
+  const sym = e.currency === "GBP" ? "\u00a3" : "$";
+  // Build -137 home: Sig hero, Quick highlights, Next steps,
+  // stop. The multi-scope card stays under Next steps: it is
+  // the only door into a pilot scope from this Home.
+  const links = [
+    { label: "Share your creator link", act: () => go("dashboard", "Links") },
+    { label: "Invite a business", act: () => go("dashboard", "Links") },
+    { label: "See your reports", act: () => go("dashboard", "Performance") },
+  ];
+  state.sigQueue = [];
+  state.sigQueueLinks = links;
+  state.sigQueueCount = 0;
   return `
-  ${wsHead(p.name, { chip: partnerSampleChip(d), sub: "Your markets, your bench, your share: the creators and businesses who came in through your links, and the share they earn you.", subKey: "pt-home" })}
-  ${sigHomeTopHtml()}
-  ${partnerScopesCardHtml(d)}
-  ${partnerSigCardHtml(d)}
-  ${empty ? "" : `
-  <div class="stat-band home-metrics">
-    <div class="stat-cell"><div class="stat-num">${cs.claimed}</div><div class="stat-lbl">Creators claimed</div></div>
-    <div class="stat-cell"><div class="stat-num">${cs.complete}</div><div class="stat-lbl">Creators complete</div></div>
-    <div class="stat-cell"><div class="stat-num">${bs.applied}</div><div class="stat-lbl">Businesses joined</div></div>
-    <div class="stat-cell"><div class="stat-num"><em>$${fmtPrice(d.earnings.accruedMonthly)}</em></div><div class="stat-lbl">Share accrued / mo</div></div>
-  </div>`}
-  ${empty ? partnerFillsIn("Share your creator link and your bench starts here.") : `
-  <div class="card mb">
-    <div class="flex-between"><strong>The funnel so far</strong><span class="badge info">${esc(p.markets.join(" · "))}</span></div>
-    <p class="small" style="margin:8px 0 0">Creators: ${cs.claimed} claimed, ${cs.approved} approved, ${cs.complete} complete. Businesses: ${bs.applied} joined, ${bs.active} active. ${t.offersLive} offer${t.offersLive === 1 ? "" : "s"} live, ${t.visitsCompleted} visit${t.visitsCompleted === 1 ? "" : "s"} completed, ${t.postsLive} post${t.postsLive === 1 ? "" : "s"} live.</p>
-  </div>
-  ${t.visitsCompleted === 0 ? `<p class="small muted" style="margin:2px 2px 12px">0 visits yet. Visits start when your first businesses go live — each one lands here the day it happens.</p>` : ""}`}
-  <div class="card mb">
-    <div class="flex-between"><strong>Share your link</strong><span class="badge ok">Next step</span></div>
-    <p class="small muted" style="margin:6px 0 10px">Every creator who claims through your link is credited to you, permanently. Your QR codes and business link are under Links &amp; assets.</p>
-    <button class="btn" onclick="return go('dashboard','Links')">Get your links</button>
-  </div>
-  <div class="card mb">
-    <div class="flex-between"><strong>Invite a business</strong><span class="badge ok">Next step</span></div>
-    <p class="small muted" style="margin:6px 0 10px">Businesses in your markets earn you ${p.sharePct == null ? "your org's share" : `${p.sharePct}%`} of their subscription while they stay subscribed. Send one your business link today.</p>
-    <button class="btn ghost" onclick="return go('dashboard','Links')">Copy business link</button>
-  </div>
-  ${d.atFill ? `<p class="small muted">At full fill, ${d.atFill.markets === 1 ? "your market holds" : `your ${d.atFill.markets} markets hold`} about ${fmtNum(d.atFill.businessesPerMarket * d.atFill.markets)} businesses, and your share runs about $${fmtNum(d.atFill.partnerYearly)} a year. Modeled, not promised: markets fill over time.</p>` : ""}`;
+  ${wsHead(p.name, { chip: partnerSampleChip(d), sub: "Start here. Your markets, your bench, your share: the creators and businesses who came in through your links, and the share they earn you.", subKey: "pt-home" })}
+  ${sigHero137Html(partnerSigLine(d))}
+  ${highlights137Html([
+    { label: "Creators claimed", sub: "Through your links", value: String(cs.claimed) },
+    { label: "Creators complete", sub: "Ready to book", value: String(cs.complete) },
+    { label: "Businesses joined", sub: "Through your links", value: String(bs.applied) },
+    { label: "Wallet", sub: `${sym}${fmtPrice(e.accruedMonthly)} accruing this month`, value: `${sym}${fmtPrice(e.accruedTotal)}`, tab: "Earnings" },
+  ])}
+  ${nextSteps137Html([], links)}
+  ${d.atFill ? `<p class="small muted" style="margin:12px 2px 0">At full fill, ${d.atFill.markets === 1 ? "your market holds" : `your ${d.atFill.markets} markets hold`} about ${fmtNum(d.atFill.businessesPerMarket * d.atFill.markets)} businesses, and your share runs about $${fmtNum(d.atFill.partnerYearly)} a year. Modeled, not promised: markets fill over time.</p>` : ""}
+  ${partnerScopesCardHtml(d)}`;
 }
 
 function partnerMarketsHtml(d) {
@@ -18131,7 +18503,7 @@ async function loadBusinessHome() {
     }
     const pace97 = (() => { const n97 = new Date(); const dim97 = new Date(n97.getFullYear(), n97.getMonth() + 1, 0).getDate(); return n97.getDate() >= 3 && (h.visitsAllowance || 0) > 0 && (h.visitsRemaining || 0) > 0 && (h.visitsUsed || 0) < (h.visitsAllowance || 0) * (n97.getDate() / dim97); })();
     if (pace97) {
-      add(4, now, `Partway through the month, ${h.visitsRemaining} of your ${h.visitsAllowance} plan visits are still unused. A new campaign is how they turn into visits.`, "Set up a campaign", () => go("dashboard", "Campaign Setup"), `${h.visitsRemaining} visits unused this month`);
+      add(4, now, `Partway through the month, ${h.visitsRemaining} of your ${h.visitsAllowance} plan visits are still unused. A new campaign is how they turn into visits.`, "Start a campaign", () => go("dashboard", "Campaign Setup"), `${h.visitsRemaining} visits unused this month`);
     }
     // Capture-gap diagnostic (Build -39): creator-reported
     // reach ran far ahead of counted register customers. The
@@ -18291,26 +18663,33 @@ async function loadBusinessHome() {
     } else {
       nxQueue = [{ cls: 1, at: Date.now(), text: "Pick your first creators: see who is local, and what they charge.", btn: "Find creators", act: () => go("dashboard", "Discover"), short: "Pick your first creators" }];
     }
+    // Build -137 home: Sig hero, Quick highlights (the
+    // visits headline is COUNTED visits only), Next steps,
+    // stop. The setup checklist stays under Next steps while
+    // it is unfinished: its editors live nowhere else.
+    const countedVisits = bookings.filter((b) => b.redeemedAt).length;
+    const plan137 = d.plan || {};
+    const credit137 = typeof plan137.foundingCredit === "number" ? plan137.foundingCredit : 100;
+    const briefBiz = nxQueue.length ? nxQueue[0].text : "You're all caught up.";
+    const nq3 = nxQueue.slice(0, 3);
     el.innerHTML = `
     <div data-dash>
-    ${wsHead("Home", { sub: "Start here. One list, in the order things need you.", subKey: "biz-home" })}
+    ${wsHead("Home", { sub: "Start here.", subKey: "biz-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line serif-line">${esc(greetLine)}</div></div>
     ${sqNoticeHtml()}
-    ${sigHomeTopHtml()}
-    ${nextStepsHtml(nxQueue, [], { caughtUp: sigQueueHtml([], { links: caughtLinks, askBox: true }) })}
-    ${d.setupChecklist ? setupChecklistHtml(d.setupChecklist) : ""}
-    ${d.proofKit && d.proofKit.complete ? `<div class="notice" style="margin-top:14px"><strong>Counter-ready.</strong> Your usual day is set, the staff PIN is on, the counter card is printed, and a test redemption has run — visits count from the first real one.</div>` : ""}
-    ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market has not launched yet.</strong> Businesses sign up when we are ready to launch. Draft offers now; publishing switches on at launch.</div>`}
-    ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
-    <div id="perf-card"></div>
-    <h3 style="margin:20px 0 0">Activity</h3>
-    <div id="biz-feed">${bizFeedHtml(state.bizFeedEvents)}</div>
-    ${hasNumbers ? `<button type="button" class="more-row results-row" onclick="return go('dashboard','Analytics')"><span class="more-ic">${bnIcon("bars")}</span><span class="more-tx"><span class="more-label">Results</span><span class="more-sub">What your campaigns did.</span></span><span class="more-chev">›</span></button>` : ""}
-    ${askSigRowHtml()}
+    ${sigHero137Html(briefBiz)}
+    ${bizGuideStartersHtml()}
+    ${highlights137Html([
+      { label: "Creators waiting", sub: "Waiting on your answer", value: String(waiting.length) },
+      { label: "Visits counted", sub: "Counted at your counter", value: String(countedVisits) },
+      { label: "Posts live", sub: "Posts from your visits", value: String(h.postsLive || 0) },
+      { label: "Wallet", sub: `$${fmtPrice(credit137)} founding credit left`, value: plan137.name || bz.planName || "Plan", tab: "Plan" },
+    ])}
+    ${nextSteps137Html(nq3, caughtLinks)}
+    ${d.setupChecklist && !d.setupChecklist.allDone ? setupChecklistHtml(d.setupChecklist) : ""}
     </div>`;
-    wireNextSteps(el, nxQueue, [], caughtLinks);
+    wireSigQueue(el, nq3, caughtLinks);
     loadSigTopNudges();
-    loadPerformanceCard(el);
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -19392,6 +19771,44 @@ async function loadFavorites() {
 // the category in or out of state.discoverCats, results match ANY
 // selected category (OR), and the "All" chip clears the set (it is
 // the active chip exactly when the set is empty).
+// Build -136 (Scopes #7/#8): the shopping layout — a left
+// filter rail on desktop that becomes the Filters sheet on a
+// phone. Same groups, same words, same order on both. Every
+// group leads with its All option: All categories, All
+// creators (must-haves), Either (booking), All tiers, All
+// universities — All is the default and clears the group.
+function shopRailToggle(id) {
+  const r = document.getElementById(id);
+  if (r) r.classList.toggle("open");
+  if (id === "disc-rail") { const b = document.getElementById("disc-rail-btn"); if (b) b.textContent = `Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}`; }
+  if (id === "fo-rail") { const b = document.getElementById("fo-rail-btn"); if (b) b.textContent = `Filters${foActiveCount() ? ` (${foActiveCount()})` : ""}`; }
+  return false;
+}
+function discActiveCount() {
+  let n = 0;
+  if ((state.discoverCats || []).length) n++;
+  if ((state.discoverBookMode || "any") !== "any") n++;
+  if (state.discoverSpanish) n++;
+  if (state.discoverMusician) n++;
+  if (state.discoverUniversity) n++;
+  return n;
+}
+function discMustAll() {
+  state.discoverSpanish = false;
+  state.discoverMusician = "";
+  loadDiscover();
+  return false;
+}
+function discClearAll() {
+  state.discoverCats = [];
+  state.discoverSpanish = false;
+  state.discoverMusician = "";
+  state.discoverBookMode = "any";
+  state.discoverRate = "any";
+  state.discoverUniversity = "";
+  loadDiscover();
+  return false;
+}
 function discoverCatChip(cat, btn) {
   if (cat === "") {
     state.discoverCats = [];
@@ -19422,27 +19839,19 @@ function syncDiscoverCatChips() {
 // content in Spanish. The control spells that out in full ("Spanish-
 // speaking creators only") because the earlier bare "Español" chip
 // under a "Language" label read as a site-language switcher.
-function discoverSpanishChip(btn) {
-  state.discoverSpanish = !state.discoverSpanish;
-  if (btn) {
-    btn.classList.toggle("on", !!state.discoverSpanish);
-    btn.setAttribute("aria-pressed", state.discoverSpanish ? "true" : "false");
-  }
+// Build -136: the must-haves are real switches now (they were
+// wide pill buttons that read as two more categories in the
+// filter stack). The state grammar is unchanged — Spanish is
+// a boolean; Musician rides the musician attribute (mode "1"),
+// and Sig's idea prompts may set the "perform"/"create" modes,
+// which the switch reflects as on and turning it off clears.
+function discoverSpanishSet(input) {
+  state.discoverSpanish = !!(input && input.checked);
   runDiscover();
   return false;
 }
-
-// Musicians toggle (Sig activation, Jeff, 2026-10-28): the
-// sibling of the Spanish toggle, same control, same grammar.
-// The toggle itself rides the musician attribute (mode "1");
-// Sig's idea prompts may set the "perform"/"create" modes,
-// which this toggle reflects as on and a tap clears.
-function discoverMusicianChip(btn) {
-  state.discoverMusician = state.discoverMusician ? "" : "1";
-  if (btn) {
-    btn.classList.toggle("on", !!state.discoverMusician);
-    btn.setAttribute("aria-pressed", state.discoverMusician ? "true" : "false");
-  }
+function discoverMusicianSet(input) {
+  state.discoverMusician = input && input.checked ? "1" : "";
   runDiscover();
   return false;
 }
@@ -19562,7 +19971,7 @@ function setupChecklistHtml(cl) {
     if (s.id === "page") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Profile')">Finish my page</button>`;
     if (s.id === "hours") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Profile')">Set my hours</button>`;
     if (s.id === "creators") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Discover')">Find creators</button>`;
-    if (s.id === "campaign") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Campaign Setup')">Set up a campaign</button>`;
+    if (s.id === "campaign") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Campaign Setup')">Start a campaign</button>`;
     return "";
   };
   const squareNote = (s) => {
@@ -19713,6 +20122,29 @@ function shelfPriceLine(c) {
   if (p.compOpen !== false) return { main: "Comped visit", sub: "no cash: the experience is the payment" };
   return { main: "Paid bookings only", sub: "" };
 }
+// Build -136 (Jeff's card ruling): the accepts-comps switch that
+// rides every creator card at the price line. Display only — it
+// renders the creator's one compOpen setting as a switch a
+// business reads at a glance: ON (mint fill, knob right, bold
+// label) = "Accepts comps"; OFF (muted track, knob left) = "Paid
+// only", so a paid-only creator never looks like one who comps.
+// Build -136 (card rulings + Scope #5): the acceptance switches.
+// Both of the creator's standing acceptances ride every card —
+// comped visits (compOpen) and coupons / store credit
+// (couponOpen) — each as a switch chip in the same treatment:
+// mint + knob right when on, muted + knob left when off. Both
+// off collapses to the single muted "Paid only" chip, so a
+// paid-only creator never reads like an accepting one. One
+// component family for the shelf tile, the compare tray, the
+// creator page buy box, Sig's cards and the setup peek view.
+function acceptanceHtml(c) {
+  const p = (c && c.profile) || {};
+  const compOn = p.compOpen !== false;
+  const couponOn = p.couponOpen !== false;
+  const sw = (on, label) => `<span class="comp-sw${on ? " on" : ""}" role="img" aria-label="${label}: ${on ? "yes" : "no"}"><span class="comp-sw-track"><span class="comp-sw-knob"></span></span><span class="comp-sw-lbl">${label}</span></span>`;
+  if (!compOn && !couponOn) return `<span class="acc-row"><span class="comp-sw" role="img" aria-label="Paid bookings only"><span class="comp-sw-track"><span class="comp-sw-knob"></span></span><span class="comp-sw-lbl">Paid only</span></span></span>`;
+  return `<span class="acc-row">${sw(compOn, "Accepts comps")}${sw(couponOn, "Accepts coupons")}</span>`;
+}
 function shelfProofLine(c) {
   const tr = c && c.trackRecord;
   if (!tr || tr.isNew) return "New to SIGNL: no visits yet";
@@ -19746,8 +20178,8 @@ function shelfTileHtml(c, opts) {
     <div class="shelf-body">
       <div class="shelf-name"${tap}>${esc(c.name || "")}</div>
       <div class="shelf-meta">${esc(place || marketDisplayName(market))}${cats ? ` · ${esc(cats)}` : ""}</div>
-      ${pct === null ? `<div class="shelf-local-none">Local audience not reported yet</div>` : `<div class="shelf-local"><span class="shelf-pct">${pct}%</span><span class="shelf-local-tx">of their followers live in ${esc(marketDisplayName(market))}${count !== null ? `<br><strong>about ${fmtFull(count)} local followers</strong>` : ""}</span></div><div class="shelf-bar"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>`}
-      <div class="shelf-price">${esc(price.main)}${price.sub ? ` <span>${esc(price.sub)}</span>` : ""}</div>
+      ${pct === null ? `<div class="shelf-local-none">Local audience not reported yet</div>` : `<div class="shelf-local"><span class="shelf-pct">${pct}%</span><span class="shelf-local-tx">of their followers live in ${esc(marketDisplayName(market))}</span></div><div class="shelf-bar"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>${count !== null ? `<div class="shelf-localcount">about ${fmtFull(count)} local followers</div>` : ""}`}
+      <div class="shelf-price-row"><div class="shelf-price">${esc(price.main)}${price.sub ? ` <span>${esc(price.sub)}</span>` : ""}</div>${acceptanceHtml(c)}</div>
       ${preview && !c.trackRecord ? "" : `<div class="shelf-proof">${esc(shelfProofLine(c))}</div>`}
       <div class="shelf-quiet">${fmtNum(totalAudienceOf(c))} followers total${p.avgViews ? ` · about ${fmtNum(p.avgViews)} views a post` : ""}</div>
       ${preview ? "" : `<div class="shelf-acts">
@@ -19815,8 +20247,9 @@ function shelfTrayHtml() {
       ${c === best ? `<span class="top-match-tag">Top match</span>` : ""}
       <div class="shelf-tray-name">${esc(c.name || "")}</div>
       <div class="shelf-tray-pct">${pct === null ? "—" : `${pct}% local`}</div>
-      <div class="shelf-tray-line">${count !== null ? `about ${fmtFull(count)} local followers` : "local count not reported"}</div>
+      ${count !== null ? `<div class="shelf-tray-count">about ${fmtFull(count)} local followers</div>` : `<div class="shelf-tray-line">local count not reported</div>`}
       <div class="shelf-tray-line">${esc(shelfPriceLine(c).main)}</div>
+      <div class="shelf-tray-acc">${acceptanceHtml(c)}</div>
       <div class="shelf-tray-line">${esc(shelfProofLine(c))}</div>
       <button type="button" class="btn small-btn" onclick="startOffer('${c.userId}')">Book</button>
     </div>`; }).join("")}</div>
@@ -19882,6 +20315,60 @@ function similarCreatorsHtml(c) {
 // Offer Card flow (openDealSheet) with the lane preset and the
 // picked day carried in the deal's note, which the creator sees
 // on the proposal card.
+// Build -137: flexible timing replaces fixed-day picking.
+// Windows, not appointments: "Within the next week" is the
+// default and the creator picks the day inside it; a specific
+// day is the last option and the only one carrying a date.
+// One picker, three prefixes (pdp = buy box, bk = booking
+// flow, ds = deal sheet, dc-<id> = a deal counter).
+const TIMING_WINDOWS_137 = [
+  { id: "week", label: "Within the next week", sub: "They pick the day" },
+  { id: "thisweek", label: "This week", sub: "By Sunday" },
+  { id: "nextweek", label: "Next week", sub: "Any day next week" },
+  { id: "twoweeks", label: "Two weeks", sub: "Inside two weeks" },
+  { id: "day", label: "A specific day", sub: "Pick the date" },
+];
+function timingLabel137(tw, visitDate) {
+  if (tw === "thisweek") return "This week";
+  if (tw === "nextweek") return "Next week";
+  if (tw === "twoweeks") return "Within the next two weeks";
+  if (tw === "day") {
+    if (!visitDate) return "On a specific day";
+    const d = new Date(`${visitDate}T12:00:00`);
+    return `On ${Number.isNaN(d.getTime()) ? visitDate : d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}`;
+  }
+  return "Within the next week \u2014 they pick the day";
+}
+function timingPickerHtml(prefix, selected, visitDate) {
+  const sel = TIMING_WINDOWS_137.some((w) => w.id === selected) ? selected : "week";
+  return `<div class="pdp-dayrow twin137">${TIMING_WINDOWS_137.map((w) => `<button type="button" class="pdp-day tw-chip${w.id === sel ? " on" : ""}" data-tw="${prefix}:${w.id}" onclick="timingPick137('${prefix}','${w.id}')">${esc(w.label)}<small>${esc(w.sub)}</small></button>`).join("")}</div>
+  <input type="hidden" id="${prefix}-timing" value="${sel}">
+  <div class="field" id="${prefix}-dayrow" style="display:${sel === "day" ? "" : "none"};margin-top:10px"><label>The day</label><input type="date" id="${prefix}-visitdate" value="${esc(visitDate || "")}"></div>`;
+}
+function timingSet137(prefix, tw, visitDate) {
+  const hid = document.getElementById(`${prefix}-timing`);
+  if (hid) hid.value = tw;
+  document.querySelectorAll(`[data-tw^="${prefix}:"]`).forEach((b) => b.classList.toggle("on", b.getAttribute("data-tw") === `${prefix}:${tw}`));
+  const row = document.getElementById(`${prefix}-dayrow`);
+  if (row) row.style.display = tw === "day" ? "" : "none";
+  const di = document.getElementById(`${prefix}-visitdate`);
+  if (di && visitDate) di.value = visitDate;
+}
+function timingPick137(prefix, tw) {
+  timingSet137(prefix, tw);
+  return false;
+}
+function timingRead137(prefix) {
+  const tw = (document.getElementById(`${prefix}-timing`) || {}).value || "week";
+  const out = { timingWindow: tw };
+  if (tw === "day") out.visitDate = (document.getElementById(`${prefix}-visitdate`) || {}).value || "";
+  return out;
+}
+function offerTimingLine137(o) {
+  if (o && o.timingWindow) return `Visit timing: ${timingLabel137(o.timingWindow, o.visitDate)} \u00b7 no appointment needed.`;
+  return null;
+}
+
 function pdpDays() {
   const out = [];
   const now = new Date();
@@ -19896,12 +20383,18 @@ function buyBoxHtml(c) {
   const sym = currencySymbolForMarket(c && c.market);
   const first = (c.name || "this creator").trim().split(" ")[0] || "this creator";
   return `<div class="pdp-buy" id="pdp-buy">
-    <div class="pdp-buy-h">Book ${esc(first)}</div>
+    <div class="pdp-buy-h"><span>Book ${esc(first)}</span>${acceptanceHtml(c)}</div>
     ${p.paidRate ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="paid" checked><span><strong>Paid booking — ${sym}${fmtPrice(p.paidRate)}</strong><small>You pay the rate + 3% (card and transfer fees). They keep 97%. SIGNL holds the money until the post is live.</small></span></label>` : ""}
     ${p.compOpen !== false ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="comp"${p.paidRate ? "" : " checked"}><span><strong>Comped visit — ${sym}0</strong><small>The experience is the payment: 1 post + 1 story on their own page only.</small></span></label>` : ""}
-    <div class="pdp-days"><span class="pdp-days-l">Pick a day</span><div class="pdp-dayrow">${pdpDays().map((d, i) => `<button type="button" class="pdp-day${i === 0 ? " on" : ""}" data-full="${esc(d.full)}" onclick="pdpPickDay(this)">${esc(d.label)}<small>${esc(d.date)}</small></button>`).join("")}</div></div>
+    <div class="pdp-days"><span class="pdp-days-l">When should the visit happen?</span>${timingPickerHtml("pdp", "week")}</div>
+    <details class="pdp-propose" id="pdp-propose">
+      <summary>Propose your own terms</summary>
+      <div class="field"><label>Your amount (${sym})</label><input type="number" id="pdp-amount" min="0" step="1" placeholder="${p.paidRate ? fmtPrice(p.paidRate) : "Your amount"}"></div>
+      <div class="field"><label>Note (optional)</label><input id="pdp-pnote" maxlength="280" placeholder="Anything they should know"></div>
+      <p class="small muted" style="margin:6px 0 0">Your terms open the deal instead of the listed ones. The creator can accept, counter once, or decline. Nothing is charged until you both agree, and their rate floor still applies.</p>
+    </details>
     <button type="button" class="btn pdp-send" onclick="pdpSendOffer('${c.userId}')">Send offer</button>
-    <p class="small muted" style="margin:8px 0 0">Your offer opens with these terms filled in. The creator can accept, counter once, or decline with a reason.</p>
+    <p class="small muted" style="margin:8px 0 0">Money is released the moment their post is live. Your offer opens with these terms filled in; the creator can accept, counter once, or decline with a reason.</p>
   </div>`;
 }
 function pdpPickDay(btn) {
@@ -19909,14 +20402,17 @@ function pdpPickDay(btn) {
   return false;
 }
 function pdpSendOffer(userId) {
+  // Build -136: the buy box's Send hands off to the dedicated
+  // booking flow (Scope #4D), carrying the lane + day picked
+  // here as its starting point.
   const lane = (document.querySelector("input[name='pdp-lane']:checked") || {}).value || "comp";
-  const dayBtn = document.querySelector(".pdp-day.on");
-  openDealSheet(userId);
-  const kindSel = document.getElementById("ds-kind");
-  if (kindSel) { kindSel.value = lane === "paid" ? "paid" : "comp"; dealSheetKind(); }
-  const note = document.getElementById("ds-notefield");
-  if (note && dayBtn) note.value = `Preferred visit day: ${dayBtn.getAttribute("data-full")}.`;
-  return false;
+  // Build -137: the buy box carries the timing window and any
+  // proposed terms into the booking flow's deal sheet.
+  const t = timingRead137("pdp");
+  const amt = (document.getElementById("pdp-amount") || {}).value;
+  const pnote = (document.getElementById("pdp-pnote") || {}).value;
+  state.bookingPreset = { lane, timingWindow: t.timingWindow, visitDate: t.visitDate || null, amount: amt === "" || amt == null ? null : Number(amt), note: pnote && pnote.trim() ? pnote.trim() : null };
+  return openBookingFlow(userId);
 }
 // ---------- The Mirror: Find offers (creator, Build -134) ----------
 // Offer cards stated like prices over the same /open-offers
@@ -19946,6 +20442,7 @@ function mirrorOfferCardHtml(o, opts) {
   const spotsLeft = (Number(o.spots) || 0) - (Number(o.filledCount) || 0);
   const tr = o.businessTrackRecord;
   return `<div class="mirror-card">
+    ${o.businessImageUrl ? `<img class="mirror-cover" src="${esc(o.businessImageUrl)}" alt="" loading="lazy">` : ""}
     <div class="mirror-top">
       <span class="mirror-mono">${esc((o.businessName || "?").trim().charAt(0).toUpperCase() || "?")}</span>
       <div class="mirror-id"><div class="mirror-biz">${esc(o.businessName || "")}</div><div class="mirror-meta">${esc(o.category || "")}${place ? ` · ${esc(place)}` : ""}${o.distanceBand ? ` · ${esc(o.distanceBand)}` : ""}</div></div>
@@ -19958,7 +20455,7 @@ function mirrorOfferCardHtml(o, opts) {
     ${o.includes ? `<div class="mirror-line">Included: ${esc(o.includes)}</div>` : ""}
     ${tr ? `<div class="mirror-track">${tr.visitsHosted} visit${tr.visitsHosted === 1 ? "" : "s"} hosted${tr.creatorsReturned > 0 ? ` · ${tr.creatorsReturned} creator${tr.creatorsReturned === 1 ? "" : "s"} came back` : ""}${tr.onTimePct !== null && tr.onTimePct !== undefined ? ` · ${tr.onTimePct}% of posts on time` : ""}</div>` : ""}
     ${o.spots && spotsLeft > 0 ? `<div class="mirror-spots">${spotsLeft} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left</div>` : ""}
-    ${preview ? "" : o.myApplication ? `<div class="mirror-acts"><span class="badge ok">Applied</span><button type="button" class="btn small-btn ghost" onclick="state.crOffersSeg='applied'; return go('dashboard','Offers')">See it in Offers</button></div>` : `<div class="mirror-acts"><button type="button" class="btn small-btn" onclick="findOffersGrab('${o.id}')">Grab this visit</button>${parked ? `<button type="button" class="btn small-btn ghost" onclick="findOffersUnlater('${o.id}')">Move back</button>` : `<button type="button" class="btn small-btn ghost" onclick="findOffersLater('${o.id}')">Save for later</button>`}<button type="button" class="btn small-btn ghost" onclick="findOffersHide('${o.id}')">Not for me</button></div>`}
+    ${preview ? "" : o.myApplication ? `<div class="mirror-acts"><span class="badge ok">Applied</span><button type="button" class="btn small-btn ghost" onclick="state.crOffersSeg='applied'; return go('dashboard','Offers')">See it in My offers</button></div>` : `<div class="mirror-acts"><button type="button" class="btn small-btn" onclick="findOffersGrab('${o.id}')">Grab this visit</button>${parked ? `<button type="button" class="btn small-btn ghost" onclick="findOffersUnlater('${o.id}')">Move back</button>` : `<button type="button" class="btn small-btn ghost" onclick="findOffersLater('${o.id}')">Save for later</button>`}<button type="button" class="btn small-btn ghost" onclick="findOffersHide('${o.id}')">Not for me</button></div>`}
   </div>`;
 }
 async function loadFindOffers() {
@@ -19975,6 +20472,28 @@ async function loadFindOffers() {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
+// Build -136 (Scopes #7/#8): Find offers wears the same shop
+// layout as Find creators — a left filter rail with labelled
+// groups and real counts on desktop; on a phone the rail is
+// the Filters sheet behind a sticky Sort + Filters bar. Every
+// group leads with its All option, and All clears the group.
+function foActiveCount() {
+  let n = 0;
+  if ((state.foKind || "all") !== "all") n++;
+  if (state.foCategory) n++;
+  if (state.foDistance) n++;
+  if (state.foFit) n++;
+  if (state.foSpots) n++;
+  return n;
+}
+function foClearAll() {
+  state.foKind = "all"; state.foCategory = ""; state.foDistance = ""; state.foFit = false; state.foSpots = false;
+  renderFindOffers();
+  return false;
+}
+function foKnowAll() { state.foFit = false; state.foSpots = false; renderFindOffers(); return false; }
+function foCatSet(btn) { state.foCategory = btn.getAttribute("data-cat") || ""; renderFindOffers(); return false; }
+function foDistSet(btn) { state.foDistance = btn.getAttribute("data-dist") || ""; renderFindOffers(); return false; }
 function renderFindOffers() {
   const el = document.getElementById("cr-findoffers");
   if (!el) return;
@@ -19986,26 +20505,57 @@ function renderFindOffers() {
   const sort = state.foSort || "new";
   const cats = [...new Set(all.map((o) => o.category).filter(Boolean))].sort();
   const hasDistance = all.some((o) => o.distanceBand);
-  let list = q.visible.filter((o) => !o.myApplication);
+  const base = q.visible.filter((o) => !o.myApplication);
+  const kindCount = (k) => (k === "all" ? base.length : base.filter((o) => o.kind === k).length);
+  const catCount = (x) => base.filter((o) => o.category === x).length;
+  const distCount = (x) => base.filter((o) => o.distanceBand === x).length;
+  let list = base;
   if (kind !== "all") list = list.filter((o) => o.kind === kind);
   if (cat) list = list.filter((o) => o.category === cat);
   if (dist) list = list.filter((o) => o.distanceBand === dist);
+  if (state.foFit) list = list.filter((o) => o.fitNote);
+  if (state.foSpots) list = list.filter((o) => (Number(o.spots) || 0) - (Number(o.filledCount) || 0) > 0);
   if (sort === "value") list = [...list].sort((a, b) => mirrorOfferValue(b) - mirrorOfferValue(a));
   if (sort === "close") { const rank = { "Same neighborhood": 0, "Under 2 miles": 1, "Under 5 miles": 2 }; list = [...list].sort((a, b) => (rank[a.distanceBand] === undefined ? 3 : rank[a.distanceBand]) - (rank[b.distanceBand] === undefined ? 3 : rank[b.distanceBand])); }
   const applied = q.visible.filter((o) => o.myApplication);
   const ea = state.findOffersEarly;
+  const sortSel = (cls) => `<label class="fo-selfilter">Sort <select onchange="state.foSort=this.value; renderFindOffers()"><option value="new"${sort === "new" ? " selected" : ""}>Newest first</option>${hasDistance ? `<option value="close"${sort === "close" ? " selected" : ""}>Closest first</option>` : ""}<option value="value"${sort === "value" ? " selected" : ""}>Highest value</option></select></label>`;
   el.innerHTML = `
+  <div class="shop-layout">
+    <aside class="shop-rail${state.foRailOpen ? " open" : ""}" id="fo-rail">
+      <div class="rail-head"><strong>Filters</strong><span><button type="button" class="btn small-btn ghost" onclick="return foClearAll()">Clear all</button> <button type="button" class="rail-x" aria-label="Close filters" onclick="state.foRailOpen=false; renderFindOffers()">×</button></span></div>
+      <div class="df-group">
+        <div class="df-label">The offer</div>
+        <div class="bookseg" role="group" aria-label="The offer">${[["all", "All offers"], ["comp", "Comped visit"], ["paid", "Paid post"], ["coupon", "Coupon"]].map(([v, l]) => `<button type="button" class="bookseg-btn${kind === v ? " on" : ""}" data-fokind="${v}" onclick="state.foKind='${v}'; renderFindOffers()">${l} (${kindCount(v)})</button>`).join("")}</div>
+      </div>
+      ${cats.length ? `<div class="df-group">
+        <div class="df-label">Category</div>
+        <div class="dcat-row rail-chips"><button type="button" class="dcat-chip${!cat ? " on" : ""}" data-cat="" onclick="return foCatSet(this)">All categories</button>${cats.map((x) => `<button type="button" class="dcat-chip${cat === x ? " on" : ""}" data-cat="${esc(x)}" onclick="return foCatSet(this)">${esc(x)} (${catCount(x)})</button>`).join("")}</div>
+      </div>` : ""}
+      ${hasDistance ? `<div class="df-group">
+        <div class="df-label">Distance from you</div>
+        <div class="dcat-row rail-chips"><button type="button" class="dcat-chip${!dist ? " on" : ""}" data-dist="" onclick="return foDistSet(this)">Any distance</button>${["Same neighborhood", "Under 2 miles", "Under 5 miles"].map((x) => `<button type="button" class="dcat-chip${dist === x ? " on" : ""}" data-dist="${esc(x)}" onclick="return foDistSet(this)">${esc(x)} (${distCount(x)})</button>`).join("")}</div>
+      </div>` : ""}
+      <div class="df-group">
+        <div class="df-label">Good to know</div>
+        <div class="dcat-row" style="margin-bottom:8px"><button type="button" class="dcat-chip${!state.foFit && !state.foSpots ? " on" : ""}" onclick="return foKnowAll()">All offers</button></div>
+        <div class="musthave-row">
+          <label class="musthave"><span class="mh-tx"><strong>Good fit for me</strong><small>Marked a strong match for you</small></span><input type="checkbox" class="sw" ${state.foFit ? "checked" : ""} onchange="state.foFit=this.checked; renderFindOffers()"></label>
+          <label class="musthave"><span class="mh-tx"><strong>Spots still open</strong><small>Room left to apply</small></span><input type="checkbox" class="sw" ${state.foSpots ? "checked" : ""} onchange="state.foSpots=this.checked; renderFindOffers()"></label>
+        </div>
+      </div>
+      <div class="rail-foot"><button type="button" class="btn" onclick="state.foRailOpen=false; renderFindOffers()">Show ${list.length} result${list.length === 1 ? "" : "s"}</button></div>
+    </aside>
+    <div class="shop-main">
+    <div class="shop-mbar"><button type="button" class="btn small-btn" id="fo-rail-btn" onclick="state.foRailOpen=!state.foRailOpen; renderFindOffers()">Filters${foActiveCount() ? ` (${foActiveCount()})` : ""}</button>${sortSel()}</div>
     <p class="fo-count"><strong>${list.length}</strong> open visit${list.length === 1 ? "" : "s"} near you</p>
-    <div class="fo-filters">
-      <div class="chip-row">${[["all", "All offers"], ["comp", "Comped"], ["paid", "Paid"], ["coupon", "Coupon"]].map(([v, l]) => `<button type="button" class="chip${kind === v ? " on" : ""}" onclick="state.foKind='${v}'; renderFindOffers()">${l}</button>`).join("")}</div>
-      ${cats.length > 1 ? `<label class="fo-selfilter">Category <select onchange="state.foCategory=this.value; renderFindOffers()"><option value="">All categories</option>${cats.map((x) => `<option value="${esc(x)}"${cat === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></label>` : ""}
-      ${hasDistance ? `<label class="fo-selfilter">Distance <select onchange="state.foDistance=this.value; renderFindOffers()"><option value="">Any distance</option>${["Same neighborhood", "Under 2 miles", "Under 5 miles"].map((x) => `<option value="${esc(x)}"${dist === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></label>` : ""}
-      <label class="fo-selfilter">Sort <select onchange="state.foSort=this.value; renderFindOffers()"><option value="new"${sort === "new" ? " selected" : ""}>Newest first</option>${hasDistance ? `<option value="close"${sort === "close" ? " selected" : ""}>Closest first</option>` : ""}<option value="value"${sort === "value" ? " selected" : ""}>Highest value</option></select></label>
-    </div>
+    <div class="fo-filters fo-sortrow">${sortSel()}</div>
     ${ea && ea.opensAt ? `<p class="small" style="margin:0 0 10px">A new offer just posted in your market. Charter creators, the founding class (creators approved before their market launched), see new offers first; this one opens to everyone ${esc(fmtDay(ea.opensAt))}.</p>` : ""}
     ${list.length ? `<div class="mirror-grid">${list.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : `<div class="empty-state"><h3>No open visits match</h3><p>Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets.</p></div>`}
     ${applied.length ? `<h3 style="margin:22px 0 10px">You applied</h3><div class="mirror-grid">${applied.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : ""}
-    ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3><div class="mirror-grid">${q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })).join("")}</div>` : ""}`;
+    ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3><div class="mirror-grid">${q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })).join("")}</div>` : ""}
+    </div>
+  </div>`;
 }
 async function findOffersGrab(id) { await applyToOffer(id); loadFindOffers(); }
 function findOffersLater(id) { pileLater("offers", id); renderFindOffers(); return false; }
@@ -20049,6 +20599,7 @@ function creatorPreviewCard() {
     neighborhood: val("p-neighborhood") !== undefined ? val("p-neighborhood") : (c0.neighborhood || ""),
     photoUrl: u.photoUrl || null,
     photos: [],
+    bestWork: (() => { const typed = [0, 1, 2].map((i) => (val("p-work-" + i) || "").trim()).filter(Boolean); return typed.length ? typed : (c0.bestWork || []); })(),
     profile: {
       handle: (val("p-handle") || c0.handle || "").replace(/^@/, ""),
       categories: cats.length ? cats : (c0.categories || []),
@@ -20057,6 +20608,7 @@ function creatorPreviewCard() {
       localAudienceSource: c0.localAudienceSource || "Self-reported",
       paidRate: rate,
       compOpen: compEl ? !!compEl.checked : c0.compOpen !== false,
+      couponOpen: (() => { const ce = document.getElementById("lane-coupon"); return ce ? !!ce.checked : c0.couponOpen !== false; })(),
       tierBand: previewTierFor(total) || c0.tierBand || "",
       avgViews: num("p-avgviews", c0.avgViews || 0) || null,
       audienceStack: stack,
@@ -20070,17 +20622,34 @@ function creatorPreviewCard() {
     badges: [],
   };
 }
-function creatorPreviewRefresh() {
-  const host = document.getElementById("profile-preview-host");
-  if (!host) return;
-  const view = state.creatorPreviewView || "business";
-  document.querySelectorAll(".pv-chip").forEach((b) => b.classList.toggle("on", b.getAttribute("data-pv") === view));
+// Build -136: the one preview switch (Jeff: the embedded
+// Live preview box with its card / page-top sub-toggles
+// sub-toggles was confusing). ON swaps the editing form for
+// the business-eye view — the real Shelf tile and the real
+// creator page component, built from the form's current
+// values by creatorPreviewCard(). The page renders inside an
+// inert wrapper: byte-identical to what a business sees,
+// with its buttons visible but not live. OFF returns to the
+// form untouched — nothing re-renders, so unsaved edits stay.
+function profilePeekRender() {
+  const peek = document.getElementById("profile-peek");
+  if (!peek) return;
   const card = creatorPreviewCard();
-  host.innerHTML = view === "public"
-    ? `<div class="prev-public">${pdpLocalHeroHtml(card)}<p class="small" style="margin:8px 0 0"><strong>${esc(card.name)}</strong>${card.profile.handle ? ` · @${esc(card.profile.handle)}` : ""} · ${esc(shelfPriceLine(card).main)}</p></div>`
-    : `<div class="prev-shelf">${shelfTileHtml(card, { preview: true })}</div>${pdpLocalHeroHtml(card)}`;
+  peek.innerHTML = `<div class="peek-block"><p class="ui-kicker">Your card in Find creators</p><div class="shelf-grid peek-shelf">${shelfTileHtml(card, { preview: true })}</div></div><div class="peek-block" style="margin-top:22px"><p class="ui-kicker">Your page, as a business sees it</p><div inert>${creatorProfileDetailHtml(card, false)}</div></div>`;
 }
-function creatorPreviewSetView(v) { state.creatorPreviewView = v; creatorPreviewRefresh(); return false; }
+function profilePeekToggle(input) {
+  const on = !!(input && input.checked);
+  const wrap = document.getElementById("profile-edit-wrap");
+  const peek = document.getElementById("profile-peek");
+  if (wrap) wrap.style.display = on ? "none" : "";
+  if (peek) peek.style.display = on ? "" : "none";
+  if (on) profilePeekRender();
+  return false;
+}
+function creatorPreviewRefresh() {
+  const sw = document.getElementById("profile-peek-sw");
+  if (sw && sw.checked) profilePeekRender();
+}
 // The business preview offer is built from the composer draft
 // and rendered with the Mirror card itself.
 function offerPreviewOffer() {
@@ -20095,6 +20664,7 @@ function offerPreviewOffer() {
     whatComped: d.comped || "", dollarCap: Number(d.cap) || 0, cashRate: Number(d.rate) || 0,
     covers: Number(d.covers) || 2, spots: Number(d.spots) || 1, filledCount: 0,
     includes: d.includes || "", experience: d.experience || "",
+    businessImageUrl: biz.hasPhoto ? `/api/users/${u.id}/photo` : (biz.assetPacket && biz.assetPacket.logoUrl) || null,
     coupon: kind === "coupon" ? { type: d.ctype || "store_credit", amount: Number(d.camount) || 0, percent: Number(d.cpercent) || 0, cap: Number(d.ccap) || 0, appliesTo: d.capplies || "" } : null,
     deliverables: { posts: Number(d.dposts) || 1, story: d.dstory !== false, windowHours: 48 },
     businessAbout: biz.about || "",
@@ -20102,17 +20672,62 @@ function offerPreviewOffer() {
   if (kind === "coupon") o.couponSummary = couponSummaryClient(o.coupon, o.businessName);
   return o;
 }
-function offerPreviewRefresh() {
-  const host = document.getElementById("offer-preview-host");
-  if (!host) return;
-  const view = state.offerPreviewView || "creator";
-  document.querySelectorAll(".opv-chip").forEach((b) => b.classList.toggle("on", b.getAttribute("data-opv") === view));
-  const o = offerPreviewOffer();
-  host.innerHTML = view === "business"
-    ? `<div class="prev-biz"><div class="mirror-title">${esc(o.title)}</div><p class="small muted" style="margin:4px 0 0">${esc(mirrorPriceLine(o).main)} · ${o.spots} spot${o.spots === 1 ? "" : "s"} · this is the draft you are building; it goes out when you post it or when your market opens.</p></div>`
-    : mirrorOfferCardHtml(o, { preview: true });
+// Build -136: the same one-switch pattern as the creator
+// profile (Jeff: the Live preview box and its See-it-as chips
+// were confusing). ON swaps the composer for the creator-eye
+// view — the real Mirror card, built from the draft by
+// offerPreviewOffer(). The old "See it as a business" sub-view
+// is gone: a business's own view of its offer already lives in
+// Your campaigns. OFF returns to the form untouched.
+// Build -136 (Scope #4E): the business's offer photo — the
+// image that leads every offer on the creator side. No photo
+// and no logo = the plain-words nudge Jeff asked for; the peek
+// switch above shows the initial tile they'd otherwise show.
+function bizOfferPhotoHtml() {
+  const u = state.user || {};
+  const b = u.business || {};
+  const logo = b.assetPacket && b.assetPacket.logoUrl;
+  if (b.hasPhoto) return `<div class="notice" id="biz-photo-block" style="margin-top:14px"><strong>Your offer photo is set.</strong> It leads every offer you send. <label class="btn small-btn ghost" style="margin-left:8px">Change it<input type="file" accept="image/*" style="display:none" onchange="bizOfferPhotoUpload(this)"></label> <span id="biz-photo-note" class="saved"></span></div>`;
+  if (logo) return `<div class="notice" id="biz-photo-block" style="margin-top:14px">Your offers lead with your logo. A real photo of your place works even better. <label class="btn small-btn ghost" style="margin-left:8px">Add a photo<input type="file" accept="image/*" style="display:none" onchange="bizOfferPhotoUpload(this)"></label> <span id="biz-photo-note" class="saved"></span></div>`;
+  return `<div class="notice blue" id="biz-photo-block" style="margin-top:14px"><strong>Offers with a photo get picked first — add one.</strong> Without one, creators see a plain tile with your initial. <label class="btn small-btn" style="margin-left:8px">Add your photo<input type="file" accept="image/*" style="display:none" onchange="bizOfferPhotoUpload(this)"></label> <span id="biz-photo-note" class="saved"></span></div>`;
 }
-function offerPreviewSetView(v) { state.offerPreviewView = v; offerPreviewRefresh(); return false; }
+function bizOfferPhotoUpload(input) {
+  const f = input && input.files && input.files[0];
+  if (!f) return false;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      await api("POST", "/me/photo", { dataUrl: reader.result });
+      if (state.user && state.user.business) { state.user.business.hasPhoto = true; state.user.business.photoCount = 1; }
+      const blk = document.getElementById("biz-photo-block");
+      if (blk) blk.outerHTML = bizOfferPhotoHtml();
+      offerPreviewRefresh();
+    } catch (e) {
+      const note = document.getElementById("biz-photo-note");
+      if (note) note.textContent = e.message;
+    }
+  };
+  reader.readAsDataURL(f);
+  return false;
+}
+function offerPeekRender() {
+  const peek = document.getElementById("offer-peek");
+  if (!peek) return;
+  peek.innerHTML = `<div class="panel" style="margin-top:18px"><p class="ui-kicker">Your offer in Find offers</p>${mirrorOfferCardHtml(offerPreviewOffer(), { preview: true })}</div>`;
+}
+function offerPeekToggle(input) {
+  const on = !!(input && input.checked);
+  const panel = document.getElementById("offer-composer");
+  const peek = document.getElementById("offer-peek");
+  if (panel) panel.style.display = on ? "none" : "";
+  if (peek) peek.style.display = on ? "" : "none";
+  if (on) offerPeekRender();
+  return false;
+}
+function offerPreviewRefresh() {
+  const sw = document.getElementById("offer-peek-sw");
+  if (sw && sw.checked) offerPeekRender();
+}
 
 async function loadDiscover() {
   const el = document.getElementById("tab-body");
@@ -20132,23 +20747,37 @@ async function loadDiscover() {
     ])}
     <p class="small" style="margin:10px 0 0"><strong>Ranked by how local their audience is, not by follower count.</strong></p>
     ${foundingDisc ? `<p class="small muted" style="margin:4px 0 0">${esc(foundingBizPlace(u))}'s founding roster is still joining. New creators show up here as they finish their pages.</p>` : ""}
-    <div class="filters disc-top">
-      <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
-    </div>
-    <div class="dspan-row"><button type="button" id="dchip-spanish" class="dspan-toggle${state.discoverSpanish ? " on" : ""}" aria-pressed="${state.discoverSpanish ? "true" : "false"}" onclick="return discoverSpanishChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Spanish-speaking creators only</span><span class="dspan-sub">Makes content in Spanish</span></button><button type="button" id="dchip-musician" class="dspan-toggle${state.discoverMusician ? " on" : ""}" style="margin-left:8px" aria-pressed="${state.discoverMusician ? "true" : "false"}" onclick="return discoverMusicianChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Musicians only</span><span class="dspan-sub">Creators who make music</span></button></div>
-    <div class="dcat-row"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
-    <div class="bookmode-row" role="group" aria-label="How you want to book">
-      <button type="button" class="rchip${(state.discoverBookMode || "any") === "any" ? " on" : ""}" data-bookmode="any" onclick="return discoverBookModeSet('any')">Any booking</button>
-      <button type="button" class="rchip${state.discoverBookMode === "comp" ? " on" : ""}" data-bookmode="comp" onclick="return discoverBookModeSet('comp')">Comped visits</button>
-      <button type="button" class="rchip${state.discoverBookMode === "paid" ? " on" : ""}" data-bookmode="paid" onclick="return discoverBookModeSet('paid')">Paid bookings</button>
-      <span class="bookmode-rate"><label for="f-rate">Their rate</label><select id="f-rate" onchange="discoverRateSet(this.value)"><option value="any"${(state.discoverRate || "any") === "any" ? " selected" : ""}>Any rate</option><option value="u100"${state.discoverRate === "u100" ? " selected" : ""}>Under ${esc(ownCurrencySymbol())}100</option><option value="m100"${state.discoverRate === "m100" ? " selected" : ""}>${esc(ownCurrencySymbol())}100 to ${esc(ownCurrencySymbol())}200</option><option value="o200"${state.discoverRate === "o200" ? " selected" : ""}>Over ${esc(ownCurrencySymbol())}200</option></select></span>
-    </div>
-    <div class="filters">
-      <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
-      <div><label>Tier (their audience size)</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
-      <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="f-sort"><option value="local" selected>Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></div>
-      <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
+    <div class="shop-layout">
+    <aside class="shop-rail" id="disc-rail">
+      <div class="rail-head"><strong>Filters</strong><span><button type="button" class="btn small-btn ghost" onclick="return discClearAll()">Clear all</button> <button type="button" class="rail-x" aria-label="Close filters" onclick="return shopRailToggle('disc-rail')">×</button></span></div>
+    <div class="disc-filters">
+      <div class="df-group">
+        <div class="df-label">Where</div>
+        <div class="filters disc-top">
+          <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
+        </div>
+      </div>
+      <div class="df-group">
+        <div class="df-label">What kind of creator</div>
+        <div class="dcat-row"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All categories</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
+      </div>
+      <div class="df-group">
+        <div class="df-label">Must-haves</div>
+        <div class="dcat-row" style="margin-bottom:8px"><button type="button" class="dcat-chip${!state.discoverSpanish && !state.discoverMusician ? " on" : ""}" onclick="return discMustAll()">All creators</button></div>
+        <div class="musthave-row">
+          <label class="musthave"><span class="mh-tx"><strong>Spanish-speaking creators</strong><small>Makes content in Spanish</small></span><input type="checkbox" class="sw" id="dchip-spanish" ${state.discoverSpanish ? "checked" : ""} onchange="return discoverSpanishSet(this)"></label>
+          <label class="musthave"><span class="mh-tx"><strong>Musicians</strong><small>Creators who make music</small></span><input type="checkbox" class="sw" id="dchip-musician" ${state.discoverMusician ? "checked" : ""} onchange="return discoverMusicianSet(this)"></label>
+        </div>
+      </div>
+      <div class="df-group">
+        <div class="df-label">How you want to book</div>
+        <div class="bookseg" role="group" aria-label="How you want to book">
+          <button type="button" class="bookseg-btn${(state.discoverBookMode || "any") === "any" ? " on" : ""}" data-bookmode="any" onclick="return discoverBookModeSet('any')">Either</button>
+          <button type="button" class="bookseg-btn${state.discoverBookMode === "comp" ? " on" : ""}" data-bookmode="comp" onclick="return discoverBookModeSet('comp')">Comped visit</button>
+          <button type="button" class="bookseg-btn${state.discoverBookMode === "paid" ? " on" : ""}" data-bookmode="paid" onclick="return discoverBookModeSet('paid')">Paid booking</button>
+        </div>
+        <span class="bookmode-rate"><label for="f-rate">Their rate</label><select id="f-rate" onchange="discoverRateSet(this.value)"><option value="any"${(state.discoverRate || "any") === "any" ? " selected" : ""}>Any rate</option><option value="u100"${state.discoverRate === "u100" ? " selected" : ""}>Under ${esc(ownCurrencySymbol())}100</option><option value="m100"${state.discoverRate === "m100" ? " selected" : ""}>${esc(ownCurrencySymbol())}100 to ${esc(ownCurrencySymbol())}200</option><option value="o200"${state.discoverRate === "o200" ? " selected" : ""}>Over ${esc(ownCurrencySymbol())}200</option></select></span>
+      </div>
     </div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
@@ -20160,10 +20789,23 @@ async function loadDiscover() {
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
     </div>
     </details>
+      <div class="rail-foot"><button type="button" class="btn" onclick="return shopRailToggle('disc-rail')">Show results</button></div>
+    </aside>
+    <div class="shop-main">
+    <div class="shop-mbar"><button type="button" class="btn small-btn" id="disc-rail-btn" onclick="return shopRailToggle('disc-rail')">Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}</button><label class="mbar-sort">Sort <select id="f-sort-m" onchange="var s=document.getElementById('f-sort'); if(s){s.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></label></div>
+    <div class="filters">
+      <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
+      <div><label>Tier (their audience size)</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
+      <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
+      <div><label>Sort by</label><select id="f-sort"><option value="local" selected>Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></div>
+      <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
+    </div>
     <p id="discover-count" class="disc-count" aria-live="polite"></p>
     <div id="discover-toggle"></div>
     <div id="biz-wishlist"></div>
-    <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>`;
+    <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>
+    </div>
+    </div>`;
   runDiscover();
   loadWishlistSection();
 }
@@ -20476,7 +21118,7 @@ function offersSetSeg(seg) {
   return false;
 }
 function offersNew() {
-  // Build -97: the composer lives in Set up a campaign.
+  // Build -97: the composer lives in Start a campaign.
   if (state.tab === "Campaign Setup") {
     const c = document.getElementById("offer-composer");
     if (c) c.scrollIntoView({ behavior: "smooth" });
@@ -20560,12 +21202,74 @@ function prefillDirectDraft(creator) {
   return true;
 }
 
+// Build -136 (Scope #4D): booking ONE creator is its own short
+// flow — it never lands the business in the middle of the
+// campaign form again. startOffer keeps its name (every Book
+// button, Sig action and wishlist nudge calls it) but now opens
+// the dedicated booking page for that creator only.
 function startOffer(creatorId) {
   pileUnlater("discover", creatorId);
-  state.tab = "Campaign Setup";
-  state.offerTarget = creatorId;
-  prefillDirectDraft((state.discover || []).find((x) => x.userId === creatorId));
-  render();
+  return openBookingFlow(creatorId);
+}
+function bkPickDay(btn) {
+  document.querySelectorAll(".bk-day").forEach((b) => b.classList.toggle("on", b === btn));
+  return false;
+}
+function bookingContinue() {
+  const lane = (document.querySelector("input[name='bk-lane']:checked") || {}).value || "comp";
+  // Build -137: the timing window (and any proposed terms
+  // from the buy box) carry into the deal sheet.
+  const t = timingRead137("bk");
+  const terms137 = state.bookingTerms137 || null;
+  openDealSheet(state.bookingCreatorId);
+  const kindSel = document.getElementById("ds-kind");
+  if (kindSel) { kindSel.value = lane === "paid" ? "paid" : "comp"; dealSheetKind(); }
+  timingSet137("ds", t.timingWindow, t.visitDate || "");
+  if (terms137) {
+    if (terms137.amount != null && lane === "paid") { const r = document.getElementById("ds-rate"); if (r) r.value = terms137.amount; }
+    if (terms137.note) { const n = document.getElementById("ds-notefield"); if (n) n.value = terms137.note; }
+  }
+  return false;
+}
+function openBookingFlow(creatorId) {
+  const el = document.getElementById("tab-body");
+  if (!el) return false;
+  const c = (state.discover || []).find((x) => x.userId === creatorId);
+  if (!c) return go("dashboard", "Discover");
+  state.bookingCreatorId = creatorId;
+  const preset = state.bookingPreset || null;
+  state.bookingPreset = null;
+  // Build -137: proposed terms from the buy box ride here so
+  // Continue can prefill the deal sheet's amount + note.
+  state.bookingTerms137 = preset ? { amount: preset.amount != null ? preset.amount : null, note: preset.note || null } : null;
+  const p = c.profile || {};
+  const sym = currencySymbolForMarket(c.market);
+  const first = (c.name || "this creator").trim().split(" ")[0] || "this creator";
+  const lane0 = preset && preset.lane ? preset.lane : (p.paidRate ? "paid" : "comp");
+  const pct = cardLocalPct(c);
+  const count = cardLocalCount(c);
+  el.innerHTML = `
+    <button type="button" class="btn ghost small-btn" onclick="return backToDiscover()">← Back to Find creators</button>
+    ${wsHead(`Book ${esc(first)}`, { sub: "Just this creator — not a campaign. Three short steps and the offer is on its way." })}
+    ${sigChatBoxHtml("book")}
+    <div class="panel" style="margin-top:14px">
+      <div class="shelf-tray-name" style="font-size:1.05rem">${esc(c.name || "")}${p.handle ? ` <span class="muted">@${esc(p.handle)}</span>` : ""}</div>
+      ${pct !== null ? `<div class="small" style="margin-top:2px"><strong>${pct}% local</strong>${count !== null ? ` · about ${fmtFull(count)} local followers` : ""}</div>` : ""}
+      <div style="margin-top:8px">${acceptanceHtml(c)}</div>
+      <div class="shelf-price" style="margin-top:6px">${esc(shelfPriceLine(c).main)}</div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h3 style="margin-top:0">Step 1 — comped or paid?</h3>
+      ${p.paidRate ? `<label class="pdp-lane"><input type="radio" name="bk-lane" value="paid"${lane0 === "paid" ? " checked" : ""}><span><strong>Paid booking — ${sym}${fmtPrice(p.paidRate)}</strong><small>You pay the rate + 3% (card and transfer fees). They keep 97%. SIGNL holds the money until the post is live.</small></span></label>` : ""}
+      ${p.compOpen !== false ? `<label class="pdp-lane"><input type="radio" name="bk-lane" value="comp"${lane0 === "comp" ? " checked" : ""}><span><strong>Comped visit — ${sym}0</strong><small>The experience is the payment: 1 post + 1 story on their own page only.</small></span></label>` : ""}
+      <div class="pdp-days"><span class="pdp-days-l">When should the visit happen?</span>${timingPickerHtml("bk", preset && preset.timingWindow ? preset.timingWindow : "week", preset && preset.visitDate ? preset.visitDate : "")}</div>
+      <p style="margin:12px 0 0"><button type="button" class="btn" onclick="return bookingContinue()">Continue</button></p>
+    </div>
+    <h3 style="margin:20px 0 0">Step 2 — the details</h3>
+    <p class="small muted" style="margin:4px 0 0">Tap Continue and the deal for ${esc(first)} opens here: what they post, the terms, and what's included. Step 3 is its Send button — review, then send.</p>
+    <div id="deal-sheet-host"></div>`;
+  window.scrollTo(0, 0);
+  return false;
 }
 
 // Composer suggestion chips (Jeff, 2026-10-19): the Standard Visit
@@ -21105,7 +21809,7 @@ function offerCoachUpdate() {
 }
 
 // ---------- Build -97: Sig-guided campaign setup ----------
-// The guided entry at the top of Set up a campaign. This is
+// The guided entry at the top of Start a campaign. This is
 // the Sig campaign-draft machinery (the B1 flow's shape:
 // ask one thing at a time, confirm on a plain-words summary,
 // commit through POST /offers) brought into the setup view.
@@ -21132,7 +21836,7 @@ function campaignGuideParse(text) {
   const raw = String(text || "").trim();
   const t = " " + raw.toLowerCase() + " ";
   const out = {};
-  if (/\b(paid|cash)\b/.test(t)) out.kind = "paid";
+  if (/\b(paid|cash|pay|paying)\b/.test(t)) out.kind = "paid";
   else if (/\bcoupon\b/.test(t)) out.kind = "coupon";
   else if (/\b(comp|comped|on us|on the house|free meal)\b/.test(t)) out.kind = "comp";
   const spots = /(\d+)\s*(creators|spots|visits|people)/.exec(t);
@@ -21148,7 +21852,28 @@ function campaignGuideParse(text) {
   if (/\blocals?\b/.test(t)) tiers.push("Locals");
   if (/neighbou?r/.test(t)) tiers.push("Neighbors");
   if (tiers.length) out.tiers = tiers;
+  // Build -136: categories, Spanish and musicians ride the same
+  // sentence. Spanish has a real offer field (requiresSpanish);
+  // categories and musicians have none, so they bite at the
+  // matched-creators step (Discover reads the same state) and
+  // the summary says exactly that. Gender words are spotted
+  // ONLY so Sig can say plainly that creators do not list that
+  // — they never become a filter or a count.
+  const catNames = (state.boot && state.boot.creatorCategories) || [];
+  const catsHit = catNames.filter((cn) => {
+    const base = String(cn || "").toLowerCase().trim();
+    if (!base) return false;
+    const variants = [base, base.replace(/s$/, ""), ...base.split(/[^a-z]+/).filter((w) => w.length > 3)];
+    return variants.some((v) => v && t.includes(" " + v));
+  });
+  if (catsHit.length) out.cats = catsHit;
+  if (/\bspanish\b/.test(t)) out.spanish = true;
+  if (/\b(musicians?|music|live music)\b/.test(t)) out.musician = true;
+  if (/\b(women|woman|female|females|men|male|males|girls?|guys|ladies|gentlemen|moms?|dads?)\b/.test(t)) out.trait = true;
+  const pctOff = /(\d+)\s*(?:%|percent)\s*off/.exec(t);
+  if (pctOff) { out.cpercent = parseInt(pctOff[1], 10); out.ctype = "percent_off"; if (!out.kind) out.kind = "coupon"; }
   let s = raw.replace(/\s+/g, " ")
+    .replace(/^i will pay [^,]*,\s*/i, "")
     .replace(/^(please\s+)?(i want|i need|we want|we need|let's|lets)\s+/i, "")
     .replace(/^(local\s+)?creators\s+(for|to)\s+/i, "")
     .replace(/^for\s+/i, "").replace(/^an?\s+/i, "")
@@ -21165,7 +21890,8 @@ function campaignGuideHtml() {
   const cg = state.campaignGuide;
   return `<section class="wcard" id="campaign-guide" style="border:2px solid #006AFC">
     <div style="display:flex;gap:12px;align-items:center">${sigAvatarHtml("greet")}<div><p class="ui-kicker" style="margin:0">Start with Sig</p><h3 style="margin:2px 0 0">Tell Sig what you want</h3></div></div>
-    <p class="small muted" style="margin:10px 0 0">Type it in your own words. Sig fills in what it already knows about your business, asks only for what is missing, one question at a time, and shows you the full draft before anything is saved.</p>
+    <p class="small muted" style="margin:10px 0 0">Say it in one sentence and Sig builds the whole campaign: she fills in what she already knows about your business, asks only for what is missing, one question at a time, shows you the full draft, and saves it when you say yes. Then she walks you to the creators who match.</p>
+    <div class="cg-starters"><span class="small muted">Tap one to start:</span> <button type="button" class="chip" onclick="return campaignGuideStart('Find me 15 creators who would take a comped meal')">Find me 15 creators who would take a comped meal</button> <button type="button" class="chip" onclick="return campaignGuideStart('I will pay 3 creators $100 each, I want fashion lovers')">I will pay 3 creators $100 each, I want fashion lovers</button></div>
     <p class="small" style="margin:8px 0 0"><strong>Already on file for you:</strong> ${esc(known.businessName || "Your business")}${known.market ? ` in ${esc(known.market)}` : ""}${known.category ? ` · ${esc(known.category)}` : ""}${known.visits ? ` · your plan includes ${known.visits} visits a month` : ""}${known.availability ? ` · your usual hours: ${esc(known.availability)}` : ""}. Sig will not ask you for any of that again.</p>
     <div id="cg-thread" class="sig-thread" style="margin-top:12px">${cg ? "" : `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Tell me the campaign in one line. For example: I want creators for a weekend brunch push. I will build the draft from there.</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return campaignGuideSubmit(event)">
@@ -21184,7 +21910,7 @@ function campaignGuideRender() {
     ? `<div class="sig-turn user"><div class="sig-bub">${esc(t.text)}</div></div>`
     : `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(t.text)}</div></div>`).join("")
     + (cg.chips && cg.chips.length ? `<div class="sig-turn sig"><div class="sig-bub">${cg.chips.map((c) => `<button type="button" class="btn small-btn sig-turn-act${c.primary ? "" : " ghost"}" onclick="return campaignGuidePick('${c.field}','${c.value}')">${esc(c.label)}</button>`).join("")}</div></div>` : "")
-    + (cg.step === "done" ? `<div class="sig-turn sig"><div class="sig-bub"><button type="button" class="btn small-btn sig-turn-act" onclick="return campaignGuideGoCampaigns()">See it in Your campaigns</button> <button type="button" class="btn small-btn sig-turn-act ghost" onclick="return campaignGuideRestart()">Start another</button></div></div>` : "");
+    + (cg.step === "done" ? `<div class="sig-turn sig"><div class="sig-bub"><button type="button" class="btn small-btn sig-turn-act" onclick="return campaignGuideGoMatches()">See the creators who match</button> <button type="button" class="btn small-btn sig-turn-act ghost" onclick="return campaignGuideGoCampaigns()">See it in Your campaigns</button> <button type="button" class="btn small-btn sig-turn-act ghost" onclick="return campaignGuideRestart()">Start another</button></div></div>` : "");
   host.scrollTop = host.scrollHeight;
 }
 function campaignGuideSay(text, chips) {
@@ -21198,14 +21924,16 @@ function campaignGuideStart(requestText) {
   const parsed = campaignGuideParse(requestText);
   const d = {
     request: requestText, lane: "open", title: parsed.title || "", kind: parsed.kind || "",
-    comped: "", cap: null, rate: null, ctype: parsed.ctype || "amount_off", camount: null, cpercent: null, capplies: "",
+    comped: "", cap: null, rate: null, ctype: parsed.ctype || "amount_off", camount: null, cpercent: parsed.cpercent || null, capplies: "", ccap: null,
     spots: parsed.spots || null, windowNote: parsed.whenText || known.availability || "",
     tiers: parsed.tiers || [], briefGoal: /weekend/.test(" " + requestText.toLowerCase() + " ") ? "more_weekend_customers" : null, dposts: undefined, dstory: undefined, dwindow: undefined, deliverablesTouched: false,
     deliverablesSeen: false, fitSeen: false,
+    cats: parsed.cats || [], spanish: !!parsed.spanish, musician: !!parsed.musician, trait: !!parsed.trait,
+    includes: "", includesSeen: false,
   };
   if (parsed.amount) {
     if (d.kind === "paid") d.rate = parsed.amount;
-    else if (d.kind === "coupon") d.camount = parsed.amount;
+    else if (d.kind === "coupon" && !d.cpercent) d.camount = parsed.amount;
     else d.cap = parsed.amount;
   }
   state.campaignGuide = { step: "", data: d, turns: [{ who: "user", text: requestText }], chips: [] };
@@ -21213,10 +21941,17 @@ function campaignGuideStart(requestText) {
   if (d.title) filled.push(`the name "${d.title}"`);
   if (d.kind) filled.push(d.kind === "paid" ? "cash pay" : d.kind === "coupon" ? "a coupon as the payment" : "a comp, your product on you");
   if (d.spots) filled.push(`${d.spots} creator spot${d.spots === 1 ? "" : "s"}`);
+  if (d.cats.length) filled.push(`${d.cats.join(", ")} creators`);
+  if (d.spanish) filled.push("Spanish content");
+  if (d.musician) filled.push("musicians");
   if (d.windowNote) filled.push(`timing: ${d.windowNote}`);
   campaignGuideSay(filled.length
     ? `Got it. From your words I have ${filled.join(", ")}. I already know your market (${known.market || "your market"}), your kind of business${known.category ? ` (${known.category})` : ""}${known.visits ? `, and that your plan includes ${known.visits} visits a month` : ""}, so I will not ask about those. A few things are still missing.`
     : `Got it. I already know your market (${known.market || "your market"}), your kind of business${known.category ? ` (${known.category})` : ""}${known.visits ? `, and that your plan includes ${known.visits} visits a month` : ""}, so I will not ask about those. A few things are still missing.`);
+  // Build -136: the unlisted-trait rule. Sig says it plainly,
+  // once, and builds with everything else — she never turns a
+  // trait creators do not list into a filter or a count.
+  if (d.trait) campaignGuideSay("One thing I can't do: creators don't list their gender, so I can't filter by it and I won't guess at it. Their profiles will speak for themselves. I'll build the campaign with everything else you gave me.");
   campaignGuideNext();
   return false;
 }
@@ -21234,11 +21969,28 @@ function campaignGuideNext() {
     ]);
     return;
   }
-  if (d.kind === "comp" && !d.comped) { cg.step = "comped"; campaignGuideSay("Exactly what does the creator get? One line is enough. For example: Brunch for two, on us."); return; }
+  if (!d.comped) {
+    // Every offer carries the "what the creator gets" line —
+    // the server requires it for comp and paid alike, and the
+    // creator's card leads with it. One question for all kinds.
+    cg.step = "comped";
+    campaignGuideSay(d.kind === "comp"
+      ? "Exactly what does the creator get? One line is enough. For example: Brunch for two, on us."
+      : "What does the creator get on the visit? The meal, the class, the treatment — one line. For example: Dinner for two, on us.");
+    return;
+  }
   if (d.kind === "comp" && !d.cap) { cg.step = "value"; campaignGuideSay("What is that worth, in dollars? That number is the most it can cost you, and creators see it before they apply. For example: 100."); return; }
   if (d.kind === "paid" && !d.rate) { cg.step = "value"; campaignGuideSay(`What rate will you pay the creator? Paid bookings start at ${ownCurrencySymbol()}${ownPaidFloor()}. The creator keeps 97% of the rate.`); return; }
   if (d.kind === "coupon" && !d.camount && !d.cpercent) { cg.step = "couponamount"; campaignGuideSay("What is the coupon worth, in dollars? For example: 50 means $50 off."); return; }
   if (d.kind === "coupon" && !d.capplies) { cg.step = "couponapplies"; campaignGuideSay("What is the coupon good for? For example: Anything on the brunch menu."); return; }
+  if (d.kind === "coupon" && d.ctype === "percent_off" && !d.ccap) { cg.step = "couponcap"; campaignGuideSay("A percent-off coupon needs a cap: the most it can take off, in dollars, so its value is real money. For example: 50."); return; }
+  if (!d.includesSeen) {
+    cg.step = "includes";
+    campaignGuideSay("What's included beyond that? Spell out what's included — specific offers get grabbed first. Think of the extras: mats, towels and the smoothie after are on us. One line, or tap Skip.", [
+      { label: "Skip", field: "includes", value: "skip" },
+    ]);
+    return;
+  }
   if (!d.spots) {
     cg.step = "spots";
     campaignGuideSay("How many creators do you want for this campaign? Each one you pick uses one visit from your plan.", [1, 2, 3, 5].map((n) => ({ label: String(n), field: "spots", value: String(n), primary: n === 1 })));
@@ -21291,8 +22043,13 @@ function campaignGuideSummary() {
     "Here is your draft. Nothing is saved until you tap Save this draft:",
     `Campaign: "${d.title}"`,
     `Pay: ${payLine}`,
+    ...(d.comped && d.kind !== "comp" ? [`The visit: ${d.comped}`] : []),
     `Creators: ${d.spots} spot${d.spots === 1 ? "" : "s"}, open to creators in ${known.market || "your market"}${known.category ? ` who fit a ${known.category}` : ""}.`,
     `Who fits: ${d.tiers.length ? d.tiers.join(", ") : "any creator who fits"}.`,
+    ...(d.cats && d.cats.length ? [`Kind of creator: ${d.cats.join(", ")}. Categories are not a field on the offer itself — they line up first when you review the creators who match.`] : []),
+    ...(d.spanish ? ["Content in Spanish: yes. The offer is marked as needing Spanish content."] : []),
+    ...(d.musician ? ["Musicians: yes. Musicians line up first when you review the creators who match."] : []),
+    ...(d.includes ? [`Included: ${d.includes}`] : []),
     `When: ${d.windowNote}.`,
     `What the creator owes: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, post within ${windowPhraseClient(cur.windowHours)}${d.kind === "paid" ? ". The standard licence is included: repost and ad use for 90 days" : ""}.`,
     ...(d.kind === "paid" ? [`${postingTermsLineClient({ postingTerms: d.postingTerms || { type: "standard" } })} The creator sees these terms before accepting.`] : []),
@@ -21309,16 +22066,16 @@ async function campaignGuideConfirm() {
   const cg = state.campaignGuide;
   const d = cg.data;
   const payload = {
-    title: d.title || "", whatComped: d.comped || "", includes: "", experience: "",
+    title: d.title || "", whatComped: d.comped || "", includes: d.includes || "", experience: "",
     kind: d.kind, spots: d.spots || 1, visitWindow: d.windowNote || "", templateId: null,
-    draft: true, creatorId: null, requiresSpanish: false, play: null, brief: briefFromParts({ goal: d.briefGoal || null, hook: "", mustMention: [], doNotSay: [], timing: d.windowNote || "", callToAction: "" }),
+    draft: true, creatorId: null, requiresSpanish: d.spanish === true, play: null, brief: briefFromParts({ goal: d.briefGoal || null, hook: "", mustMention: [], doNotSay: [], timing: d.windowNote || "", callToAction: "" }),
     assetPacketAttached: d.kind === "paid",
     deliverables: draftDeliverables(d, d.kind),
     targetTiers: d.tiers || [], applyWindowDays: 3, windowDays: 7,
   };
   if (d.kind === "paid") { payload.cashRate = Number(d.rate); payload.postingTerms = d.postingTerms || { type: "standard" }; }
   else if (d.kind === "coupon") {
-    payload.coupon = { type: d.ctype || "amount_off", amount: d.camount != null ? Number(d.camount) : null, percent: d.cpercent != null ? Number(d.cpercent) : null, cap: null, appliesTo: String(d.capplies || "").trim(), expiresAt: null };
+    payload.coupon = { type: d.ctype || "amount_off", amount: d.camount != null ? Number(d.camount) : null, percent: d.cpercent != null ? Number(d.cpercent) : null, cap: d.ccap != null ? Number(d.ccap) : null, appliesTo: String(d.capplies || "").trim(), expiresAt: null };
     payload.whatComped = "";
   } else { payload.dollarCap = Number(d.cap); payload.covers = 2; }
   try {
@@ -21346,6 +22103,7 @@ function campaignGuidePick(field, value) {
   const chip = (cg.chips || []).find((c) => c.field === field && c.value === value);
   cg.turns.push({ who: "user", text: chip ? labelOf(chip) : value });
   if (field === "kind") { d.kind = value; campaignGuideNext(); }
+  else if (field === "includes") { d.includesSeen = true; campaignGuideNext(); }
   else if (field === "spots") { d.spots = parseInt(value, 10); campaignGuideNext(); }
   else if (field === "deliverables") {
     const cur = draftDeliverables(d, d.kind);
@@ -21400,6 +22158,10 @@ function campaignGuideAnswer(text) {
       if (!(num >= 1)) { campaignGuideSay("I need a dollar amount for the coupon. For example: 50."); return; }
       d.camount = Math.round(num); break;
     case "couponapplies": d.capplies = text.slice(0, 120); break;
+    case "couponcap":
+      if (!(num >= 1)) { campaignGuideSay("I need the cap in dollars. For example: 50."); return; }
+      d.ccap = Math.round(num); break;
+    case "includes": d.includes = text.slice(0, 200); d.includesSeen = true; break;
     case "dates": d.windowNote = text.slice(0, 140); break;
     case "postingbydate": case "postingfrom": case "postingto": {
       const iso = cgParseDate(text);
@@ -21433,9 +22195,15 @@ function campaignGuideSubmit(ev) {
   if (input) input.value = "";
   const cg = state.campaignGuide;
   if (!cg) { campaignGuideStart(text); return false; }
-  if (["title", "comped", "value", "couponamount", "couponapplies", "dates", "postingbydate", "postingfrom", "postingto", "postingnote"].includes(cg.step)) { campaignGuideAnswer(text); return false; }
+  if (["title", "comped", "value", "couponamount", "couponapplies", "couponcap", "includes", "dates", "postingbydate", "postingfrom", "postingto", "postingnote"].includes(cg.step)) { campaignGuideAnswer(text); return false; }
   cg.turns.push({ who: "user", text });
-  campaignGuideSay("Tap one of the choices above to answer this one. One question at a time keeps the draft right.");
+  // Build -136 (wiring fix): a typed answer at a chip step used
+  // to strand the conversation — the "tap a choice" line cleared
+  // the chips, so the choices vanished and nothing could move.
+  // Now Sig re-asks the same question with its choices intact.
+  if (cg.step === "done") { campaignGuideSay("That one is saved already. Tap See the creators who match to keep going, or Start another for a fresh draft."); return false; }
+  campaignGuideSay("One question at a time keeps the draft right — tap one of the choices for this one:");
+  campaignGuideNext();
   return false;
 }
 function campaignGuideRestart() {
@@ -21446,6 +22214,29 @@ function campaignGuideRestart() {
 function campaignGuideGoCampaigns() {
   state.offersSeg = "drafts";
   return go("dashboard", "My Offers");
+}
+// Build -136: the walk after the save — Sig hands the business
+// to Find creators with the sentence's own filters already set
+// (categories, comp acceptance, Spanish, musicians — the real
+// Discover fields, nothing invented), ranked by local fit as
+// Discover always ranks. The draft waits in Your campaigns.
+function campaignGuideGoMatches() {
+  const cg = state.campaignGuide;
+  const d = cg ? cg.data : {};
+  state.discoverCats = Array.isArray(d.cats) ? d.cats.slice() : [];
+  state.discoverSpanish = !!d.spanish;
+  state.discoverMusician = d.musician ? "1" : "";
+  state.discoverBookMode = d.kind === "paid" ? "paid" : d.kind === "comp" ? "comp" : "any";
+  return go("dashboard", "Discover");
+}
+// Build -136: a tapped starter example on the business home —
+// the sentence rides to Start a campaign and Sig starts from it.
+function bizGuideStarter(text) {
+  state.campaignGuideSeed = text;
+  return go("dashboard", "Campaign Setup");
+}
+function bizGuideStartersHtml() {
+  return `<div class="cg-starters panel" style="margin-top:12px"><span class="small muted">Sig can build the whole campaign from one sentence. Tap one to start:</span> <button type="button" class="chip" onclick="return bizGuideStarter('Find me 15 creators who would take a comped meal')">Find me 15 creators who would take a comped meal</button> <button type="button" class="chip" onclick="return bizGuideStarter('I will pay 3 creators $100 each, I want fashion lovers')">I will pay 3 creators $100 each, I want fashion lovers</button></div>`;
 }
 
 // ---------- Build -97: the manual builder, one step at a time ----------
@@ -21484,12 +22275,12 @@ function campaignPromptsHtml(offers) {
     return `<div class="wcard" id="camp-prompt" style="text-align:center"><h3 style="margin-top:0">No campaigns yet</h3><p class="small muted">Your first campaign takes about a minute to set up. Sig can build the draft with you.</p><button type="button" class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">Set up your first campaign</button></div>`;
   }
   if (drafts.length) {
-    return `<div class="notice blue" id="camp-prompt"><strong>${drafts.length} draft${drafts.length === 1 ? "" : "s"} waiting.</strong> A draft sends nothing until you publish it. Open the Drafts list below to finish one, or start a new one in Set up a campaign.</div>`;
+    return `<div class="notice blue" id="camp-prompt"><strong>${drafts.length} draft${drafts.length === 1 ? "" : "s"} waiting.</strong> A draft sends nothing until you publish it. Open the Drafts list below to finish one, or start a new one in Start a campaign.</div>`;
   }
   return "";
 }
 
-// ---------- Build -97: Set up a campaign (its own view) ----------
+// ---------- Build -97: Start a campaign (its own view) ----------
 // The builder half of the old single Campaigns view. The
 // composer below is the same composer that always lived in
 // loadMyOffers (same draft store, same POST /offers, same
@@ -21533,13 +22324,16 @@ async function loadCampaignSetup() {
     return `<label class="tier-toggle"><input type="checkbox" class="sw" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tt-body"><span class="tt-name">${esc(t)}</span><span class="tt-line">floor $${fmtPrice(gd.floor)} &middot; typ. $${fmtPrice(gd.typicalLow)}&ndash;$${fmtPrice(gd.typicalHigh)}</span></span></label>`;
   }).join("")}</div>`;
   el.innerHTML = `
-  ${wsHead("Set up a campaign", { sub: "Build a new campaign here. Checking on one you already made lives in Your campaigns.", subKey: "biz-setup" })}
+  ${wsHead("Start a campaign", { sub: "Build a new campaign here. Checking on one you already made lives in Your campaigns.", subKey: "biz-setup" })}
   ${campaignGuideHtml()}
-  <div id="aud-block"></div>
-  <div id="offers-live-only">
-  ${foundingBiz ? `<p class="small" style="margin:14px 0 0"><strong>Building ahead:</strong> build a campaign now and it saves as a draft. Drafts go out the day ${esc(foundingBizPlace(state.user))} opens. Nothing is sent to a creator before then.</p>${sigDraftCardHtml(state.user)}` : ""}
   <h3 style="margin:24px 0 0">Templates</h3>
   ${bizTemplatesHtml()}
+  <div id="offers-live-only">
+  ${foundingBiz ? `<p class="small" style="margin:14px 0 0"><strong>Building ahead:</strong> build a campaign now and it saves as a draft. Drafts go out the day ${esc(foundingBizPlace(state.user))} opens. Nothing is sent to a creator before then.</p>${sigDraftCardHtml(state.user)}` : ""}
+  <div class="field" style="margin:18px 0 0">
+    <label class="tgl-row"><input type="checkbox" class="sw" id="offer-peek-sw" onchange="return offerPeekToggle(this)"><span><strong>See how creators view you</strong> — your offer card in Find offers, exactly as creators see it, drawn from the values in this form.</span></label>
+  </div>
+  ${bizOfferPhotoHtml()}
   <div class="panel" id="offer-composer" style="margin-top:18px">
     <h3 style="margin-top:0">New campaign</h3>
     <div id="form-error"></div>
@@ -21614,7 +22408,7 @@ async function loadCampaignSetup() {
           <div class="field"><label>Coupon expires <span class="opt-tag">Optional</span></label><input type="date" id="o2-cexpires" value="${dv(dft.cexpires)}" onchange="offerDraftSync()"><p class="small muted">No date? The coupon expires 30 days after the deal is set. Accepting a coupon deal means the coupon is the payment for the post. No cash changes hands.</p></div>
         </div>
       </div>
-      <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Any two entrees, two drinks each, dessert to share" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea></div>
+      <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Mats, towels and the smoothie after are on us" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea><p class="small muted camp-help" style="margin:4px 0 0">Spell out what's included — specific offers get grabbed first. Creators see this line word for word.</p></div>
       <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
       <div class="field spanish-panel"><div class="lrow"><input type="checkbox" class="sw" id="o2-spanish" ${dft.spanish ? "checked" : ""} onchange="offerDraftSync()"><div><label for="o2-spanish"><strong>Content in Spanish</strong></label> <span class="opt-tag">Optional</span><p class="small muted" style="margin:2px 0 0">Reach Spanish-speaking customers with content made in Spanish. The offer is marked; it never blocks anyone from applying.</p></div></div></div>
       </div>
@@ -21678,16 +22472,9 @@ async function loadCampaignSetup() {
         : marketLive ? "" : `<p class="small muted">Market not open yet — offers save as drafts until it does.</p>`}
     </form>
   </div>
-  <div class="panel preview-panel" id="offer-preview-panel" style="margin-top:18px">
-    <div class="flex-between"><strong>Live preview</strong><span class="badge info">Updates as you type</span></div>
-    <p class="small muted" style="margin:6px 0 10px">Your offer card in Find offers, drawn from the form above. Change a field and this changes with it.</p>
-    <div class="chip-row" style="margin-bottom:10px">
-      <button type="button" class="chip opv-chip on" data-opv="creator" onclick="return offerPreviewSetView('creator')">See it as a creator</button>
-      <button type="button" class="chip opv-chip" data-opv="business" onclick="return offerPreviewSetView('business')">See it as a business</button>
-    </div>
-    <div id="offer-preview-host"></div>
+  <div id="offer-peek" style="display:none"></div>
   </div>
-  </div>
+  <div id="aud-block"></div>
   <div class="wcard" style="margin-top:18px"><h3 style="margin-top:0">Already made one?</h3><p class="small muted" style="margin:0">Current and past campaigns, who applied, and what they did live in Your campaigns.</p><p style="margin:10px 0 0"><button type="button" class="btn ghost" onclick="return go('dashboard','My Offers')">Open Your campaigns</button></p></div>
   <div id="offer-info-pop" class="sheet-overlay" style="display:none" onclick="if(event.target===this) closeOfferInfo()">
     <div class="sheet">
@@ -21699,6 +22486,13 @@ async function loadCampaignSetup() {
   offerCoachUpdate();
   campaignStepsInit();
   loadAudienceBlock();
+  // Build -136: a starter sentence tapped on Home starts the
+  // guide the moment this view lands.
+  if (state.campaignGuideSeed) {
+    const seed = state.campaignGuideSeed;
+    state.campaignGuideSeed = null;
+    campaignGuideStart(seed);
+  }
 }
 
 // ---------- Build -97: Your campaigns (its own view) ----------
@@ -21727,7 +22521,7 @@ async function loadMyOffers() {
     renderRequestsTab(true);
     return;
   }
-  el.innerHTML = `${wsHead("Your campaigns", { sub: "Current and past campaigns, who applied, and what they did.", subKey: "biz-campaigns", action: `<button type="button" class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">+ Set up a campaign</button>` })}<div id="offers-segs"></div><div id="camp-prompts"></div><div id="offer-list">${skelHtml("Loading your campaigns...", 2)}</div>`;
+  el.innerHTML = `${wsHead("Your campaigns", { sub: "Current and past campaigns, who applied, and what they did.", subKey: "biz-campaigns", action: `<button type="button" class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">+ Start a campaign</button>` })}<div id="offers-segs"></div><div id="camp-prompts"></div><div id="offer-list">${skelHtml("Loading your campaigns...", 2)}</div>`;
   renderOffersSegTabs();
   try {
     const data = await api("GET", "/offers");
@@ -21770,7 +22564,7 @@ function renderOfferList() {
   let rows, title, emptyT, emptyS;
   if (seg === "drafts") {
     rows = all.filter((o) => o.status === "draft");
-    title = "Drafts"; emptyT = "No drafts saved yet"; emptyS = isFoundingBusiness(state.user) ? "Build a campaign in Set up a campaign and it saves here, ready for opening day." : "A campaign you save instead of sending waits here.";
+    title = "Drafts"; emptyT = "No drafts saved yet"; emptyS = isFoundingBusiness(state.user) ? "Build a campaign in Start a campaign and it saves here, ready for opening day." : "A campaign you save instead of sending waits here.";
   } else if (seg === "past") {
     rows = all.filter(offerIsArchived);
     title = "Done"; emptyT = "Nothing finished yet"; emptyS = "Campaigns you close, or that run their course, collect here.";
@@ -21942,7 +22736,7 @@ async function createOfferV2(e, draft) {
     // where the business sees the draft wearing its opening-day
     // label, with the honesty line said out loud. Build -97:
     // every save lands in Your campaigns, the tracking view;
-    // the builder stays in Set up a campaign.
+    // the builder stays in Start a campaign.
     if (isFoundingBusiness(state.user)) {
       state.offersSeg = "drafts";
       toast("Saved for opening day. Nothing is sent to creators until your market opens.");
@@ -23226,9 +24020,62 @@ async function adminMsgSendReply(e) {
 
 // ---------- admin ----------
 
+// Build -137: the Admin Home — Sig hero (her attention
+// brief from the same three payloads the Sig tab reads),
+// Quick highlights (the review queue, signed-up creators,
+// total followers, claims today), Next steps, stop. The
+// Preview-as tabs ride along: they are working controls,
+// and Home is where Jeff lands.
+async function loadAdminHome137() {
+  const el = document.getElementById("admin-home137");
+  if (!el) return;
+  const grab = async (path) => { try { return await api("GET", path); } catch (e) { return null; } };
+  const [apps, marketsData, partnersData, totals] = await Promise.all([grab("/admin/applications"), grab("/admin/markets"), grab("/admin/partners"), grab("/admin/platform-totals")]);
+  if (!document.getElementById("admin-home137")) return;
+  const items = adminSigItems(apps, marketsData, partnersData);
+  const counts = adminSummaryCounts121(apps, marketsData, partnersData);
+  const queue = items.map((it) => ({ text: it.text, btn: it.btn, act: () => go("dashboard", it.tab) }));
+  state.sigQueue = queue;
+  state.sigQueueLinks = [];
+  state.sigQueueCount = queue.length;
+  const brief = items.length ? items[0].text : "Nothing needs a decision right now. Approvals, claims, activations, and partners are all caught up.";
+  const hour = localHourNow();
+  const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const first = (state.user.name || "").trim().split(" ")[0] || "";
+  el.innerHTML = `
+    <div class="home-greet"><div class="hg-hi">${greet}${first ? `, ${esc(first)}` : ""}.</div></div>
+    ${sigHero137Html(brief)}
+    ${highlights137Html([
+      { label: "Waiting on your review", value: fmtNum(counts.waiting), tab: "Applications" },
+      { label: "Creators signed up", sub: "across all markets", value: fmtNum((totals && totals.creatorsSignedUp) || 0) },
+      { label: "Total followers", sub: "as reported by creators", value: fmtNum((totals && totals.totalFollowers) || 0) },
+      { label: "Claims today", value: fmtNum(counts.claimsToday), tab: "Applications" },
+    ])}
+    ${nextSteps137Html(queue, [])}
+    <div class="pv-tabs126" role="group" aria-label="Preview the app as another role">
+      <span class="pv-tabs126-label">Preview as</span>
+      <button type="button" class="pv-tab126" onclick="enterPreview()">Business</button>
+      <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('creator')">Creator</button>
+      <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('partner')">Partner</button>
+    </div>
+    <p id="pv-note126" class="small muted" role="status" style="margin:2px 0 10px"></p>`;
+  wireSigQueue(el, queue.slice(0, 3), []);
+  loadSigTopNudges();
+  renderBottomNav();
+}
+
 function renderAdmin() {
-  const tab = state.tab || "Applications";
+  const tab = state.tab || "Home";
   state.tab = tab;
+  // Build -137: Home is the landing now (Sig-first); the
+  // Applications queue keeps its rich -121 work layout.
+  if (tab === "Home") {
+    app.innerHTML = `
+    <h2>SIGNL Admin</h2>
+    <div id="admin-home137"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your home...", 2)}</div>`;
+    loadAdminHome137();
+    return;
+  }
   // One nav system (Build -47, audit A1/A2): the left rail is
   // the Admin nav (Jeff's standing call), so the in-page tab
   // strip that duplicated it is gone, and the Business Preview
@@ -26548,10 +27395,18 @@ function previewDiscoverHtml() {
   return `
   <h3 class="pv-step-head"><span class="preview-tag">PREVIEW</span> Find creators</h3>
   <p class="muted small">The live Find creators screen, run over the real approved roster. Searches are answered by the same server code a business hits; invites open the simulated composer and reach nobody.</p>
-  <div class="filters disc-top">
-    <div><label>Market</label><select id="pvf-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+  <div class="disc-filters">
+    <div class="df-group">
+      <div class="df-label">Where</div>
+      <div class="filters disc-top">
+        <div><label>Market</label><select id="pvf-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+      </div>
+    </div>
+    <div class="df-group">
+      <div class="df-label">What kind of creator</div>
+      <div class="dcat-row"><button type="button" data-pvcat="" class="dcat-chip${pvCats.length ? "" : " on"}" onclick="return pvDiscoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-pvcat="${esc(c)}" class="dcat-chip${pvCats.includes(c) ? " on" : ""}" onclick="return pvDiscoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
+    </div>
   </div>
-  <div class="dcat-row"><button type="button" data-pvcat="" class="dcat-chip${pvCats.length ? "" : " on"}" onclick="return pvDiscoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-pvcat="${esc(c)}" class="dcat-chip${pvCats.includes(c) ? " on" : ""}" onclick="return pvDiscoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
   <details class="filters-fold"><summary>More filters</summary>
   <div class="filters">
     <div><label>Neighborhood / area</label><input id="pvf-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>

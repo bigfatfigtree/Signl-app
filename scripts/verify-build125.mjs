@@ -68,14 +68,14 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || "";
-check("stamp is 2026.11.06-135 and identical in build.js + index.html", stamp === "2026.11.06-135" && indexHtml.includes(stamp), String(stamp));
+check("stamp is 2026.11.06-137 and identical in build.js + index.html", stamp === "2026.11.06-137" && indexHtml.includes(stamp), String(stamp));
 check("index.html cache-busts app.js + theme-v3 with the rolled stamp",
   indexHtml.includes(`/app.js?v=${stamp}`) && indexHtml.includes(`/theme-v3.css?v=${stamp}`));
 
 // B — daily-stop bars
 part("B: daily stops only");
 check("primary tab sets are the design's daily stops per role",
-  appJs.includes('business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"]') &&
+  appJs.includes('business: ["Home", "Discover", "Campaign Setup", "Visits & Posts", "Plan"]') &&
   appJs.includes('creator: ["Dashboard", "Offers", "Find Offers", "My Visits", "Messages", "Earnings"]') &&
   appJs.includes('partner: ["Home", "Businesses", "Earnings", "Performance"]') &&
   appJs.includes('pilot: ["Overview", "Businesses", "Results", "Report"]') &&
@@ -225,7 +225,7 @@ for (const [label, tab] of CREATOR_PANEL) {
 }
 check("creator Visits + Wallet + Messages are bar stops now (were rows in the buried list)",
   appJs.includes('creator: ["Dashboard", "Offers", "Find Offers", "My Visits", "Messages", "Earnings"]'));
-const BIZ_PANEL = [["Business profile", "Profile"], ["Team & register PIN", "Settings"], ["Set up a campaign", "Campaign Setup"], ["Saved creators", "Favorites"], ["My Regulars", "Regulars"], ["License library", "Content"], ["Results", "Analytics"], ["Plan & billing", "Plan"], ["Messages", "Messages"], ["Settings", "Settings"], ["Help", "Help"]];
+const BIZ_PANEL = [["Business profile", "Profile"], ["Team & register PIN", "Settings"], ["Start a campaign", "Campaign Setup"], ["Saved creators", "Favorites"], ["My Regulars", "Regulars"], ["License library", "Content"], ["Results", "Analytics"], ["Plan & billing", "Plan"], ["Messages", "Messages"], ["Settings", "Settings"], ["Help", "Help"]];
 for (const [label, tab] of BIZ_PANEL) {
   check(`business panel row: "${label}" → ${tab}`, appJs.includes(`R("`) && appJs.includes(`"${label}"`) && appJs.includes(`"${tab}"`));
 }

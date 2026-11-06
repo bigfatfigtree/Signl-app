@@ -1132,7 +1132,7 @@ function answerBusiness(f, q, t) {
   // Campaign setup (Build -97): building and checking are
   // two separate views now, and Sig guides the setup.
   if (hasPhrase(t, "set up a campaign", "setup a campaign", "new campaign", "start a campaign", "create a campaign", "make a campaign", "build a campaign", "first campaign")) {
-    return linked(`Set up a campaign is its own view. Tell Sig what you want in your own words there, and Sig fills in what it already knows about your business, asks only for what is missing one question at a time, and shows you the full draft before anything is saved.${f.founding ? " While your market is founding, the draft saves for opening day and nothing sends to a creator." : " The draft lands in Your campaigns, where you check on it."}`, "Set up a campaign", "biz-setup");
+    return linked(`Start a campaign is its own view. Tell Sig what you want in your own words there, and Sig fills in what it already knows about your business, asks only for what is missing one question at a time, and shows you the full draft before anything is saved.${f.founding ? " While your market is founding, the draft saves for opening day and nothing sends to a creator." : " The draft lands in Your campaigns, where you check on it."}`, "Start a campaign", "biz-setup");
   }
   // My offers
   if ((hasWord(t, "offer", "offers", "campaign", "campaigns")) && hasPhrase(t, "my", "how many", "do i have", "live", "draft")) {

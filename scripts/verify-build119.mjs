@@ -64,7 +64,7 @@ check("theme-v3 carries the design tokens (Paper, Ink, Signal, the one gradient)
 check("theme-v3 carries the shape vocabulary + shell rules",
   [".donut119", ".lbar119", ".ring119", ".bigcode119", ".pilot-fundbar", ".mkt-photo", "#agent-fab"].every((x) => css.includes(x)));
 check("primary tab sets match the approved IA map",
-  appJs.includes('business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"]') &&
+  appJs.includes('business: ["Home", "Discover", "Campaign Setup", "Visits & Posts", "Plan"]') &&
   appJs.includes('creator: ["Dashboard", "Offers", "Find Offers", "My Visits", "Messages", "Earnings"]') &&
   appJs.includes('partner: ["Home", "Businesses", "Earnings", "Performance"]') &&
   appJs.includes('pilot: ["Overview", "Businesses", "Results", "Report"]') &&

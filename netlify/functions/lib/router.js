@@ -867,7 +867,18 @@ function normalizeDealTerms(input, ctx) {
     whatComped: String((input && input.whatComped) || "").trim().slice(0, 600),
     covers: null, cashRate: null, dollarCap: null, coupon: null, cashTopUp: null,
     deliverables: null, postingTerms: null, windowMode: input && input.windowMode === "thisweek" ? "thisweek" : "7days",
+    // Build -137: the flexible visit timing window. Windows,
+    // not appointments: "week" (the default) lets the creator
+    // pick the day inside the next week; a specific day is the
+    // last option and the only one that carries a date.
+    timingWindow: ["week", "thisweek", "nextweek", "twoweeks", "day"].includes(input && input.timingWindow) ? input.timingWindow : (input && input.windowMode === "thisweek" ? "thisweek" : "week"),
+    visitDate: null,
     note: String((input && input.note) || "").trim().slice(0, 280),
+    // Build -136: the extras line, composed in the booking flow
+    // ("Mats, towels and the smoothie after are on us") — it
+    // rides the terms so the creator's deal card shows it word
+    // for word, like the composer's includes on open offers.
+    includes: String((input && input.includes) || "").trim().slice(0, 200),
   };
   const tier = ctx.creatorTier;
   if (kind === "paid") {
@@ -905,6 +916,12 @@ function normalizeDealTerms(input, ctx) {
     if (t.error) return { error: t.error };
     terms.postingTerms = t.terms;
   }
+  if (terms.timingWindow === "day") {
+    const vd = String((input && input.visitDate) || "").trim();
+    if (!dateOnlyOk(vd)) return { error: "Pick the specific day for the visit, or choose a timing window instead." };
+    terms.visitDate = vd;
+  }
+  if (terms.timingWindow === "thisweek") terms.windowMode = "thisweek";
   terms.deliverables = validateDeliverables(input.deliverables, kind === "mix" ? "coupon" : kind);
   if (!terms.title) terms.title = kind === "paid" ? "Paid visit" : kind === "comp" ? "Comped visit" : "Coupon deal";
   return { terms };
@@ -998,8 +1015,10 @@ async function materializeDeal(deal) {
     experience: "",
     templateId: null, play: null, moment: null, countedResult: "door",
     dollarCap: t.kind === "paid" ? Math.round(t.cashRate) : (t.dollarCap || 0),
-    visitWindow: t.windowMode === "thisweek" ? "This week" : "Any time within 7 days",
+    visitWindow: t.timingWindow ? timingWindowLabel137(t.timingWindow, t.visitDate) : (t.windowMode === "thisweek" ? "This week" : "Any time within 7 days"),
     windowMode: t.windowMode,
+    timingWindow: t.timingWindow || null,
+    visitDate: t.visitDate || null,
     spots: 1,
     status: "open",
     createdAt: ts, updatedAt: ts, publishedAt: ts, nudgeSentAt: null,
@@ -1014,7 +1033,7 @@ async function materializeDeal(deal) {
   const creator = await store.get(`user:${deal.creatorId}`);
   const booking = await createBookingForOffer({ offer, creator, via: "deal_accept" });
   booking.dealId = deal.id;
-  booking.agreedTerms = { kind: t.kind, amount: cur.amount, cashRate: t.cashRate || null, dollarCap: t.dollarCap || null, cashTopUp: t.cashTopUp || null, coupon: t.coupon || null };
+  booking.agreedTerms = { kind: t.kind, amount: cur.amount, cashRate: t.cashRate || null, dollarCap: t.dollarCap || null, cashTopUp: t.cashTopUp || null, coupon: t.coupon || null, timingWindow: t.timingWindow || null, visitDate: t.visitDate || null };
   booking.updatedAt = nowIso();
   await store.set(`booking:${booking.id}`, booking);
   deal.offerId = offer.id;
@@ -1296,6 +1315,7 @@ async function fanoutOpenOffer(offer) {
     if (!isListedInMarket(c, offer.market)) continue;
     if (Array.isArray(offer.targetTiers) && offer.targetTiers.length && !offer.targetTiers.includes(normalizeTierBand(c.creator ? c.creator.tierBand : ""))) continue;
     if (kind === "comp" && c.creator && c.creator.compOpen === false) continue;
+    if (kind === "coupon" && c.creator && c.creator.couponOpen === false) continue;
     if (kind === "comp" && dignityBlock(offer.dollarCap, [normalizeTierBand(c.creator ? c.creator.tierBand : "")])) continue;
     const prefs = alertPrefsOf(c);
     if (prefs.set) {
@@ -5286,6 +5306,7 @@ function rateCardFor(c) {
   const out = [];
   if (!c || typeof c !== "object") return out;
   if (c.compOpen !== false) out.push({ kind: "comp", label: "Comped visit", price: null, detail: "A meal, service, or experience, for one post plus one story" });
+  if (c.couponOpen !== false) out.push({ kind: "coupon", label: "Coupon / store credit", price: null, detail: "A coupon or store credit with real spendable value, for one post plus one story" });
   if (typeof c.paidRate === "number" && c.paidRate > 0) out.push({ kind: "paid", label: "Paid booking", price: c.paidRate, detail: "Booked at my listed rate: I keep 97%, payment held until the post is live, one 90-day license included" });
   if (typeof c.licensingFee === "number" && c.licensingFee > 0) out.push({ kind: "license", label: "License a post for ads", price: c.licensingFee, detail: "90 days of repost and ad use, I approve each use, I keep 97%" });
   return out;
@@ -5322,6 +5343,10 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
   let redeemBy;
   if (laneOf(offer) === "open" && offer.windowEndAt) {
     redeemBy = new Date(Math.min(Date.parse(offer.windowEndAt), Date.parse(ts) + COMPLIANCE.visitWindowDays * DAY_MS)).toISOString();
+  } else if (offer.timingWindow) {
+    // Build -137: a direct offer or an agreed deal carries the
+    // flexible timing window its two sides settled on.
+    redeemBy = timingRedeemBy137(offer.timingWindow, offer.visitDate, new Date(ts));
   } else {
     redeemBy = redeemByFor(offer, new Date(ts));
   }
@@ -5343,8 +5368,9 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     dollarCap: offer.dollarCap,
     visitWindow: offer.visitWindow,
     windowMode: offer.windowMode || "7days",
+    timingWindow: offer.timingWindow || null,
     redeemBy,
-    visitDate: "",
+    visitDate: offer.timingWindow === "day" && offer.visitDate ? offer.visitDate : "",
     code,
     codeStatus: "issued",
     status: "booked",
@@ -5866,7 +5892,11 @@ async function discoverCards(query, viewer) {
   if (catSet.size) creators = creators.filter((u) => u.creator && (u.creator.categories || []).some((c) => catSet.has(canonicalFromList(c, CREATOR_CATEGORIES) || c)));
   if (query.compCategory) {
     const wantComp = canonicalFromList(query.compCategory, COMP_CATEGORIES) || query.compCategory;
-    creators = creators.filter((u) => u.creator && (u.creator.compCategories || []).some((x) => (canonicalFromList(x, COMP_CATEGORIES) || x) === wantComp));
+    // Build -136: compOpen is the single source of truth for comp
+    // acceptance. The category refines WITHIN the creators who
+    // accept comps; a creator who turned comps off never matches a
+    // comp filter, whatever categories their record still carries.
+    creators = creators.filter((u) => u.creator && u.creator.compOpen !== false && (u.creator.compCategories || []).some((x) => (canonicalFromList(x, COMP_CATEGORIES) || x) === wantComp));
   }
   // Spanish content filter (Jeff, 2026-10-28): the Discover
   // "Español" chip. Attribute only; unset means excluded here.
@@ -6038,7 +6068,7 @@ async function publicCreator(u, viewer, foundingPriority, marketContext) {
     // defaults true for legacy records, paidRate is a number or
     // null (null = no paid bookings at any price).
     profile: u.creator
-      ? { ...u.creator, university, primaryPlatform: primaryProfileOf(u.creator).platform, primaryPlatformLabel: primaryProfileOf(u.creator).label, primaryProfileUrl: primaryProfileOf(u.creator).url, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null, licensingFee: typeof u.creator.licensingFee === "number" && u.creator.licensingFee > 0 ? u.creator.licensingFee : null, zip: undefined, ...(inOtherMarket ? { localAudiencePct: shareHere } : {}) }
+      ? { ...u.creator, university, primaryPlatform: primaryProfileOf(u.creator).platform, primaryPlatformLabel: primaryProfileOf(u.creator).label, primaryProfileUrl: primaryProfileOf(u.creator).url, compOpen: u.creator.compOpen !== false, couponOpen: u.creator.couponOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null, licensingFee: typeof u.creator.licensingFee === "number" && u.creator.licensingFee > 0 ? u.creator.licensingFee : null, zip: undefined, ...(inOtherMarket ? { localAudiencePct: shareHere } : {}) }
       : u.creator,
     // Multi-market listing (2026-11-01): every market this
     // creator is listed in, with the share that ranks them
@@ -6147,6 +6177,7 @@ function claimPagePayload(u) {
     city: u.city || "",
     categories: c.categories || [],
     compOpen: c.compOpen !== false,
+    couponOpen: c.couponOpen !== false,
     paidRate: typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null,
     licensingFee: typeof c.licensingFee === "number" && c.licensingFee > 0 ? c.licensingFee : null,
     status: u.status,
@@ -6361,6 +6392,7 @@ async function publicProfilePayload(u) {
     brokerage: creatorIsRealtor(c) ? (c.brokerage || "") : "",
     compCategories: (c.compCategories || []).filter((x) => x !== PAID_COMP),
     compOpen: c.compOpen !== false,
+    couponOpen: c.couponOpen !== false,
     paidRate: typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null,
     licensingFee: typeof c.licensingFee === "number" && c.licensingFee > 0 ? c.licensingFee : null,
     localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
@@ -6494,6 +6526,7 @@ async function bookMePayload(u, viewer) {
     brokerage: full.brokerage,
     compCategories: full.compCategories,
     compOpen: full.compOpen,
+    couponOpen: full.couponOpen,
     localAudiencePct: full.localAudiencePct,
     localAudienceSource: full.localAudienceSource,
     // Multi-market + profile upgrade (2026-11-01): the listed
@@ -7308,6 +7341,31 @@ async function maybeRunAutoDecisionCleanup() {
 // shapes only, picked in the composer: "7days" (redeem within
 // COMPLIANCE.visitWindowDays of accepting; the default) and
 // "thisweek" (redeem by the end of the current week, Sunday).
+// Build -137: the flexible timing windows, in plain words
+// and in deadlines. The redemption deadline a booking carries
+// is computed from the window the two sides agreed, here and
+// nowhere else.
+function timingWindowLabel137(tw, visitDate) {
+  if (tw === "thisweek") return "This week";
+  if (tw === "nextweek") return "Next week";
+  if (tw === "twoweeks") return "Within the next two weeks";
+  if (tw === "day") return visitDate ? `On ${visitDate}` : "On a specific day";
+  return "Within the next week";
+}
+function timingRedeemBy137(tw, visitDate, fromDate) {
+  const from = fromDate ? new Date(fromDate) : new Date();
+  if (tw === "day" && visitDate && dateOnlyOk(visitDate)) return new Date(`${visitDate}T23:59:59.999Z`).toISOString();
+  if (tw === "thisweek") return redeemByFor({ windowMode: "thisweek" }, from);
+  if (tw === "nextweek") {
+    const end = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate(), 23, 59, 59));
+    const add = (7 - end.getUTCDay()) % 7;
+    end.setUTCDate(end.getUTCDate() + add + 7);
+    return end.toISOString();
+  }
+  if (tw === "twoweeks") return new Date(from.getTime() + 14 * DAY_MS).toISOString();
+  return new Date(from.getTime() + COMPLIANCE.visitWindowDays * DAY_MS).toISOString();
+}
+
 function redeemByFor(offer, fromDate) {
   const from = fromDate ? new Date(fromDate) : new Date();
   if (offer && offer.windowMode === "thisweek") {
@@ -18645,7 +18703,25 @@ async function route(event) {
   // working); /photo/<n> serves gallery slot n under the same gate.
   if (method === "GET" && seg[0] === "users" && (seg.length === 3 || seg.length === 4) && seg[2] === "photo") {
     const target = await store.get(`user:${seg[1]}`);
-    if (!target || target.role !== "creator") return err(404, "Photo not found");
+    if (!target) return err(404, "Photo not found");
+    // Build -136: a business's offer photo (slot 0 only) serves
+    // to any signed-in user — it is marketing imagery the
+    // business chose to lead its offers with, shown on offer
+    // cards inside the app. Never public, never a gallery.
+    if (target.role === "business") {
+      const bIdx = seg.length === 4 ? parseInt(seg[3], 10) : 0;
+      if (bIdx !== 0 || !(target.business && target.business.hasPhoto)) return err(404, "Photo not found");
+      if (!user) return err(401, "Sign in required");
+      const bPhoto = await store.get(photoKey(target.id, 0));
+      if (!bPhoto) return err(404, "Photo not found");
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": bPhoto.contentType, "Cache-Control": "private, max-age=300" },
+        body: bPhoto.dataBase64,
+        isBase64Encoded: true,
+      };
+    }
+    if (target.role !== "creator") return err(404, "Photo not found");
     const photoIdx = seg.length === 4 ? parseInt(seg[3], 10) : 0;
     if (!Number.isInteger(photoIdx) || photoIdx < 0 || photoIdx >= photoCountOf(target.creator)) return err(404, "Photo not found");
     // Public while approved and in good/paused standing; a banned
@@ -19722,6 +19798,14 @@ async function route(event) {
         c.compOpen = b.compOpen !== false;
         changes.compOpen = [user.creator.compOpen !== false, c.compOpen];
       }
+      // Build -136: couponOpen is the coupon/store-credit twin of
+      // compOpen (default true; false = no coupon offers). Same
+      // single-source rule: cards, Sig and the apply gate all read
+      // this one field.
+      if (b.couponOpen !== undefined) {
+        c.couponOpen = b.couponOpen !== false;
+        changes.couponOpen = [user.creator.couponOpen !== false, c.couponOpen];
+      }
       // Spanish content (Jeff, 2026-10-28): optional creator
       // attribute, simple yes/no (creates content in Spanish at
       // all = yes). Deliberately NOT a completeness field, so
@@ -20269,6 +20353,24 @@ async function route(event) {
   // creators' photos are on their public profile; everyone else's
   // stay locked down).
   if (method === "POST" && seg[0] === "me" && seg[1] === "photo" && seg.length === 2) {
+    // Build -136: businesses get ONE photo — the offer photo
+    // that leads their offers. Same bytes-in-own-record storage,
+    // slot 0 only, flagged on the business record.
+    if (user.role === "business" && user.business) {
+      const bb = parseBody(event);
+      const bm = typeof bb.dataUrl === "string" && bb.dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+      if (!bm) return err(400, "Send the photo as a PNG, JPEG, or WebP data URL");
+      const bBytes = Math.floor((bm[2].length * 3) / 4);
+      if (bBytes > MAX_PHOTO_BYTES) return err(413, "That photo is too large. Please use one under 2.5 MB.");
+      const bts = nowIso();
+      await store.set(photoKey(user.id, 0), { contentType: bm[1], dataBase64: bm[2], bytes: bBytes, uploadedAt: bts });
+      user.business.hasPhoto = true;
+      user.business.photoCount = 1;
+      user.updatedAt = bts;
+      await store.set(`user:${user.id}`, user);
+      await logEvent({ type: "business_photo_uploaded", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { contentType: bm[1], bytes: bBytes } });
+      return json(200, { ok: true, photoUrl: `/api/users/${user.id}/photo`, photos: [`/api/users/${user.id}/photo`] });
+    }
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
     const b = parseBody(event);
     const m = typeof b.dataUrl === "string" && b.dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
@@ -22679,6 +22781,10 @@ async function route(event) {
         dollarCap,
         visitWindow: String(b.visitWindow || "").trim(),
         windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",
+        // Build -137: the flexible timing window (Sig's guide
+        // and the booking flow send it on the direct lane).
+        timingWindow: ["week", "thisweek", "nextweek", "twoweeks", "day"].includes(b.timingWindow) ? b.timingWindow : null,
+        visitDate: b.timingWindow === "day" && dateOnlyOk(String(b.visitDate || "")) ? String(b.visitDate) : null,
         spots,
         status: "preview-sent",
         createdAt: nowIso(),
@@ -23687,6 +23793,10 @@ async function route(event) {
         dollarCap,
         visitWindow: String(b.visitWindow || "").trim(),
         windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",
+        // Build -137: the flexible timing window (Sig's guide
+        // and the booking flow send it on the direct lane).
+        timingWindow: ["week", "thisweek", "nextweek", "twoweeks", "day"].includes(b.timingWindow) ? b.timingWindow : null,
+        visitDate: b.timingWindow === "day" && dateOnlyOk(String(b.visitDate || "")) ? String(b.visitDate) : null,
         spots,
         status: wantsDraft ? "draft" : "open",
         createdAt: ts,
@@ -23709,6 +23819,7 @@ async function route(event) {
       // asset-packet flag: paid offers carry the business's packet
       // by default, comp offers do not, and an explicit
       // assetPacketAttached in the request overrides either way.
+      if (offer.timingWindow && !offer.visitWindow) offer.visitWindow = timingWindowLabel137(offer.timingWindow, offer.visitDate);
       offer.assetPacketAttached = b.assetPacketAttached !== undefined ? b.assetPacketAttached === true : kind === "paid";
       offer.brief = normalizeBriefInput(b.brief, kind, briefSeedFromFields(offer));
       if (lane === "open") {
@@ -24149,6 +24260,7 @@ async function route(event) {
       if (Array.isArray(offer.targetTiers) && offer.targetTiers.length && !offer.targetTiers.includes(tier)) return err(403, `This offer is for ${offer.targetTiers.join(", ")} creators. Your tier is ${tier}.`);
       if (kindOf(offer) === "comp" && !(Array.isArray(offer.targetTiers) && offer.targetTiers.length) && Number(offer.dollarCap) < (COMP_GUIDANCE[tier] || {}).floor) return err(403, `This comp is below your tier's guidance floor (${currencySymbolForMarket(offer.market)}${fmtPriceS((COMP_GUIDANCE[tier] || {}).floor)}), so it is not shown to ${tier}. That floor exists to protect the roster from token comps.`);
       if (kindOf(offer) === "comp" && user.creator && user.creator.compOpen === false) return err(403, "This is a comp offer and your profile is set to paid visits only. Turn comp visits back on under Profile if you want comp offers.");
+      if (kindOf(offer) === "coupon" && user.creator && user.creator.couponOpen === false) return err(403, "This offer pays with a coupon or store credit, and your profile is set to not accept those. Turn coupons back on under Profile if you want coupon offers.");
       const apps = await allApplications();
       const mine = apps.filter((a) => a.offerId === offer.id);
       if (mine.some((a) => a.creatorId === user.id && a.status !== "withdrawn" && a.status !== "released" && a.status !== "expired")) return err(409, "You already applied to this offer");
@@ -24739,6 +24851,11 @@ async function route(event) {
         // redeemed visit (businessTrackRecordFor returns null
         // before that, and the card renders no strip).
         businessCity: biz ? (biz.city || "") : "",
+        // Build -136: the offer's lead image — the business's
+        // offer photo when they have one, else their asset
+        // packet logo, else nothing (the card falls back to the
+        // initial tile, never a broken box).
+        businessImageUrl: biz && biz.business ? (biz.business.hasPhoto ? `/api/users/${biz.id}/photo` : (biz.business.assetPacket && biz.business.assetPacket.logoUrl) || null) : null,
         distanceBand: biz ? proximityBandFor(biz, user) : null,
         businessTrackRecord: biz ? (bizTrackCache[biz.id] !== undefined ? bizTrackCache[biz.id] : (bizTrackCache[biz.id] = businessTrackRecordFor(biz.id, bookings, posts))) : null,
         paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,

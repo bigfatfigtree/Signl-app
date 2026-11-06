@@ -225,22 +225,22 @@ const win = (startMarker, endMarker) => {
   return a >= 0 && b > a ? appSrc.slice(a, b) : "";
 };
 
-check("build stamp is 2026.11.06-135", BUILD_ID === "2026.11.06-135", BUILD_ID);
-check("index.html carries the -53 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.06-135"));
+check("build stamp is 2026.11.06-137", BUILD_ID === "2026.11.06-137", BUILD_ID);
+check("index.html carries the -53 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.06-137"));
 
 const rail = win('if (u.role === "admin") {', "return items;");
 check("rail: admin block found", rail.length > 0);
 const railLabels = [...rail.matchAll(/add\("[abc]", "[a-z]+", "([^"]+)"/g)].map((m) => m[1]);
-check("rail: first two admin destinations are Applications, then Requests",
-  railLabels[0] === "Applications" && railLabels[1] === "Requests", railLabels.join(" | "));
+check("rail: Home lands first (Build -137), then Applications, then Requests",
+  railLabels[0] === "Home" && railLabels[1] === "Applications" && railLabels[2] === "Requests", railLabels.join(" | "));
 check("rail: Applications goes to the Applications tab, Requests to the Requests tab",
   rail.includes(`add("a", "inbox", "Applications", "return go('dashboard','Applications')"`) && rail.includes(`add("a", "requests", "Requests", "return go('dashboard','Requests')"`));
 const allLabels = railLabels;
 // Pin updated at the Build -70 merge (2026-11-02): Build -70 added the
 // Admin Outreach tab (Jeff's owner outreach workspace) after Recruiters,
 // superseding this suite's ten-destination pin. Order otherwise unchanged.
-check("rail: TWELVE admin destinations in Jeff's order (Creators added as its own tab, Build -130 Part 9)",
-  JSON.stringify(allLabels) === JSON.stringify(["Applications", "Requests", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "Event Log", "Compliance", "Campaign", "Stats", "Sig"]),
+check("rail: THIRTEEN admin destinations in Jeff's order (Home added first by Build -137; Creators added as its own tab, Build -130 Part 9)",
+  JSON.stringify(allLabels) === JSON.stringify(["Home", "Applications", "Requests", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "Event Log", "Compliance", "Campaign", "Stats", "Sig"]),
   allLabels.join(" | "));
 
 const renderAdminSrc = win("function renderAdmin() {", "function adminSigItems(");

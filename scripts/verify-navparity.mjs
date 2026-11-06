@@ -62,8 +62,11 @@ check("admin rail source found", railLabels.length >= 10, railLabels.join(","));
 
 const primariesMatch = app.match(/ADMIN_RAIL_PRIMARY_125 = \[([^\]]+)\]/);
 const primaries = primariesMatch ? [...primariesMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
-check("phone-bar primaries are all real rail destinations",
-  primaries.length === 4 && primaries.every((l) => railLabels.includes(l)), primaries.join(","));
+// Build -137: the Admin phone bar is Home · Review · Sig ·
+// Stats · Markets (Applications reads "Review" on the bar).
+check("Admin phone bar is the -137 set (Home, Applications, Sig, Stats, Markets)",
+  JSON.stringify(primaries) === JSON.stringify(["Home", "Applications", "Sig", "Stats", "Markets"])
+  && primaries.every((l) => railLabels.includes(l)), primaries.join(","));
 
 const renderAdminSrc = fnWindow("renderAdmin");
 const dispatched = new Set([...renderAdminSrc.matchAll(/tab === "([^"]+)"/g)].map((m) => m[1]));
@@ -72,6 +75,7 @@ check("every Admin rail destination has a renderAdmin branch",
   railLabels.filter((l) => !dispatched.has(l)).join(","));
 
 const evSrc = fnWindow("everythingGroups125");
+const hamSrc = fnWindow("hamburgerGroups137");
 const evAdmin = roleBlock(evSrc, "admin", ["admin", "creator", "business", "partner"]);
 const evTabs = [...tabsOf(evAdmin), ...rTabsOf(evAdmin)];
 check("every Admin Everything-panel destination is a real rail destination",
@@ -133,15 +137,51 @@ for (const role of roles) {
     [...evSet].every((t) => railSet.has(t)), [...evSet].filter((t) => !railSet.has(t)).join(","));
   check(`${role}: every rail destination has a renderer (no orphans)`,
     [...railSet].every((t) => rendererUniverse.includes(`"${t}"`)), [...railSet].filter((t) => !rendererUniverse.includes(`"${t}"`)).join(","));
+  // Build -137: the hamburger set equals the rail set, Sig
+  // excepted for creator/business (their Sig is the bar orb).
+  const hamBlock = roleBlock(hamSrc, role, [...roles, "admin", "recruiter", "pilot_partner"]);
+  const hamSet = new Set(rTabsOf(hamBlock));
+  const sigExcept = role === "partner" ? [] : ["Sig"];
+  check(`${role}: hamburger carries the full rail set`,
+    [...railSet].every((t) => hamSet.has(t) || sigExcept.includes(t)) && [...hamSet].every((t) => railSet.has(t)),
+    `ham:${[...hamSet].join(",")} rail:${[...railSet].join(",")}`);
 }
 
-// Desktop completeness (Part 6): the rail composition includes
-// the secondary destinations inline, not only in a panel.
+// Desktop completeness (Build -137): the rail lists the FULL
+// destination set directly, in tabItemsFor order (inline
+// order per item), with no Everything button for the
+// redesigned roles.
 const tabBar = fnWindow("tabBarHtml");
-check("desktop rail composes primary + secondary destinations from tabItemsFor",
-  tabBar.includes("tabItemsFor()") && tabBar.includes("tab-secondary") && tabBar.includes("tab-grouplabel"), "");
+check("desktop rail composes the full destination set from tabItemsFor in order",
+  tabBar.includes("tabItemsFor()") && tabBar.includes("tab-secondary") && tabBar.includes("order:${ix}"), "");
+check("creator/business rail carries no Everything button (redesigned137 gate)",
+  tabBar.includes("redesigned137 ? [] :"), "");
 check("no role's Everything trigger renders on desktop (CSS gate kept)",
   /\.tab-ev125,\s*\.tr-ev125\s*\{\s*display:\s*none\s*!important/.test(css), "");
+
+// ---------------- Build -137: bars + hamburger parity ----------------
+// The mobile bars are Jeff's ruled sets, and the top-right
+// hamburger carries the role's full destination set (the same
+// set the desktop rail lists), Sig excepted where the bar's
+// center orb IS Sig (creator/business).
+const primTabsMatch = app.match(/PRIMARY_TABS_125 = \{([\s\S]*?)\n\};/);
+const primTabsSrc = primTabsMatch ? primTabsMatch[1] : "";
+const primTabsOf = (role) => {
+  const m = primTabsSrc.match(new RegExp(`${role}: \\[([^\\]]+)\\]`));
+  return m ? [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]) : [];
+};
+check("creator mobile bar is Home · Find · Sig · Wallet · Offers",
+  JSON.stringify(primTabsOf("creator")) === JSON.stringify(["Dashboard", "Find Offers", "Sig", "Earnings", "Offers"]), primTabsOf("creator").join(","));
+check("business mobile bar is Home · Find · Sig · Wallet · Start",
+  JSON.stringify(primTabsOf("business")) === JSON.stringify(["Home", "Discover", "Sig", "Plan", "Campaign Setup"]), primTabsOf("business").join(","));
+check("partner mobile bar stays as held (Home · Business · Sig · Stats · Menu)",
+  JSON.stringify(primTabsOf("partner")) === JSON.stringify(["Home", "Businesses", "Sig", "Performance", "__menu137"]), primTabsOf("partner").join(","));
+
+check("hamburger source found", hamSrc.length > 500, "");
+const hamAdmin = new Set(rTabsOf(roleBlock(hamSrc, "admin", ["admin", "creator", "business", "partner"])));
+check("admin hamburger carries the full rail set (+ Account)",
+  railLabels.every((l) => hamAdmin.has(l)) && [...hamAdmin].every((t) => railLabels.includes(t) || t === "Account"),
+  [...hamAdmin].join(","));
 
 console.log(`\nverify-navparity: ${passed} passed, ${failed} failed`);
 if (failed) { console.log("failures:", failures.join(" | ")); process.exit(1); }
