@@ -11,7 +11,7 @@
 // fails the job loudly if it ever trips.
 //
 // Usage:
-//   SIGNL_APP_API=https://app.joinsignl.com/api \
+//   SIGNL_APP_API=https://app.magpielocal.com/api \
 //   SIGNL_VERIFY_TOKEN=... \
 //   SIGNL_LEARN_SITE_DIR=~/workspace/signl-site \
 //   node scripts/learn-publish-runner.mjs [--no-push] [--once]
@@ -21,7 +21,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-const API = (process.env.SIGNL_APP_API || "https://app.joinsignl.com/api").replace(/\/+$/, "");
+const API = (process.env.SIGNL_APP_API || "https://app.magpielocal.com/api").replace(/\/+$/, "");
 const TOKEN = process.env.SIGNL_VERIFY_TOKEN || "";
 const SITE_DIR = process.env.SIGNL_LEARN_SITE_DIR || path.join(process.env.HOME, "workspace/signl-site");
 const NO_PUSH = process.argv.includes("--no-push") || process.env.SIGNL_LEARN_NO_PUSH === "1";
@@ -51,8 +51,8 @@ function articleHtml(siteDir, a) {
     ? "net-90-is-not-a-payment-term.html"
     : fs.readdirSync(learnDir).find((f) => f.endsWith(".html") && f !== "index.html");
   const tpl = fs.readFileSync(path.join(learnDir, templateName), "utf8");
-  const url = `https://joinsignl.com/learn/${a.slug}.html`;
-  const title = `${a.headline} | SIGNL`;
+  const url = `https://magpielocal.com/learn/${a.slug}.html`;
+  const title = `${a.headline} | Magpie`;
   const description = (a.dek || a.lede || "").slice(0, 300);
   let head = tpl.slice(0, tpl.indexOf("</head>") + "</head>".length);
   head = head
@@ -68,9 +68,9 @@ function articleHtml(siteDir, a) {
   // template's FAQ schema (a studio article carries none in v1).
   const articleSchema = JSON.stringify({
     "@context": "https://schema.org", "@type": "Article", headline: a.headline, description,
-    author: { "@type": "Person", name: a.authorLine === "named" ? "Jeff Rimmer" : "Jeff", jobTitle: "Founder, SIGNL" },
-    publisher: { "@type": "Organization", name: "SIGNL", logo: { "@type": "ImageObject", url: "https://joinsignl.com/assets/logo.png" } },
-    datePublished: a.date, dateModified: a.date, mainEntityOfPage: url, image: "https://joinsignl.com/assets/og-image.png",
+    author: { "@type": "Person", name: a.authorLine === "named" ? "Jeff Rimmer" : "Jeff", jobTitle: "Founder, Magpie" },
+    publisher: { "@type": "Organization", name: "Magpie", logo: { "@type": "ImageObject", url: "https://magpielocal.com/assets/logo.png" } },
+    datePublished: a.date, dateModified: a.date, mainEntityOfPage: url, image: "https://magpielocal.com/assets/og-image.png",
   });
   head = head.replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "Article"[\s\S]*?<\/script>/, `<script type="application/ld+json">${articleSchema}</script>`);
   head = head.replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "FAQPage"[\s\S]*?<\/script>/, "");
@@ -103,7 +103,7 @@ function articleHtml(siteDir, a) {
       <span class="label">${audienceLabel}</span>
       <h1>${esc(a.headline)}</h1>
       <p class="lede">${esc(a.lede || "")}</p>
-      <p style="font-size:.92rem;color:var(--ink3);margin-bottom:28px">By ${bylineName}, Founder, SIGNL &middot; ${dateLong} &middot; <a href="index.html" class="tx-link">SIGNL Learn hub</a></p>
+      <p style="font-size:.92rem;color:var(--ink3);margin-bottom:28px">By ${bylineName}, Founder, Magpie &middot; ${dateLong} &middot; <a href="index.html" class="tx-link">Magpie Learn hub</a></p>
     </div>
   </section>
 ${sections}
@@ -113,7 +113,7 @@ ${sections}
       <h2 style="margin:16px 0 14px">Local reach, booked like it should be.</h2>
       <p class="lede" style="margin-bottom:28px">Creators get found by local businesses, ranked by local reach, not follower count. Businesses book the people their customers actually follow.</p>
       <div class="form-wrap" style="text-align:center">
-        <p><a class="btn" href="https://app.joinsignl.com/claim">Join SIGNL</a></p>
+        <p><a class="btn" href="https://app.magpielocal.com/claim">Join Magpie</a></p>
       </div>
     </div>
   </section>
@@ -157,10 +157,10 @@ async function publish(job) {
     run("git", ["add", `learn/${a.slug}.html`, "learn/articles-meta.json", "learn/index.html", "learn"], SITE_DIR);
     run("git", ["commit", "-m", `Learn: ${a.headline} (via Admin Learn Studio)`], SITE_DIR);
     run("git", ["push"], SITE_DIR);
-    const res = await fetch(`https://joinsignl.com/learn/${a.slug}.html`, { method: "GET" });
+    const res = await fetch(`https://magpielocal.com/learn/${a.slug}.html`, { method: "GET" });
     if (!res.ok) throw new Error(`The article file is pushed but the live page answered ${res.status} — check the deploy.`);
   }
-  return `https://joinsignl.com/learn/${a.slug}.html`;
+  return `https://magpielocal.com/learn/${a.slug}.html`;
 }
 
 const { jobs } = await api("GET", "/internal/learn-jobs");
