@@ -3280,6 +3280,7 @@ function renderTopBar2(full) {
       <span class="tb2-name">${esc(name || "")}</span>
     </button>
     ${full ? `<button type="button" class="tb2-btn tb2-help130" onclick="return go('dashboard','Help')" aria-label="Help">${bnIcon("help")}</button>` : `<a class="tb2-btn tb2-help130" href="mailto:hello@magpielocal.com" aria-label="Help">${bnIcon("help")}</a>`}
+    <span class="tb2-brand mbrand"><span class="brand-lockup tb2-lockup"><img src="/assets/logo.png" alt="Magpie"><span class="formerly-line" data-bridge="formerly-signl">formerly SIGNL</span></span></span>
     <span class="tb2-actions">
       ${full && (live || u.role === "creator") ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Messages')" aria-label="Messages">${bnIcon("bubble")}${b.messages ? `<span class="tab-badge">${b.messages > 99 ? "99+" : b.messages}</span>` : ""}</button>` : ""}
       ${(u.role === "creator" || u.role === "business" || (u.role === "partner" && !state.pilotScopeId)) ? `<button type="button" class="tb2-btn tb2-burger137" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>` : `<button type="button" class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button>`}
@@ -3850,7 +3851,7 @@ function renderTopRow() {
   // Settings / Sign out), and the spelled-out controls are
   // icons — Everything keeps its name as the panel's title and
   // this button's title/aria-label; help is a help icon.
-  el.innerHTML = `<div class="wrap tr-in"><button type="button" class="tr-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span></button><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button><a class="tr-help126" href="mailto:hello@magpielocal.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a></span></div>`;
+  el.innerHTML = `<div class="wrap tr-in"><button type="button" class="tr-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span></button><span class="tr-brand mbrand"><span class="brand-lockup tb2-lockup"><img src="/assets/logo.png" alt="Magpie"><span class="formerly-line" data-bridge="formerly-signl">formerly SIGNL</span></span></span><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button><a class="tr-help126" href="mailto:hello@magpielocal.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a></span></div>`;
 }
 
 // Build -119: the greeting hour comes from the user's own

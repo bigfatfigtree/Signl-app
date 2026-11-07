@@ -1371,6 +1371,31 @@ table { max-width: 100%; }
 .formerly-line{font-size:11px;font-weight:700;letter-spacing:.16em;color:var(--ink2);white-space:nowrap}
 .topbar .formerly-line{color:rgba(255,255,255,.85)}
 
+/* Logged-in phone top bars: the brand lockup + bridge line ride the
+   middle at the top of the bar (Jeff, 2026-11-07) — the lockup takes
+   its own centered line inside the bar; the controls row below it
+   (profile chip left, the bar's own controls right) is byte-for-byte
+   the row that was already there. A single-row fit was measured and
+   rejected: the 109px lockup only fits beside the controls by
+   truncating the user's name to ~33px (creator) and landing up to
+   75px off-center (business/partner). The bar grows by the lockup's
+   own 29px line, the growth Jeff allowed for exactly this case.
+   The .mbrand spans render inside renderTopBar2 (creator / business /
+   partner / recruiter shells) and renderTopRow (admin); they are
+   display:none above the phone breakpoint, so desktop shells render
+   exactly as before. Removal rides the bridge removal (item 5.6):
+   delete the two .mbrand spans in app.js and this block. */
+.mbrand{display:none}
+@media (max-width:767.98px){
+  .mbrand{display:flex;flex:none;align-items:center}
+  .mbrand .brand-lockup{align-items:center;gap:2px}
+  .mbrand .brand-lockup img{height:16px;width:auto;display:block}
+  .tb2-in{flex-wrap:wrap}
+  .tb2-brand{order:-1;flex:0 0 100%;justify-content:center}
+  .tr-in{flex-wrap:wrap}
+  .tr-brand{order:0;flex:0 0 100%;justify-content:center}
+}
+
 
 /* ================= Maggie (2026-11-07): Sig becomes Maggie.
    Her mark is the magpie from Jeff's canonical logo master,
