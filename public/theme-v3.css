@@ -1383,9 +1383,13 @@ table { max-width: 100%; }
    block's phone query. The lockup is the existing .brand-lockup +
    .formerly-line span, rendered as .mbrand inside renderTopBar2
    (creator / business / partner / recruiter) and renderTopRow
-   (admin) — same artwork and bridge styling, only placed. Desktop
-   is untouched: .mbrand stays display:none above the phone
-   breakpoint and every layout rule below lives in the phone query.
+   (admin) — same artwork and bridge styling, only placed. The
+   phone rules live in the phone query below; a desktop query
+   after it (Jeff, 2026-11-07, later the same day) rides the
+   lockup at the top-right on desktop too: in the admin top row
+   itself, and for the .tb2 shells — whose bar the v3 desktop
+   shell hides — as a lockup-only strip floated at the top-right
+   of the page, out of flow.
 
    RESTORATION (item 5.6 — do exactly this, nothing else): delete
    this block AND the two .mbrand spans in public/app.js
@@ -1394,7 +1398,13 @@ table { max-width: 100%; }
    profile circle on the left (its suppression lives only here),
    profile + help sit on the left again, and the admin row's
    Build -130 ordering resumes — the order / margin-left overrides
-   below live only here and lapse with the block. */
+   below live only here and lapse with the block. The DESKTOP
+   lockup is part of the same removal: the >=1024px query below
+   (the .tr-brand placement in the admin row AND the #topbar2
+   lockup-only strip for the other shells) lives inside this
+   block and lapses with it — delete the block and the desktop
+   lockup is gone too, with the v3 shell's own top-bar rules
+   (outside this block) taking over again untouched. */
 .mbrand{display:none}
 @media (max-width:767.98px){
   .mbrand{display:flex;flex:none;align-items:center}
@@ -1418,6 +1428,31 @@ table { max-width: 100%; }
   .tr-help126{order:3}
   .tr-right > button:not(.tr-ev125){order:4;margin-left:0}
   .tr-ev125{order:5;margin-left:0}
+}
+
+/* Desktop top-right lockup (Jeff, 2026-11-07 — same bridge, see
+   the block comment above; it comes down with the same item-5.6
+   restoration). Admin has a real top row: .tr-brand shows in it,
+   pushed against the .tr-right icon cluster — the cluster gives
+   up its own margin-left:auto so the lockup sits immediately
+   left of the icons. The .tb2 shells have no desktop bar (the
+   v3 shell hides #topbar2 above 768px), so the bar becomes a
+   lockup-only strip floated at the top-right of the page: out
+   of flow (no layout shift), pointer-events off, and the bar's
+   other children stay hidden at this width. The v3-slim shell
+   keeps its bar at this width, so there the lockup simply joins
+   it, right-aligned the same way. */
+@media (min-width:1024px){
+  .mbrand .brand-lockup{gap:3px}
+  .mbrand .brand-lockup img{height:24px;width:auto;display:block}
+  .tr-brand{display:flex;flex:none;align-items:center;margin-left:auto}
+  .tr-right{margin-left:0}
+  body.v3-on #topbar2{display:block;position:absolute;top:0;right:0;left:auto;height:0;overflow:visible;background:none;border:0;box-shadow:none;z-index:95;pointer-events:none}
+  body.v3-on .tb2-in{justify-content:flex-end;padding:14px 24px 0 0;pointer-events:none}
+  body.v3-on .tb2-id, body.v3-on .tb2-help130, body.v3-on .tb2-actions{display:none}
+  body.v3-on .tb2-brand{display:flex;flex:none;align-items:center}
+  body.v3-slim .tb2-brand{display:flex;flex:none;align-items:center;margin-left:auto}
+  body.v3-slim .tb2-actions{margin-left:0}
 }
 
 
