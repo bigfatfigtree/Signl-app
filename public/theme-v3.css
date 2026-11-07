@@ -1534,3 +1534,38 @@ img.maggie-char-img { object-fit: cover; }
 @media (prefers-reduced-motion: reduce) {
   .maggie-char-head img, .maggie-char-hero .maggie-char-poster, .sig-celeb-media.maggie-char-celeb img { animation: none !important; }
 }
+
+/* --- Messages: two-pane desktop rebuild (Jeff, 2026-11-07) ---
+   The surface sat full-bleed: the toolbar spacer stranded the
+   primary button ("See offers" / "Find creators") at the far
+   edge of wide screens, and the reading pane was an unbounded
+   void with "Pick a conversation." floating in it. Now the
+   whole surface lives in the dashboard's 1180px content
+   column, the toolbar is one cluster, the list is a stable
+   pane, and the thread reads inside a white card. Mobile
+   keeps the stacked layout it had — only the rows gain the
+   sender avatar Jeff asked for. */
+.msg-wrap { max-width: 1180px; }
+.msg-tools .ws-search { flex: 0 1 440px; }
+.msg-panes { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 12px; align-items: start; }
+.msg-empty p { margin: 0; }
+.thread-list .thread-item { display: flex; gap: 11px; align-items: flex-start; }
+.thread-main { flex: 1; min-width: 0; }
+.thread-top { overflow-wrap: break-word; }
+.thread-avwrap { --avs: 42px; position: relative; flex: none; width: var(--avs); height: var(--avs); }
+.thread-avwrap.lg { --avs: 48px; }
+.thread-av { width: var(--avs); height: var(--avs); border-radius: 50%; display: block; }
+.thread-av.init { display: flex; align-items: center; justify-content: center; background: #A9E8C9; border: 1px solid #8FD3AC; color: #0B0D0C; font: 800 1.02rem 'Manrope', sans-serif; }
+.thread-avwrap img.thread-av { position: absolute; inset: 0; object-fit: cover; background: #fff; }
+.thread-head { display: flex; gap: 11px; align-items: flex-start; }
+.thread-head-main { flex: 1; min-width: 0; }
+@media (min-width: 900px) {
+  .msg-panes { grid-template-columns: 372px minmax(0, 1fr); height: calc(100dvh - 190px); min-height: 440px; align-items: stretch; }
+  .msg-list-col { overflow-y: auto; padding-right: 2px; min-height: 0; }
+  .msg-view { display: flex; flex-direction: column; background: #fff; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; min-height: 0; }
+  .msg-view .thread-head { flex: none; padding: 14px 18px 12px; border-bottom: 1px solid var(--line); }
+  .msg-view #msg-list { flex: 1; overflow-y: auto; padding: 14px 18px 4px; min-height: 0; }
+  .msg-view .msg-composer { flex: none; padding: 0 18px 14px; }
+  .msg-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .msg-pane-note { padding: 16px 18px; margin: 0; }
+}

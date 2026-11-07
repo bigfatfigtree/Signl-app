@@ -29169,13 +29169,23 @@ async function route(event) {
         // The platform thread (Build -40): the other side is the
         // Magpie team identity, not a user record.
         if (t.otherId === PLATFORM_PEER_ID) {
-          threads.push({ ...t, otherName: "Magpie", otherRole: "platform", otherBusinessName: null, otherHandle: null, platform: true });
+          threads.push({ ...t, otherName: "Magpie", otherRole: "platform", otherBusinessName: null, otherHandle: null, otherPhotoUrl: null, platform: true });
           continue;
         }
         const other = await store.get(`user:${t.otherId}`);
         const pairBooking = pairNewest(ctxBookings, (b) => (b.businessId === user.id && b.creatorId === t.otherId) || (b.creatorId === user.id && b.businessId === t.otherId));
         const pairOffer = pairBooking ? null : pairNewest(ctxOffers, (o) => (o.businessId === user.id && o.creatorId === t.otherId) || (o.businessId === t.otherId && o.creatorId === user.id));
-        threads.push({ ...t, otherName: other ? other.name : "Unknown", otherRole: other ? other.role : null, otherBusinessName: other && other.business ? other.business.businessName : null, otherHandle: other && other.creator ? other.creator.handle : null, contextTitle: pairBooking ? (pairBooking.title || null) : pairOffer ? (pairOffer.title || null) : null });
+        // Sender photo for the conversation list + thread head
+        // (Jeff, 2026-11-07): the same photo routes the cards use —
+        // a business's lead photo (or packet logo), a creator's
+        // profile photo. Null when neither exists; the client
+        // falls back to an initial tile.
+        const otherPhotoUrl = !other ? null
+          : other.business && other.business.hasPhoto ? `/api/users/${other.id}/photo`
+          : other.business && other.business.assetPacket && other.business.assetPacket.logoUrl ? other.business.assetPacket.logoUrl
+          : other.creator && other.creator.hasPhoto ? `/api/users/${other.id}/photo`
+          : null;
+        threads.push({ ...t, otherName: other ? other.name : "Unknown", otherRole: other ? other.role : null, otherBusinessName: other && other.business ? other.business.businessName : null, otherHandle: other && other.creator ? other.creator.handle : null, otherPhotoUrl, contextTitle: pairBooking ? (pairBooking.title || null) : pairOffer ? (pairOffer.title || null) : null });
       }
       threads.sort((a, b) => (a.lastMessage.createdAt < b.lastMessage.createdAt ? 1 : -1));
       return json(200, { threads });

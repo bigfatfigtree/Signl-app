@@ -24523,6 +24523,17 @@ let msgMode = "all";
 let msgQ = "";
 function msgSetMode(v) { msgMode = v; renderThreadList(); return false; }
 function msgSetQ(v) { msgQ = v; renderThreadList(true); return false; }
+// Conversation avatar (Jeff, 2026-11-07): show who is sending —
+// a business's lead photo/logo, a creator's profile photo, or
+// Maggie's curious tile for Magpie team threads. The initial
+// tile sits underneath, so a missing or failed photo still
+// shows a clean brand initial, never a broken icon.
+function threadAvatarHtml(t, lg) {
+  const name = (t && (t.otherBusinessName || t.otherName)) || "Magpie";
+  const initial = esc((name.trim().charAt(0) || "M").toUpperCase());
+  const src = t && t.platform ? `${MAGGIE_CHAR}/curious.jpg` : (t && t.otherPhotoUrl) || "";
+  return `<span class="thread-avwrap${lg ? " lg" : ""}"><span class="thread-av init" aria-hidden="true">${initial}</span>${src ? `<img class="thread-av" src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ""}</span>`;
+}
 function threadItemsHtml() {
   const me = state.user.id;
   let threads = state.threads || [];
@@ -24532,9 +24543,12 @@ function threadItemsHtml() {
   if (!threads.length) return `<div class="empty-card"><div class="ec-t">No conversations here</div><div class="ec-s">${msgMode === "waiting" ? "Nothing is waiting on you. When someone writes and you have not answered yet, it lands here." : "No conversations match that search."}</div></div>`;
   return `<div class="thread-list">${threads.map((t) => `
         <div class="thread-item${t.platform ? " thread-platform" : ""}" onclick="openThread('${t.otherId}')">
-          <strong>${esc(t.otherBusinessName || t.otherName)}</strong>${t.platform ? ` <span class="badge ok">Magpie team</span>` : ""} ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}
-          ${threadContextFor(t.otherId) ? `<div class="small thread-ctx">${esc(threadContextFor(t.otherId))}</div>` : ""}
-          <div class="small muted">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
+          ${threadAvatarHtml(t)}
+          <div class="thread-main">
+            <div class="thread-top"><strong>${esc(t.otherBusinessName || t.otherName)}</strong>${t.platform ? ` <span class="badge ok">Magpie team</span>` : ""} ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}</div>
+            ${threadContextFor(t.otherId) ? `<div class="small thread-ctx">${esc(threadContextFor(t.otherId))}</div>` : ""}
+            <div class="small muted">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
+          </div>
         </div>`).join("")}</div>`;
 }
 function renderThreadList(keepFocus) {
@@ -24552,15 +24566,16 @@ async function loadThreads() {
     state.threads = data.threads;
     const newGo = state.user.role === "business" ? "return go('dashboard','Discover')" : "return go('dashboard','Offers')";
     el.innerHTML = `
+    <div class="msg-wrap">
     ${wsHead("Messages", { sub: state.user.role === "business" ? "Talk to a creator about a visit or an offer." : "Talk to a business about a visit or an offer.", subKey: "messages" })}
-    <div class="ws-tools">
+    <div class="ws-tools msg-tools">
       <span class="ws-search">${bnIcon("search")}<input id="msg-q" type="search" placeholder="Search conversations" value="${esc(msgQ)}" oninput="msgSetQ(this.value)"></span>
       <span id="msg-seg">${segSw([{ v: "waiting", label: "Waiting on you" }, { v: "all", label: "All" }], msgMode, "msgSetMode")}</span>
-      <span class="sp"></span>
       <button type="button" class="btn ws-primary" onclick="${newGo}">${state.user.role === "business" ? "Find creators" : "See offers"}</button>
     </div>
-    <div class="grid cols-2"><div id="thread-list-wrap">${data.threads.length || state.activeThread ? threadItemsHtml() : `<div class="empty-card"><div class="ec-t">No messages yet</div><div class="ec-s">${state.user.role === "business" ? "Conversations attach to a visit or an offer. Invite a creator from Find creators, or answer an applicant, and the conversation lives here." : "Conversations attach to a visit or an offer. Apply to an offer, or accept an invite, and the conversation lives here."}</div></div>`}</div>
-    <div id="thread-view">${state.activeThread ? `<p class="muted">Loading conversation...</p>` : `<p class="muted">Pick a conversation.</p>`}</div></div>`;
+    <div class="msg-panes"><div class="msg-list-col" id="thread-list-wrap">${data.threads.length || state.activeThread ? threadItemsHtml() : `<div class="empty-card"><div class="ec-t">No messages yet</div><div class="ec-s">${state.user.role === "business" ? "Conversations attach to a visit or an offer. Invite a creator from Find creators, or answer an applicant, and the conversation lives here." : "Conversations attach to a visit or an offer. Apply to an offer, or accept an invite, and the conversation lives here."}</div></div>`}</div>
+    <div id="thread-view" class="msg-view">${state.activeThread ? `<p class="muted msg-pane-note">Loading conversation...</p>` : `<div class="msg-empty"><p class="muted">Pick a conversation.</p></div>`}</div></div>
+    </div>`;
     if (state.activeThread) loadConversation(state.activeThread);
   } catch (err) {
     el.innerHTML = `${wsHead("Conversations")}<div class="error-box">${esc(err.message)}</div>`;
@@ -24576,14 +24591,14 @@ async function loadConversation(otherId) {
     const isPlatform = otherId === SIGNL_TEAM_PEER || !!t0.platform;
     const ctxLine = isPlatform ? "" : threadContextFor(otherId);
     el.innerHTML = `
-      <div class="thread-head"><strong>${esc(isPlatform ? "Magpie" : (t0.otherBusinessName || t0.otherName || "Conversation"))}</strong>${isPlatform ? ` <span class="badge ok">Magpie team</span>` : ""}${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">${isPlatform ? "Messages from the Magpie team. Reply here any time." : "Contact about this visit or offer. Messages stay in Magpie."}</div></div>
+      <div class="thread-head">${threadAvatarHtml(isPlatform ? { platform: true, otherName: "Magpie" } : t0, true)}<div class="thread-head-main"><strong>${esc(isPlatform ? "Magpie" : (t0.otherBusinessName || t0.otherName || "Conversation"))}</strong>${isPlatform ? ` <span class="badge ok">Magpie team</span>` : ""}${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">${isPlatform ? "Messages from the Magpie team. Reply here any time." : "Contact about this visit or offer. Messages stay in Magpie."}</div></div></div>
       <div id="msg-list">${data.messages.map((m) => m.system ? `
         <div class="msg-system">${esc(m.body)}</div>` : `
         <div class="msg ${m.fromId === state.user.id ? "mine" : ""}${m.platform ? " platform-msg" : ""}">
           <div class="meta">${m.fromId === state.user.id ? "You" : (m.fromId === SIGNL_TEAM_PEER ? "Magpie" : "Them")} &middot; ${fmtDate(m.createdAt)}</div>
           ${esc(m.body)}
         </div>`).join("") || '<p class="muted">No messages yet. Say hello.</p>'}</div>
-      <form onsubmit="return sendMessage(event, '${otherId}')" class="mt">
+      <form onsubmit="return sendMessage(event, '${otherId}')" class="mt msg-composer">
         <div class="field"><textarea id="msg-body" rows="2" placeholder="Write a message..." required></textarea></div>
         <button class="btn small-btn" type="submit">Send</button>
         <button class="btn small-btn ghost" type="button" onclick="loadConversation('${otherId}')">Refresh</button>
