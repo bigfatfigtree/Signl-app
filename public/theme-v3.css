@@ -1370,3 +1370,46 @@ table { max-width: 100%; }
 .brand-lockup{display:inline-flex;flex-direction:column;align-items:flex-start;gap:1px;line-height:1}
 .formerly-line{font-size:9.5px;font-weight:600;letter-spacing:.13em;color:var(--ink3);white-space:nowrap}
 .topbar .formerly-line{color:rgba(255,255,255,.55)}
+
+
+/* ================= Maggie (2026-11-07): Sig becomes Maggie.
+   Her mark is the magpie from Jeff's canonical logo master,
+   traced to SVG (see maggieMarkHtml in app.js). The orb stays
+   behind SIG_MARK_BIRD=false; these rules size her slots and
+   run her motion. Transform-only, and reduced motion stills
+   her completely. ================= */
+.maggie-mark { display:block; overflow:visible; }
+.maggie-mark .mg-bob { animation: mgBob 3.8s ease-in-out infinite; }
+.maggie-mark .mg-head-rot { transform-box: view-box; transform-origin: 84px 47px; animation: mgTilt 9s ease-in-out infinite; transition: transform .35s ease; }
+.maggie-mark .mg-tail-rot { transform-box: view-box; transform-origin: 54px 90px; animation: mgFlick 7s ease-in-out infinite; }
+.maggie-mark .mg-wing-rot { transform-box: view-box; transform-origin: 42px 76px; }
+.maggie-mark[data-state="listen"] .mg-head-rot { animation: none; transform: rotate(-9deg); }
+.maggie-mark[data-state="think"] .mg-wing-rot { animation: mgFlutter .34s ease-in-out infinite alternate; }
+.maggie-mark[data-state="think"] .mg-head-rot { animation: none; transform: rotate(-4deg); }
+.maggie-mark[data-state="greet"] .mg-wing-rot { animation: mgFlap .95s ease-out 1; }
+.maggie-mark[data-state="greet"] .mg-bob { animation: mgHop .95s ease-out 1; }
+.maggie-mark[data-state="rest"] .mg-bob, .maggie-mark[data-state="rest"] .mg-head-rot, .maggie-mark[data-state="rest"] .mg-tail-rot { animation: none; }
+@keyframes mgBob { 0%,100%{ transform: translateY(0);} 50%{ transform: translateY(-1.1px);} }
+@keyframes mgTilt { 0%,52%{ transform: rotate(0deg);} 60%,72%{ transform: rotate(3.2deg);} 80%{ transform: rotate(-1.6deg);} 88%,100%{ transform: rotate(0deg);} }
+@keyframes mgFlick { 0%,68%{ transform: rotate(0deg);} 73%{ transform: rotate(2.3deg);} 77%{ transform: rotate(-0.9deg);} 82%,100%{ transform: rotate(0deg);} }
+@keyframes mgFlutter { from{ transform: rotate(-13deg);} to{ transform: rotate(5deg);} }
+@keyframes mgFlap { 0%{ transform: rotate(0deg);} 30%{ transform: rotate(-27deg);} 55%{ transform: rotate(7deg);} 78%{ transform: rotate(-13deg);} 100%{ transform: rotate(0deg);} }
+@keyframes mgHop { 0%{ transform: translateY(0);} 35%{ transform: translateY(-3.2px);} 70%{ transform: translateY(0.6px);} 100%{ transform: translateY(0);} }
+@media (prefers-reduced-motion: reduce) {
+  .maggie-mark .mg-bob, .maggie-mark .mg-head-rot, .maggie-mark .mg-tail-rot, .maggie-mark .mg-wing-rot { animation: none !important; transition: none !important; transform: none !important; }
+}
+
+/* Slot sizing: the svg is 120x134, so heights run ~1.12x width. */
+.maggie-mark { width: 44px; height: 49px; }
+svg.rail-sig-img.maggie-mark { width: 24px; height: 27px; }
+#agent-fab svg.maggie-mark { width: 32px; height: 36px; }
+.sigbox-orb.maggie-orb { background: transparent; display: inline-flex; align-items: center; justify-content: center; }
+.sigbox-orb .maggie-mark { width: 40px; height: 45px; }
+.sighero137-head .sigbox-orb .maggie-mark { width: 56px; height: 63px; }
+.sigsheet137-head .sigbox-orb .maggie-mark { width: 44px; height: 49px; }
+.sig-ava-bird { box-shadow: 0 0 0 2px var(--mint, #A9E8C9); }
+.sig-ava .maggie-mark { width: 88%; height: 88%; }
+.sig-hero-media.maggie-hero { background: none; box-shadow: none; overflow: visible; }
+.maggie-hero .maggie-mark { width: 100%; height: 100%; }
+.sig-celeb-media.maggie-celeb { background: none; box-shadow: none; overflow: visible; }
+.maggie-celeb .maggie-mark { width: 100%; height: 100%; }

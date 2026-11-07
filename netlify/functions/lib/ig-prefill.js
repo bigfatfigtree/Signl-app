@@ -252,7 +252,7 @@ const FOOD_CATEGORIES = ["Restaurant", "Bar", "Coffee & Bakery"];
 function suggestPlayForBusiness(signals = {}) {
   const category = signals.category || "";
   let play = "build_regulars";
-  let reason = "A steady first campaign while Sig learns your crowd.";
+  let reason = "A steady first campaign while Maggie learns your crowd.";
   if (signals.opening) {
     play = "grand_opening";
     reason = "You are opening, so the first campaign should make the opening the event.";

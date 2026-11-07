@@ -2524,7 +2524,7 @@ function moreRowsFor() {
   }
   if (u.role === "business") {
     return [
-      { icon: "notice", label: "Start a campaign", sub: "Build a new campaign, step by step or with Sig.", tab: "Campaign Setup" },
+      { icon: "notice", label: "Start a campaign", sub: "Build a new campaign, step by step or with Maggie.", tab: "Campaign Setup" },
       { icon: "bars", label: "Your campaigns", sub: "Current and past campaigns, who applied, and what they did.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
       { icon: "calendar", label: "Visits", sub: "Visits and posts. The counter is inside.", tab: "Visits & Posts", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
       { icon: "users", label: "My Regulars", sub: "Creators who visited you. Book them again.", tab: "Regulars" },
@@ -2678,7 +2678,7 @@ function everythingGroups125() {
         R("users", "Team", "Who can do what in Admin", "Team"),
       ] },
       { title: "System", rows: [
-        R("sig", "Sig", "Your attention list", "Sig"),
+        R("sig", "Maggie", "Your attention list", "Sig"),
         { icon: "building", label: "Preview as business", sub: "Walk the app as a business", act: "return enterPreview()" },
         { icon: "building", label: "Business dashboard", sub: "The founding business view", act: "return enterPreviewDashboard()" },
       ] },
@@ -2754,7 +2754,7 @@ function everythingGroups125() {
   if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) {
     return [
       { title: "Your pilot", rows: [
-        R("sig", "Sig", "Your pilot's numbers, in plain sentences", "Sig"),
+        R("sig", "Maggie", "Your pilot's numbers, in plain sentences", "Sig"),
         ...(u.teamAdmin || (u.partner && u.partner.teamAdmin) ? [R("users", "Team", "Your pilot team's seats", "Team")] : []),
         R("help", "Help", "How the pilot works, in plain words", "Help"),
         ...(u.role === "partner" ? [{ icon: "home", label: "Partner view", sub: "Back to your partner console", tab: "__partner_scope_exit" }] : []),
@@ -2764,7 +2764,7 @@ function everythingGroups125() {
   if (u.role === "recruiter") {
     return [
       { title: "Your console", rows: [
-        R("sig", "Sig", "Ask anything about your queue and your market", "Sig"),
+        R("sig", "Maggie", "Ask anything about your queue and your market", "Sig"),
         R("help", "Help", "Your launch guide and scripts, in plain words", "Help"),
       ] },
     ];
@@ -2772,7 +2772,7 @@ function everythingGroups125() {
   return [];
 }
 function everythingRowHtml125(r) {
-  const inner = `<span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
+  const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
   if (r.href) return `<a class="more-row ev125-row" href="${esc(r.href)}" onclick="closeEverything125()">${inner}</a>`;
   const act = r.act || `return go('dashboard','${r.tab}')`;
   return `<button type="button" class="more-row ev125-row" onclick="closeEverything125(); ${act}">${inner}</button>`;
@@ -2821,7 +2821,7 @@ function hamburgerGroups137() {
     const founding = !(u.founding && u.founding.marketLive);
     return [
       { title: "Your work", rows: [
-        R("home", "Home", "Sig, your highlights, your next steps", "Dashboard"),
+        R("home", "Home", "Maggie, your highlights, your next steps", "Dashboard"),
         R("search", "Find offers", "Open visits near you", "Find Offers"),
         R("deck", "My offers", "Invites and deals you are working on", "Offers", { badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) }),
         R("calendar", "Visits", "Your visits and post deadlines", "My Visits", { badge: wc.crVisits || 0 }),
@@ -2847,9 +2847,9 @@ function hamburgerGroups137() {
   if (u.role === "business") {
     return [
       { title: "Sell", rows: [
-        R("home", "Home", "Sig, your highlights, your next steps", "Home"),
+        R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
         R("deck", "Find creators", "Shop local creators near you", "Discover"),
-        R("notice", "Start a campaign", "Build a new campaign, step by step or with Sig", "Campaign Setup"),
+        R("notice", "Start a campaign", "Build a new campaign, step by step or with Maggie", "Campaign Setup"),
         R("bars", "Your campaigns", "Current and past campaigns, who applied, and what they did", "My Offers", { badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) }),
         R("heart", "Saved creators", "Your shortlist", "Favorites", { badge: wc.bizSaved || 0 }),
       ] },
@@ -2872,8 +2872,8 @@ function hamburgerGroups137() {
   if (u.role === "partner" && !state.pilotScopeId) {
     return [
       { title: "Start", rows: [
-        R("home", "Home", "Sig, your highlights, your next steps", "Home"),
-        R("sig", "Sig", "Your numbers and next moves, in plain sentences", "Sig"),
+        R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
+        R("sig", "Maggie", "Your numbers and next moves, in plain sentences", "Sig"),
       ] },
       { title: "Your market", rows: [
         R("pin", "Markets", "Each market's funnel, end to end", "Markets"),
@@ -2898,8 +2898,8 @@ function hamburgerGroups137() {
   if (u.role === "admin") {
     return [
       { title: "Start", rows: [
-        R("home", "Home", "Sig, your highlights, your next steps", "Home"),
-        R("sig", "Sig", "Your attention list", "Sig"),
+        R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
+        R("sig", "Maggie", "Your attention list", "Sig"),
       ] },
       { title: "Review & people", rows: [
         R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
@@ -2944,7 +2944,7 @@ function hamburgerGroups137() {
   return [];
 }
 function hamburgerRowHtml137(r) {
-  const inner = `<span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
+  const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
   if (r.href) return `<a class="more-row ev125-row" href="${esc(r.href)}" onclick="closeHamburger137()">${inner}</a>`;
   const act = r.act || `return go('dashboard','${r.tab}')`;
   return `<button type="button" class="more-row ev125-row" onclick="closeHamburger137(); ${act}">${inner}</button>`;
@@ -3000,14 +3000,22 @@ function openSigSheet137() {
   el.id = "sig-sheet137";
   el.className = "sigsheet137-overlay";
   el.innerHTML = `
-  <div class="sigsheet137" role="dialog" aria-label="Sig">
-    <div class="sigsheet137-head">${sigOrbMedia130(false)}<div class="sigsheet137-htext"><strong>Sig</strong><span>Your helper — she works from your real numbers, not guesses.</span></div><button type="button" class="linklike" onclick="closeSigSheet137()" aria-label="Close">✕</button></div>
+  <div class="sigsheet137" role="dialog" aria-label="Maggie">
+    <div class="sigsheet137-head">${sigOrbMedia130(false)}<div class="sigsheet137-htext"><strong>Maggie</strong><span>Your helper — she works from your real numbers, not guesses.</span></div><button type="button" class="linklike" onclick="closeSigSheet137()" aria-label="Close">✕</button></div>
     ${brief ? `<div class="sig-brief137">${esc(brief)}</div>` : ""}
     ${sigChatBoxHtml("sheet")}
     ${q.length ? `<div class="sigsheet137-steps"><div class="sigsheet137-slabel">Next steps</div>${q.map((r, i) => `<div class="nx-row"><div class="nx-tx">${esc(r.short || r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}</div>`).join("")}</div>` : ""}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeSigSheet137(); });
   document.body.appendChild(el);
+  // Maggie arrival: one flap-and-settle when the sheet opens.
+  if (SIG_MARK_BIRD) {
+    const mg = el.querySelector("[data-maggie]");
+    if (mg && !sigReducedMotion()) {
+      mg.setAttribute("data-state", "greet");
+      setTimeout(() => { if (document.body.contains(mg)) mg.setAttribute("data-state", "idle"); }, 1150);
+    }
+  }
   const wrapped = q.map((r) => ({ ...r, act: r.act ? (btn) => { closeSigSheet137(); r.act(btn); } : null }));
   wireSigQueue(el, wrapped, []);
   return false;
@@ -3025,7 +3033,7 @@ function closeSigSheet137() {
 // this context — the hero carries it.
 function sigHero137Html(brief) {
   return `<section class="sighero137 panel">
-    <div class="sighero137-head">${sigOrbMedia130(false)}<div class="sigbox-htext"><strong>Sig</strong><span>Your helper — she works from your real numbers, not guesses.</span></div></div>
+    <div class="sighero137-head">${sigOrbMedia130(false)}<div class="sigbox-htext"><strong>Maggie</strong><span>Your helper — she works from your real numbers, not guesses.</span></div></div>
     ${brief ? `<div class="sig-brief137">${esc(brief)}</div>` : ""}
     ${sigChatBoxHtml("home")}
     <div class="sigtop-nudges" id="sigtop-nudges"></div>
@@ -3200,7 +3208,7 @@ function tabBarHtml() {
     // Build -125 display names ride the -41 dual-span mechanism:
     // the full label on the wide rail, the design's one-word
     // label on the phone bar (NAV_LABEL_125 / RAIL_SHORT).
-    const full = it.tab === "Plan" && u.role === "business" ? "Wallet" : it.label;
+    const full = it.tab === "Sig" ? "Maggie" : it.tab === "Plan" && u.role === "business" ? "Wallet" : it.label;
     const short = NAV_LABEL_125[it.tab] || RAIL_SHORT[it.tab] || full;
     const isSig = it.tab === "Sig";
     const bi = barIdx[it.tab];
@@ -3213,7 +3221,7 @@ function tabBarHtml() {
     const style137 = redesigned137 ? ` style="${bi != null ? `--bar-ord:${bi};` : ""}order:${ix}"` : (bi != null ? ` style="--bar-ord:${bi}"` : "");
     return `
     <button type="button" class="tab-item ${cls}${bi != null ? " tab-bar137" : ""}${isSig ? " tab-sig137" : ""} ${it.on ? "on" : ""}"${style137} onclick="${click}" aria-label="${esc(full)}">
-      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
+      <span class="tab-ic">${it.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
       <span class="tab-label"><span class="lbl-full">${esc(full)}</span><span class="lbl-short">${esc(short)}</span></span>
     </button>`;
   };
@@ -3363,8 +3371,40 @@ const SIG_ART = "/assets/sig-orb";
 const SIG_ART_VIDEO = true;
 const SIG_STILL = "orb.webp";
 const SIG_CLIP = "orb.mp4";
+
+// Maggie (Jeff, 2026-11-07): Sig is renamed Maggie and her mark
+// is a BIRD — the magpie from Jeff's canonical logo master
+// (~/workspace/magpie-brand/magpie-mark-gradient-on-black.jpg),
+// traced from that artwork into clean SVG: the gradient g, the
+// ink bird, the wing leaf, the eye. Identical ink copies of the
+// bird, clipped to the head / wing / tail zones, rotate over the
+// static base, so at rest she is true to the master and motion
+// never breaks the silhouette. States (data-state on the svg):
+// idle (breathing bob, slow head tilt, tail flick on a long
+// loop), listen (head cocked toward the words while the user
+// types), think (wing flutter while she works), greet (one
+// flap-and-settle when the chat opens), rest (frozen).
+// SIG_MARK_BIRD = false restores the Build -130 orb in every
+// slot below; the orb assets and code paths are untouched.
+const SIG_MARK_BIRD = true;
+let __mgUid = 0;
+function maggieMarkHtml(cls, state) {
+  const u = ++__mgUid;
+  const G = `url(#mg${u})`;
+  const bird = `<path d="M 72.3 29.5 Q 76.7 28.4 81.6 29.1 Q 86.5 29.8 92.1 34.2 Q 97.7 38.6 103.3 39.3 Q 108.8 40.0 108.8 44.9 Q 108.8 49.8 104.7 50.0 Q 100.5 50.2 99.1 50.9 Q 97.7 51.6 95.6 54.4 Q 93.5 57.2 92.6 68.9 Q 91.6 80.5 89.1 86.5 Q 86.5 92.6 83.0 95.6 Q 79.5 98.6 75.6 100.3 Q 71.6 101.9 56.7 102.1 Q 41.9 102.4 36.0 103.3 Q 30.2 104.2 25.1 106.5 Q 20.0 108.9 15.6 112.6 Q 11.2 116.3 11.2 98.6 Q 11.2 81.0 14.0 84.2 Q 16.7 87.5 18.8 84.4 Q 20.9 81.4 29.3 73.7 Q 37.7 66.1 45.8 54.4 Q 54.0 42.8 57.4 39.1 Q 60.9 35.4 64.4 33.0 Q 67.9 30.7 72.3 29.5 Z"/>`;
+  return `<svg class="maggie-mark ${cls || ""}" data-maggie data-state="${state || "idle"}" viewBox="0 0 120 134" role="img" aria-label="Maggie"><defs><linearGradient id="mg${u}" gradientUnits="userSpaceOnUse" x1="8" y1="126" x2="112" y2="8"><stop offset="0" stop-color="#006AFC"/><stop offset=".38" stop-color="#019BFC"/><stop offset=".72" stop-color="#03C9AB"/><stop offset="1" stop-color="#2FE07E"/></linearGradient><clipPath id="mgh${u}"><polygon points="50,14 120,14 120,62 64,59 50,38"/></clipPath><clipPath id="mgw${u}"><polygon points="34,50 92,50 92,104 34,104"/></clipPath><clipPath id="mgt${u}"><polygon points="0,68 62,77 60,120 0,120"/></clipPath></defs><g class="mg-bob"><path fill="${G}" d="M 47.9 3.0 Q 57.2 0.0 67.7 0.0 Q 78.1 0.0 84.0 1.6 Q 89.8 3.3 94.4 5.6 Q 99.1 7.9 102.6 10.5 Q 106.0 13.0 110.0 17.7 Q 114.0 22.3 116.3 27.0 Q 118.6 31.6 119.3 35.8 Q 120.0 40.0 110.2 39.8 Q 100.5 39.5 98.4 38.6 Q 96.3 37.7 93.3 34.7 Q 90.2 31.6 86.7 30.2 Q 83.3 28.8 80.0 28.6 Q 76.7 28.4 72.3 29.5 Q 67.9 30.7 62.1 35.4 Q 56.3 40.0 47.0 53.0 Q 37.7 66.1 31.9 71.2 Q 26.0 76.3 21.2 81.9 Q 16.3 87.5 13.5 84.0 Q 10.7 80.5 7.7 72.6 Q 4.7 64.7 4.4 58.6 Q 4.2 52.6 6.3 44.9 Q 8.4 37.2 13.0 29.8 Q 17.7 22.3 22.6 17.7 Q 27.4 13.0 33.0 9.5 Q 38.6 6.0 47.9 3.0 Z"/><path fill="${G}" d="M 100.2 50.7 Q 102.8 49.8 111.4 49.8 Q 120.0 49.8 120.0 70.3 Q 120.0 90.7 116.7 99.6 Q 113.5 108.4 107.4 115.6 Q 101.4 122.8 95.1 126.6 Q 88.8 130.3 82.1 132.1 Q 75.3 134.0 66.3 134.0 Q 57.2 134.0 42.1 131.2 Q 27.0 128.4 21.4 128.4 Q 15.8 128.4 8.6 130.0 Q 1.4 131.7 6.3 124.0 Q 11.2 116.3 18.1 111.2 Q 25.1 106.1 33.5 104.2 Q 41.9 102.4 55.6 102.4 Q 69.3 102.4 75.8 99.6 Q 82.3 96.8 85.3 93.3 Q 88.4 89.8 89.8 86.3 Q 91.2 82.8 92.3 70.0 Q 93.5 57.2 95.6 54.4 Q 97.7 51.6 100.2 50.7 Z"/><g fill="#0B0D0C">${bird}</g><path fill="${G}" d="M 57.7 63.0 Q 67.0 61.0 73.0 61.2 Q 79.1 61.4 81.2 63.0 Q 83.3 64.7 82.8 69.3 Q 82.3 74.0 78.4 78.6 Q 74.4 83.3 68.4 85.8 Q 62.3 88.4 51.6 89.1 Q 40.9 89.8 34.9 91.0 Q 28.8 92.1 22.3 95.1 Q 15.8 98.2 18.4 91.9 Q 20.9 85.6 26.5 79.8 Q 32.1 74.0 40.2 69.6 Q 48.4 65.1 57.7 63.0 Z"/><g clip-path="url(#mgt${u})"><g class="mg-tail-rot"><g fill="#0B0D0C">${bird}</g></g></g><g clip-path="url(#mgw${u})"><g class="mg-wing-rot"><path fill="${G}" d="M 57.7 63.0 Q 67.0 61.0 73.0 61.2 Q 79.1 61.4 81.2 63.0 Q 83.3 64.7 82.8 69.3 Q 82.3 74.0 78.4 78.6 Q 74.4 83.3 68.4 85.8 Q 62.3 88.4 51.6 89.1 Q 40.9 89.8 34.9 91.0 Q 28.8 92.1 22.3 95.1 Q 15.8 98.2 18.4 91.9 Q 20.9 85.6 26.5 79.8 Q 32.1 74.0 40.2 69.6 Q 48.4 65.1 57.7 63.0 Z"/></g></g><g clip-path="url(#mgh${u})"><g class="mg-head-rot"><g fill="#0B0D0C">${bird}</g><path fill="${G}" d="M 79.8 38.6 Q 80.9 37.7 82.1 37.7 Q 83.3 37.7 84.4 38.9 Q 85.6 40.0 84.9 42.3 Q 84.2 44.7 82.6 44.9 Q 80.9 45.1 79.8 44.2 Q 78.6 43.3 78.6 41.4 Q 78.6 39.5 79.8 38.6 Z"/></g></g></g></svg>`;
+}
+// One resolver for the small static slots (tab, rail, More rows,
+// FAB): the bird when SIG_MARK_BIRD, the orb still otherwise.
+function sigMarkHtml(cls) {
+  if (SIG_MARK_BIRD) return maggieMarkHtml(cls, "idle");
+  return `<img class="${cls}" src="${SIG_ART}/${SIG_STILL}" alt="">`;
+}
 function sigAvatarHtml(mood) {
-  return `<span class="sig-ava sig-ava-img${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Sig"><img src="${SIG_ART}/${SIG_STILL}" alt="" loading="lazy" decoding="async"></span>`;
+  if (SIG_MARK_BIRD) {
+    return `<span class="sig-ava sig-ava-bird${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Maggie">${maggieMarkHtml("", mood === "think" ? "think" : "idle")}</span>`;
+  }
+  return `<span class="sig-ava sig-ava-img${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Maggie"><img src="${SIG_ART}/${SIG_STILL}" alt="" loading="lazy" decoding="async"></span>`;
 }
 const SIG_AVATAR_HTML = sigAvatarHtml("");
 
@@ -3378,6 +3418,9 @@ let sigQueueBeat = "";
 // NO sources in markup — sigHeroSet attaches only the visible
 // state's clips, so nothing downloads before the hero renders.
 function sigHeroMediaHtml() {
+  if (SIG_MARK_BIRD) {
+    return `<span class="sig-hero-media maggie-hero" data-sig-hero-media data-mode="idle">${maggieMarkHtml("maggie-hero-svg", "idle")}</span>`;
+  }
   return `<span class="sig-hero-media" data-sig-hero-media>
     <img class="sig-hero-still" src="${SIG_ART}/${SIG_STILL}" alt="" decoding="async">
     <video class="sig-hero-video" data-sig-hero-video muted loop playsinline autoplay preload="none" poster="${SIG_ART}/${SIG_STILL}" aria-hidden="true"></video>
@@ -3398,6 +3441,25 @@ function sigReducedMotion() {
 function sigHeroSet(mode) {
   const host = document.querySelector("[data-sig-hero-media]");
   if (!host) { sigHeroMode = ""; return; }
+  if (SIG_MARK_BIRD && host.classList.contains("maggie-hero")) {
+    // Maggie's hero states are CSS on the bird (data-state):
+    // think flutters, greet/celebrate flap once and settle back
+    // to idle, talk rides the idle bob.
+    const svg = host.querySelector("[data-maggie]");
+    host.setAttribute("data-mode", mode);
+    sigHeroMode = mode;
+    if (svg) {
+      const st = mode === "think" ? "think" : (mode === "greet" || mode === "celebrate") ? "greet" : "idle";
+      svg.setAttribute("data-state", st);
+      if (st === "greet") {
+        clearTimeout(host.__mgT);
+        host.__mgT = setTimeout(() => {
+          if (host.getAttribute("data-mode") === mode) { host.setAttribute("data-mode", "idle"); svg.setAttribute("data-state", "idle"); }
+        }, 1150);
+      }
+    }
+    return;
+  }
   const video = host.querySelector("[data-sig-hero-video]");
   const think = host.querySelector(".sig-hero-think");
   if (!video) return;
@@ -3434,12 +3496,23 @@ function sigHeroSet(mode) {
 // treatment as the hero, one shot). Reduced motion or a failed
 // clip leaves the still standing.
 function sigCelebMediaHtml() {
+  if (SIG_MARK_BIRD) {
+    return `<span class="sig-celeb-media maggie-celeb" data-sig-celeb-media>${maggieMarkHtml("", "idle")}</span>`;
+  }
   return `<span class="sig-celeb-media" data-sig-celeb-media>
     <img src="${SIG_ART}/${SIG_STILL}" alt="" decoding="async" data-sig-celeb-still>
     <video data-sig-celeb-video muted playsinline preload="none" poster="${SIG_ART}/${SIG_STILL}" aria-hidden="true" hidden></video>
   </span>`;
 }
 function sigCelebKick() {
+  if (SIG_MARK_BIRD) {
+    const host = document.querySelector("[data-sig-celeb-media]");
+    const svg = host && host.querySelector("[data-maggie]");
+    if (!svg || sigReducedMotion()) return;
+    svg.setAttribute("data-state", "greet");
+    setTimeout(() => { if (document.body.contains(svg)) svg.setAttribute("data-state", "idle"); }, 1150);
+    return;
+  }
   if (!SIG_ART_VIDEO) return; // a mark with no clip: the orb still stands
   const host = document.querySelector("[data-sig-celeb-media]");
   if (!host || sigReducedMotion()) return;
@@ -3550,7 +3623,7 @@ function railItems() {
     add("b", "deck", "Templates", "return go('dashboard','Templates')", t === "Templates");
     add("b", "stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
     add("c", "users", "Team", "return go('dashboard','Team')", t === "Team");
-    add("c", "sig", "Sig", "return go('dashboard','Sig')", t === "Sig");
+    add("c", "sig", "Maggie", "return go('dashboard','Sig')", t === "Sig");
     // Build -138: a teammate's rail carries only their rooms —
     // the same rule the server enforces on every route.
     const allow138 = adminTabsAllowed138();
@@ -3620,7 +3693,7 @@ function renderRail() {
   // Build -130 (Part 9): the stops are Review · Creators ·
   // Markets · Stats — Creators is its own tab now and Admin
   // has no Wallet anywhere (the money views live in Stats).
-  const railLabel119 = (label) => label === "Applications" ? "Review" : label;
+  const railLabel119 = (label) => label === "Sig" ? "Maggie" : label === "Applications" ? "Review" : label;
   // Build -137: the phone bar is Home · Review · Sig ·
   // Stats · Markets (Jeff's ruling). Creators leaves the
   // bar; it stays in the rail, the section bar and the menu.
@@ -3633,7 +3706,7 @@ function renderRail() {
     const active = it.active;
     const labelHtml = `<span class="rail-label">${esc(disp)}</span>`;
     const oc = it.label === "Sig" ? "return sigBarGo137()" : it.onclick;
-    return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_125.includes(it.label) ? `rail-primary rail-p-${it.label.toLowerCase()}` : ""} ${active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${oc}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
+    return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_125.includes(it.label) ? `rail-primary rail-p-${it.label.toLowerCase()}` : ""} ${active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${oc}"><span class="bn-icon">${it.icon === "sig" ? `${sigMarkHtml("rail-sig-img")}` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
   }).join("");
   rail.innerHTML = `
     <button type="button" class="rail-brand" title="Magpie" aria-label="Magpie home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="Magpie"></button>
@@ -3720,7 +3793,7 @@ function ensureSigFab() {
     fab = document.createElement("button");
     fab.id = "agent-fab";
     fab.type = "button";
-    fab.setAttribute("aria-label", "Ask Sig");
+    fab.setAttribute("aria-label", "Ask Maggie");
     document.body.appendChild(fab);
   }
   renderAgentFab();
@@ -3737,7 +3810,7 @@ function renderAgentFab() {
     && (document.body.classList.contains("v3-on") || document.body.classList.contains("v3-slim"));
   if (!state.user || state.preview || (!q && !inAppShell)) { fab.classList.remove("show"); fab.innerHTML = ""; fab.onclick = null; return; }
   fab.classList.add("show");
-  fab.innerHTML = `<img src="/assets/sig-orb/orb.webp" alt=""><span class="fab-dot" aria-hidden="true"></span>Sig${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
+  fab.innerHTML = `${sigMarkHtml("fab-sig-img")}<span class="fab-dot" aria-hidden="true"></span>Maggie${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
   // Build -137: the orb opens the Sig SHEET (her brief +
   // the live chat) over the current screen, at every width.
   fab.onclick = openSigSheet137;
@@ -3758,15 +3831,15 @@ function readyRowsHtml(q, opts) {
 function readyCardHtml(q) {
   if (!q) return "";
   const n = q.count || 0;
-  const title = n ? `Sig has ${n} thing${n === 1 ? "" : "s"} ready for you` : esc(q.title || "Your queue is clear");
-  const sub = n ? "One tap takes you straight to it." : esc(q.empty || "Sig is watching the queue. New items land here first.");
+  const title = n ? `Maggie has ${n} thing${n === 1 ? "" : "s"} ready for you` : esc(q.title || "Your queue is clear");
+  const sub = n ? "One tap takes you straight to it." : esc(q.empty || "Maggie is watching the queue. New items land here first.");
   return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">${title}</div><div class="sig-sub">${sub}</div></div></div>${n ? readyRowsHtml(q) : ""}</div>`;
 }
 // The "Your goals" card (Grin pattern): a plain-language goal
 // slot on the home. Structure only in V2 — Sig does not act on
 // goals yet, and the card says so instead of implying it does.
 function goalsCardHtml() {
-  return `<div class="goals-card"><h3>Your goals</h3><p>No goals yet. Soon you will be able to tell Sig what you want, in plain words, and watch progress here. Sig does not act on goals yet.</p></div>`;
+  return `<div class="goals-card"><h3>Your goals</h3><p>No goals yet. Soon you will be able to tell Maggie what you want, in plain words, and watch progress here. Maggie does not act on goals yet.</p></div>`;
 }
 
 // ---------- Overhaul V3 components (spec §4–§6) ----------
@@ -3802,8 +3875,8 @@ function sigQueueHtml(items, opts) {
   // leadShort (Homes only): the greeting above the card already
   // carries the lead item's full sentence, so the lead row renders
   // its short task form instead — Home never shows a sentence twice.
-  const row = (r, i) => `<div class="sig-item">${o.speaker ? `<span class="sig-says">Sig</span>` : ""}<div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss">&times;</button>` : ""}</div>`;
-  return `<div class="sig-card"><div class="sig-top">${ava}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
+  const row = (r, i) => `<div class="sig-item">${o.speaker ? `<span class="sig-says">Maggie</span>` : ""}<div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss">&times;</button>` : ""}</div>`;
+  return `<div class="sig-card"><div class="sig-top">${ava}<div><div class="sig-title">Maggie has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
   ${o.askBox ? sigAskBoxHtml() : ""}
   ${items.slice(0, 3).map(row).join("")}
   ${n > 3 ? `<div class="sig-more" hidden>${items.slice(3).map((r, j) => row(r, j + 3)).join("")}</div><button type="button" class="sig-seeall" onclick="return sigSeeAll(this)">See all ${n}</button>` : ""}
@@ -4075,6 +4148,10 @@ function snapshotHtml(cells, fillLine, tab) {
 // flows hold per-step state); the box answers questions and
 // carries the answer's own walk-to/action buttons.
 function sigOrbMedia130(still) {
+  if (SIG_MARK_BIRD) {
+    const rest = still || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    return `<span class="sigbox-orb maggie-orb">${maggieMarkHtml("", rest ? "rest" : "idle")}</span>`;
+  }
   if (still || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
     return `<img class="sigbox-orb" src="${SIG_ART}/${SIG_STILL}" alt="">`;
   }
@@ -4083,15 +4160,39 @@ function sigOrbMedia130(still) {
 function sigChatBoxHtml(key, opts) {
   const o = opts || {};
   return `<div class="sigbox130" data-sigbox="${esc(key)}">
-    <div class="sigbox-head">${sigOrbMedia130(!!o.still)}<div class="sigbox-htext"><strong>Sig</strong><span>${esc(o.hint || "Ask me anything. I work from your real numbers, and I can get things done.")}</span></div></div>
+    <div class="sigbox-head">${sigOrbMedia130(!!o.still)}<div class="sigbox-htext"><strong>Maggie</strong><span>${esc(o.hint || "Ask me anything. I work from your real numbers, and I can get things done.")}</span></div></div>
     <div class="sigbox-thread" id="sigbox-thread-${esc(key)}" hidden></div>
     <form class="sigbox-form" onsubmit="return sigBoxSend(event, '${esc(key)}')">
-      <input id="sigbox-input-${esc(key)}" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
+      <input id="sigbox-input-${esc(key)}" type="text" placeholder="Ask Maggie anything" autocomplete="off" aria-label="Ask Maggie anything">
       <button type="submit" class="btn sigbox-go">Ask</button>
     </form>
   </div>`;
 }
 const sigBoxTurns130 = {};
+// Maggie, listening: while the user composes in any Sig chat
+// box (the home/sheet boxes and the Sig tab's ask input), her
+// head cocks toward the words. Focus or typing sets the listen
+// state on the marks in the same surface; blur settles her.
+function maggieListenSet(input, on) {
+  if (!SIG_MARK_BIRD) return;
+  const scope = input.closest("[data-sigbox], .sighero137, .sigsheet137, .sig-hero, .sig-chat") || input.closest("section") || document;
+  const marks = new Set(scope.querySelectorAll("[data-maggie]"));
+  // The Sig tab's hero is a sibling of the chat block, not an
+  // ancestor of the input: include her too, she is the one
+  // listening there.
+  const hero = document.querySelector("[data-sig-hero-media] [data-maggie]");
+  if (hero) marks.add(hero);
+  marks.forEach((s) => {
+    if (s.getAttribute("data-state") === "think") return;
+    s.setAttribute("data-state", on ? "listen" : "idle");
+  });
+}
+if (typeof document !== "undefined") {
+  const mgListenSel = 'input[id^="sigbox-input-"], #sig-ask-input, #cg-text';
+  document.addEventListener("focusin", (e) => { if (e.target && e.target.matches && e.target.matches(mgListenSel)) maggieListenSet(e.target, true); });
+  document.addEventListener("input", (e) => { if (e.target && e.target.matches && e.target.matches(mgListenSel)) maggieListenSet(e.target, true); });
+  document.addEventListener("focusout", (e) => { if (e.target && e.target.matches && e.target.matches(mgListenSel)) { const t = e.target; setTimeout(() => maggieListenSet(t, false), 400); } });
+}
 async function sigBoxSend(ev, key) {
   if (ev) ev.preventDefault();
   const input = document.getElementById("sigbox-input-" + key);
@@ -4146,7 +4247,7 @@ async function loadSigTopNudges() {
   if (!host2) return;
   const chips = (d && d.chips) || [];
   if (!chips.length) { host2.innerHTML = ""; return; }
-  host2.innerHTML = `<div class="sigtop-nlabel">Sig noticed</div>` + chips.slice(0, 4).map((c) => {
+  host2.innerHTML = `<div class="sigtop-nlabel">Maggie noticed</div>` + chips.slice(0, 4).map((c) => {
     const dest = sigChipDest(c);
     return dest ? `<button type="button" class="sigtop-nudge" onclick="return sigLinkGo('${dest}')">${esc(c)}</button>` : `<div class="sigtop-nudge plain">${esc(c)}</div>`;
   }).join("");
@@ -5531,11 +5632,11 @@ function renderSigTab() {
   const presenceSub = anyPending ? "Lining up a straight answer." : anyTalk ? "Answering now." : "Listening. Your queue is in order.";
   const queueHtml = sigQueueHtml(items, { links, speaker: true });
   el.innerHTML = `
-  <section class="sig-hero" aria-label="Sig">
+  <section class="sig-hero" aria-label="Maggie">
     <div class="sig-hero-ava">${sigHeroMediaHtml()}</div>
     <div class="sig-hero-copy">
       <div class="sig-hero-kicker">Your guide</div>
-      <h2>Sig</h2>
+      <h2>Maggie</h2>
       <div class="sig-presence"><span class="sig-live-dot${anyPending ? " thinking" : ""}" data-sig-presence-dot></span><strong data-sig-presence-text>${presence}</strong><span data-sig-presence-sub>${presenceSub}</span></div>
       <p>Ask in plain words, or tell me to do it: campaigns, people, numbers, right here. I keep the queue in order, and I confirm before anything is saved.</p>
     </div>
@@ -5551,16 +5652,16 @@ function renderSigTab() {
     <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers and real actions, with the next step attached. Nothing posts, sends, or saves until you confirm a plain summary.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
     <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${state.user && state.user.role === "business" ? "Ask me anything about how Magpie works for your business: what your plan includes, how campaigns run, how your results get counted. Or tell me to do something: draft a campaign, find creators, set your staff PIN. I confirm before anything is saved." : state.user && state.user.role === "creator" ? "Ask me anything about how Magpie works for creators: how visits and points run, what you earn, when your market opens. Or tell me to do something: find offers, finish your profile, show your numbers. I confirm before anything is saved." : "Ask me anything about how Magpie works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved."}</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
-      <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
+      <input id="sig-ask-input" type="text" placeholder="Ask Maggie anything" autocomplete="off" aria-label="Ask Maggie anything">
       <button class="btn" type="submit">Ask</button>
     </form>
   </div>
-  <h3 style="margin:22px 0 6px">${esc(ST("What Sig can do", "Lo que Sig puede hacer"))}</h3>
+  <h3 style="margin:22px 0 6px">${esc(ST("What Maggie can do", "Lo que Maggie puede hacer"))}</h3>
   <div class="sig-panel">
     ${sigOpCapabilities().map((c) => `<div class="sheet-row" style="cursor:default"><span>${esc(c)}</span></div>`).join("")}
     <div style="padding:10px 2px 2px;display:flex;gap:8px;flex-wrap:wrap">${sigOpHomeActions().map((a, i) => `<button type="button" class="btn small-btn" data-opstart="${i}">${esc(a.label)}</button>`).join("")}</div>
   </div>
-  <h3 style="margin:22px 0 6px">Things Sig can walk you to</h3>
+  <h3 style="margin:22px 0 6px">Things Maggie can walk you to</h3>
   <div class="sig-panel">
     ${flows.map((f, i) => `<button type="button" class="sheet-row ask-flow" data-flow="${i}"><span>${esc(f.label)}</span><span class="ask-chev">›</span></button>`).join("")}
   </div>
@@ -5678,10 +5779,10 @@ function openAgentSheet() {
   el.id = "agent-sheet";
   el.className = "sheet-overlay";
   el.innerHTML = `
-  <div class="sheet" role="dialog" aria-label="Ask Sig">
-    <div class="flex-between"><span class="sig-top" style="gap:10px">${SIG_AVATAR_HTML}<strong>Ask Sig</strong></span><button class="linklike" onclick="closeAgentSheet()">Close</button></div>
+  <div class="sheet" role="dialog" aria-label="Ask Maggie">
+    <div class="flex-between"><span class="sig-top" style="gap:10px">${SIG_AVATAR_HTML}<strong>Ask Maggie</strong></span><button class="linklike" onclick="closeAgentSheet()">Close</button></div>
     ${sigChatBoxHtml("sheet", { still: true, hint: "Ask me anything, or pick a walk-through below." })}
-    <p class="small muted" style="margin:8px 0 4px">Tell Sig what you want to do. Sig walks you to the exact screen.</p>
+    <p class="small muted" style="margin:8px 0 4px">Tell Maggie what you want to do. Maggie walks you to the exact screen.</p>
     ${flows.map((f, i) => `<button type="button" class="sheet-row ask-flow" data-flow="${i}"><span>${esc(f.label)}</span><span class="ask-chev">›</span></button>`).join("")}
     <h4 style="margin:16px 0 4px">Straight answers</h4>
     ${sigQaFor().map(qa).join("")}
@@ -9109,7 +9210,7 @@ function igAssistCardHtml(uid, side, opts = {}) {
   const handleField = opts.handleFrom ? `<p class="small muted">${T("Uses the handle you typed above.", "Usa el usuario que escribiste arriba.")}</p>` : `<div class="field"><label>${T("Your Instagram handle", "Tu usuario de Instagram")}</label><input id="${uid}-ig-handle" placeholder="yourhandle"></div>`;
   return `<div class="fgroup tint" id="${uid}-ig-card">
     <p class="fg-kicker">${T("Fast setup", "Configuración rápida")}</p>
-    <p class="small muted"${uid === "qc" ? ` id="qc-ig-intro"` : ""}>${T("Sig is Magpie's built-in helper. Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Sig es el asistente integrado de Magpie. Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")}</p>
+    <p class="small muted"${uid === "qc" ? ` id="qc-ig-intro"` : ""}>${T("Maggie is Magpie's built-in helper. Give Maggie your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Maggie es el asistente integrado de Magpie. Dale a Maggie tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")}</p>
     ${handleField}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="btn" onclick="igAssistLookup('${uid}','${side}')">${T("Draft my setup", "Arma mi configuración")}</button>
@@ -9161,8 +9262,8 @@ function igAssistSummaryHtml(uid, draft) {
     ${fc && fc.value !== null ? `<div class="field"><label>${T("Instagram followers", "Seguidores en Instagram")}</label><input type="number" id="${uid}-ig-followers" min="0" value="${fc.value}">${fc.approx ? `<p class="small muted">${esc(T("Instagram shows this rounded. Type the exact count if you know it.", "Instagram lo muestra redondeado. Escribe el número exacto si lo sabes."))}</p>` : ""}</div>` : ""}
     ${uid === "bp" && photo ? `<div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="bp-ig-logo" checked><span>${T("Use this photo as my asset packet logo", "Usa esta foto como el logo de mi paquete")}</span></label></div>` : ""}
     <p class="small muted">${esc(draft.side === "business"
-      ? T("Your category, city and links are not public, so they stay yours to add in the form. Sig never guesses them.", "Tu categoría, ciudad y enlaces no son públicos, así que los agregas tú en el formulario. Sig nunca los adivina.")
-      : T("Your categories, your city and your local reach are not public, so they stay yours to add in the form. Sig never guesses them.", "Tus categorías, tu ciudad y tu alcance local no son públicos, así que los agregas tú en el formulario. Sig nunca los adivina."))}</p>
+      ? T("Your category, city and links are not public, so they stay yours to add in the form. Maggie never guesses them.", "Tu categoría, ciudad y enlaces no son públicos, así que los agregas tú en el formulario. Maggie nunca los adivina.")
+      : T("Your categories, your city and your local reach are not public, so they stay yours to add in the form. Maggie never guesses them.", "Tus categorías, tu ciudad y tu alcance local no son públicos, así que los agregas tú en el formulario. Maggie nunca los adivina."))}</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="btn" onclick="igAssistUse('${uid}')">${T("Use these details", "Usar estos datos")}</button>
       <button type="button" class="btn ws-outline" onclick="igAssistBlank('${uid}')">${T("Start blank instead", "Empezar en blanco")}</button>
@@ -10014,7 +10115,7 @@ function renderForBusinesses() {
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on Magpie on Magpie, and to account and marketing emails from Magpie.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
     </form>
-    <p class="small muted" style="margin-top:16px">Rather talk it through? <a class="tlink" href="#" id="jb-convo-start" onclick="jbConvoStart(); return false">Apply by conversation</a>: Sig asks one question at a time and files the same founding application this form files.</p>
+    <p class="small muted" style="margin-top:16px">Rather talk it through? <a class="tlink" href="#" id="jb-convo-start" onclick="jbConvoStart(); return false">Apply by conversation</a>: Maggie asks one question at a time and files the same founding application this form files.</p>
     <div id="jb-convo"></div>
     <p class="small muted mt">Reviewed by a person. Decision within 2 business days. Once you join, your status page previews your first drafted offer and exactly how Magpie works; booking itself opens at activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
     </div>
@@ -10126,7 +10227,7 @@ function jbConvoSteps(a) {
   steps.push({ key: "neighborhood", q: "Neighborhood or area? Optional, leave it empty to skip.", type: "text", optional: true, ph: "For example: Oceanfront, Ghent" });
   steps.push({ key: "planId", q: "Which founding plan fits? No card is taken, and billing starts at activation.", type: "chips", options: () => (state.boot.plans || []).map((pl) => ({ value: pl.id, label: `${pl.name}: $${pl.priceMonthly}/mo for ${pl.visitsPerMonth} creators a month` })) });
   steps.push({ key: "moment", q: "Last question: what is your first month about? The moment names the play your first month runs.", type: "chips", options: () => momentsClient().map((m) => ({ value: m.id, label: m.label })).concat([{ value: "", label: "Not sure yet" }]) });
-  steps.push({ key: "terms", q: "That is everything. Agree to the terms and Sig files your founding application.", type: "terms" });
+  steps.push({ key: "terms", q: "That is everything. Agree to the terms and Maggie files your founding application.", type: "terms" });
   return steps;
 }
 function jbConvoStart() {
@@ -10144,7 +10245,7 @@ function jbConvoRender() {
   const steps = jbConvoSteps(st.answers);
   const step = steps[st.idx];
   const logHtml = st.log.map((m) => m.who === "sig"
-    ? `<p class="small" style="margin:6px 0"><strong>Sig:</strong> ${esc(m.text)}</p>`
+    ? `<p class="small" style="margin:6px 0"><strong>Maggie:</strong> ${esc(m.text)}</p>`
     : `<p class="small muted" style="margin:6px 0 6px 18px"><strong>You:</strong> ${esc(m.text)}</p>`).join("");
   if (!step) { host.innerHTML = logHtml; return; }
   let inputHtml = "";
@@ -10157,7 +10258,7 @@ function jbConvoRender() {
   } else {
     inputHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="jb-convo-input" type="${step.type}" placeholder="${esc(step.ph || "")}" style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter'){event.preventDefault();jbConvoAnswerText('${esc(step.key)}');}"><button class="btn small-btn" type="button" onclick="jbConvoAnswerText('${esc(step.key)}')">${step.optional ? "Continue" : "Next"}</button></div>`;
   }
-  host.innerHTML = `${logHtml}<p class="small" style="margin:10px 0 6px"><strong>Sig:</strong> ${esc(step.q)}</p>${inputHtml}`;
+  host.innerHTML = `${logHtml}<p class="small" style="margin:10px 0 6px"><strong>Maggie:</strong> ${esc(step.q)}</p>${inputHtml}`;
   const inp = document.getElementById("jb-convo-input");
   if (inp) inp.focus();
 }
@@ -10191,7 +10292,7 @@ async function jbConvoFile() {
   const st = jbConvoState;
   const errHost = document.getElementById("jb-convo-error");
   const terms = document.getElementById("jb-convo-terms");
-  if (!terms || !terms.checked) { if (errHost) errHost.innerHTML = `<div class="error-box">Agree to the terms and Sig can file it.</div>`; return; }
+  if (!terms || !terms.checked) { if (errHost) errHost.innerHTML = `<div class="error-box">Agree to the terms and Maggie can file it.</div>`; return; }
   const a = st.answers;
   const isUnlisted = a.market === unlistedLabel();
   try {
@@ -10478,7 +10579,7 @@ function foundingLastAdHtml() {
   return `<section class="wcard">
     <p class="ui-kicker">Your last ad, graded</p>
     <h3>What did your last ad actually buy?</h3>
-    <p class="wc-sub">Tell Sig about the last promo you paid for. You get your own receipt back, restated plainly, and the same dollars priced at founding rates.</p>
+    <p class="wc-sub">Tell Maggie about the last promo you paid for. You get your own receipt back, restated plainly, and the same dollars priced at founding rates.</p>
     <div class="form-2col" style="margin-top:12px">
       <div class="field"><label>What was it?</label><select id="la-type">
         <option>An influencer post</option>
@@ -10508,7 +10609,7 @@ function gradeLastAd() {
   const type = (document.getElementById("la-type") || {}).value || "Something else";
   const point = (document.getElementById("la-point") || {}).value || "Nothing I can point to";
   const cost = Math.round(Number((document.getElementById("la-cost") || {}).value) || 0);
-  if (!(cost > 0)) { out.innerHTML = `<p class="small muted">Enter what it cost and Sig will grade it.</p>`; return; }
+  if (!(cost > 0)) { out.innerHTML = `<p class="small muted">Enter what it cost and Maggie will grade it.</p>`; return; }
   const plan = (state.boot.plans || []).find((x) => x.id === "self-service") || { priceMonthly: 199, visitsPerMonth: 5, firstMonthPriceMonthly: 99 };
   const verdicts = {
     "Nothing I can point to": "Grade: unproven. Not because the ad was bad, because nothing about it could be counted.",
@@ -10634,11 +10735,11 @@ function foundingFirstOfferHtml(u) {
     <div style="display:flex;gap:12px;align-items:center">
       ${sigAvatarHtml("greet")}
       <div>
-        <p class="ui-kicker" style="margin:0">Preview &middot; drafted by Sig</p>
+        <p class="ui-kicker" style="margin:0">Preview &middot; drafted by Maggie</p>
         <h3 style="margin:2px 0 0">Your first offer is already drafted</h3>
       </div>
     </div>
-    <p class="wc-sub" style="margin-top:10px">Sig picked the <strong>${esc(play.name)}</strong> play${bz.category && bz.category !== "Other" ? ` for a ${esc(String(bz.category).toLowerCase())} business` : " for your business"}. A play is a ready-made offer pattern: the goal, the brief and the timing are preset, and you can edit every word. ${esc(play.mix)} You never start from a blank screen here.</p>
+    <p class="wc-sub" style="margin-top:10px">Maggie picked the <strong>${esc(play.name)}</strong> play${bz.category && bz.category !== "Other" ? ` for a ${esc(String(bz.category).toLowerCase())} business` : " for your business"}. A play is a ready-made offer pattern: the goal, the brief and the timing are preset, and you can edit every word. ${esc(play.mix)} You never start from a blank screen here.</p>
     <div class="panel" style="margin-top:12px">
       <div class="ui-row"><span class="k">Play</span><span class="v">${esc(play.name)}</span></div>
       <div class="ui-row"><span class="k">Spots</span><span class="v">${play.spots} creators, picked by you</span></div>
@@ -10646,7 +10747,7 @@ function foundingFirstOfferHtml(u) {
       <div class="ui-row"><span class="k">Lane</span><span class="v">Open offer. Creators apply, you pick. Comped, or paid at a creator's listed rate.</span></div>
     </div>
     ${briefBlockHtml({ brief: { ...brief, deliverable } })}
-    <p class="small muted" style="margin:10px 0 0">This is a preview of a draft. Nothing is saved, nothing is sent, and no creator has been contacted. At activation, Sig rebuilds this as a real draft in your account, with what you comp filled in, and you approve it before anything goes out. Sig confirms with you before anything posts, always.</p>
+    <p class="small muted" style="margin:10px 0 0">This is a preview of a draft. Nothing is saved, nothing is sent, and no creator has been contacted. At activation, Maggie rebuilds this as a real draft in your account, with what you comp filled in, and you approve it before anything goes out. Maggie confirms with you before anything posts, always.</p>
   </section>`;
 }
 
@@ -12967,7 +13068,7 @@ function benchIntroCardHtml(intro) {
   if (intro.sharedStreets && intro.sharedStreets.length) shared.push(intro.sharedStreets[0]);
   if (intro.sharedCategories && intro.sharedCategories.length) shared.push(intro.sharedCategories[0]);
   return `<div class="wcard bench-intro">
-    <div class="kpi-label">Sig introduction</div>
+    <div class="kpi-label">Maggie introduction</div>
     <h3 style="margin:6px 0 4px">${esc(benchMeetLine(intro))}</h3>
     <p class="small muted" style="margin:0 0 10px">You share ground${shared.length ? `: ${esc(shared.join(", "))}` : ""}. Bring them on a visit as your +1 and you each post your own post and story.</p>
     <div class="cta-row" style="justify-content:flex-start"><button type="button" class="btn small-btn" onclick="return benchIntroBring()">Bring on a visit</button><button type="button" class="btn small-btn ghost" onclick="return benchIntroDismiss()">Not now</button></div>
@@ -13077,7 +13178,7 @@ function poRenderPicker(ctx) {
   host.innerHTML = `<div class="plusone-box">
     <p class="small" style="margin-top:0"><strong>Bring a +1.</strong> Another finished creator from your market joins the visit. You each post your own post and story, and the business approves you as a pair.${plusOneKind[ctx] === "paid" ? " On a paid visit your +1 is a guest (comped presence) unless the business books them at their own rate too." : ""}</p>
     ${sel ? `<div class="lrow"><div style="flex:1"><span class="lname">${esc(sel.name)}</span>${sel.handle ? ` <span class="muted">@${esc(sel.handle)}</span>` : ""}<div class="small muted">Your +1 on this one.</div></div><button type="button" class="btn small-btn ghost" onclick="poClear('${ctx}')">Change</button></div>`
-    : `${intro && intro.creator ? `<div class="lrow"><div style="flex:1"><span class="lname">Sig suggests ${esc(intro.creator.name)}</span> <span class="muted">@${esc(intro.creator.handle)}</span><div class="small muted">${esc(benchMeetLine(intro))}</div></div><button type="button" class="btn small-btn" onclick="poPick('${ctx}','${intro.creator.userId}')">Bring them</button></div>` : ""}
+    : `${intro && intro.creator ? `<div class="lrow"><div style="flex:1"><span class="lname">Maggie suggests ${esc(intro.creator.name)}</span> <span class="muted">@${esc(intro.creator.handle)}</span><div class="small muted">${esc(benchMeetLine(intro))}</div></div><button type="button" class="btn small-btn" onclick="poPick('${ctx}','${intro.creator.userId}')">Bring them</button></div>` : ""}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><input id="po-q-${ctx}" placeholder="Exact name or @handle" maxlength="80" style="flex:1;min-width:180px"><button type="button" class="btn small-btn ghost" onclick="poSearch('${ctx}')">Find</button></div>
     <div id="po-res-${ctx}"></div>`}
   </div>`;
@@ -14090,7 +14191,7 @@ function pitchDraftFill() {
   api("GET", "/me/pitch-draft").then((d) => {
     const inp = document.getElementById("p-pitch");
     if (inp && d && d.draft) { inp.value = d.draft; if (note) note.textContent = "Drafted from your profile. Edit it, then save."; }
-  }).catch(() => { if (note) note.textContent = "Sig could not draft just now. Write your own line and save."; });
+  }).catch(() => { if (note) note.textContent = "Maggie could not draft just now. Write your own line and save."; });
   return false;
 }
 function laneFeaturedSave() {
@@ -15271,7 +15372,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
       </div>
       <div class="field" id="pf-bio"><label>${T("Bio", "Biografía")}</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
-      <div class="field"><label>${T("Your pitch line", "Tu línea de presentación")}</label><input id="p-pitch" value="${esc(c.pitchLine || "")}" maxlength="200" placeholder="${T("One line that introduces you, at the top of your profile", "Una línea que te presenta, arriba de tu perfil")}"><p class="small muted">${T("Sig can draft it from your real profile: your categories, your local percentage, your streets. Accept it, edit it, or write your own.", "Sig puede redactarla desde tu perfil real: tus categorías, tu porcentaje local, tus calles. Acéptala, edítala o escribe la tuya.")}</p><button type="button" class="btn small-btn ghost" onclick="return pitchDraftFill()">${T("Draft it with Sig", "Redactarla con Sig")}</button> <span id="p-pitch-note" class="small muted"></span></div>
+      <div class="field"><label>${T("Your pitch line", "Tu línea de presentación")}</label><input id="p-pitch" value="${esc(c.pitchLine || "")}" maxlength="200" placeholder="${T("One line that introduces you, at the top of your profile", "Una línea que te presenta, arriba de tu perfil")}"><p class="small muted">${T("Maggie can draft it from your real profile: your categories, your local percentage, your streets. Accept it, edit it, or write your own.", "Maggie puede redactarla desde tu perfil real: tus categorías, tu porcentaje local, tus calles. Acéptala, edítala o escribe la tuya.")}</p><button type="button" class="btn small-btn ghost" onclick="return pitchDraftFill()">${T("Draft it with Sig", "Redactarla con Sig")}</button> <span id="p-pitch-note" class="small muted"></span></div>
       </div>
       <div class="save-bar"><div id="save-warn"></div><button class="btn" type="submit">${T("Save profile", "Guardar perfil")}</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span></div>
     </form>
@@ -17610,7 +17711,7 @@ async function loadFoundingBusinessHome() {
     const od = await api("GET", "/offers");
     const myOffers = (od && od.offers) || [];
     state._fbzOfferCount = myOffers.length;
-    if (!myOffers.length) items.push({ text: "No campaign drafts yet. Set one up now, with Sig or step by step, and it is ready for opening day.", btn: "Start a campaign", act: () => go("dashboard", "Campaign Setup") });
+    if (!myOffers.length) items.push({ text: "No campaign drafts yet. Set one up now, with Maggie or step by step, and it is ready for opening day.", btn: "Start a campaign", act: () => go("dashboard", "Campaign Setup") });
   } catch (e) { /* the queue is a nudge, never a blocker */ }
   // Build -99: the ONE setup checklist renders on this Home
   // too, and its register item joins the queue when Square is
@@ -17666,11 +17767,11 @@ function sigDraftCardHtml(u) {
     <div style="display:flex;gap:12px;align-items:center">
       ${sigAvatarHtml("greet")}
       <div>
-        <p class="ui-kicker" style="margin:0">Drafted by Sig</p>
+        <p class="ui-kicker" style="margin:0">Drafted by Maggie</p>
         <h3 style="margin:2px 0 0">Your first campaign is already drafted</h3>
       </div>
     </div>
-    <p class="wc-sub" style="margin-top:10px">Sig picked the <strong>${esc(play.name)}</strong> play for ${esc(bizName)}: ${esc(play.spots)} creators, a ${esc(play.windowDays)} day visit window, brief and timing preset. Open it, change anything, and save it for opening day.</p>
+    <p class="wc-sub" style="margin-top:10px">Maggie picked the <strong>${esc(play.name)}</strong> play for ${esc(bizName)}: ${esc(play.spots)} creators, a ${esc(play.windowDays)} day visit window, brief and timing preset. Open it, change anything, and save it for opening day.</p>
     <div class="cta-row" style="justify-content:flex-start;margin-top:12px">
       <button class="btn" type="button" onclick="return foundingOpenSigDraft()">Open draft</button>
       <button class="btn ghost" type="button" onclick="return foundingStartFresh()">Start fresh</button>
@@ -18014,9 +18115,9 @@ function partnerSigCardHtml(d) {
   <div class="card mb pt-sig-card">
     <div class="pt-sig-media">${sigHeroMediaHtml()}</div>
     <div class="pt-sig-copy">
-      <div class="flex-between"><strong>Sig</strong><span class="badge info">Your guide</span></div>
+      <div class="flex-between"><strong>Maggie</strong><span class="badge info">Your guide</span></div>
       <p class="small" style="margin:6px 0 10px">${esc(partnerSigLine(d))}</p>
-      <button class="btn small-btn" onclick="return go('dashboard','Sig')">Ask Sig</button>
+      <button class="btn small-btn" onclick="return go('dashboard','Sig')">Ask Maggie</button>
     </div>
   </div>`;
 }
@@ -18347,11 +18448,11 @@ function partnerSigActions(d) {
 // and produces the month pack on request.
 function scopedSigChatHtml(opts) {
   return `
-  <section class="sig-hero" aria-label="Sig">
+  <section class="sig-hero" aria-label="Maggie">
     <div class="sig-hero-ava">${sigHeroMediaHtml()}</div>
     <div class="sig-hero-copy">
       <div class="sig-hero-kicker">Your guide</div>
-      <h2>Sig</h2>
+      <h2>Maggie</h2>
       <div class="sig-presence"><span class="sig-live-dot"></span><strong>Ready</strong><span>Your numbers, in plain sentences.</span></div>
       <p>${esc(opts.intro)}</p>
     </div>
@@ -18367,7 +18468,7 @@ function scopedSigChatHtml(opts) {
     <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers from your own records, with the next step attached.</div></div></div>
     <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(opts.greeting)}</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
-      <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
+      <input id="sig-ask-input" type="text" placeholder="Ask Maggie anything" autocomplete="off" aria-label="Ask Maggie anything">
       <button class="btn" type="submit">Ask</button>
     </form>
   </div>`;
@@ -18411,9 +18512,9 @@ function partnerHelpHtml(d) {
   <div class="card mb pt-sig-card">
     ${sigAvatarHtml("")}
     <div class="pt-sig-copy">
-      <div class="flex-between"><strong>Sig</strong><span class="badge info">Your guide</span></div>
-      <p class="small" style="margin:6px 0 10px">Questions about your numbers? Sig reads your dashboard and answers in plain sentences, with your next move attached.</p>
-      <button class="btn small-btn" onclick="return go('dashboard','Sig')">Open Sig</button>
+      <div class="flex-between"><strong>Maggie</strong><span class="badge info">Your guide</span></div>
+      <p class="small" style="margin:6px 0 10px">Questions about your numbers? Maggie reads your dashboard and answers in plain sentences, with your next move attached.</p>
+      <button class="btn small-btn" onclick="return go('dashboard','Sig')">Open Maggie</button>
     </div>
   </div>
   <div class="wcard">
@@ -18708,7 +18809,7 @@ async function loadBusinessHome() {
   const el = document.getElementById("tab-body");
   if (!el) return;
   const u = state.user;
-  el.innerHTML = `${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}${skelHtml("Loading your home...", 3)}`;
+  el.innerHTML = `${wsHead("Home", { sub: "Start here. Maggie shows you what needs you, in order.", subKey: "biz-home" })}${skelHtml("Loading your home...", 3)}`;
   try {
     // Perf (2026-10-28): notifications, offers and bookings do not
     // depend on the business-home payload, so all four requests now
@@ -18961,7 +19062,7 @@ async function loadBusinessHome() {
     // checklist in d.setupChecklist, rendered below. Its page
     // and campaign items carry the old launch steps' state.
     const fresh = !(bz.businessName && bz.category && bz.about) || !offers.length;
-    const greetLine = fresh ? "Let's get your first campaign live. Sig walks you through it, three steps." : (queue.length ? queue[0].text : "You're all caught up.");
+    const greetLine = fresh ? "Let's get your first campaign live. Maggie walks you through it, three steps." : (queue.length ? queue[0].text : "You're all caught up.");
     const greetDup = !fresh && queue.length > 0;
     const hasNumbers = (h.postsLive || 0) > 0 || (h.localReachDelivered || 0) > 0 || (h.visitsUsed || 0) > 0;
     const snapCells = hasNumbers ? [
@@ -19183,7 +19284,7 @@ function reqRowHtml(r) {
   const statusBadge = { applied: `<span class="badge info">Waiting</span>`, selected: `<span class="badge ok">Selected</span>`, released: `<span class="badge">Released</span>`, expired: `<span class="badge">Window passed</span>`, backfill_offered: `<span class="badge warn">Backfill offered</span>`, backfill_accepted: `<span class="badge ok">Took backfill</span>` }[a.status] || esc(a.status);
   const menu = `<div class="kebab-menu">
     <button type="button" onclick="openCreatorProfile('${c.userId}')">View creator profile</button>
-    <button type="button" onclick="openAgentSheet()">Ask Sig</button>
+    <button type="button" onclick="openAgentSheet()">Ask Maggie</button>
     ${a.status === "applied" ? `<button type="button" data-ctx="${esc(r.offer.title)}" onclick="return openThreadCtx('${c.userId}', this.dataset.ctx)">Request info</button>
     <button type="button" onclick="return reqLater('${a.id}')">${reqState.later[a.id] ? "Move back to waiting" : "Later"}</button>
     <div class="km-sep"></div>
@@ -20024,7 +20125,7 @@ async function renderBizProfileTab() {
       <div class="wcard" id="bp-optional" style="margin-top:14px">
         <h3>Optional</h3>
         <p class="wc-sub">Language, who you are open to, and the packet creators post with. Skip any of it; change it any time.</p>
-        <div class="field"><label>Preferred language / Idioma preferido</label><select id="bp-lang"><option value="en"${b.preferredLanguage !== "es" ? " selected" : ""}>English</option><option value="es"${b.preferredLanguage === "es" ? " selected" : ""}>Español</option></select><p class="small muted">Sig answers you in this language, and our team writes to you in it.</p></div>
+        <div class="field"><label>Preferred language / Idioma preferido</label><select id="bp-lang"><option value="en"${b.preferredLanguage !== "es" ? " selected" : ""}>English</option><option value="es"${b.preferredLanguage === "es" ? " selected" : ""}>Español</option></select><p class="small muted">Maggie answers you in this language, and our team writes to you in it.</p></div>
         <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-music-open" ${b.musicOpen ? "checked" : ""} onchange="syncBizMusicRows()"><span><strong>Open to booking musicians</strong><br><span class="small muted">Marks your offers and your page as open to musicians. Any booking still runs as a normal visit, the same as any other creator.</span></span></label></div>
         <div id="bp-music-rows" style="display:${b.musicOpen ? "" : "none"}">
           <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-music-live" ${b.musicLive ? "checked" : ""}><span>For live performances</span></label></div>
@@ -20032,7 +20133,7 @@ async function renderBizProfileTab() {
         </div>
         <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-student-open" ${b.studentOpen ? "checked" : ""}><span><strong>Open to student creators</strong><br><span class="small muted">Marks your offers and your page as open to creators who are current students. Any booking still runs as a normal visit, the same as any other creator.</span></span></label></div>
         <h3 style="margin:18px 0 4px">Asset packet</h3>
-        <p class="wc-sub" style="margin:0 0 10px">The links and lines a creator needs to post well: your logo, your key pages, your talking points. It rides with paid offers by default (your choice per offer) and the creator sees it inside their visit view. Links must start with https://. Sig can build this with you in chat, too.</p>
+        <p class="wc-sub" style="margin:0 0 10px">The links and lines a creator needs to post well: your logo, your key pages, your talking points. It rides with paid offers by default (your choice per offer) and the creator sees it inside their visit view. Links must start with https://. Maggie can build this with you in chat, too.</p>
         ${(() => { const pk = b.assetPacket || {}; return `
         <div class="field"><label>Logo link (https URL)</label><input id="bp-pk-logo" value="${esc(pk.logoUrl || "")}" placeholder="https://your-site.com/logo.png"></div>
         <div class="field"><label>Key links (up to 6, one per line: Label | https://...)</label><textarea id="bp-pk-links" rows="4" placeholder="Menu | https://your-site.com/menu&#10;Book a table | https://your-site.com/book">${esc((pk.links || []).map((l) => `${l.label || ""} | ${l.url || ""}`).join("\n"))}</textarea></div>
@@ -22537,14 +22638,14 @@ function campaignGuideHtml() {
   const known = campaignGuideKnown();
   const cg = state.campaignGuide;
   return `<section class="wcard" id="campaign-guide" style="border:2px solid #006AFC">
-    <div style="display:flex;gap:12px;align-items:center">${sigAvatarHtml("greet")}<div><p class="ui-kicker" style="margin:0">Start with Sig</p><h3 style="margin:2px 0 0">Tell Sig what you want</h3></div></div>
-    <p class="small muted" style="margin:10px 0 0">Say it in one sentence and Sig builds the whole campaign: she fills in what she already knows about your business, asks only for what is missing, one question at a time, shows you the full draft, and saves it when you say yes. Then she walks you to the creators who match.</p>
+    <div style="display:flex;gap:12px;align-items:center">${sigAvatarHtml("greet")}<div><p class="ui-kicker" style="margin:0">Start with Maggie</p><h3 style="margin:2px 0 0">Tell Maggie what you want</h3></div></div>
+    <p class="small muted" style="margin:10px 0 0">Say it in one sentence and Maggie builds the whole campaign: she fills in what she already knows about your business, asks only for what is missing, one question at a time, shows you the full draft, and saves it when you say yes. Then she walks you to the creators who match.</p>
     <div class="cg-starters"><span class="small muted">Tap one to start:</span> <button type="button" class="chip" onclick="return campaignGuideStart('Find me 15 creators who would take a comped meal')">Find me 15 creators who would take a comped meal</button> <button type="button" class="chip" onclick="return campaignGuideStart('I will pay 3 creators $100 each, I want fashion lovers')">I will pay 3 creators $100 each, I want fashion lovers</button></div>
-    <p class="small" style="margin:8px 0 0"><strong>Already on file for you:</strong> ${esc(known.businessName || "Your business")}${known.market ? ` in ${esc(known.market)}` : ""}${known.category ? ` · ${esc(known.category)}` : ""}${known.visits ? ` · your plan includes ${known.visits} visits a month` : ""}${known.availability ? ` · your usual hours: ${esc(known.availability)}` : ""}. Sig will not ask you for any of that again.</p>
+    <p class="small" style="margin:8px 0 0"><strong>Already on file for you:</strong> ${esc(known.businessName || "Your business")}${known.market ? ` in ${esc(known.market)}` : ""}${known.category ? ` · ${esc(known.category)}` : ""}${known.visits ? ` · your plan includes ${known.visits} visits a month` : ""}${known.availability ? ` · your usual hours: ${esc(known.availability)}` : ""}. Maggie will not ask you for any of that again.</p>
     <div id="cg-thread" class="sig-thread" style="margin-top:12px">${cg ? "" : `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Tell me the campaign in one line. For example: I want creators for a weekend brunch push. I will build the draft from there.</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return campaignGuideSubmit(event)">
-      <input id="cg-text" type="text" placeholder="I want creators for a weekend brunch push" autocomplete="off" aria-label="Tell Sig what you want">
-      <button class="btn" type="submit">Tell Sig</button>
+      <input id="cg-text" type="text" placeholder="I want creators for a weekend brunch push" autocomplete="off" aria-label="Tell Maggie what you want">
+      <button class="btn" type="submit">Tell Maggie</button>
     </form>
     <p class="small muted" style="margin:8px 0 0">Rather build it yourself? The step by step form is right below. Both ways land in the same place: a draft in Your campaigns.</p>
   </section>`;
@@ -22884,7 +22985,7 @@ function bizGuideStarter(text) {
   return go("dashboard", "Campaign Setup");
 }
 function bizGuideStartersHtml() {
-  return `<div class="cg-starters panel" style="margin-top:12px"><span class="small muted">Sig can build the whole campaign from one sentence. Tap one to start:</span> <button type="button" class="chip" onclick="return bizGuideStarter('Find me 15 creators who would take a comped meal')">Find me 15 creators who would take a comped meal</button> <button type="button" class="chip" onclick="return bizGuideStarter('I will pay 3 creators $100 each, I want fashion lovers')">I will pay 3 creators $100 each, I want fashion lovers</button></div>`;
+  return `<div class="cg-starters panel" style="margin-top:12px"><span class="small muted">Maggie can build the whole campaign from one sentence. Tap one to start:</span> <button type="button" class="chip" onclick="return bizGuideStarter('Find me 15 creators who would take a comped meal')">Find me 15 creators who would take a comped meal</button> <button type="button" class="chip" onclick="return bizGuideStarter('I will pay 3 creators $100 each, I want fashion lovers')">I will pay 3 creators $100 each, I want fashion lovers</button></div>`;
 }
 
 // ---------- Build -97: the manual builder, one step at a time ----------
@@ -22920,7 +23021,7 @@ function campaignPromptsHtml(offers) {
   const all = offers || [];
   const drafts = all.filter((o) => o.status === "draft");
   if (!all.length) {
-    return `<div class="wcard" id="camp-prompt" style="text-align:center"><h3 style="margin-top:0">No campaigns yet</h3><p class="small muted">Your first campaign takes about a minute to set up. Sig can build the draft with you.</p><button type="button" class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">Set up your first campaign</button></div>`;
+    return `<div class="wcard" id="camp-prompt" style="text-align:center"><h3 style="margin-top:0">No campaigns yet</h3><p class="small muted">Your first campaign takes about a minute to set up. Maggie can build the draft with you.</p><button type="button" class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">Set up your first campaign</button></div>`;
   }
   if (drafts.length) {
     return `<div class="notice blue" id="camp-prompt"><strong>${drafts.length} draft${drafts.length === 1 ? "" : "s"} waiting.</strong> A draft sends nothing until you publish it. Open the Drafts list below to finish one, or start a new one in Start a campaign.</div>`;
@@ -23001,7 +23102,7 @@ async function loadCampaignSetup() {
         ${momentsClient().map((m) => `<label class="radio-chip"><input type="radio" name="o2-moment" value="${m.id}" ${dft.moment === m.id ? "checked" : ""} onchange="state.offerDraft.moment=this.value"><span>${esc(m.label)}</span></label>`).join("")}
         <label class="radio-chip"><input type="radio" name="o2-moment" value="" ${!dft.moment ? "checked" : ""} onchange="state.offerDraft.moment=''"><span>No set moment</span></label>
         </div>
-        <p class="small muted">Pick one and your first campaign is built around it. Skip it and Sig suggests one. Change it any time.</p>
+        <p class="small muted">Pick one and your first campaign is built around it. Skip it and Maggie suggests one. Change it any time.</p>
       </div>
       <div class="field"><label>The one number we count <span class="req-tag">Required</span></label>
         <div class="radio-stack">
@@ -23054,7 +23155,7 @@ async function loadCampaignSetup() {
       </div>
       <div class="fgroup">
       <p class="fg-kicker">The brief</p>
-      <p class="small muted" style="margin:0 0 10px">The creator's instructions, in one block. Sig can draft this with you in chat; here it is by hand. Key points, never a script: creators post honestly, in their own words.</p>
+      <p class="small muted" style="margin:0 0 10px">The creator's instructions, in one block. Maggie can draft this with you in chat; here it is by hand. Key points, never a script: creators post honestly, in their own words.</p>
       <div class="field"><label>What is this offer for?</label>
         <div class="radio-stack">
         ${BRIEF_GOALS.map((g) => `<label class="radio-chip"><input type="radio" name="o2-bgoal" value="${g.id}" ${dft.briefGoal === g.id ? "checked" : ""} onchange="offerDraftSync()"><span>${esc(g.label)}</span></label>`).join("")}
@@ -24538,7 +24639,7 @@ function adminFinishPanelHtml() {
   }).join("");
   return `
   <h3 class="mt">Finish Engine</h3>
-  <p class="muted small">Unfinished creators get up to three messages (the blunt truth, the booking page, the founding first look), Sig can finish a profile with a creator inside their message thread, and finishing fires one finish-moment message. The engine is <strong>${d.enabled ? "on" : "off"}</strong>${d.epochAt ? ` since ${String(d.epochAt).slice(0, 10)}` : ""}.
+  <p class="muted small">Unfinished creators get up to three messages (the blunt truth, the booking page, the founding first look), Maggie can finish a profile with a creator inside their message thread, and finishing fires one finish-moment message. The engine is <strong>${d.enabled ? "on" : "off"}</strong>${d.epochAt ? ` since ${String(d.epochAt).slice(0, 10)}` : ""}.
   <button type="button" class="btn small-btn ${d.enabled ? "ghost" : ""}" onclick="return adminFinishToggle(this)">${d.enabled ? "Turn engine off" : "Turn engine on"}</button></p>
   <p class="muted small">${c.audience || 0} approved and unfinished &middot; ${c.inSequence || 0} in the sequence &middot; ${c.conciergeActive || 0} finishing by message &middot; ${c.conciergePaused || 0} paused &middot; ${c.optedOut || 0} opted out &middot; ${c.finishMoments || 0} finish moments sent &middot; ${c.finished || 0} finished</p>
   ${(d.roster || []).length ? `<div class="table-wrap panel"><table><tr><th>Creator</th><th>Market</th><th>State</th><th>Still missing</th><th></th></tr>${rosterRows}</table></div>${d.rosterTruncated ? `<p class="muted small">Roster trimmed to the first 100.</p>` : ""}` : `<p class="muted">No unfinished approved creators right now.</p>`}
@@ -24800,7 +24901,7 @@ function renderAdmin() {
     <div id="admin-summary"></div>
     <div class="admin-home121">
       <div class="admin-home-side">
-        <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>
+        <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Maggie is reading the same numbers Admin shows...</p></div></div>
       </div>
       <div class="admin-home-main"><div id="tab-body"><p class="muted">Loading...</p></div></div>
     </div>` : `
@@ -25031,8 +25132,8 @@ async function loadAdminSig(hostId) {
     <div class="admin-sig-head">
       <span class="admin-sig-media">${sigHeroMediaHtml()}</span>
       <div>
-        <div class="flex-between"><strong>Sig</strong><span class="badge info">Attention list</span></div>
-        <p class="small muted" style="margin:4px 0 0">Plain sentences, real counts, from the same records Admin shows. Sig points; your taps decide.</p>
+        <div class="flex-between"><strong>Maggie</strong><span class="badge info">Attention list</span></div>
+        <p class="small muted" style="margin:4px 0 0">Plain sentences, real counts, from the same records Admin shows. Maggie points; your taps decide.</p>
       </div>
     </div>
     ${items.length ? items.map((it) => `
@@ -25040,7 +25141,7 @@ async function loadAdminSig(hostId) {
       <span class="admin-sig-dot" aria-hidden="true"></span>
       <p class="small" style="margin:0;flex:1">${esc(it.text)}</p>
       <button class="btn small-btn ghost" onclick="return go('dashboard','${it.tab}')">${esc(it.btn)}</button>
-    </div>`).join("") : `<p class="small" style="margin:10px 0 0">${loaded ? "Nothing needs a decision right now. Approvals, claims, activations, and partners are all caught up." : "Sig could not load the Admin numbers just now. The tabs below carry the same records."}</p>`}
+    </div>`).join("") : `<p class="small" style="margin:10px 0 0">${loaded ? "Nothing needs a decision right now. Approvals, claims, activations, and partners are all caught up." : "Maggie could not load the Admin numbers just now. The tabs below carry the same records."}</p>`}
     ${loaded && (!apps || !marketsData || !partnersData) ? `<p class="small muted" style="margin:8px 0 0">Some Admin numbers could not load; this list covers what answered.</p>` : ""}
   </div>`;
   sigHeroSet("idle");
@@ -25725,21 +25826,21 @@ function renderAdminSig() {
     ["Event Log", "Event Log"], ["Compliance", "Compliance"], ["Campaign", "Campaign"], ["Stats", "Stats"],
   ];
   el.innerHTML = `
-  <section class="sig-hero" aria-label="Sig">
+  <section class="sig-hero" aria-label="Maggie">
     <div class="sig-hero-ava">${sigHeroMediaHtml()}</div>
     <div class="sig-hero-copy">
       <div class="sig-hero-kicker">Admin console</div>
-      <h2>Sig</h2>
+      <h2>Maggie</h2>
       <div class="sig-presence"><span class="sig-live-dot${anyPending ? " thinking" : ""}" data-sig-presence-dot></span><strong data-sig-presence-text>${presence}</strong><span data-sig-presence-sub>${presenceSub}</span></div>
       <p>Ask me what needs you, what a number means, or how a rule works. I read the same records Admin shows, and I point; your taps stay the only writes.</p>
     </div>
   </section>
-  <div id="admin-sig-brief"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>
+  <div id="admin-sig-brief"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Maggie is reading the same numbers Admin shows...</p></div></div>
   <div class="sig-chat">
     <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers from the locked rules and the live Admin counts. Nothing here approves, sends, or changes anything.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
-    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">I'm Sig, on your side of the console. Ask me what's waiting on you, what any number here means, or how a Magpie rule works. The brief above is your live attention list; this chat is where you ask about it.</div></div>`}</div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">I'm Maggie, on your side of the console. Ask me what's waiting on you, what any number here means, or how a Magpie rule works. The brief above is your live attention list; this chat is where you ask about it.</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
-      <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
+      <input id="sig-ask-input" type="text" placeholder="Ask Maggie anything" autocomplete="off" aria-label="Ask Maggie anything">
       <button class="btn" type="submit">Ask</button>
     </form>
   </div>
@@ -30274,7 +30375,7 @@ function recruiterHelpHtml() {
     </ul>
     <h3>The one rule</h3>
     <p>Only message people from your console list, and always mark what happened: sent, replied, not interested. If someone asks not to be contacted, tap <strong>Do not contact</strong> and they are never messaged again.</p>
-    <p class="muted">Stuck? Open the Sig tab and ask in plain words. Anything Sig cannot answer, ask Jeff.</p>
+    <p class="muted">Stuck? Open the Maggie tab and ask in plain words. Anything Maggie cannot answer, ask Jeff.</p>
   </div>`;
 }
 

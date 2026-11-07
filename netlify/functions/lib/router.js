@@ -8423,9 +8423,9 @@ const FINISH_TOUCH2_AFTER_MS = 3 * DAY_MS;
 const FINISH_TOUCH3_AFTER_MS = 7 * DAY_MS;
 const FINISH_ENGINE_TEMPLATE_KEYS = ["rescue1", "rescue2", "rescue3", "finishMoment"];
 const FINISH_ENGINE_DEFAULT_TEMPLATES = {
-  rescue1: "Hi {firstName}, Sig from the Magpie team. Straight with you: your profile is not finished, and while it is unfinished, no business can book you. Not for a comped visit (a meal, a service, or an experience in exchange for your post) and not for paid work at your own rate, where you keep 97%.\n\nFinished creators are the ones businesses can find, book, and pay. Finishing takes a few minutes.\n\nWant me to finish it with you right here? Reply and I will walk you through it, one question at a time.",
-  rescue2: "Hi {firstName}, Sig again. When you finish your profile, you get your own booking page: your name on it, your categories, your local audience, your rate. It is sitting there switched off until your profile is finished, and it turns on the moment you finish.\n\nThen your page is one switch away in your profile, ready to send anywhere.\n\nReply here and I will finish your profile with you, one question at a time. Or open the app and finish it there, either way works.",
-  rescue3: "Hi {firstName}, one more from Sig. {market} has not opened yet, and creators who finish before it opens hold founding status for good: when offers start posting, you see each new one a full day before everyone else.\n\nThat window closes the day the market opens, and it does not come back.\n\nYour profile is still unfinished. Reply here and I will finish it with you now, one question at a time.",
+  rescue1: "Hi {firstName}, Maggie from the Magpie team. Straight with you: your profile is not finished, and while it is unfinished, no business can book you. Not for a comped visit (a meal, a service, or an experience in exchange for your post) and not for paid work at your own rate, where you keep 97%.\n\nFinished creators are the ones businesses can find, book, and pay. Finishing takes a few minutes.\n\nWant me to finish it with you right here? Reply and I will walk you through it, one question at a time.",
+  rescue2: "Hi {firstName}, Maggie again. When you finish your profile, you get your own booking page: your name on it, your categories, your local audience, your rate. It is sitting there switched off until your profile is finished, and it turns on the moment you finish.\n\nThen your page is one switch away in your profile, ready to send anywhere.\n\nReply here and I will finish your profile with you, one question at a time. Or open the app and finish it there, either way works.",
+  rescue3: "Hi {firstName}, one more from Maggie. {market} has not opened yet, and creators who finish before it opens hold founding status for good: when offers start posting, you see each new one a full day before everyone else.\n\nThat window closes the day the market opens, and it does not come back.\n\nYour profile is still unfinished. Reply here and I will finish it with you now, one question at a time.",
   finishMoment: "{firstName}, you finished. Your profile is complete.\n\n{pageLine}\n\n{turnedOnLine}\n{charterLine}",
 };
 const FINISH_OPTOUT_RE = /^(stop|unsubscribe|opt[ -]?out|end|quit|leave me alone|no more messages?)$/;
@@ -8730,7 +8730,7 @@ async function startFinishConcierge(adminUser, creatorId, via) {
   rec.updatedAt = nowIso();
   await store.set(`user:${rec.id}`, rec);
   await logEvent({ type: "sig_concierge_started", actorId: adminUser ? adminUser.id : null, actorRole: adminUser ? "admin" : "system", subjectId: rec.id, market: rec.market, data: { via, currentField: missing[0] } });
-  const body = `Hi ${greetingName(rec)}, Sig from the Magpie team. I can finish your profile with you right here, one question at a time. Every answer saves straight to your profile, and you can stop any time.\n\nFirst one: ${conciergeQuestionFor(rec, missing[0])}`;
+  const body = `Hi ${greetingName(rec)}, Maggie from the Magpie team. I can finish your profile with you right here, one question at a time. Every answer saves straight to your profile, and you can stop any time.\n\nFirst one: ${conciergeQuestionFor(rec, missing[0])}`;
   await sendPlatformMessage(adminUser, rec, body, { engine: "sig_concierge" });
   return { ok: true };
 }
@@ -10842,7 +10842,7 @@ async function runRosterDigestSweep(opts = {}) {
       "",
       ...mine.map((d) => `- @${d.handle}${(d.categories || []).length ? ` — ${d.categories.join(", ")}` : ""}`),
       "",
-      "Open Find creators in Magpie to save the ones who fit, or invite one straight into a draft campaign from Sig's queue on your Home page.",
+      "Open Find creators in Magpie to save the ones who fit, or invite one straight into a draft campaign from Maggie's queue on your Home page.",
       "",
       "Open Magpie: https://app.magpielocal.com",
       "",
