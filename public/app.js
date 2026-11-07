@@ -24591,7 +24591,7 @@ async function msgNewFolder() {
     state.msgFolders = [...(state.msgFolders || []), d.folder];
     msgFolder = d.folder.id;
     renderThreadList();
-  } catch (e) { alert(e.message); }
+  } catch (e) { showToast(e.message); }
   return false;
 }
 async function msgRenameFolder() {
@@ -24603,7 +24603,7 @@ async function msgRenameFolder() {
     const d = await api("PATCH", "/messages/folders/" + encodeURIComponent(f.id), { name: name.trim() });
     f.name = d.folder.name;
     renderThreadList();
-  } catch (e) { alert(e.message); }
+  } catch (e) { showToast(e.message); }
   return false;
 }
 async function msgDeleteFolder() {
@@ -24616,7 +24616,7 @@ async function msgDeleteFolder() {
     for (const t of state.threads || []) if (t.folderId === f.id) t.folderId = null;
     msgFolder = "all";
     renderThreadList();
-  } catch (e) { alert(e.message); }
+  } catch (e) { showToast(e.message); }
   return false;
 }
 // Per-conversation actions (Jeff, 2026-11-07): the ⋯ menu on a
@@ -24663,7 +24663,7 @@ async function msgMarkThread(otherId, mode) {
     if (t) t.unread = mode === "unread";
     renderThreadList();
     refreshBadges();
-  } catch (e) { alert(e.message); }
+  } catch (e) { showToast(e.message); }
   return false;
 }
 async function msgDeleteThread(otherId) {
@@ -24675,7 +24675,7 @@ async function msgDeleteThread(otherId) {
     closeMsgSheet();
     if (document.getElementById("thread-list-wrap")) loadThreads(); else renderThreadList();
     refreshBadges();
-  } catch (e) { alert(e.message); }
+  } catch (e) { showToast(e.message); }
   return false;
 }
 async function msgMoveThread(otherId, folderId) {
@@ -24684,7 +24684,7 @@ async function msgMoveThread(otherId, folderId) {
     const t = (state.threads || []).find((x) => x.otherId === otherId);
     if (t) t.folderId = folderId || null;
     renderThreadList();
-  } catch (e) { alert(e.message); }
+  } catch (e) { showToast(e.message); }
   return false;
 }
 async function msgNewFolderThenMove(otherId) {
@@ -24695,7 +24695,7 @@ async function msgNewFolderThenMove(otherId) {
     state.msgFolders = [...(state.msgFolders || []), d.folder];
     closeMsgSheet();
     return msgMoveThread(otherId, d.folder.id);
-  } catch (e) { alert(e.message); }
+  } catch (e) { showToast(e.message); }
   return false;
 }
 // Back to the inbox (Jeff, 2026-11-07): on mobile an open

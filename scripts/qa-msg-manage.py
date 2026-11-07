@@ -17,6 +17,22 @@ Part 2 — inbox management, creator + business:
   (All / Inbox / folder), rename, delete folder unfiles;
 - mobile 390: open thread covers the list, "← Inbox" returns;
 - desktop 1440 two-pane layout from 9ffbc23 stays intact (372px).
+
+Part 3 — UNLAUNCHED-market regression (Jeff's live bug, 2026-11-07):
+a Hampton Roads creator (market NOT in the live flags) holding the
+Magpie team thread. The market-activation gate used to intercept
+every per-user message-state route (read / unread / delete / move /
+folder CRUD), because its POST exemption only recognised a send TO
+the platform peer and PATCH/DELETE were never exempted — every
+⋯-menu action answered with the "market has not launched yet" 403,
+surfaced as a native alert, and nothing ever changed state. This
+part exercises every ⋯ item from the list row AND the thread head
+for the unlaunched creator (badge moving both ways, folders, delete
++ resurrection, open-clears-badge), asserts NO alert dialog ever
+appears, and runs the full state matrix over the API for an
+unlaunched-market business. The person-to-person gates must stay:
+the unlaunched creator still cannot send to, or open, a
+person-to-person thread.
 Chromium runs through the local relay with loopback bypassed.
 """
 import os, sys, subprocess, tempfile, time, urllib.request
@@ -46,6 +62,13 @@ putUser({ id: "msgbiz", role: "business", email: "owner@msgqa.dev", name: "Ben B
   business: { businessName: "Salt & Stone Kitchen", category: "Restaurant", plan: "self-service", planId: "self-service", accessState: "active", hasPhoto: true, about: "Wood-fired kitchen." } });
 putUser({ id: "msgbiz2", role: "business", email: "blue@msgqa.dev", name: "Bea Blue", passwordSalt: salt, passwordHash: hash, status: "approved", market: "Nashville", city: "Nashville", createdAt: now, updatedAt: now,
   business: { businessName: "Blue Door Bakery", category: "Bakery", plan: "self-service", planId: "self-service", accessState: "active", hasPhoto: false, about: "Bakery." } });
+// Part 3 fixtures: Hampton Roads is NOT in config:markets flags
+// below, so both of these users live in an unlaunched market —
+// Jeff's exact setup when every ⋯ action 403'd on the team thread.
+putUser({ id: "hrqa", role: "creator", email: "harbor@msgqa.dev", name: "Harbor Creator", passwordSalt: salt, passwordHash: hash, status: "approved", market: "Hampton Roads", city: "Virginia Beach", createdAt: now, updatedAt: now,
+  creator: { handle: "harborcreates", primaryPlatform: "instagram", followerCount: 4200, totalAudience: 4200, audienceStack: { instagram: 4200 }, categories: ["Food & Drink"], localAudiencePct: 71, tierBand: "Locals", profileComplete: true, publicPage: true, hasPhoto: false, bio: "Virginia Beach creator." } });
+putUser({ id: "hrbizq", role: "business", email: "harborbiz@msgqa.dev", name: "Harbor Owner", passwordSalt: salt, passwordHash: hash, status: "approved", market: "Hampton Roads", city: "Virginia Beach", createdAt: now, updatedAt: now,
+  business: { businessName: "Harbor Lights Kitchen", category: "Restaurant", plan: "self-service", planId: "self-service", accessState: "active", hasPhoto: false, about: "Kitchen." } });
 const photoCr = fs.readFileSync(process.argv[3]);
 data["photo:msgcr"] = { contentType: "image/jpeg", dataBase64: photoCr.toString("base64") };
 const photoBiz = fs.readFileSync(process.argv[4]);
@@ -65,6 +88,12 @@ note("n1", "msgcr", "msgcr__signl-team", "signl-team");
 note("n2", "msgcr", "msgbiz__msgcr", "msgbiz");
 note("n3", "msgcr", "msgbiz2__msgcr", "msgbiz2");
 note("nb1", "msgbiz", "msgbiz__msgcr", "msgcr");
+msg("mh1", "hrqa__signl-team", "signl-team", "hrqa", "Welcome in — your founding spot in Hampton Roads is held, and we email you the moment it opens.", "2026-11-07T19:50:00.000Z", true);
+msg("mh2", "hrqa__msgbiz", "msgbiz", "hrqa", "Hi Harbor — Salt & Stone would love to host you once Hampton Roads opens.", "2026-11-07T17:00:00.000Z");
+msg("mh3", "hrbizq__hrqa", "hrqa", "hrbizq", "Thanks for the invite — excited for Hampton Roads to open.", "2026-11-07T18:00:00.000Z");
+note("nh1", "hrqa", "hrqa__signl-team", "signl-team");
+note("nh2", "hrqa", "hrqa__msgbiz", "msgbiz");
+note("nhb1", "hrbizq", "hrbizq__hrqa", "hrqa");
 fs.writeFileSync(process.argv[2], JSON.stringify(data));
 """
 seed_path = os.path.join(tmp, "seed.cjs")
@@ -289,6 +318,135 @@ try:
         back = page.evaluate("() => getComputedStyle(document.querySelector('.msg-list-col')).display !== 'none' && document.querySelectorAll('.thread-item').length")
         check("mobile: ← Inbox returns to the list", back == 3, f"rows={back}")
         page.screenshot(path=os.path.join(OUT, "06-creator-inbox-mobile.png"))
+        ctx.close()
+
+        # ============ PART 3: UNLAUNCHED MARKET (Hampton Roads) ============
+        # Jeff's exact case: a creator in a market that has not
+        # launched, Magpie team thread in her inbox. Every per-user
+        # state action used to answer with the launch-gate 403.
+        # Dialogs are RECORDED here, not just accepted: a native
+        # alert firing at all is a failure.
+        hr_dialogs = []
+        def wire_recorder(page):
+            def on_dialog(d):
+                hr_dialogs.append({"type": d.type, "message": d.message})
+                if d.type == "prompt":
+                    d.accept(prompt_answer["v"])
+                else:
+                    d.accept()
+            page.on("dialog", on_dialog)
+
+        ctx = b.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True, device_scale_factor=2)
+        login(ctx, "harbor@msgqa.dev")
+        check("HR creator badge starts at 2", badge(ctx) == 2, f"badge={badge(ctx)}")
+        page = ctx.new_page()
+        wire_recorder(page)
+        open_messages(page)
+        rows = page.evaluate("() => [...document.querySelectorAll('.thread-item')].map(r => r.textContent)")
+        check("HR inbox lists team + business threads", len(rows) == 2, f"rows={len(rows)}")
+        page.screenshot(path=os.path.join(OUT, "08-hr-inbox-mobile.png"))
+
+        # open the team thread -> the badge clears on open
+        page.click(".thread-item:has-text('Magpie')")
+        page.wait_for_selector("#msg-list .msg", timeout=15000)
+        page.wait_for_timeout(900)
+        check("HR badge drops to 1 after opening team thread", badge(ctx) == 1, f"badge={badge(ctx)}")
+        page.screenshot(path=os.path.join(OUT, "09-hr-team-thread-mobile.png"))
+
+        # thread-head menu: mark unread brings it back, mark read clears it
+        page.click(".thread-head .thread-menu-btn")
+        page.wait_for_selector("#msg-sheet .sheet-row", timeout=10000)
+        page.click("#msg-sheet .sheet-row:has-text('Mark as unread')")
+        page.wait_for_timeout(800)
+        check("HR badge back to 2 after thread-head mark-unread", badge(ctx) == 2, f"badge={badge(ctx)}")
+        page.click(".thread-head .thread-menu-btn")
+        page.wait_for_selector("#msg-sheet .sheet-row", timeout=10000)
+        page.click("#msg-sheet .sheet-row:has-text('Mark as read')")
+        page.wait_for_timeout(800)
+        check("HR badge back to 1 after thread-head mark-read", badge(ctx) == 1, f"badge={badge(ctx)}")
+
+        # back to the list; the business thread's row menu marks it read
+        page.click(".msg-back")
+        page.wait_for_selector("#thread-list-wrap .thread-item", timeout=15000)
+        page.wait_for_timeout(500)
+        page.click(".thread-item:has-text('Salt & Stone') .thread-menu-btn")
+        page.wait_for_selector("#msg-sheet .sheet-row", timeout=10000)
+        page.click("#msg-sheet .sheet-row:has-text('Mark as read')")
+        page.wait_for_timeout(800)
+        check("HR badge to 0 after row-menu mark-read", badge(ctx) == 0, f"badge={badge(ctx)}")
+
+        # move the team thread into a brand-new folder from its row menu
+        prompt_answer["v"] = "Harbor"
+        page.click(".thread-item:has-text('Magpie') .thread-menu-btn")
+        page.wait_for_selector("#msg-sheet .sheet-row", timeout=10000)
+        page.click("#msg-sheet .sheet-row:has-text('Move to folder')")
+        page.wait_for_selector("#msg-sheet .sheet-row:has-text('New folder')", timeout=10000)
+        page.click("#msg-sheet .sheet-row:has-text('New folder')")
+        page.wait_for_timeout(1000)
+        th = {t["otherId"]: t for t in threads_api(ctx)}
+        check("HR team thread filed in new folder", bool(th["signl-team"].get("folderId")), str(th["signl-team"].get("folderId")))
+        chips = page.evaluate("() => [...document.querySelectorAll('#msg-folders .chip')].map(c => c.textContent.trim())")
+        check("HR folder chip present", "Harbor" in chips, str(chips))
+        page.click("#msg-folders .chip:has-text('Harbor')")
+        page.wait_for_timeout(500)
+        rows = page.evaluate("() => [...document.querySelectorAll('.thread-item')].map(r => r.textContent)")
+        check("HR folder view shows only the team thread", len(rows) == 1 and "Magpie" in rows[0], f"rows={len(rows)}")
+        page.click("#msg-folders .chip:has-text('All')")
+        page.wait_for_timeout(500)
+        page.screenshot(path=os.path.join(OUT, "10-hr-folders-mobile.png"))
+
+        # delete the business thread from its row menu, then it resurrects
+        page.click(".thread-item:has-text('Salt & Stone') .thread-menu-btn")
+        page.wait_for_selector("#msg-sheet .sheet-row", timeout=10000)
+        page.click("#msg-sheet .sheet-row:has-text('Delete conversation')")
+        page.wait_for_timeout(900)
+        th = threads_api(ctx)
+        check("HR deleted business thread leaves inbox", len(th) == 1 and th[0]["otherId"] == "signl-team", f"threads={len(th)}")
+        ctxB = b.new_context(viewport={"width": 1440, "height": 900})
+        login(ctxB, "owner@msgqa.dev")
+        r = ctxB.request.post(BASE + "/api/messages", data={"toUserId": "hrqa", "body": "Following up, Harbor — the first table is yours when we open."})
+        check("HR resurrection send from live-market business", r.status == 201, f"status={r.status}")
+        ctxB.close()
+        page.evaluate("go('dashboard','Messages')")
+        page.wait_for_selector("#thread-list-wrap .thread-item", timeout=30000)
+        page.wait_for_timeout(800)
+        th = {t["otherId"]: t for t in threads_api(ctx)}
+        check("HR business thread resurrected unread", "msgbiz" in th and th["msgbiz"]["unread"] is True, str(th.get("msgbiz", {}).get("unread")))
+        check("HR badge counts resurrected thread (1)", badge(ctx) == 1, f"badge={badge(ctx)}")
+
+        # the whole point of the fix: no alert ever fired
+        alerts = [d for d in hr_dialogs if d["type"] == "alert"]
+        launched = [d for d in hr_dialogs if "has not launched" in d["message"]]
+        check("HR: no native alert dialogs in any menu action", not alerts and not launched, str(hr_dialogs))
+
+        # gates that must STAY for the unlaunched creator
+        r = ctx.request.post(BASE + "/api/messages", data={"toUserId": "msgbiz", "body": "hello?"})
+        check("HR person-to-person send still gated (403)", r.status == 403, f"status={r.status}")
+        r = ctx.request.get(BASE + "/api/messages?with=msgbiz")
+        check("HR person-to-person thread read still gated (403)", r.status == 403, f"status={r.status}")
+        r = ctx.request.get(BASE + "/api/messages?with=signl-team")
+        check("HR platform thread read still allowed (200)", r.status == 200, f"status={r.status}")
+        ctx.close()
+
+        # unlaunched-market BUSINESS: the full state matrix over the API
+        ctx = b.new_context(viewport={"width": 1440, "height": 900})
+        login(ctx, "harborbiz@msgqa.dev")
+        check("HR business badge starts at 1", badge(ctx) == 1, f"badge={badge(ctx)}")
+        r = ctx.request.post(BASE + "/api/messages/read", data={"otherId": "hrqa"})
+        check("HR business mark read 200, badge 0", r.status == 200 and badge(ctx) == 0, f"status={r.status} badge={badge(ctx)}")
+        r = ctx.request.post(BASE + "/api/messages/unread", data={"otherId": "hrqa"})
+        check("HR business mark unread 200, badge 1", r.status == 200 and badge(ctx) == 1, f"status={r.status} badge={badge(ctx)}")
+        r = ctx.request.post(BASE + "/api/messages/folders", data={"name": "VIP"})
+        fid = r.json()["folder"]["id"] if r.status == 201 else None
+        check("HR business folder create 201", r.status == 201, f"status={r.status}")
+        r = ctx.request.post(BASE + "/api/messages/move", data={"otherId": "hrqa", "folderId": fid})
+        check("HR business move 200", r.status == 200, f"status={r.status}")
+        r = ctx.request.patch(BASE + f"/api/messages/folders/{fid}", data={"name": "VIPs"})
+        check("HR business folder rename 200", r.status == 200, f"status={r.status}")
+        r = ctx.request.delete(BASE + f"/api/messages/folders/{fid}")
+        check("HR business folder delete 200", r.status == 200, f"status={r.status}")
+        r = ctx.request.post(BASE + "/api/messages/delete", data={"otherId": "hrqa"})
+        check("HR business conversation delete 200", r.status == 200, f"status={r.status}")
         ctx.close()
 
         # ============ BUSINESS DESKTOP (parity) ============

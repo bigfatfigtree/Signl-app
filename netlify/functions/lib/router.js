@@ -25567,7 +25567,23 @@ async function route(event) {
         seg[0] === "bookings" || seg[0] === "open-offers" || seg[0] === "offers" ||
         seg[0] === "applications" || seg[0] === "posts"
       );
-      if (!businessPrelaunchOk && !foundingPrelaunchOk && !creatorPlatformMsgOk && !creatorPrelaunchReadOk) {
+      // Inbox housekeeping (fix, Jeff 2026-11-07): the per-user
+      // message-STATE routes — mark read / unread, soft delete,
+      // move, and the folder CRUD — write ONLY the caller's own
+      // msgstate / msgfolder records. They never send, start, or
+      // expose a conversation, so this launch gate must never
+      // intercept them, for any role. Before this exemption, a
+      // creator in an unlaunched market hit this 403 on EVERY
+      // ⋯-menu action on the platform thread (the POST check
+      // above only lets a send TO the platform peer through, and
+      // PATCH/DELETE were never exempted at all): the client
+      // surfaced the 403 as an alert and the conversation could
+      // never be marked read, filed, or deleted.
+      const msgStateOk = seg[0] === "messages" && (
+        (method === "POST" && seg.length === 2 && ["read", "unread", "delete", "move"].includes(seg[1])) ||
+        (seg[1] === "folders" && ["GET", "POST", "PATCH", "DELETE"].includes(method))
+      );
+      if (!businessPrelaunchOk && !foundingPrelaunchOk && !creatorPlatformMsgOk && !creatorPrelaunchReadOk && !msgStateOk) {
         return err(403, `The ${marketTalkName(user.market)} market has not launched yet. Founding creators keep priority in the order they signed up, and we email them the moment it opens to businesses.`);
       }
     }
