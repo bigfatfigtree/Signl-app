@@ -20745,8 +20745,8 @@ function pdpSaveToggle(userId) {
     const fav = !!(r && r.isFavorite);
     if (c) c.isFavorite = fav;
     for (const id of ["pdp-save-top", "pdp-save-bar"]) { const b = document.getElementById(id); if (b) b.textContent = fav ? "Saved" : "Save"; }
-    toast(fav ? "Saved to your list." : "Removed from your list.");
-  }).catch((e) => toast(e.message || "Could not save just now."));
+    showToast(fav ? "Saved to your list." : "Removed from your list.");
+  }).catch((e) => showToast(e.message || "Could not save just now."));
   return false;
 }
 function audienceSpecsHtml(c) {
@@ -22111,7 +22111,7 @@ function applyPlayToDraft(playId) {
   d.briefCta = play.cta;
   if (!d.spots) d.spots = String(play.spots);
   renderMyOffersPage();
-  toast(`Play set: ${play.name}. The brief below is drafted from it; edit anything.`);
+  showToast(`Play set: ${play.name}. The brief below is drafted from it; edit anything.`);
 }
 function composerPlaysHtml() {
   const d = state.offerDraft || {};
@@ -23382,7 +23382,7 @@ async function createOfferV2(e, draft) {
     // the builder stays in Start a campaign.
     if (isFoundingBusiness(state.user)) {
       state.offersSeg = "drafts";
-      toast("Saved for opening day. Nothing is sent to creators until your market opens.");
+      showToast("Saved for opening day. Nothing is sent to creators until your market opens.");
     } else if (draft === true) state.offersSeg = "drafts";
     else state.offersSeg = "live";
     state.campaignStep = 0;
@@ -27249,7 +27249,7 @@ async function reviewApp(userId, decision) {
   if (btn) { btn.disabled = true; btn.textContent = decision === "approve" ? "Approving…" : "Working…"; }
   try {
     await api("POST", "/admin/review", { userId, decision });
-    toast(decision === "approve" ? "Approved. The list is refreshing." : "Done. The list is refreshing.");
+    showToast(decision === "approve" ? "Approved. The list is refreshing." : "Done. The list is refreshing.");
     reviewBusy138.delete(userId);
     loadApplications();
   } catch (err) {

@@ -121,8 +121,8 @@ const cookieOf = (res) => (((res.headers || {})["Set-Cookie"] || (res.headers ||
 
 console.log("verify-build54: Command Center foundation + Overview + Markets");
 
-check("build stamp is 2026.11.06-139", BUILD_ID === "2026.11.06-139", BUILD_ID);
-check("index.html carries the -54 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.06-139"));
+check("build stamp is 2026.11.06-140", BUILD_ID === "2026.11.06-140", BUILD_ID);
+check("index.html carries the -54 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.06-140"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);

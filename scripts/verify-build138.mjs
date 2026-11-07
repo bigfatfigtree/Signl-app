@@ -43,10 +43,10 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
 // ---------- stamp ----------
-// Stamp moved to -139 with the post-138 fix batch (2026-11-06); the
+// Stamp moved to -140 with the post-139 fix batch (2026-11-06); the
 // invariant this check protects is build.js + index.html AGREEING.
-check("stamp is current (2026.11.06-139 since the post-138 batch) and identical in build.js + index.html",
-  buildJs.includes('BUILD_ID = "2026.11.06-139"') && (indexHtml.match(/2026\.11\.06-139/g) || []).length >= 5);
+check("stamp is current (2026.11.06-140 since the post-138 batch) and identical in build.js + index.html",
+  buildJs.includes('BUILD_ID = "2026.11.06-140"') && (indexHtml.match(/2026\.11\.06-140/g) || []).length >= 5);
 
 // ---------- catalogue (unit, from the real lib) ----------
 const require2 = createRequire(path.join(root, "netlify/functions/lib/router.js"));

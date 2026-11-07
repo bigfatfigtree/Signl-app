@@ -107,7 +107,7 @@ try {
   // ---------- source pins ----------
   const appJs = read("public/app.js");
   const routerJs = read("netlify/functions/lib/router.js");
-  check("pin: stamp is 2026.11.06-139 on both sides", read("netlify/functions/lib/build.js").includes('BUILD_ID = "2026.11.06-139"') && read("public/index.html").includes("2026.11.06-139"));
+  check("pin: stamp is 2026.11.06-140 on both sides", read("netlify/functions/lib/build.js").includes('BUILD_ID = "2026.11.06-140"') && read("public/index.html").includes("2026.11.06-140"));
   check("pin: self-serve screen is nested in accountHtml with the type-DELETE gate", appJs.includes("deleteAccountHtml(u)") && appJs.includes('id="delacct-confirm"') && appJs.includes('api("DELETE", "/me/account"'));
   check("pin: admin card carries the delete action with its own confirm", appJs.includes("adminDeleteAccountPrompt") && appJs.includes("/delete-account"));
   check("pin: card servicing row carries delete with its own prefixed prompt host (Build -133)", appJs.includes("adminDeleteAccountPrompt('${u.id}', '${prefix}-${u.id}')") && appJs.includes("id=\"admin-delacct-${prefix}-${u.id}\""));
