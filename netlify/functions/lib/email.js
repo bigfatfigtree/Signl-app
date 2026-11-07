@@ -1,13 +1,13 @@
-// Transactional email for SIGNL (sign-up confirmations, approval
+// Transactional email for Magpie (sign-up confirmations, approval
 // notices). Zero-dependency SMTP client (implicit TLS, AUTH LOGIN)
 // so the function bundle needs no extra packages.
 //
 // Transport activates only when these env vars are set in Netlify:
-//   SIGNL_SMTP_USER  e.g. hello@joinsignl.com
+//   SIGNL_SMTP_USER  e.g. hello@magpielocal.com
 //   SIGNL_SMTP_PASS  a Gmail App Password for that mailbox
 // Optional: SIGNL_SMTP_HOST (default smtp.gmail.com),
 //           SIGNL_SMTP_PORT (default 465),
-//           SIGNL_MAIL_FROM (default "SIGNL <hello@joinsignl.com>")
+//           SIGNL_MAIL_FROM (default "Magpie <hello@magpielocal.com>")
 //
 // When the transport is not configured, sendEmail reports
 // { sent: false, queued: true } and the caller logs a *_queued event:
@@ -28,9 +28,9 @@
 // the default identity: sendEmail refuses with reason
 // "sender_profile_unavailable", and the campaign sweep checks
 // availability up front so it can skip and log instead. Mail sent
-// from a signlteam profile carries Reply-To: hello@joinsignl.com
+// from a signlteam profile carries Reply-To: hello@magpielocal.com
 // (the watched inbox) unless the caller passes its own replyTo.
-// The display name stays "SIGNL"; the From address is the
+// The display name stays "Magpie"; the From address is the
 // profile's own mailbox (its SMTP user).
 const tls = require("tls");
 
@@ -39,9 +39,9 @@ function emailEnabled() {
 }
 
 // The Reply-To every signlteam.com send defaults to: replies land
-// in the hello@joinsignl.com inbox the reply watch already reads,
+// in the hello@magpielocal.com inbox the reply watch already reads,
 // never in a warm-up mailbox nobody monitors.
-const TEAM_REPLY_TO = "hello@joinsignl.com";
+const TEAM_REPLY_TO = "hello@magpielocal.com";
 
 const SENDER_PROFILES = {
   default: { userEnv: "SIGNL_SMTP_USER", passEnv: "SIGNL_SMTP_PASS", replyTo: null },
@@ -66,9 +66,9 @@ function senderProfile(name) {
   const available = !!(user && pass);
   let from = null;
   if (key === "default") {
-    from = process.env.SIGNL_MAIL_FROM || "SIGNL <hello@joinsignl.com>";
+    from = process.env.SIGNL_MAIL_FROM || "Magpie <hello@magpielocal.com>";
   } else if (user) {
-    from = `SIGNL <${user}>`;
+    from = `Magpie <${user}>`;
   }
   return { name: key, user, pass, available, from, replyTo: def.replyTo, team: key !== "default" };
 }
@@ -82,21 +82,21 @@ function senderProfileAvailable(name) {
 // mail whose copy promises "unsubscribe at any time") carry a real
 // List-Unsubscribe header, so the promise in the copy is one the
 // reader can actually act on from their mail app.
-const UNSUBSCRIBE_ADDR = "hello@joinsignl.com";
+const UNSUBSCRIBE_ADDR = "hello@magpielocal.com";
 function listUnsubscribeHeader() {
   return `List-Unsubscribe: <mailto:${UNSUBSCRIBE_ADDR}?subject=unsubscribe>`;
 }
 
 // Branded HTML alternative (Build -114): transactional mail sent
 // through the router's deliverEmail also carries an HTML part in
-// the SIGNL brand shell: the real logo (the same file the app
+// the Magpie brand shell: the real logo (the same file the app
 // shell serves from its own public assets) over the locked site
 // gradient band, with the plain-text wording set as the body,
 // unchanged. The text part stays canonical; subjects and copy do
 // not change. Sends that call sendEmail directly without an html
 // part (the campaign sweep's founder outreach, the internal
 // business-application notice) keep their plain shape.
-const EMAIL_LOGO_URL = "https://app.joinsignl.com/assets/logo.png";
+const EMAIL_LOGO_URL = "https://app.magpielocal.com/assets/logo.png";
 const EMAIL_GRADIENT = "linear-gradient(90deg,#006AFC 0%,#019BFC 35%,#03C9AB 70%,#2FE07E 100%)";
 
 function escapeHtml(s) {
@@ -124,13 +124,13 @@ function brandedEmailHtml(text) {
     "<!DOCTYPE html>",
     '<html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    "<title>SIGNL</title></head>",
+    "<title>Magpie</title></head>",
     '<body style="margin:0;padding:0;background-color:#F4F7F4;">',
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F4F7F4;"><tr><td align="center" style="padding:24px 12px;">',
     '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#FFFFFF;border:1px solid #DDE7DD;">',
     `<tr><td style="height:6px;line-height:6px;font-size:0;background-color:#006AFC;background-image:${EMAIL_GRADIENT};">&nbsp;</td></tr>`,
     '<tr><td style="padding:26px 32px 4px 32px;">',
-    `<img src="${EMAIL_LOGO_URL}" width="160" alt="SIGNL" style="display:block;border:0;width:160px;max-width:60%;height:auto;">`,
+    `<img src="${EMAIL_LOGO_URL}" width="160" alt="Magpie" style="display:block;border:0;width:160px;max-width:60%;height:auto;">`,
     "</td></tr>",
     `<tr><td style="padding:16px 32px 24px 32px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#0B0D0C;">${emailTextToHtml(text)}</td></tr>`,
     `<tr><td style="height:6px;line-height:6px;font-size:0;background-color:#006AFC;background-image:${EMAIL_GRADIENT};">&nbsp;</td></tr>`,
@@ -147,11 +147,11 @@ function smtpSend({ to, subject, text, html, listUnsubscribe, profile, replyTo, 
     const prof = profile || senderProfile("default");
     const user = prof.user;
     const pass = prof.pass;
-    const baseFrom = prof.from || "SIGNL <hello@joinsignl.com>";
+    const baseFrom = prof.from || "Magpie <hello@magpielocal.com>";
     const fromAddr = (baseFrom.match(/<([^>]+)>/) || [null, baseFrom])[1];
     // Partner co-brand (Build -105): a display-name override
     // swaps ONLY the name a mail client shows; the address,
-    // the envelope sender and the auth all stay SIGNL's.
+    // the envelope sender and the auth all stay Magpie's.
     const safeName = typeof fromName === "string" ? fromName.replace(/[<>"\r\n]/g, "").trim().slice(0, 80) : "";
     const from = safeName ? `${safeName} <${fromAddr}>` : baseFrom;
     const replyToAddr = replyTo || prof.replyTo || null;
@@ -194,7 +194,7 @@ function smtpSend({ to, subject, text, html, listUnsubscribe, profile, replyTo, 
     (async () => {
       try {
         expect(220, await reply());
-        await cmd(`EHLO app.joinsignl.com`, 250);
+        await cmd(`EHLO app.magpielocal.com`, 250);
         await cmd("AUTH LOGIN", 334);
         await cmd(Buffer.from(user).toString("base64"), 334);
         await cmd(Buffer.from(pass).toString("base64"), 235);
