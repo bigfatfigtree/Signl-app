@@ -24521,6 +24521,11 @@ function threadContextFor(otherId) {
 // threads where the last message came from the other side.
 let msgMode = "all";
 let msgQ = "";
+// Inbox folders (Jeff, 2026-11-07): the filter the folder chips
+// set — "all" shows every conversation, "inbox" the unfiled
+// ones, anything else is one of the user's own folder ids. The
+// folders themselves live server-side per user (state.msgFolders).
+let msgFolder = "all";
 function msgSetMode(v) { msgMode = v; renderThreadList(); return false; }
 function msgSetQ(v) { msgQ = v; renderThreadList(true); return false; }
 // Conversation avatar (Jeff, 2026-11-07): show who is sending —
@@ -24532,23 +24537,29 @@ function threadAvatarHtml(t, lg) {
   const name = (t && (t.otherBusinessName || t.otherName)) || "Magpie";
   const initial = esc((name.trim().charAt(0) || "M").toUpperCase());
   const src = t && t.platform ? `${MAGGIE_CHAR}/curious.jpg` : (t && t.otherPhotoUrl) || "";
-  return `<span class="thread-avwrap${lg ? " lg" : ""}"><span class="thread-av init" aria-hidden="true">${initial}</span>${src ? `<img class="thread-av" src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ""}</span>`;
+  return `<span class="thread-avwrap${lg ? " lg" : ""}"><span class="thread-av init" aria-hidden="true">${initial}</span>${src ? `<img class="thread-av" src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ""}${t && t.unread && !lg ? `<span class="thread-dot av" title="Unread"></span>` : ""}</span>`;
 }
 function threadItemsHtml() {
   const me = state.user.id;
   let threads = state.threads || [];
   if (msgMode === "waiting") threads = threads.filter((t) => t.lastMessage && t.lastMessage.fromId !== me);
+  if (msgFolder === "inbox") threads = threads.filter((t) => !t.folderId);
+  else if (msgFolder !== "all") threads = threads.filter((t) => t.folderId === msgFolder);
   const q = msgQ.trim().toLowerCase();
   if (q) threads = threads.filter((t) => ((t.otherBusinessName || t.otherName || "") + " " + (t.otherHandle || "")).toLowerCase().includes(q));
-  if (!threads.length) return `<div class="empty-card"><div class="ec-t">No conversations here</div><div class="ec-s">${msgMode === "waiting" ? "Nothing is waiting on you. When someone writes and you have not answered yet, it lands here." : "No conversations match that search."}</div></div>`;
+  if (!threads.length) {
+    const inFolder = msgFolder !== "all" && msgFolder !== "inbox";
+    return `<div class="empty-card"><div class="ec-t">No conversations here</div><div class="ec-s">${q ? "No conversations match that search." : inFolder ? "Nothing is filed in this folder yet. Open a conversation's options (the dots on its row) and choose Move to folder to put it here." : msgFolder === "inbox" ? "Every conversation is filed in a folder. Switch to All to see everything." : msgMode === "waiting" ? "Nothing is waiting on you. When someone writes and you have not answered yet, it lands here." : "No conversations match that search."}</div></div>`;
+  }
   return `<div class="thread-list">${threads.map((t) => `
-        <div class="thread-item${t.platform ? " thread-platform" : ""}" onclick="openThread('${t.otherId}')">
+        <div class="thread-item${t.platform ? " thread-platform" : ""}${t.unread ? " unread" : ""}" onclick="openThread('${t.otherId}')">
           ${threadAvatarHtml(t)}
           <div class="thread-main">
             <div class="thread-top"><strong>${esc(t.otherBusinessName || t.otherName)}</strong>${t.platform ? ` <span class="badge ok">Magpie team</span>` : ""} ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}</div>
             ${threadContextFor(t.otherId) ? `<div class="small thread-ctx">${esc(threadContextFor(t.otherId))}</div>` : ""}
-            <div class="small muted">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
+            <div class="small ${t.unread ? "thread-prev-unread" : "muted"}">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
           </div>
+          <button type="button" class="thread-menu-btn" onclick="return msgThreadMenu(event, '${t.otherId}')" aria-label="Conversation options" title="Options">${bnIcon("more")}</button>
         </div>`).join("")}</div>`;
 }
 function renderThreadList(keepFocus) {
@@ -24557,23 +24568,163 @@ function renderThreadList(keepFocus) {
   host.innerHTML = threadItemsHtml();
   const seg = document.getElementById("msg-seg");
   if (seg) seg.innerHTML = segSw([{ v: "waiting", label: "Waiting on you" }, { v: "all", label: "All" }], msgMode, "msgSetMode");
+  const fb = document.getElementById("msg-folders");
+  if (fb) fb.innerHTML = msgFoldersHtml();
   if (keepFocus) { const inp = document.getElementById("msg-q"); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } }
+}
+// Folder chips row: All · Inbox (unfiled) · the user's folders ·
+// + New folder. When a folder is the active filter, its Rename
+// and Delete controls ride along; deleting a folder unfiles its
+// conversations, it never deletes them.
+function msgFoldersHtml() {
+  const folders = state.msgFolders || [];
+  const chip = (v, label) => `<button type="button" class="chip${msgFolder === v ? " on" : ""}" onclick="return msgSetFolder('${v}')">${esc(label)}</button>`;
+  const active = folders.find((f) => f.id === msgFolder);
+  return `${chip("all", "All")}${chip("inbox", "Inbox")}${folders.map((f) => chip(f.id, f.name)).join("")}<button type="button" class="chip chip-add" onclick="return msgNewFolder()">+ New folder</button>${active ? `<span class="msg-folder-admin"><button type="button" class="linklike" onclick="return msgRenameFolder()">Rename</button><button type="button" class="linklike danger" onclick="return msgDeleteFolder()">Delete folder</button></span>` : ""}`;
+}
+function msgSetFolder(v) { msgFolder = v; renderThreadList(); return false; }
+async function msgNewFolder() {
+  const name = prompt("Name the folder");
+  if (!name || !name.trim()) return false;
+  try {
+    const d = await api("POST", "/messages/folders", { name: name.trim() });
+    state.msgFolders = [...(state.msgFolders || []), d.folder];
+    msgFolder = d.folder.id;
+    renderThreadList();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function msgRenameFolder() {
+  const f = (state.msgFolders || []).find((x) => x.id === msgFolder);
+  if (!f) return false;
+  const name = prompt("Rename the folder", f.name);
+  if (!name || !name.trim() || name.trim() === f.name) return false;
+  try {
+    const d = await api("PATCH", "/messages/folders/" + encodeURIComponent(f.id), { name: name.trim() });
+    f.name = d.folder.name;
+    renderThreadList();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function msgDeleteFolder() {
+  const f = (state.msgFolders || []).find((x) => x.id === msgFolder);
+  if (!f) return false;
+  if (!confirm(`Delete the folder "${f.name}"? The conversations in it are not deleted — they go back to the Inbox.`)) return false;
+  try {
+    await api("DELETE", "/messages/folders/" + encodeURIComponent(f.id));
+    state.msgFolders = (state.msgFolders || []).filter((x) => x.id !== f.id);
+    for (const t of state.threads || []) if (t.folderId === f.id) t.folderId = null;
+    msgFolder = "all";
+    renderThreadList();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+// Per-conversation actions (Jeff, 2026-11-07): the ⋯ menu on a
+// conversation row or in the open thread — mark read / unread,
+// move to a folder, delete from my inbox. Every action writes
+// only my own thread state on the server; the other person's
+// inbox is never touched.
+function closeMsgSheet() { const el = document.getElementById("msg-sheet"); if (el) el.remove(); return false; }
+function msgThreadMenu(e, otherId) {
+  if (e) e.stopPropagation();
+  closeMsgSheet();
+  const t = (state.threads || []).find((x) => x.otherId === otherId) || {};
+  const name = t.otherBusinessName || t.otherName || "Conversation";
+  const filed = (state.msgFolders || []).find((f) => f.id === t.folderId);
+  const el = document.createElement("div");
+  el.id = "msg-sheet";
+  el.className = "sheet-overlay";
+  el.innerHTML = `
+  <div class="sheet" role="dialog" aria-label="Conversation options">
+    <div class="flex-between"><strong>${esc(name)}</strong><button class="linklike" onclick="closeMsgSheet()">Close</button></div>
+    ${filed ? `<p class="small muted" style="margin:8px 0 0">Filed in ${esc(filed.name)}</p>` : ""}
+    <button class="sheet-row" onclick="closeMsgSheet(); return msgMarkThread('${otherId}', '${t.unread ? "read" : "unread"}')">${t.unread ? "Mark as read" : "Mark as unread"}</button>
+    <button class="sheet-row" onclick="return msgMoveMenu('${otherId}')">Move to folder</button>
+    <button class="sheet-row danger" onclick="closeMsgSheet(); return msgDeleteThread('${otherId}')">Delete conversation</button>
+  </div>`;
+  document.body.appendChild(el);
+  return false;
+}
+function msgMoveMenu(otherId) {
+  const sheet = document.querySelector("#msg-sheet .sheet");
+  if (!sheet) return msgThreadMenu(null, otherId);
+  const t = (state.threads || []).find((x) => x.otherId === otherId) || {};
+  sheet.innerHTML = `
+    <div class="flex-between"><strong>Move to folder</strong><button class="linklike" onclick="closeMsgSheet()">Close</button></div>
+    <button class="sheet-row" onclick="closeMsgSheet(); return msgMoveThread('${otherId}', '')">Inbox (no folder)${!t.folderId ? " ✓" : ""}</button>
+    ${(state.msgFolders || []).map((f) => `<button class="sheet-row" onclick="closeMsgSheet(); return msgMoveThread('${otherId}', '${f.id}')">${esc(f.name)}${t.folderId === f.id ? " ✓" : ""}</button>`).join("")}
+    <button class="sheet-row" onclick="return msgNewFolderThenMove('${otherId}')">+ New folder…</button>`;
+  return false;
+}
+async function msgMarkThread(otherId, mode) {
+  try {
+    await api("POST", "/messages/" + mode, { otherId });
+    const t = (state.threads || []).find((x) => x.otherId === otherId);
+    if (t) t.unread = mode === "unread";
+    renderThreadList();
+    refreshBadges();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function msgDeleteThread(otherId) {
+  if (!confirm("Delete this conversation? It leaves your inbox. If they write again, it comes back.")) return false;
+  try {
+    await api("POST", "/messages/delete", { otherId });
+    state.threads = (state.threads || []).filter((x) => x.otherId !== otherId);
+    if (state.activeThread === otherId) state.activeThread = null;
+    closeMsgSheet();
+    if (document.getElementById("thread-list-wrap")) loadThreads(); else renderThreadList();
+    refreshBadges();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function msgMoveThread(otherId, folderId) {
+  try {
+    await api("POST", "/messages/move", { otherId, folderId: folderId || null });
+    const t = (state.threads || []).find((x) => x.otherId === otherId);
+    if (t) t.folderId = folderId || null;
+    renderThreadList();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function msgNewFolderThenMove(otherId) {
+  const name = prompt("Name the folder");
+  if (!name || !name.trim()) return false;
+  try {
+    const d = await api("POST", "/messages/folders", { name: name.trim() });
+    state.msgFolders = [...(state.msgFolders || []), d.folder];
+    closeMsgSheet();
+    return msgMoveThread(otherId, d.folder.id);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+// Back to the inbox (Jeff, 2026-11-07): on mobile an open
+// conversation covers the list, so the thread head carries a
+// way back. Clearing the active thread re-renders the surface
+// to the conversation list.
+function msgBackToInbox() {
+  state.activeThread = null;
+  render();
+  return false;
 }
 async function loadThreads() {
   const el = document.getElementById("tab-body");
   try {
     const data = await api("GET", "/messages");
     state.threads = data.threads;
+    try { const fd = await api("GET", "/messages/folders"); state.msgFolders = fd.folders || []; } catch (e) { state.msgFolders = state.msgFolders || []; }
+    if (msgFolder !== "all" && msgFolder !== "inbox" && !(state.msgFolders || []).some((f) => f.id === msgFolder)) msgFolder = "all";
     const newGo = state.user.role === "business" ? "return go('dashboard','Discover')" : "return go('dashboard','Offers')";
     el.innerHTML = `
-    <div class="msg-wrap">
+    <div class="msg-wrap${state.activeThread ? " has-active" : ""}">
     ${wsHead("Messages", { sub: state.user.role === "business" ? "Talk to a creator about a visit or an offer." : "Talk to a business about a visit or an offer.", subKey: "messages" })}
     <div class="ws-tools msg-tools">
       <span class="ws-search">${bnIcon("search")}<input id="msg-q" type="search" placeholder="Search conversations" value="${esc(msgQ)}" oninput="msgSetQ(this.value)"></span>
       <span id="msg-seg">${segSw([{ v: "waiting", label: "Waiting on you" }, { v: "all", label: "All" }], msgMode, "msgSetMode")}</span>
       <button type="button" class="btn ws-primary" onclick="${newGo}">${state.user.role === "business" ? "Find creators" : "See offers"}</button>
     </div>
-    <div class="msg-panes"><div class="msg-list-col" id="thread-list-wrap">${data.threads.length || state.activeThread ? threadItemsHtml() : `<div class="empty-card"><div class="ec-t">No messages yet</div><div class="ec-s">${state.user.role === "business" ? "Conversations attach to a visit or an offer. Invite a creator from Find creators, or answer an applicant, and the conversation lives here." : "Conversations attach to a visit or an offer. Apply to an offer, or accept an invite, and the conversation lives here."}</div></div>`}</div>
+    <div class="msg-folders" id="msg-folders">${msgFoldersHtml()}</div>
+    <div class="msg-panes${state.activeThread ? " has-active" : ""}"><div class="msg-list-col" id="thread-list-wrap">${data.threads.length || state.activeThread ? threadItemsHtml() : `<div class="empty-card"><div class="ec-t">No messages yet</div><div class="ec-s">${state.user.role === "business" ? "Conversations attach to a visit or an offer. Invite a creator from Find creators, or answer an applicant, and the conversation lives here." : "Conversations attach to a visit or an offer. Apply to an offer, or accept an invite, and the conversation lives here."}</div></div>`}</div>
     <div id="thread-view" class="msg-view">${state.activeThread ? `<p class="muted msg-pane-note">Loading conversation...</p>` : `<div class="msg-empty"><p class="muted">Pick a conversation.</p></div>`}</div></div>
     </div>`;
     if (state.activeThread) loadConversation(state.activeThread);
@@ -24591,7 +24742,7 @@ async function loadConversation(otherId) {
     const isPlatform = otherId === SIGNL_TEAM_PEER || !!t0.platform;
     const ctxLine = isPlatform ? "" : threadContextFor(otherId);
     el.innerHTML = `
-      <div class="thread-head">${threadAvatarHtml(isPlatform ? { platform: true, otherName: "Magpie" } : t0, true)}<div class="thread-head-main"><strong>${esc(isPlatform ? "Magpie" : (t0.otherBusinessName || t0.otherName || "Conversation"))}</strong>${isPlatform ? ` <span class="badge ok">Magpie team</span>` : ""}${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">${isPlatform ? "Messages from the Magpie team. Reply here any time." : "Contact about this visit or offer. Messages stay in Magpie."}</div></div></div>
+      <div class="thread-head"><button type="button" class="btn small-btn ghost msg-back" onclick="return msgBackToInbox()">← Inbox</button>${threadAvatarHtml(isPlatform ? { platform: true, otherName: "Magpie" } : t0, true)}<div class="thread-head-main"><strong>${esc(isPlatform ? "Magpie" : (t0.otherBusinessName || t0.otherName || "Conversation"))}</strong>${isPlatform ? ` <span class="badge ok">Magpie team</span>` : ""}${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">${isPlatform ? "Messages from the Magpie team. Reply here any time." : "Contact about this visit or offer. Messages stay in Magpie."}</div></div><button type="button" class="thread-menu-btn" onclick="return msgThreadMenu(event, '${otherId}')" aria-label="Conversation options" title="Options">${bnIcon("more")}</button></div>
       <div id="msg-list">${data.messages.map((m) => m.system ? `
         <div class="msg-system">${esc(m.body)}</div>` : `
         <div class="msg ${m.fromId === state.user.id ? "mine" : ""}${m.platform ? " platform-msg" : ""}">
@@ -24605,6 +24756,12 @@ async function loadConversation(otherId) {
       </form>`;
     const list = document.getElementById("msg-list");
     list.scrollTop = list.scrollHeight;
+    // Reading is reading (Jeff, 2026-11-07): opening the
+    // conversation marks it read in my thread state and every
+    // unread alert follows at once — the badge used to outlive
+    // the reading because nothing here touched read state.
+    if (t0.unread) { t0.unread = false; renderThreadList(); }
+    api("POST", "/messages/read", { otherId }).then(() => refreshBadges()).catch(() => {});
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }

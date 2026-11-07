@@ -173,9 +173,18 @@ try {
   const notes2 = await nashA.client("GET", "/api/notifications");
   check("(2) a second message in the same thread does not stack the badge",
     send2.status === 201 && notes2.data.badges && notes2.data.badges.messages === 1, JSON.stringify(notes2.data.badges));
+  // BUILD -40 pin update (2026-11-07, Jeff's inbox build): the
+  // badge now counts unread CONVERSATIONS from per-participant
+  // thread state, not notes. Reading the notifications list no
+  // longer clears it — reading the conversation does, via
+  // POST /messages/read (what the app fires on open).
   await nashA.client("POST", "/api/notifications/read", {});
+  const notesMid = await nashA.client("GET", "/api/notifications");
+  check("(2) reading notifications alone no longer clears the Messages badge",
+    notesMid.data.badges && notesMid.data.badges.messages === 1, JSON.stringify(notesMid.data.badges));
+  await nashA.client("POST", "/api/messages/read", { otherId: "signl-team" });
   const notes3 = await nashA.client("GET", "/api/notifications");
-  check("(2) the badge clears when the creator reads their notifications",
+  check("(2) the badge clears when the creator reads the conversation",
     notes3.data.badges && notes3.data.badges.messages === 0, JSON.stringify(notes3.data.badges));
 
   // (3) Email failure never blocks the in-app message.

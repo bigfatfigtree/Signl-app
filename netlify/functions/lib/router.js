@@ -4309,6 +4309,102 @@ async function deliverEmail(kind, user, subject, text, band, opts) {
   return result;
 }
 
+// ---------- per-participant message thread state ----------
+// One record per (user, conversation): msgstate:{userId}:{otherId}
+//   { userId, otherId, threadId, readCursor, forceUnread,
+//     deletedAt, folderId, updatedAt }
+// plus the user's own folders: msgfolder:{userId}:{folderId}
+//   { id, userId, name, createdAt }
+// The state record belongs to ONE participant: what they have
+// read, whether they filed the conversation in one of their
+// folders, whether they deleted it from their own inbox. The
+// other participant's copy is never touched (helper-privacy rule:
+// a user only ever sees and changes their own state).
+//
+// READ STATE LIVES HERE (Jeff, 2026-11-07: "the alert should go
+// away after I've read it" — it didn't). Root cause of the stuck
+// alert: the Messages badge counted unread message_received
+// NOTES, and the only code that ever marked notes read was
+// leaving a dashboard that had rendered the Updates panel (go()
+// flushing notesReadPending). Opening the conversation itself
+// never touched the notes and never refreshed the badges, so the
+// alert outlived the reading. Now opening a conversation (or
+// "Mark as read") moves this record's readCursor past the
+// thread's messages and retires the thread's live
+// message_received notes with it, and every unread alert counts
+// threads from these records — so the badges say what the user
+// has actually read.
+function msgThreadIdFor(a, b) { return [String(a), String(b)].sort().join("__"); }
+async function msgStateMap(userId) {
+  const rows = await store.list(`msgstate:${userId}:`);
+  const map = {};
+  for (const r of rows) { if (r.value && r.value.otherId) map[r.value.otherId] = r.value; }
+  return map;
+}
+async function msgStatePut(userId, otherId, patch) {
+  const key = `msgstate:${userId}:${otherId}`;
+  const cur = (await store.get(key)) || { userId, otherId, threadId: msgThreadIdFor(userId, otherId), readCursor: null, forceUnread: false, deletedAt: null, folderId: null };
+  const next = { ...cur, ...patch, userId, otherId, threadId: msgThreadIdFor(userId, otherId), updatedAt: nowIso() };
+  await store.set(key, next);
+  return next;
+}
+// A conversation stays in the user's inbox unless they deleted
+// it AND nothing has arrived since — a new message brings it
+// back, standard inbox behavior.
+function msgThreadVisible(msgs, st) {
+  if (!st || !st.deletedAt) return true;
+  return msgs.some((m) => m.createdAt > st.deletedAt);
+}
+// Unread for THIS user: a manual mark-as-unread holds until the
+// conversation is opened or marked read again; otherwise any
+// incoming message newer than the read cursor is unread. System
+// records (the book-me opener line) never count.
+function msgThreadUnread(userId, msgs, st) {
+  if (st && st.forceUnread) return true;
+  const cursor = (st && st.readCursor) || "";
+  return msgs.some((m) => !m.system && m.toId === userId && m.createdAt > cursor);
+}
+// Group a user's conversation messages by the other party (a
+// thread IS a pair, so other-party and thread are the same key).
+function msgThreadsByOther(userId, allMsgs) {
+  const byOther = {};
+  for (const m of allMsgs) {
+    if (!m || m.system) continue;
+    if (m.fromId !== userId && m.toId !== userId) continue;
+    const otherId = m.fromId === userId ? m.toId : m.fromId;
+    (byOther[otherId] = byOther[otherId] || []).push(m);
+  }
+  return byOther;
+}
+// The Messages badge number: conversations with something unread
+// in them, counted from thread state — the same number the inbox
+// shows unread dots for.
+async function unreadThreadCount(user) {
+  const rows = await store.list("message:");
+  const byOther = msgThreadsByOther(user.id, rows.map((r) => r.value));
+  const states = await msgStateMap(user.id);
+  let n = 0;
+  for (const [otherId, msgs] of Object.entries(byOther)) {
+    const st = states[otherId] || null;
+    if (!msgThreadVisible(msgs, st)) continue;
+    if (msgThreadUnread(user.id, msgs, st)) n += 1;
+  }
+  return n;
+}
+// Retire this thread's live message_received notes when the user
+// reads the conversation, so the Updates panel and the total
+// unread count stop carrying a conversation that has been read.
+async function retireThreadNotes(userId, threadId) {
+  const rows = await store.list(`note:${userId}:`);
+  const ts = nowIso();
+  for (const r of rows) {
+    if (r.value && r.value.kind === "message_received" && !r.value.readAt && r.value.data && r.value.data.threadId === threadId) {
+      r.value.readAt = ts;
+      await store.set(r.key, r.value);
+    }
+  }
+}
+
 // ---------- platform messages (Build -40, Jeff, 2026-10-30) ----------
 // A direct line from the Magpie team to a creator, inside the
 // creator's existing Messages surface. The sender is a platform
@@ -27059,21 +27155,22 @@ async function route(event) {
       // counts by surface, computed over ALL of the user's unread
       // notifications (not just the 40 the list returns), grouped
       // by kind. Only kinds that exist in the code are mapped;
-      // unmapped kinds count toward the total only. Messages count
-      // the "message_received" notifications the message-send route
-      // writes for the other participant (one live signal per
-      // thread), so an unread thread badges Messages once.
+      // unmapped kinds count toward the total only. Messages are
+      // the exception (Jeff, 2026-11-07): the badge counts
+      // CONVERSATIONS with something unread in them, computed
+      // from per-participant thread state — never from the
+      // message_received notes, which outlived the reading and
+      // left the alert stuck on after Jeff had read the thread.
       const BADGE_OFFER_KINDS = user.role === "business"
         ? ["application_received", "offer_declined", "creator_declined", "backfill_filled", "offer_deadline", "offer_nudge"]
         : ["offer_received", "backfill_offered", "application_selected", "application_received", "offer_declined", "creator_declined", "backfill_filled", "offer_deadline", "offer_nudge"];
       const BADGE_VISIT_KINDS = ["booking_confirmed", "clock_started", "proof_submitted", "post_verified", "rating_received", "performance_reported", "performance_updated", "register_tally", "paid_booking_received"];
-      const BADGE_MESSAGE_KINDS = ["message_received"];
       const unread = all.filter((n) => !n.readAt);
       const countKinds = (kinds) => unread.filter((n) => kinds.includes(n.kind)).length;
       const badges = {
         offers: countKinds(BADGE_OFFER_KINDS),
         visits: countKinds(BADGE_VISIT_KINDS),
-        messages: countKinds(BADGE_MESSAGE_KINDS),
+        messages: await unreadThreadCount(user),
         total: unread.length,
       };
       return json(200, { notifications: notes, unreadCount: unread.length, badges });
@@ -29150,12 +29247,16 @@ async function route(event) {
       const byThread = {};
       for (const m of mine) {
         const otherId = m.fromId === user.id ? m.toId : m.fromId;
-        if (!byThread[otherId] || byThread[otherId].lastMessage.createdAt < m.createdAt) {
-          byThread[otherId] = { otherId, lastMessage: m, count: (byThread[otherId] ? byThread[otherId].count : 0) + 1 };
-        } else {
-          byThread[otherId].count += 1;
-        }
+        if (!byThread[otherId]) byThread[otherId] = { otherId, lastMessage: m, count: 0, msgs: [] };
+        byThread[otherId].msgs.push(m);
+        byThread[otherId].count += 1;
+        if (byThread[otherId].lastMessage.createdAt < m.createdAt) byThread[otherId].lastMessage = m;
       }
+      // Per-participant thread state (read / deleted / folder):
+      // a conversation this user deleted stays out of their list
+      // until something new arrives in it; each row carries the
+      // user's own unread flag and folder.
+      const msgStates = await msgStateMap(user.id);
       const threads = [];
       // Thread context (Build -47, audit B6): conversations
       // attach to a visit or an offer, and the list says which —
@@ -29166,10 +29267,13 @@ async function route(event) {
       const ctxOffers = await allOffers();
       const pairNewest = (rows, pred) => rows.filter(pred).sort((a, b) => (String(a.createdAt || "") < String(b.createdAt || "") ? 1 : -1))[0] || null;
       for (const t of Object.values(byThread)) {
+        const st = msgStates[t.otherId] || null;
+        if (!msgThreadVisible(t.msgs, st)) continue;
+        const view = { otherId: t.otherId, lastMessage: t.lastMessage, count: t.count, unread: msgThreadUnread(user.id, t.msgs, st), folderId: st ? (st.folderId || null) : null };
         // The platform thread (Build -40): the other side is the
         // Magpie team identity, not a user record.
         if (t.otherId === PLATFORM_PEER_ID) {
-          threads.push({ ...t, otherName: "Magpie", otherRole: "platform", otherBusinessName: null, otherHandle: null, otherPhotoUrl: null, platform: true });
+          threads.push({ ...view, otherName: "Magpie", otherRole: "platform", otherBusinessName: null, otherHandle: null, otherPhotoUrl: null, platform: true });
           continue;
         }
         const other = await store.get(`user:${t.otherId}`);
@@ -29185,7 +29289,7 @@ async function route(event) {
           : other.business && other.business.assetPacket && other.business.assetPacket.logoUrl ? other.business.assetPacket.logoUrl
           : other.creator && other.creator.hasPhoto ? `/api/users/${other.id}/photo`
           : null;
-        threads.push({ ...t, otherName: other ? other.name : "Unknown", otherRole: other ? other.role : null, otherBusinessName: other && other.business ? other.business.businessName : null, otherHandle: other && other.creator ? other.creator.handle : null, otherPhotoUrl, contextTitle: pairBooking ? (pairBooking.title || null) : pairOffer ? (pairOffer.title || null) : null });
+        threads.push({ ...view, otherName: other ? other.name : "Unknown", otherRole: other ? other.role : null, otherBusinessName: other && other.business ? other.business.businessName : null, otherHandle: other && other.creator ? other.creator.handle : null, otherPhotoUrl, contextTitle: pairBooking ? (pairBooking.title || null) : pairOffer ? (pairOffer.title || null) : null });
       }
       threads.sort((a, b) => (a.lastMessage.createdAt < b.lastMessage.createdAt ? 1 : -1));
       return json(200, { threads });
@@ -29211,6 +29315,7 @@ async function route(event) {
           createdAt: nowIso(),
         };
         await store.set(`message:${msg.id}`, msg);
+        await msgStatePut(user.id, PLATFORM_PEER_ID, { readCursor: msg.createdAt, forceUnread: false });
         await logEvent({ type: "platform_message_reply", actorId: user.id, actorRole: "creator", subjectId: msg.id, market: user.market, data: { threadId, bodyLength: replyBody.length } });
         // Finish Engine (BUILD -50): the reply may be an opt-out,
         // a pause, or a Sig Concierge answer. Engine failures must
@@ -29237,12 +29342,16 @@ async function route(event) {
         createdAt: nowIso(),
       };
       await store.set(`message:${msg.id}`, msg);
+      await msgStatePut(user.id, other.id, { readCursor: msg.createdAt, forceUnread: false });
       // Message badge signal (UX redesign section 2, 2026-10-24):
       // a stored message notifies the other participant, kind
-      // "message_received" with the thread id, so the Messages tab
-      // badge has something real to count. One live signal per
-      // thread: while an unread one is already waiting, further
-      // messages in the same thread do not stack more.
+      // "message_received" with the thread id — the Updates
+      // panel's knock. (The tab badge itself counts unread
+      // THREADS from msgstate since 2026-11-07; this note is
+      // retired per-thread when the conversation is read.) One
+      // live signal per thread: while an unread one is already
+      // waiting, further messages in the same thread do not
+      // stack more.
       const priorNotes = await store.list(`note:${other.id}:`);
       const alreadySignaled = priorNotes.some((r) => r.value && r.value.kind === "message_received" && !r.value.readAt && r.value.data && r.value.data.threadId === threadId);
       if (!alreadySignaled) {
@@ -29250,6 +29359,85 @@ async function route(event) {
       }
       await logEvent({ type: "message_sent", actorId: user.id, actorRole: user.role, subjectId: msg.id, market: user.market, data: { toId: other.id, toRole: other.role, threadId, bodyLength: body.length } });
       return json(201, { message: msg });
+    }
+    // ---------- inbox folders (per-user) ----------
+    if (seg[1] === "folders") {
+      if (method === "GET" && seg.length === 2) {
+        const rows = await store.list(`msgfolder:${user.id}:`);
+        const folders = rows.map((r) => r.value).filter((f) => f && f.userId === user.id)
+          .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+          .map((f) => ({ id: f.id, name: f.name, createdAt: f.createdAt }));
+        return json(200, { folders });
+      }
+      if (method === "POST" && seg.length === 2) {
+        const b = parseBody(event);
+        const name = String(b.name || "").trim().slice(0, 40);
+        if (!name) return err(400, "Give the folder a name");
+        const folder = { id: crypto.randomUUID(), userId: user.id, name, createdAt: nowIso() };
+        await store.set(`msgfolder:${user.id}:${folder.id}`, folder);
+        return json(201, { folder: { id: folder.id, name: folder.name, createdAt: folder.createdAt } });
+      }
+      if (method === "PATCH" && seg.length === 3) {
+        const folder = await store.get(`msgfolder:${user.id}:${seg[2]}`);
+        if (!folder || folder.userId !== user.id) return err(404, "Folder not found");
+        const b = parseBody(event);
+        const name = String(b.name || "").trim().slice(0, 40);
+        if (!name) return err(400, "Give the folder a name");
+        folder.name = name;
+        await store.set(`msgfolder:${user.id}:${folder.id}`, folder);
+        return json(200, { folder: { id: folder.id, name: folder.name, createdAt: folder.createdAt } });
+      }
+      if (method === "DELETE" && seg.length === 3) {
+        const folder = await store.get(`msgfolder:${user.id}:${seg[2]}`);
+        if (!folder || folder.userId !== user.id) return err(404, "Folder not found");
+        await store.del(`msgfolder:${user.id}:${folder.id}`);
+        // Deleting a folder UNFILES its conversations — the
+        // conversations themselves are never deleted with it.
+        const states = await msgStateMap(user.id);
+        for (const st of Object.values(states)) {
+          if (st.folderId === folder.id) await msgStatePut(user.id, st.otherId, { folderId: null });
+        }
+        return json(200, { ok: true });
+      }
+    }
+    // ---------- per-conversation actions (own state only) ------
+    // Mark read / unread, soft-delete from my inbox, file into
+    // one of my folders. Every action writes ONLY the caller's
+    // msgstate record for the pair.
+    if (method === "POST" && seg.length === 2 && ["read", "unread", "delete", "move"].includes(seg[1])) {
+      const b = parseBody(event);
+      const otherId = String(b.otherId || "");
+      if (!otherId || otherId === user.id) return err(400, "Conversation not found");
+      if (otherId !== PLATFORM_PEER_ID) {
+        const other = await store.get(`user:${otherId}`);
+        if (!other) return err(404, "Conversation not found");
+      }
+      const threadId = msgThreadIdFor(user.id, otherId);
+      if (seg[1] === "read") {
+        await msgStatePut(user.id, otherId, { readCursor: nowIso(), forceUnread: false });
+        await retireThreadNotes(user.id, threadId);
+        return json(200, { ok: true });
+      }
+      if (seg[1] === "unread") {
+        await msgStatePut(user.id, otherId, { forceUnread: true });
+        return json(200, { ok: true });
+      }
+      if (seg[1] === "delete") {
+        // Soft delete: the conversation leaves MY inbox. If a
+        // new message arrives in it later, it comes back
+        // (msgThreadVisible). The other side keeps everything.
+        await msgStatePut(user.id, otherId, { deletedAt: nowIso() });
+        await retireThreadNotes(user.id, threadId);
+        return json(200, { ok: true });
+      }
+      // move: folderId null files it back to the Inbox (unfiled).
+      const folderId = b.folderId ? String(b.folderId) : null;
+      if (folderId) {
+        const folder = await store.get(`msgfolder:${user.id}:${folderId}`);
+        if (!folder || folder.userId !== user.id) return err(404, "Folder not found");
+      }
+      await msgStatePut(user.id, otherId, { folderId });
+      return json(200, { ok: true });
     }
   }
 

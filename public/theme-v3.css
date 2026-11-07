@@ -1366,10 +1366,18 @@ table { max-width: 100%; }
 .shelf-tray-col.top-match { overflow: visible; }
 
 /* Magpie flip — "formerly SIGNL" bridge line (flip package item 4.7; removal is item 5.6:
-   delete every .formerly-line span (marked data-bridge="formerly-signl"), unwrap .brand-lockup, drop this block) */
+   delete every .formerly-line span (marked data-bridge="formerly-signl"), unwrap .brand-lockup, drop this block).
+   The spans live in: public/app.js (railhead, renderTopBar2, renderTopRow) and
+   public/index.html — the .topbar lockup there is the LOGGED-OUT header shared by
+   sign-in, the logged-out landing, forgot/reset, join and staff screens (Jeff,
+   2026-11-07: it was missing there — the span existed but this block colored it
+   near-white from the topbar's old black era, and the v3 topbar is paper, so it
+   rendered invisible; the .topbar rule below is what makes it show). Dropping
+   this block + deleting the index.html span in the same pass restores the bare
+   logged-out logo with everything else. */
 .brand-lockup{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px;line-height:1}
 .formerly-line{font-size:11px;font-weight:700;letter-spacing:.16em;color:var(--ink2);white-space:nowrap}
-.topbar .formerly-line{color:rgba(255,255,255,.85)}
+.topbar .formerly-line{color:var(--ink2)}
 
 /* Logged-in phone top bars — BRIDGE-ERA LAYOUT (Jeff, 2026-11-07,
    revised 12:12 ET; temporary — it comes down with the bridge
@@ -1559,6 +1567,28 @@ img.maggie-char-img { object-fit: cover; }
 .thread-avwrap img.thread-av { position: absolute; inset: 0; object-fit: cover; background: #fff; }
 .thread-head { display: flex; gap: 11px; align-items: flex-start; }
 .thread-head-main { flex: 1; min-width: 0; }
+/* Inbox management (Jeff, 2026-11-07): unread dots, the
+   per-conversation ⋯ menu, the folder chips row, and the mobile
+   way back to the inbox. The desktop two-pane layout above is
+   untouched — the back button and the cover-the-list behavior
+   exist only below the 900px pane breakpoint. */
+.thread-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); margin-left: 4px; vertical-align: 2px; }
+.thread-dot.av { position: absolute; top: -2px; right: -2px; width: 12px; height: 12px; margin: 0; border: 2px solid #fff; z-index: 1; }
+.thread-prev-unread { color: var(--ink); font-weight: 600; }
+.thread-menu-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: #fff; color: var(--ink2); cursor: pointer; padding: 0; }
+.thread-menu-btn svg { width: 18px; height: 18px; display: block; }
+.thread-menu-btn:hover { border-color: var(--ink3); color: var(--ink); }
+.msg-folders { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.msg-folders .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.msg-folder-admin { display: inline-flex; gap: 12px; margin-left: 6px; }
+#msg-sheet .sheet-row.danger { color: var(--red); }
+.msg-folder-admin .linklike.danger { color: var(--red); }
+.msg-back { display: none; }
+@media (max-width: 899.98px) {
+  .msg-back { display: inline-flex; flex: none; align-items: center; }
+  .msg-panes.has-active .msg-list-col { display: none; }
+  .msg-wrap.has-active .msg-tools, .msg-wrap.has-active .msg-folders { display: none; }
+}
 @media (min-width: 900px) {
   .msg-panes { grid-template-columns: 372px minmax(0, 1fr); height: calc(100dvh - 190px); min-height: 440px; align-items: stretch; }
   .msg-list-col { overflow-y: auto; padding-right: 2px; min-height: 0; }

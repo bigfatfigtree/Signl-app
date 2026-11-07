@@ -401,9 +401,20 @@ try {
     JSON.stringify(bizNotes.data.badges));
   await c1.client("POST", "/api/notifications/read");
   const cNotes0 = await c1.client("GET", "/api/notifications");
-  check("after mark-read the creator's badges are all zero",
-    cNotes0.data.badges.offers === 0 && cNotes0.data.badges.visits === 0 && cNotes0.data.badges.messages === 0 && cNotes0.data.badges.total === 0,
+  // Pin update (2026-11-07, Jeff's inbox build): the Messages
+  // badge counts unread CONVERSATIONS from thread state, not
+  // notes — marking notifications read zeroes the note badges
+  // and the total, but the creator's unread signup platform
+  // thread still badges Messages until the conversation itself
+  // is read. That is the fix for Jeff's stuck alert: alerts now
+  // follow the reading, in both directions.
+  check("after mark-read the creator's note badges are zero; the unread platform thread still badges Messages",
+    cNotes0.data.badges.offers === 0 && cNotes0.data.badges.visits === 0 && cNotes0.data.badges.messages === 1 && cNotes0.data.badges.total === 0,
     JSON.stringify(cNotes0.data.badges));
+  await c1.client("POST", "/api/messages/read", { otherId: "signl-team" });
+  const cNotes0b = await c1.client("GET", "/api/notifications");
+  check("reading the conversation zeroes the Messages badge",
+    cNotes0b.data.badges.messages === 0, JSON.stringify(cNotes0b.data.badges));
   const offBadge = await biz.client("POST", "/api/offers", { title: "Badge check offer", whatComped: "Dinner for two", dollarCap: 50, spots: 1, creatorId: c1.user.id });
   check("badge fixture offer created", offBadge.status === 201, `${offBadge.status}`);
   const cNotes1 = await c1.client("GET", "/api/notifications");
