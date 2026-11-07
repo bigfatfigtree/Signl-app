@@ -1346,16 +1346,68 @@ function fmtPrice(n) {
 // surface shows the total plus where it lives. Payloads carry the
 // stack as an array of { platform, label, count }; the creator's own
 // stored record carries it as a map, so normalize both shapes here.
+// Build -140 (Jeff, Items E/F): the full platform list a
+// creator can be on. Every count stacks into the total
+// audience; "website" is link-only (no followers to count).
+const PLATFORM_LABELS_ALL = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", linkedin: "LinkedIn", youtube: "YouTube", snapchat: "Snapchat", pinterest: "Pinterest", reddit: "Reddit", twitch: "Twitch", kick: "Kick", threads: "Threads", bluesky: "Bluesky", discord: "Discord", spotify: "Spotify", patreon: "Patreon", substack: "Substack", website: "Website" };
+const COUNT_PLATFORM_KEYS_CLIENT = ["instagram", "tiktok", "facebook", "x", "linkedin", "youtube", "snapchat", "pinterest", "reddit", "twitch", "kick", "threads", "bluesky", "discord", "spotify", "patreon", "substack"];
+const LEGACY_STACK_KEYS = ["instagram", "tiktok", "facebook", "x", "linkedin", "youtube", "snapchat"];
+const LEGACY_LINK_KEYS = ["instagram", "tiktok", "youtube", "facebook", "x", "linkedin"];
+
+// The creator's effective platform links, client mirror of the
+// server's platformLinksOf: legacy fields first, the stored
+// platformLinks map over them.
+function clientPlatformLinks(c) {
+  const p = c || {};
+  const out = {};
+  const put = (k, handle, url) => {
+    const h = String(handle || "").trim();
+    const u2 = String(url || "").trim();
+    if (!h && !u2) return;
+    out[k] = { ...(h ? { handle: h } : {}), ...(u2 ? { url: u2 } : {}) };
+  };
+  const plat = p.primaryPlatform || "instagram";
+  put("instagram", plat === "instagram" ? p.handle : "", p.instagramUrl);
+  put("tiktok", p.tiktokHandle, p.tiktokUrl);
+  if (p.youtubeChannel) {
+    if (/^https?:\/\//i.test(p.youtubeChannel)) put("youtube", "", p.youtubeChannel);
+    else put("youtube", p.youtubeChannel, "");
+  }
+  put("facebook", plat === "facebook" ? p.handle : "", p.facebookUrl);
+  put("x", p.xHandle, p.xUrl);
+  put("linkedin", plat === "linkedin" ? p.handle : "", p.linkedinUrl);
+  const stored = (p.platformLinks && typeof p.platformLinks === "object") ? p.platformLinks : {};
+  for (const k of Object.keys(stored)) {
+    const v = stored[k] || {};
+    if (v.handle || v.url) out[k] = { ...(out[k] || {}), ...v };
+  }
+  return out;
+}
+
 function stackList(source) {
   if (!source) return [];
-  if (Array.isArray(source.audienceStack)) return source.audienceStack.filter((p) => p && p.count > 0);
+  // Build -140: every entry also carries the platform's link
+  // state (the profile pills show only link+count platforms)
+  // and its own local % when the creator supplied one (the
+  // hero neighbor math). Server card payloads carry both
+  // already; raw records resolve them here from the record.
+  const rec = source.profile || source;
+  const links = clientPlatformLinks(rec);
+  const rates = (rec && rec.platformLocalPct) || {};
+  const finish = (list) => list.map((e) => ({
+    ...e,
+    hasLink: e.hasLink !== undefined ? e.hasLink : !!links[e.platform],
+    url: e.url || (links[e.platform] || {}).url || "",
+    handle: e.handle || (links[e.platform] || {}).handle || "",
+    localPct: e.localPct !== undefined ? e.localPct : (rates[e.platform] !== undefined ? rates[e.platform] : null),
+  }));
+  if (Array.isArray(source.audienceStack)) return finish(source.audienceStack.filter((p) => p && p.count > 0));
   if (source.audienceStack && typeof source.audienceStack === "object") {
-    const labels = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", linkedin: "LinkedIn", youtube: "YouTube", snapchat: "Snapchat" };
     const syncMap = (source.profile && source.profile.platformSync) || source.platformSync || {};
-    return Object.entries(source.audienceStack)
+    return finish(Object.entries(source.audienceStack)
       .filter(([, n]) => Number(n) > 0)
-      .map(([platform, count]) => ({ platform, label: labels[platform] || platform, count: Number(count), synced: !!(syncMap[platform] && syncMap[platform].verified === true) }))
-      .sort((a, b) => b.count - a.count);
+      .map(([platform, count]) => ({ platform, label: PLATFORM_LABELS_ALL[platform] || platform, count: Number(count), synced: !!(syncMap[platform] && syncMap[platform].verified === true) }))
+      .sort((a, b) => b.count - a.count));
   }
   return [];
 }
@@ -1626,6 +1678,16 @@ function attachStackDrag(wrap, card) {
 // Instagram verification exists. This teaches where the number
 // comes from and licenses a rough estimate.
 const LOCAL_PCT_HELP = "Instagram: Insights → Audience → top cities. Add the share in your market's cities. A rough number is fine — it's labeled Self-reported everywhere.";
+// Build -140 (Jeff): the basis lines. The hero line and the
+// geography section's source line say the same thing in the
+// words each surface needs, and never contradict: the % is
+// confirmed from the matched channels, platforms without their
+// own local % are only ever estimated (in the neighbor count,
+// labelled potential), and the market splits are never
+// stretched beyond the platforms where location is counted.
+const LOCAL_BASIS_LINE = "Local % is worked out from Instagram, Facebook and YouTube. Any platform without its own local % is estimated at that same % until the creator adds theirs.";
+const GEO_BASIS_LINE = "These percentages describe the audience on the platforms where location is counted: Instagram, Facebook and YouTube, plus any platform with a local % added.";
+const SETUP_BASIS_LINE = "Your local % is worked out from Instagram, Facebook and YouTube. Any platform without its own local % is estimated at that same % until you add yours.";
 
 // Picker disclosure (audit F3 mitigation, 2026-10-22): visit proof
 // is an Instagram post link for now, and that rule is unchanged.
@@ -5212,6 +5274,12 @@ function sigLinkGo(dest) {
 // stay plain text.
 function sigChipDest(label) {
   const t = " " + String(label || "").toLowerCase() + " ";
+  // Build -140: the geography prompts land on the Profile
+  // fields themselves. Checked first: their text also carries
+  // the word Momentum, which would otherwise route to the
+  // Momentum tab instead of the fields.
+  if (t.includes("under-counted")) return "cr-profile";
+  if (t.includes("no local % yet")) return "cr-profile";
   if (t.includes("pack is final")) return "partner-earnings";
   if (t.includes("end-of-pilot pack")) return "pilot-report";
   if (t.includes("through your links")) return "partner-markets";
@@ -6614,8 +6682,12 @@ function syncPaidOption() {
 }
 
 function profileStackTotal() {
-  const ids = ["p-followers", "p-stack-tiktok", "p-stack-facebook", "p-stack-x", "p-stack-linkedin", "p-stack-youtube", "p-stack-snapchat"];
-  return ids.reduce((s, id) => s + (parseInt((document.getElementById(id) || {}).value, 10) || 0), 0);
+  // Build -140: every platform row counts — the Instagram
+  // field plus every p-stack-* input the form carries (the six
+  // legacy rows and any platform added from the picker).
+  let total = parseInt((document.getElementById("p-followers") || {}).value, 10) || 0;
+  document.querySelectorAll("input[id^='p-stack-']").forEach((el) => { total += parseInt(el.value, 10) || 0; });
+  return total;
 }
 
 function syncPaidOptionProfile() {
@@ -11227,6 +11299,13 @@ const MEDIA_FIT_SELECTOR = "img.shelf-photo-img, img.pdp-sim-img, img.mirror-cov
 function mediaFitImg(img) {
   if (!img || !img.naturalWidth || !img.naturalHeight) return;
   const r = img.naturalWidth / img.naturalHeight;
+  // Build -140: the Similar rail's smaller 4/3 cards take a
+  // wider contain band than the Shelf — a 2:1 logo in a small
+  // card reads as cropped and zoomed long before the Shelf's
+  // 2.4 threshold, which is exactly what Jeff's screenshot
+  // showed. Shelf, Mirror and PDP cover media keep the
+  // original band.
+  if (img.classList.contains("pdp-sim-img")) { img.classList.toggle("media-contain", r >= 1.75 || r <= 0.57); return; }
   img.classList.toggle("media-contain", r >= 2.4 || r <= 0.42);
 }
 function mediaFitSweep(root) {
@@ -11245,6 +11324,41 @@ if (!window.__signlMediaFitObs) {
     }
   });
   window.__signlMediaFitObs.observe(document.documentElement, { childList: true, subtree: true });
+}
+
+// Rail fit (Build -140, Item A — Jeff's Find offers screenshot):
+// the -139 rail rule capped the rail at 100vh - 24px as if the
+// rail started at the viewport top. It starts 150-200px down
+// (workspace head + takeover bar above it), so on Find offers
+// the rail was never a scroll container at all and its last
+// groups sat below the fold. fitRails measures each rail's
+// natural rest offset and hands it to the CSS as --rail-off,
+// so max-height = 100vh - (rest offset + a small buffer) and
+// the rail box always ends inside the viewport. While a rail
+// is stuck (page scrolled, rail pinned at its sticky top) its
+// natural offset cannot be re-measured, so the last good
+// measurement for that rail is kept.
+const RAIL_OFF_CACHE = {};
+function fitRails() {
+  document.querySelectorAll(".shop-rail, .camp-rail").forEach((el) => {
+    const key = el.id || el.className;
+    const rect = el.getBoundingClientRect();
+    const stuck = window.scrollY > 0 && rect.top <= 13;
+    if (!stuck) RAIL_OFF_CACHE[key] = Math.max(24, Math.round(rect.top + window.scrollY + 16));
+    const off = RAIL_OFF_CACHE[key];
+    if (off) el.style.setProperty("--rail-off", off + "px");
+  });
+}
+let railFitQueued = false;
+function queueFitRails() {
+  if (railFitQueued) return;
+  railFitQueued = true;
+  requestAnimationFrame(() => { railFitQueued = false; fitRails(); });
+}
+if (!window.__signlRailObs) {
+  window.__signlRailObs = new MutationObserver(() => queueFitRails());
+  window.__signlRailObs.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("resize", queueFitRails);
 }
 
 // Best work (Build -79, Jeff): on a profile, a best-work link
@@ -11392,7 +11506,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
           <div><div class="k">Total audience (all platforms)</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
           <div><div class="k">Typical views</div><div class="v">${fmtNum(p.avgViews)}</div></div>
         </div>
-        ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}${x.synced ? " &middot; Synced" : ""}</span>`).join("")}</div>` : ""}
+        ${(() => { const pills = stackList(c).filter((x) => x.hasLink); return pills.length ? `<div class="cc-platforms">${pills.map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}${x.synced ? " &middot; Synced" : ""}</span>`).join("")}</div>` : ""; })()}
       </div>
     </div>
     ${(!adminView && !preview) ? `<div class="pdp-topacts"><button type="button" class="btn" onclick="startOffer('${c.userId}')">Book ${esc(firstName)}</button><button type="button" class="btn ghost" id="pdp-save-top" onclick="return pdpSaveToggle('${c.userId}')">${c.isFavorite ? "Saved" : "Save"}</button><button type="button" class="btn ghost" onclick="openThread('${c.userId}')">Message</button></div>` : ""}
@@ -11403,10 +11517,10 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.musician && (p.musicPerform || p.musicCreate) ? `<p class="small muted">${[p.musicPerform ? "Open to live performances" : "", p.musicCreate ? "Open to creating music for businesses" : ""].filter(Boolean).join(" &middot; ")}</p>` : ""}
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
-    <p class="small">${socialLinksHtml(p)}</p>
+    ${platformLinksHtml(c)}
     ${creatorShowcaseHtml(c)}
     ${audienceSpecsHtml(c)}
-    ${similarCreatorsHtml(c)}
+    ${audienceGeoHtml(c)}
     ${adminView ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn ghost" onclick="adminBackToRequests()">Back to Applications</button></div>` : preview ? `<div class="cta-row" style="justify-content:flex-start">
       <button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""}
       <button class="btn small-btn ghost" onclick="profileLater('${c.userId}', true)">Later</button>
@@ -11428,6 +11542,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
       <p class="small muted">Ad use comes with the standard license: on a paid visit, a business can repost the post and run it as an ad for 90 days from the post date, and a comped post can be licensed the same way at the creator's listed fee with their approval. In the real app that logs the use, notifies the creator, and awards +25 Momentum. Here it is a simulation: nothing is logged and no points move.</p>
       <button class="btn small-btn ghost" onclick="previewAdUse('${c.userId}')">Use in an ad</button> <span id="pv-aduse-note" class="saved"></span>
     </div>` : ""}
+    ${similarCreatorsHtml(c)}
   </div>`;
 }
 
@@ -14883,6 +14998,79 @@ function profileRowSync(name) {
   return true;
 }
 
+// Build -140 (Item F): setup's platform furniture. A platform
+// counts as "added" when it has a count, a link, or a local %
+// on the record. The seven legacy platforms keep their fixed
+// rows and fields; every other platform gets the same three
+// rows (count, handle + link, local %) from these builders,
+// in the form or appended live by the picker.
+function pfPresentPlatforms(c) {
+  const set = new Set();
+  const stack = (c && c.audienceStack) || {};
+  for (const k of COUNT_PLATFORM_KEYS_CLIENT) if (Number(stack[k]) > 0) set.add(k);
+  if (!set.size && c && c.followerCount > 0) set.add("instagram");
+  for (const k of Object.keys((c && c.platformLinks) || {})) set.add(k);
+  for (const k of Object.keys((c && c.platformLocalPct) || {})) set.add(k);
+  for (const k of Object.keys(clientPlatformLinks(c))) set.add(k);
+  return set;
+}
+function extraStackRowHtml(key, val) {
+  return `<div class="field"><label>${esc(PLATFORM_LABELS_ALL[key] || key)} followers</label><input type="number" id="p-stack-${key}" min="0" value="${val || ""}" oninput="syncStackTotal()"><p class="small muted" style="margin-top:6px">Self-reported.</p></div>`;
+}
+function extraStackRowsHtml(c) {
+  const present = pfPresentPlatforms(c);
+  return COUNT_PLATFORM_KEYS_CLIENT.filter((k) => !LEGACY_STACK_KEYS.includes(k) && present.has(k)).map((k) => extraStackRowHtml(k, (c.audienceStack || {})[k] || "")).join("");
+}
+function addPlatformOptions(c) {
+  const present = pfPresentPlatforms(c);
+  const keys = [...COUNT_PLATFORM_KEYS_CLIENT.filter((k) => !LEGACY_STACK_KEYS.includes(k) && !present.has(k)), ...(present.has("website") ? [] : ["website"])];
+  return keys.map((k) => `<option value="${k}">${esc(PLATFORM_LABELS_ALL[k] || k)}</option>`).join("");
+}
+function extraLinkRowHtml(key, link) {
+  const l = link || {};
+  return `<div class="form-2col" data-plink="${key}">
+    <div class="field"><label>${esc(PLATFORM_LABELS_ALL[key] || key)} handle</label><input class="plink-h" value="${esc(l.handle || "")}" placeholder="Optional"></div>
+    <div class="field"><label>${esc(PLATFORM_LABELS_ALL[key] || key)} profile link</label><input class="plink-u" value="${esc(l.url || "")}" placeholder="https://"></div>
+  </div>`;
+}
+function extraLinkRowsHtml(c) {
+  const links = clientPlatformLinks(c);
+  const present = pfPresentPlatforms(c);
+  const keys = [...new Set([...present, ...Object.keys(links)])].filter((k) => !LEGACY_LINK_KEYS.includes(k));
+  return keys.map((k) => extraLinkRowHtml(k, links[k])).join("");
+}
+function lpRowHtml(key, c) {
+  const matched = ["instagram", "facebook", "youtube"].includes(key);
+  const rate = (c.platformLocalPct || {})[key];
+  return `<div class="lp-row"><div class="lp-tx"><div class="lp-name">${esc(PLATFORM_LABELS_ALL[key] || key)}</div><div class="lp-note">${matched ? "% of your audience here who live in your home market. One of the platforms your confirmed local % is worked out from." : "% of your audience here who live in your home market. Optional — adding it turns an estimate into your real number and grows your confirmed local followers. +10 Momentum the first time you add it."}</div></div><input type="number" id="p-lp-${key}" min="0" max="100" placeholder="%" value="${rate === undefined || rate === null ? "" : rate}"></div>`;
+}
+function lpRowsHtml(c) {
+  const present = pfPresentPlatforms(c);
+  const keys = [...new Set(["instagram", "facebook", "youtube", ...present])].filter((k) => COUNT_PLATFORM_KEYS_CLIENT.includes(k));
+  return keys.map((k) => lpRowHtml(k, c)).join("");
+}
+function pfAddPlatform() {
+  const sel = document.getElementById("p-add-platform");
+  const key = sel && sel.value;
+  if (!key) return false;
+  if (COUNT_PLATFORM_KEYS_CLIENT.includes(key)) {
+    const grid = document.getElementById("p-stack-grid");
+    if (grid && !document.getElementById(`p-stack-${key}`)) grid.insertAdjacentHTML("beforeend", extraStackRowHtml(key, ""));
+  }
+  if (!LEGACY_LINK_KEYS.includes(key)) {
+    const host = document.getElementById("p-extra-links");
+    if (host && !host.querySelector(`[data-plink="${key}"]`)) host.insertAdjacentHTML("beforeend", extraLinkRowHtml(key, {}));
+  }
+  const lp = document.getElementById("p-lp-rows");
+  if (lp && COUNT_PLATFORM_KEYS_CLIENT.includes(key) && !document.getElementById(`p-lp-${key}`)) {
+    lp.insertAdjacentHTML("beforeend", lpRowHtml(key, (state.user && state.user.creator) || {}));
+  }
+  const opt = sel.querySelector(`option[value="${key}"]`);
+  if (opt) opt.remove();
+  if (typeof creatorPreviewRefresh === "function") creatorPreviewRefresh();
+  return false;
+}
+
 function creatorProfileHtml(u) {
   const c = u.creator || {};
   // Build -129: the one-time confirmation from a market save
@@ -14994,13 +15182,16 @@ function creatorProfileHtml(u) {
         : `<div class="field"><label>${T("Home city", "Ciudad")} (${esc(marketDisplayName(u.market))}) <span class="req-badge">${T("Required", "Obligatorio")}</span></label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       <div class="field"><label>${T("Your audience size", "El tamaño de tu audiencia")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label>
         <p class="small muted">Connect a platform and its count is verified: it updates on its own, and businesses see a Synced mark next to it. Counts you type yourself are labeled Self-reported.</p>
-        <div class="form-2col">
+        <div class="form-2col" id="p-stack-grid">
           ${stackRows.map(stackRowHtml).join("")}
+          ${extraStackRowsHtml(c)}
         </div>
+        <div class="pf-addrow"><select id="p-add-platform">${addPlatformOptions(c)}</select><button type="button" class="btn small-btn ghost" onclick="return pfAddPlatform()">Add platform</button></div>
+        <p class="small muted">Add every platform you are on — Pinterest, Twitch, your own website, any of them. Each one gets a handle, a link and a follower count, and every count stacks into your total audience.</p>
         <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points. <strong>SIGNL starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
       </div>
       <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="checkrow">${cats}</div></div>
-      <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
+      <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP} Once you add a local % for a platform in Your audience below, this number is worked out from those automatically.</p></div>
       </div>
       <div class="fgroup tint" id="pf-about">
       <p class="fg-kicker">${T("About you", "Sobre ti")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
@@ -15042,6 +15233,7 @@ function creatorProfileHtml(u) {
         <div class="field"><label>${T("X (Twitter) handle or URL", "Usuario o URL de X (Twitter)")}</label><input id="p-x" value="${esc(c.xHandle || "")}" placeholder="${T("Optional", "Opcional")}"></div>
       </div>
       <div class="field"><label>${T("LinkedIn profile URL", "URL de tu perfil de LinkedIn")}</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="${T("Optional", "Opcional")}"></div>
+      <div id="p-extra-links">${extraLinkRowsHtml(c)}</div>
       </div>
       <div class="fgroup tint" id="pf-audience">
       <p class="fg-kicker">${T("Your audience", "Tu audiencia")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
@@ -15053,6 +15245,10 @@ function creatorProfileHtml(u) {
         <p class="small muted" id="p-am-help">${T("Optional. If a real share of your audience lives in another SIGNL market, name the market and the %. At 5% or more you are listed and ranked in that market too, and offers from its businesses reach you, not just home-market ones. Your home market is your local % in the four basics at the top, never a row here.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de SIGNL, escribe el mercado y el %. Con 5% o más también apareces y te posicionas en ese mercado, y las ofertas de sus negocios te llegan, no solo las de tu mercado. Tu mercado principal es tu % local en los cuatro datos básicos de arriba, nunca una fila aquí.")}</p>
         <div id="p-am-rows">${(() => { const rows = (c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)); return (rows.length ? rows : [{}]).slice(0, 5).map((e) => amRowHtml(e.market || "", e.pct === undefined || e.pct === null ? "" : String(e.pct))).join(""); })()}</div>
         <button type="button" class="btn small-btn ghost" id="p-am-add" onclick="return amAddRow()"${(c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)).length >= 5 ? ' style="display:none"' : ""}>${T("Add another market", "Agregar otro mercado")}</button>
+      </div>
+      <div class="field"><label>${T("Your local % by platform", "Tu % local por plataforma")}</label>
+        <p class="small muted">${SETUP_BASIS_LINE} Businesses book creators on local proof: filling this in stops you being under-counted and puts you in front of businesses in every market you cover. Finish the whole breakdown — these %s plus your market splits above — and you earn +10 Momentum.</p>
+        <div id="p-lp-rows">${lpRowsHtml(c)}</div>
       </div>
       </div>
       <div class="fgroup" id="pf-create">
@@ -15259,8 +15455,32 @@ async function doUpdateCreator(e) {
           const v = parseInt(document.getElementById(id).value, 10) || 0;
           if (v > 0) s[platform] = v;
         }
+        // Build -140: platforms added from the picker ride the
+        // same stack — every count accumulates into the total.
+        document.querySelectorAll("input[id^='p-stack-']").forEach((el) => {
+          const key = el.id.slice("p-stack-".length);
+          if (!(key in s)) { const v = parseInt(el.value, 10) || 0; if (v > 0) s[key] = v; }
+        });
         return s;
       })(),
+      // Build -140: the added platforms' handles + links, and
+      // the per-platform local %. Only sent when the rows
+      // rendered, so a save from any other surface can never
+      // wipe them.
+      ...(document.getElementById("p-extra-links") ? {
+        platformLinks: Array.from(document.querySelectorAll("#p-extra-links [data-plink]")).map((row) => ({
+          platform: row.getAttribute("data-plink"),
+          handle: (row.querySelector(".plink-h") || {}).value || "",
+          url: (row.querySelector(".plink-u") || {}).value || "",
+        })),
+      } : {}),
+      ...(document.getElementById("p-lp-rows") ? {
+        platformLocalPct: (() => {
+          const out = {};
+          document.querySelectorAll("input[id^='p-lp-']").forEach((el) => { if (el.value !== "") out[el.id.slice("p-lp-".length)] = Number(el.value); });
+          return out;
+        })(),
+      } : {}),
       avgViews: parseInt(document.getElementById("p-avgviews").value, 10) || 0,
       localAudiencePct: pctRaw === "" ? null : Number(pctRaw),
       // Multi-market shares (2026-11-01; dynamic rows, Build
@@ -15284,6 +15504,13 @@ async function doUpdateCreator(e) {
     state.user = data.user;
     submitBusy(form, false);
     document.getElementById("save-ok").textContent = "Saved.";
+    // Build -140: the geography awards, shown as they land.
+    // The server flags the save that completed the breakdown
+    // (once — the points live in the computed Momentum ledger,
+    // so re-saving can never mint them twice) and each platform
+    // whose local % was supplied for the first time.
+    if (data.geoAward) showToast(`+${data.geoAward.points} Momentum — audience breakdown complete. Your local proof now shows in every market you cover.`);
+    for (const a of (data.localRateAwards || [])) showToast(`+${a.points} Momentum — local % added for ${a.label}. Those followers count for real now.`);
     // The profile-completion moment: the save that flips the
     // profile to complete gets a one-tap share of the invite link.
     const nowComplete = !!((data.user.profileCompletion && data.user.profileCompletion.complete) || (data.user.creator && data.user.creator.profileComplete === true));
@@ -20280,11 +20507,40 @@ function cardLocalMarket(c) {
   const raw = (c && c.marketContext && c.marketContext.market) || (c && c.market) || "";
   return String(raw).replace(/\s*\([^)]*\)\s*$/, "");
 }
-function cardLocalCount(c) {
+// Build -140 (Jeff): THE neighbor-count model. The headline
+// % is the confirmed rate R (cardLocalPct — the stored
+// localAudiencePct, which the server now computes from the
+// per-platform rates, matched channels first, never diluted
+// by unrated platforms). The count sums EVERY platform the
+// creator added at its own rate where it has one, and at R
+// where it does not — those followers are estimates, and the
+// hero calls them POTENTIAL neighbors. While no per-platform
+// rate exists anywhere (every legacy record), the typed local
+// % simply applies to the total, exactly as before, and
+// nothing is labelled an estimate. A market-context card (a
+// creator viewed inside another market) keeps the older
+// share-of-total reading for that market's share.
+function localCountModel(c) {
   const pct = cardLocalPct(c);
+  if (pct === null) return { count: null, extrapolated: false };
   const total = totalAudienceOf(c);
-  if (pct === null || !(total > 0)) return null;
-  return Math.round((pct / 100) * total);
+  if (!(total > 0)) return { count: null, extrapolated: false };
+  if (c.marketContext) return { count: Math.round((pct / 100) * total), extrapolated: false };
+  const p = (c && c.profile) || {};
+  const rates = p.platformLocalPct || (c && c.platformLocalPct) || {};
+  const list = stackList(c);
+  if (!Object.keys(rates).length || !list.length) return { count: Math.round((pct / 100) * total), extrapolated: false };
+  let sum = 0;
+  let extrapolated = false;
+  for (const e of list) {
+    const own = e.localPct !== null && e.localPct !== undefined;
+    if (!own) extrapolated = true;
+    sum += (e.count * (own ? e.localPct : pct)) / 100;
+  }
+  return { count: Math.round(sum), extrapolated };
+}
+function cardLocalCount(c) {
+  return localCountModel(c).count;
 }
 function shelfPriceLine(c) {
   const p = (c && c.profile) || {};
@@ -20438,13 +20694,22 @@ function pdpLocalHeroHtml(c) {
   const pct = cardLocalPct(c);
   const p = (c && c.profile) || {};
   if (pct === null) return `<div class="pdp-hero pdp-hero-none"><div class="lbl">Local audience not reported yet</div></div>`;
-  const count = cardLocalCount(c);
+  // Build -140: the count is the local-follower model (own
+  // rate per platform, the confirmed % where a platform has
+  // none), and the word follows the honesty label Jeff set:
+  // POTENTIAL neighbors while any part of the count is an
+  // estimate, plain neighbors when every platform carries its
+  // own real rate. The small print under the block states the
+  // basis in plain words.
+  const model = localCountModel(c);
+  const count = model.count;
   const market = cardLocalMarket(c);
   const first = (c.name || "their").trim().split(" ")[0] || "their";
   return `<div class="pdp-hero">
     <div class="pdp-hero-pct">${pct}%</div>
-    <div class="pdp-hero-tx">of ${esc(first)}&rsquo;s followers live in ${esc(marketDisplayName(market))}.${count !== null ? `<br><strong>That&rsquo;s about ${fmtFull(count)} neighbors</strong> who could actually walk through your door, not strangers three states away.` : ""}</div>
-    <div class="pdp-hero-src">${esc(p.localAudienceSource || "Self-reported")} · ${fmtNum(totalAudienceOf(c))} followers in total</div>
+    <div class="pdp-hero-tx">of ${esc(first)}&rsquo;s followers live in ${esc(marketDisplayName(market))}.${count !== null ? `<br><strong>That&rsquo;s about ${fmtFull(count)} ${model.extrapolated ? "potential neighbors" : "neighbors"}</strong> who could actually walk through your door, not strangers three states away.` : ""}</div>
+    <div><div class="pdp-hero-src">${esc(p.localAudienceSource || "Self-reported")} · ${fmtNum(totalAudienceOf(c))} followers in total</div>
+    <p class="pdp-smallprint" style="margin-top:2px">${LOCAL_BASIS_LINE}</p></div>
   </div>`;
 }
 function whatYouGetHtml(c) {
@@ -20492,7 +20757,9 @@ function audienceSpecsHtml(c) {
   for (const s of stackList(c)) rows.push(`<div class="pdp-spec"><span>${esc(s.label)}</span><strong>${fmtFull(s.count)}${s.synced ? " · synced" : ""}</strong></div>`);
   if (p.avgViews) rows.push(`<div class="pdp-spec"><span>Typical views</span><strong>about ${fmtFull(p.avgViews)} a post</strong></div>`);
   if (p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined) rows.push(`<div class="pdp-spec"><span>Spanish-speaking audience</span><strong>${p.spanishAudiencePct}%</strong></div>`);
-  if (p.topAudienceCities && p.topAudienceCities.length) rows.push(`<div class="pdp-spec"><span>Top audience cities</span><strong>${p.topAudienceCities.map(esc).join(", ")}</strong></div>`);
+  // Build -140 (Item E): the old "Top audience cities" line is
+  // gone from this block — audience geography is its own
+  // section now (audienceGeoHtml, right below this block).
   for (const m of (c.listedMarkets || []).filter((x) => !x.home)) rows.push(`<div class="pdp-spec"><span>Local to ${esc(m.market)}</span><strong>${m.pct}%</strong></div>`);
   if (!rows.length) return "";
   return `<div class="pdp-block"><h4>The audience, in numbers</h4><div class="pdp-specs">${rows.join("")}</div><p class="small muted" style="margin:6px 0 0">Local shares are ${esc(String(p.localAudienceSource || "self-reported").toLowerCase())} by the creator.</p></div>`;
@@ -20503,7 +20770,75 @@ function similarCreatorsHtml(c) {
   const pool = (state.discover || []).filter((x) => x.userId !== c.userId && (((x.profile || {}).categories || []).some((cat) => mine.has(cat)) || x.market === c.market));
   const ranked = pool.sort((a, b) => (cardLocalPct(b) ?? -1) - (cardLocalPct(a) ?? -1)).slice(0, 3);
   if (!ranked.length) return "";
-  return `<div class="pdp-block"><h4>Similar creators nearby</h4><div class="pdp-similar">${ranked.map((x) => { const pct = cardLocalPct(x); return `<button type="button" class="pdp-sim" onclick="openCreatorProfile('${x.userId}')">${avatarHtml(x, "pdp-sim-img")}<span class="pdp-sim-name">${esc(x.name || "")}</span><span class="pdp-sim-meta">${pct === null ? "Local % not reported" : `${pct}% local`} · ${esc(shelfPriceLine(x).main)}</span></button>`; }).join("")}</div></div>`;
+  // Build -140 (Item B): this block renders at the very bottom
+  // of the profile, below the booking box, behind a divider —
+  // the pdp-similar-bottom class carries that treatment.
+  return `<div class="pdp-block pdp-similar-bottom"><h4>Similar creators nearby</h4><div class="pdp-similar">${ranked.map((x) => { const pct = cardLocalPct(x); return `<button type="button" class="pdp-sim" onclick="openCreatorProfile('${x.userId}')">${avatarHtml(x, "pdp-sim-img")}<span class="pdp-sim-name">${esc(x.name || "")}</span><span class="pdp-sim-meta">${pct === null ? "Local % not reported" : `${pct}% local`} · ${esc(shelfPriceLine(x).main)}</span></button>`; }).join("")}</div></div>`;
+}
+// Build -140 (Item F): the clickable channels list, lower on
+// the profile — every platform the creator entered, as a real
+// link through to their page there (handle shown). Ordered by
+// audience size, then the rest. Renders nothing when the
+// creator entered no links at all.
+function platformLinksHtml(c) {
+  const p = (c && c.profile) || {};
+  const links = clientPlatformLinks(p);
+  const keys = [];
+  for (const e of stackList(c)) if (links[e.platform] && !keys.includes(e.platform)) keys.push(e.platform);
+  for (const k of Object.keys(links)) if (!keys.includes(k)) keys.push(k);
+  const rows = keys.map((k) => {
+    const l = links[k];
+    const label = PLATFORM_LABELS_ALL[k] || k;
+    const handleTx = k === "website" ? (l.handle || l.url || "") : (l.handle ? (String(l.handle).startsWith("@") ? l.handle : `@${l.handle}`) : "");
+    if (l.url) return `<a href="${esc(l.url)}" target="_blank" rel="noopener"><span class="pdp-link-plat">${esc(label)}</span><span class="pdp-link-handle">${esc(handleTx || "Open profile")}</span></a>`;
+    return `<div class="pdp-link-row"><span class="pdp-link-plat">${esc(label)}</span><span>${esc(handleTx)}</span></div>`;
+  });
+  if (!rows.length) return "";
+  return `<div class="pdp-block"><h4>Their channels</h4><div class="pdp-links">${rows.join("")}</div></div>`;
+}
+// Build -140 (Item E): audience geography as its own section.
+// Dead simple, top to bottom: the source line, the home metro
+// with its total %, the metro's city split when city-level
+// data exists (it arrives with the Meta connection — until
+// then one quiet note, never an invented split), then every
+// other metro as one whole-% line, then everywhere else.
+// Percentages right-aligned in the numbers block's row style.
+// The market splits describe the matched-channel audience
+// (listedMarkets), confirmed-only — never extrapolated.
+function audienceGeoHtml(c) {
+  const p = (c && c.profile) || {};
+  const listed = Array.isArray(c.listedMarkets) ? c.listedMarkets : [];
+  const home = listed.find((x) => x.home);
+  if (!home || typeof home.pct !== "number") return "";
+  const rows = [];
+  rows.push(`<div class="pdp-spec"><span>${esc(home.market)} (home market)</span><strong>${home.pct}%</strong></div>`);
+  // The city slot: a future Meta/YouTube feed writes
+  // profile.audienceGeo.homeCities = [{ name, pct }]. Nothing
+  // writes it today, so the slot stays empty and the note
+  // below shows instead — the split is never fabricated from
+  // market-level data or from the free-text cities field.
+  const cities = (p.audienceGeo && Array.isArray(p.audienceGeo.homeCities) && p.audienceGeo.homeCities.length)
+    ? p.audienceGeo.homeCities
+    : (Array.isArray(p.audienceCities) && p.audienceCities.length ? p.audienceCities : null);
+  let cityNote = "";
+  if (cities) {
+    for (const ct of cities) {
+      if (ct && ct.name && typeof ct.pct === "number") rows.push(`<div class="pdp-spec sub"><span>${esc(ct.name)}</span><strong>${ct.pct}%</strong></div>`);
+    }
+  } else {
+    cityNote = `<p class="pdp-smallprint">The city-by-city split for ${esc(home.market)} arrives when Instagram and Facebook connect.</p>`;
+  }
+  for (const m of listed.filter((x) => !x.home && typeof x.pct === "number")) {
+    rows.push(`<div class="pdp-spec"><span>${esc(m.market)}</span><strong>${m.pct}%</strong></div>`);
+  }
+  const used = listed.reduce((s, x) => s + (typeof x.pct === "number" ? x.pct : 0), 0);
+  const rem = Math.round((100 - used) * 10) / 10;
+  if (rem > 0) rows.push(`<div class="pdp-spec"><span>Everywhere else</span><strong>${rem}%</strong></div>`);
+  return `<div class="pdp-block"><h4>Where their audience lives</h4>
+    <p class="pdp-smallprint" style="margin:0 0 4px">${GEO_BASIS_LINE}</p>
+    <div class="pdp-specs" style="grid-template-columns:1fr">${rows.join("")}</div>
+    ${cityNote}
+    <p class="pdp-smallprint">${esc(p.localAudienceSource || "Self-reported")} by the creator.</p></div>`;
 }
 // The buy box: lane + day picker, sending into the existing
 // Offer Card flow (openDealSheet) with the lane preset and the
@@ -20813,6 +21148,8 @@ function creatorPreviewCard() {
   const stack = {};
   let total = 0;
   for (const [k, id] of stackIds) { const v = num(id, (c0.audienceStack || {})[k] || (k === "instagram" ? c0.followerCount || 0 : 0)) || 0; stack[k] = v; total += v; }
+  // Build -140: picker-added platforms preview in the stack too.
+  document.querySelectorAll("input[id^='p-stack-']").forEach((el) => { const k = el.id.slice("p-stack-".length); if (!(k in stack)) { const v = parseFloat(el.value) || 0; stack[k] = v; total += v; } });
   const pctRaw = val("p-localpct");
   const pct = pctRaw === undefined || pctRaw === "" ? (c0.localAudiencePct === undefined ? null : c0.localAudiencePct) : Number(pctRaw);
   const paidOn = document.getElementById("lane-paid");
@@ -20847,7 +21184,31 @@ function creatorPreviewCard() {
       followerCount: stack.instagram || 0,
       bio: val("p-bio") !== undefined ? val("p-bio") : (c0.bio || ""),
       topAudienceCities: topCities ? topCities.split(",").map((s) => s.trim()).filter(Boolean) : (c0.topAudienceCities || []),
+      // Build -140: the new platform fields ride the preview
+      // too — links from the record, local %s from the form's
+      // own inputs — so the peek shows the same pills, channels
+      // and neighbor math a business will see after saving.
+      instagramUrl: c0.instagramUrl || null,
+      tiktokHandle: c0.tiktokHandle || null,
+      tiktokUrl: c0.tiktokUrl || null,
+      youtubeChannel: c0.youtubeChannel || null,
+      facebookUrl: c0.facebookUrl || null,
+      xHandle: c0.xHandle || null,
+      xUrl: c0.xUrl || null,
+      linkedinUrl: c0.linkedinUrl || null,
+      platformLinks: c0.platformLinks || {},
+      platformLocalPct: (() => { const out = {}; document.querySelectorAll("input[id^='p-lp-']").forEach((el) => { if (el.value !== "") out[el.id.slice("p-lp-".length)] = Number(el.value); }); return Object.keys(out).length ? out : (c0.platformLocalPct || {}); })(),
     },
+    // Build -140: the preview's market list, from the record's
+    // own shares (home first, then the saved splits at 5%+),
+    // so the geography section previews too.
+    listedMarkets: (() => {
+      const home = (marketSel && marketSel.value) || u.market || "";
+      const out = [];
+      if (home) out.push({ market: home, pct: pct === null || pct === undefined || Number.isNaN(Number(pct)) ? null : Number(pct), home: true });
+      for (const e of (c0.audienceMarkets || [])) if (e && e.market && typeof e.pct === "number" && e.pct >= 5) out.push({ market: e.market, pct: e.pct, home: false });
+      return out;
+    })(),
     totalAudience: total,
     momentum: u.momentum || null,
     foundingBand: null,

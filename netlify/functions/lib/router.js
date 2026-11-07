@@ -22,7 +22,7 @@ const sigdata = require("./sigdata");
 const { buildProfilePageHtml, buildClaimPageHtml, buildRosterPageHtml, buildRosterNotFoundHtml } = require("./profile-meta");
 const { videoEmbedFor } = require("./video-embed");
 const intentLib = require("./intent");
-const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT, verifiedInMarket, computeAudienceVerification, canonicalMarketName } = require("./audience-markets");
+const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT, verifiedInMarket, computeAudienceVerification, canonicalMarketName, COUNT_PLATFORM_KEYS, PLATFORM_LABELS, MATCHED_LOCAL_PLATFORMS, normalizePlatformLocalPct, normalizePlatformLinks, localRateModel, geoBreakdownState } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
 const pilots = require("./pilots");
@@ -216,6 +216,15 @@ function creatorSocialLinks(c) {
   else if (c.facebookUrl) push("facebook", "Facebook", c.facebookUrl);
   if (primary.platform === "x") push("x", "X", primary.url);
   else if (c.xUrl) push("x", "X", c.xUrl);
+  // Build -140: the rest of the platform list (Pinterest,
+  // Twitch, the creator's website, ...) joins the public
+  // channels from the stored platformLinks — URL-bearing
+  // entries only, since this list is links, present-only like
+  // everything above.
+  const extraLinks = normalizePlatformLinks(c.platformLinks);
+  for (const k of Object.keys(extraLinks)) {
+    if (extraLinks[k].url) push(k, PLATFORM_LABELS[k] || k, extraLinks[k].url);
+  }
   return links;
 }
 // Non-circumvention reminder lines (Amendment 1, Jeff,
@@ -2195,20 +2204,15 @@ function visitRightsForVisit(kind) {
 // Meta verification will replace). Legacy profiles with no stack
 // treat their stored followerCount as the Instagram count, so no
 // record loses its audience in the migration.
-const AUDIENCE_PLATFORMS = [
-  { id: "instagram", label: "Instagram" },
-  { id: "tiktok", label: "TikTok" },
-  { id: "facebook", label: "Facebook" },
-  { id: "x", label: "X" },
-  { id: "linkedin", label: "LinkedIn" },
-  { id: "youtube", label: "YouTube" },
-  // Snapchat (Jeff, 2026-10-22): count-only. Dubai and younger
-  // talent run Snapchat-first audiences, so the count stacks and
-  // tiers like every other platform, but there is deliberately NO
-  // Snapchat handle or profile-URL field anywhere: Snapchat has no
-  // public profile pattern in our system.
-  { id: "snapchat", label: "Snapchat" },
-];
+// Build -140 (Jeff): the platform set is the full list a
+// creator can be on — the canonical keys + labels live in
+// lib/audience-markets.js (COUNT_PLATFORM_KEYS / PLATFORM_LABELS)
+// so the stack, the links, the per-platform local % and Sig all
+// read one list. The first seven keep their historical order.
+// (The 2026-10-22 "no Snapchat handle anywhere" rule is
+// superseded by Jeff's 2026-11-06 platform model: every platform
+// can carry a handle + link through creator.platformLinks.)
+const AUDIENCE_PLATFORMS = COUNT_PLATFORM_KEYS.map((id) => ({ id, label: PLATFORM_LABELS[id] }));
 const AUDIENCE_COUNT_CAP = 100000000;
 
 function normalizeAudienceStack(input) {
@@ -2731,14 +2735,59 @@ function primaryProfileOf(creator) {
 // Synced mark; every other entry stays unlabeled, which every
 // surface reads as Self-reported. Records with no connection carry
 // no platformSync and this output is byte-identical to before.
+// The creator's effective platform links (Build -140): the
+// legacy per-platform fields first (the primary handle + the
+// five link fields signup and setup have always written), with
+// the stored platformLinks map (every other platform, plus
+// Snapchat and the creator's website) merged over them. One
+// definition behind the profile pills, the channels list, the
+// public page and Sig's presence checks.
+function platformLinksOf(creator) {
+  const c = creator || {};
+  const out = {};
+  const put = (k, handle, url) => {
+    const h = String(handle || "").trim();
+    const u2 = String(url || "").trim();
+    if (!h && !u2) return;
+    out[k] = { ...(h ? { handle: h } : {}), ...(u2 ? { url: u2 } : {}) };
+  };
+  const plat = primaryPlatformOf(c);
+  put("instagram", plat === "instagram" ? c.handle : "", c.instagramUrl);
+  put("tiktok", c.tiktokHandle, c.tiktokUrl);
+  if (c.youtubeChannel) {
+    if (/^https?:\/\//i.test(c.youtubeChannel)) put("youtube", "", c.youtubeChannel);
+    else put("youtube", c.youtubeChannel, "");
+  }
+  put("facebook", plat === "facebook" ? c.handle : "", c.facebookUrl);
+  put("x", c.xHandle, c.xUrl);
+  put("linkedin", plat === "linkedin" ? c.handle : "", c.linkedinUrl);
+  const stored = normalizePlatformLinks(c.platformLinks);
+  for (const [k, v] of Object.entries(stored)) out[k] = { ...(out[k] || {}), ...v };
+  return out;
+}
+
 function audienceView(creator) {
   const stack = audienceStackOf(creator);
   const sync = (creator && creator.platformSync) || {};
+  // Build -140: each platform entry also carries the creator's
+  // link state (the profile's pills show only platforms with
+  // BOTH a link/handle and a count) and its own local % when the
+  // creator supplied one (the hero neighbor math reads it).
+  const links = platformLinksOf(creator);
+  const rates = normalizePlatformLocalPct((creator || {}).platformLocalPct);
   const platforms = AUDIENCE_PLATFORMS
     .filter((p) => stack[p.id])
-    .map((p) => (sync[p.id] && sync[p.id].verified === true
-      ? { platform: p.id, label: p.label, count: stack[p.id], synced: true, syncedAt: sync[p.id].lastSyncAt || null }
-      : { platform: p.id, label: p.label, count: stack[p.id] }))
+    .map((p) => {
+      const base = sync[p.id] && sync[p.id].verified === true
+        ? { platform: p.id, label: p.label, count: stack[p.id], synced: true, syncedAt: sync[p.id].lastSyncAt || null }
+        : { platform: p.id, label: p.label, count: stack[p.id] };
+      const l = links[p.id];
+      base.hasLink = !!l;
+      if (l && l.url) base.url = l.url;
+      if (l && l.handle) base.handle = l.handle;
+      base.localPct = rates[p.id] !== undefined ? rates[p.id] : null;
+      return base;
+    })
     .sort((a, b) => b.count - a.count);
   return { total: platforms.reduce((s, p) => s + p.count, 0), platforms };
 }
@@ -3493,6 +3542,12 @@ const MOMENTUM_POINTS = {
   profileBio: 5,
   profileNeighborhood: 5,
   profileLocalAudience: 5,
+  // Build -140 (Jeff): the geography awards, on the same scale
+  // as the other profile-completion awards (profileStack = 10):
+  // one-time for completing the audience breakdown, and one-time
+  // per extra platform the creator supplies a local % for.
+  geoBreakdown: 10,
+  platformLocalRate: 10,
   profileStack: 10,
   profileBestWorkPerLink: 5,
   profileBestWorkMax: 15,
@@ -3750,6 +3805,18 @@ function createMomentum(data) {
     if (bioDone) push("profile_bio", "Bio written", MOMENTUM_POINTS.profileBio, user.updatedAt || user.createdAt);
     if (neighborhoodDone) push("profile_neighborhood", "Neighborhood set", MOMENTUM_POINTS.profileNeighborhood, user.updatedAt || user.createdAt);
     if (localDone) push("profile_local", "Local audience % reported", MOMENTUM_POINTS.profileLocalAudience, user.updatedAt || user.createdAt);
+    // Build -140 (Jeff): the geography awards. Completion is a
+    // fact of the record (lib/audience-markets geoBreakdownState),
+    // so the entry exists exactly while the breakdown is complete
+    // and can never be farmed by re-saving; the per-platform
+    // entries are likewise one per platform, dated by the
+    // first-supplied stamp the profile save writes.
+    const geoState = geoBreakdownState(user, platformLinksOf(c));
+    if (geoState.complete) push("geo_breakdown", "Audience breakdown completed (local % by platform + market splits)", MOMENTUM_POINTS.geoBreakdown, user.updatedAt || user.createdAt);
+    const extraRateKeys = Object.keys(normalizePlatformLocalPct(c.platformLocalPct)).filter((k) => !MATCHED_LOCAL_PLATFORMS.includes(k));
+    for (const k of extraRateKeys) {
+      push(`local_rate_${k}`, `Local % added for ${PLATFORM_LABELS[k] || k}`, MOMENTUM_POINTS.platformLocalRate, (c.platformLocalPctAt || {})[k] || user.updatedAt || user.createdAt);
+    }
     if (stackDone) push("profile_stack", "Audience stack completed (3+ platforms)", MOMENTUM_POINTS.profileStack, user.updatedAt || user.createdAt);
     for (let i = 0; i < workLinks; i++) {
       push("profile_best_work", `Best work link ${i + 1} added`, MOMENTUM_POINTS.profileBestWorkPerLink, user.updatedAt || user.createdAt);
@@ -3859,6 +3926,8 @@ function createMomentum(data) {
       { id: "bio", label: "Write your bio (40+ characters)", points: MOMENTUM_POINTS.profileBio, done: bioDone },
       { id: "neighborhood", label: "Set your neighborhood or area", points: MOMENTUM_POINTS.profileNeighborhood, done: neighborhoodDone },
       { id: "local", label: "Report your local audience %", points: MOMENTUM_POINTS.profileLocalAudience, done: localDone },
+      { id: "geo", label: "Complete your audience breakdown (local % by platform + your market splits)", points: MOMENTUM_POINTS.geoBreakdown, done: geoState.complete },
+      { id: "localrates", label: "Add a local % for another platform (+10 each, one per platform)", points: MOMENTUM_POINTS.platformLocalRate, done: extraRateKeys.length > 0, detail: `${extraRateKeys.length} added` },
       { id: "stack", label: "Complete your audience stack (3+ platforms)", points: MOMENTUM_POINTS.profileStack, done: stackDone, detail: `${stackCount} of 3+ platforms` },
       { id: "bestwork", label: "Add best work links (+5 each, up to 3)", points: MOMENTUM_POINTS.profileBestWorkPerLink, done: workLinks >= 3, detail: `${workLinks} of 3 added` },
       { id: "firstoffer", label: "Accept your first offer", points: MOMENTUM_POINTS.firstOfferAccepted, done: myBookings.length > 0 },
@@ -11935,6 +12004,10 @@ async function buildSigFacts(user, full) {
       // Build -131: the per-platform split behind the total,
       // for Sig's grounded audience answer.
       audienceStack: user.creator ? audienceStackOf(user.creator) : {},
+      // Build -140: geography-breakdown state, from the one
+      // definition the Momentum award also reads, so Sig's
+      // prompt can name exactly what is missing.
+      geoBreakdown: user.creator ? geoBreakdownState(user, platformLinksOf(user.creator)) : null,
       missingLabels: (pc.missing || []).map((id) => itemLabels[id] || id),
       // Build -108: whether the Instagram connect lane is open
       // in this environment at all (Meta credentials present);
@@ -20722,6 +20795,13 @@ async function route(event) {
     if (user.role === "creator" && user.creator) {
       const c = { ...user.creator };
       const changes = {};
+      // Build -140: geography completion BEFORE this save, so
+      // the response can carry the one-time award the moment the
+      // save completes the breakdown (the points themselves are
+      // computed from the record by the Momentum ledger — this
+      // flag only drives the celebration, never the points).
+      const geoWasComplete = geoBreakdownState(user, platformLinksOf(user.creator)).complete;
+      let newRateAwards = [];
       // Display name: a quick claim starts out named by its
       // handle; the completion flow is where the real name lands.
       if (b.name !== undefined) {
@@ -21133,6 +21213,46 @@ async function route(event) {
         c.localAudienceSource = pct === null ? null : "Self-reported";
         c.localAudienceAsOf = pct === null ? null : ts.slice(0, 10);
       }
+      // Build -140 (Jeff, Items E/F): platform links + the
+      // per-platform local %. Sending platformLinks replaces the
+      // stored map (setup sends the whole set it manages, so a
+      // cleared row is a removed link). A rate that appears for
+      // the first time stamps platformLocalPctAt — the Momentum
+      // ledger dates its one-per-platform entry by that stamp,
+      // and a first rate on a platform beyond the matched
+      // channels rides the response as an award.
+      if (b.platformLinks !== undefined) {
+        c.platformLinks = normalizePlatformLinks(b.platformLinks);
+      }
+      if (b.platformLocalPct !== undefined) {
+        const beforeRates = normalizePlatformLocalPct(c.platformLocalPct);
+        const afterRates = normalizePlatformLocalPct(b.platformLocalPct);
+        const stamps = { ...(c.platformLocalPctAt || {}) };
+        for (const k of Object.keys(afterRates)) {
+          if (beforeRates[k] === undefined && stamps[k] === undefined) {
+            stamps[k] = ts;
+            if (!MATCHED_LOCAL_PLATFORMS.includes(k)) newRateAwards.push({ platform: k, label: PLATFORM_LABELS[k] || k, points: MOMENTUM_POINTS.platformLocalRate });
+          }
+        }
+        c.platformLocalPct = afterRates;
+        c.platformLocalPctAt = stamps;
+      }
+      // Build -140: once any per-platform rate exists, the
+      // headline local % IS the confirmed rate R from
+      // lib/audience-markets (follower-weighted over the
+      // platforms carrying a rate, matched channels first) —
+      // never diluted by platforms without a rate, and never
+      // the hand-typed number, which stays the fallback only
+      // while no rate exists anywhere.
+      if (c.platformLocalPct && Object.keys(c.platformLocalPct).length) {
+        const rateModel = localRateModel(c);
+        if (rateModel.R !== null && c.localAudiencePct !== rateModel.R) {
+          changes.localAudiencePct = [c.localAudiencePct, rateModel.R];
+          c.localAudiencePct = rateModel.R;
+          c.localAudienceSource = "Self-reported";
+          c.localAudienceAsOf = ts.slice(0, 10);
+        }
+      }
       user.creator = c;
       // Two-step claim (Jeff, 2026-10-20): completeness recomputes
       // on every save, from the record, and the stored flag follows
@@ -21166,7 +21286,15 @@ async function route(event) {
       if (changes.audienceMarkets) {
         await logEvent({ type: "audience_markets_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { markets: (c.audienceMarkets || []).map((e) => ({ market: e.market, pct: e.pct })), listed: listedMarketsFor(user).map((e) => e.market), source: "Self-reported" } });
       }
-      return json(200, { user: await withFounding(user) });
+      // Build -140: the geography award moment — this save
+      // flipped the breakdown to complete. The response flag
+      // lets setup show the award as it lands; the points
+      // themselves live in the computed Momentum ledger.
+      const geoNowComplete = geoBreakdownState(user, platformLinksOf(c)).complete;
+      if (!geoWasComplete && geoNowComplete) {
+        await logEvent({ type: "geo_breakdown_completed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { points: MOMENTUM_POINTS.geoBreakdown } });
+      }
+      return json(200, { user: await withFounding(user), ...(!geoWasComplete && geoNowComplete ? { geoAward: { points: MOMENTUM_POINTS.geoBreakdown } } : {}), ...(newRateAwards.length ? { localRateAwards: newRateAwards } : {}) });
     }
     if (user.role === "business" && user.business) {
       const bz = { ...user.business };

@@ -65,7 +65,7 @@ function brandViewOf(brand) {
 // deps: { users, offers, bookings, posts, partners, marketFlags,
 //         marketNames, isTester, profileCompleteOf,
 //         businessAccessState, planNameOf, now }
-const AUDIENCE_PLATFORM_LABELS = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", linkedin: "LinkedIn", youtube: "YouTube", snapchat: "Snapchat" };
+const AUDIENCE_PLATFORM_LABELS = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", linkedin: "LinkedIn", youtube: "YouTube", snapchat: "Snapchat", pinterest: "Pinterest", reddit: "Reddit", twitch: "Twitch", kick: "Kick", threads: "Threads", bluesky: "Bluesky", discord: "Discord", spotify: "Spotify", patreon: "Patreon", substack: "Substack", website: "Website" };
 
 function buildAdminFacts(d) {
   const now = d.now || Date.now();
@@ -477,6 +477,9 @@ function buildCreatorFacts(d) {
     // the audience answer can show where the followers live.
     audienceStack: Object.entries(d.audienceStack || {}).filter(([, n]) => Number(n) > 0).map(([id, n]) => ({ id, label: AUDIENCE_PLATFORM_LABELS[id] || id, count: Number(n) })).sort((a, b) => b.count - a.count),
     localPct: c.localAudiencePct != null ? c.localAudiencePct : null,
+    // Build -140: geography-breakdown state (router-computed
+    // from the shared definition), driving the home prompts.
+    geoBreakdown: d.geoBreakdown || null,
     listedMarkets: d.listedMarkets || [],
     // Build -102: the public roster pages this creator appears
     // on, from the same finished-public predicate the pages and
@@ -1783,6 +1786,21 @@ function buildHomeState(role, f) {
     // Build -132: a deal waiting on this creator expires on its
     // own — it prompts while it is real, and only then.
     if (f.deals && f.deals.waitingOnMe && f.deals.waitingOnMe.length) chips.push(`${fmt(f.deals.waitingOnMe.length)} ${plural(f.deals.waitingOnMe.length, "deal")} waiting on your answer`);
+    // Build -140 (Jeff): the geography prompts, from the same
+    // record state the Momentum award reads — never invented.
+    // Incomplete breakdown: name what is missing, the why, and
+    // the points. Complete but with platforms still estimated:
+    // name those platforms and what a real rate changes.
+    const geoChip = f.geoBreakdown;
+    if (geoChip && !geoChip.complete) {
+      const miss = [];
+      for (const k of geoChip.missingPlatforms || []) miss.push(`your ${AUDIENCE_PLATFORM_LABELS[k] || k} local %`);
+      if (geoChip.splitsMissing) miss.push("your market splits");
+      if (miss.length) chips.push(`Add ${miss.join(" and ")}: businesses book on local proof, and filling it in stops you being under-counted. +10 Momentum when it is done.`);
+    } else if (geoChip && geoChip.unfilledPlatforms && geoChip.unfilledPlatforms.length) {
+      const names = geoChip.unfilledPlatforms.slice(0, 3).map((k) => AUDIENCE_PLATFORM_LABELS[k] || k);
+      chips.push(`${names.join(", ")} ${names.length === 1 ? "has" : "have"} no local % yet, so those followers are estimated at your confirmed ${geoChip.R != null ? geoChip.R : ""}% — add the real % and they count for real. +10 Momentum per platform.`);
+    }
     chips.push(`${fmt(f.momentumPoints)} Momentum points`);
     chips.push(f.profileComplete ? "Profile live" : (f.missingLabels && f.missingLabels.length ? `Profile: ${fmt(f.missingLabels.length)} ${plural(f.missingLabels.length, "step")} to finish` : "Profile not finished"));
     // Build -98 proactive prompts, real records only: payout

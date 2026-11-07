@@ -218,6 +218,166 @@ function computeAudienceVerification(user, igShares, opts) {
   };
 }
 
+// ---------- Platforms, links + per-platform local % (Build -140) ----------
+// Jeff's platform model (2026-11-06, Items E/F as amended):
+// a creator can add every platform they are on — handle, link
+// and follower count — and every count stacks into the total
+// audience. The local % is NEVER diluted: the headline rate R
+// is the follower-weighted local % over the platforms that
+// carry a local rate, and the matched channels (Instagram,
+// Facebook, YouTube when added) are the confirmed source. Any
+// other platform joins the rate the moment the creator supplies
+// a local % for it; platforms without a rate are excluded from
+// the % entirely (numerator and denominator) and, in the hero
+// neighbor count only, are estimated at R and labelled
+// "potential" until the creator adds their real rate.
+const AUDIENCE_PLATFORM_KEYS = [
+  "instagram", "tiktok", "facebook", "x", "linkedin", "youtube", "snapchat",
+  "pinterest", "reddit", "twitch", "kick", "threads", "bluesky", "discord",
+  "spotify", "patreon", "substack", "website",
+];
+// Platforms that carry a follower count (a website is link-only).
+const COUNT_PLATFORM_KEYS = AUDIENCE_PLATFORM_KEYS.filter((k) => k !== "website");
+const PLATFORM_LABELS = {
+  instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X",
+  linkedin: "LinkedIn", youtube: "YouTube", snapchat: "Snapchat",
+  pinterest: "Pinterest", reddit: "Reddit", twitch: "Twitch", kick: "Kick",
+  threads: "Threads", bluesky: "Bluesky", discord: "Discord",
+  spotify: "Spotify", patreon: "Patreon", substack: "Substack", website: "Website",
+};
+// The matched channels: their local rates are the confirmed rate.
+const MATCHED_LOCAL_PLATFORMS = ["instagram", "facebook", "youtube"];
+
+// The stack stored on a creator record, normalized over the
+// count platforms, with the legacy fallback (no stack yet means
+// followerCount IS the Instagram count). Mirrors the router's
+// audienceStackOf — kept here so the rate model and the router
+// can never disagree about who has how many followers where.
+function stackOf(creator) {
+  const c = creator || {};
+  const raw = c.audienceStack && typeof c.audienceStack === "object" ? c.audienceStack : {};
+  const out = {};
+  for (const k of COUNT_PLATFORM_KEYS) {
+    const n = Math.floor(Number(raw[k]));
+    if (Number.isFinite(n) && n > 0) out[k] = n;
+  }
+  if (!Object.keys(out).length && (c.followerCount || 0) > 0) {
+    const fc = Math.floor(Number(c.followerCount)) || 0;
+    if (fc > 0) out.instagram = fc;
+  }
+  return out;
+}
+
+// Per-platform local rates for storage: known count platforms,
+// values clamped 0-100. A filled 0 is a REAL rate (a creator can
+// honestly have no local audience on a platform) and is kept.
+function normalizePlatformLocalPct(input) {
+  if (!input || typeof input !== "object") return {};
+  const out = {};
+  for (const k of COUNT_PLATFORM_KEYS) {
+    if (input[k] === undefined || input[k] === null || input[k] === "") continue;
+    const pct = cleanPct(input[k]);
+    if (pct !== null) out[k] = pct;
+  }
+  return out;
+}
+
+// Platform links for storage: [{ platform, handle, url }] in or
+// a { platform: { handle, url } } map. A bare domain typed as a
+// URL earns its https://; anything that still is not an http(s)
+// URL drops out (the handle, if any, still stands).
+function normalizePlatformLinks(input) {
+  const entries = Array.isArray(input)
+    ? input.map((e) => [e && e.platform, e || {}])
+    : (input && typeof input === "object" ? Object.entries(input) : []);
+  const out = {};
+  for (const [platform, raw] of entries) {
+    if (!AUDIENCE_PLATFORM_KEYS.includes(platform) || !raw || typeof raw !== "object") continue;
+    const handle = String(raw.handle || "").trim().slice(0, 90);
+    let url = String(raw.url || "").trim().slice(0, 320);
+    if (url && !/^https?:\/\//i.test(url) && !/\s/.test(url) && url.includes(".")) url = `https://${url}`;
+    if (url && !/^https?:\/\/\S+$/i.test(url)) url = "";
+    if (!handle && !url) continue;
+    out[platform] = { ...(handle ? { handle } : {}), ...(url ? { url } : {}) };
+  }
+  return out;
+}
+
+// THE local-follower model. R = the confirmed rate: the
+// follower-weighted local % across matched channels that carry
+// a rate; if no matched channel carries one but some other
+// platform does, R falls back to the weighted filled rates
+// (fallbackUsed says so — a conscious, reported choice, never
+// silent). neighborCount sums EVERY added platform at its own
+// rate, or at R when it has none (those platforms are the
+// extrapolated set, and the hero labels their followers
+// "potential neighbors"). Returns R null when no rate exists
+// anywhere — the legacy manual localAudiencePct then rules.
+function localRateModel(creator) {
+  const c = creator || {};
+  const stack = stackOf(c);
+  const rates = normalizePlatformLocalPct(c.platformLocalPct);
+  const present = COUNT_PLATFORM_KEYS.filter((k) => (stack[k] || 0) > 0);
+  const hasRate = (k) => rates[k] !== undefined;
+  const weighted = (keys) => {
+    let num = 0, den = 0;
+    for (const k of keys) { num += (stack[k] || 0) * rates[k]; den += (stack[k] || 0); }
+    if (den > 0) return num / den;
+    if (keys.length) return keys.reduce((s, k) => s + rates[k], 0) / keys.length;
+    return null;
+  };
+  const matchedWithRate = MATCHED_LOCAL_PLATFORMS.filter(hasRate);
+  let R = weighted(matchedWithRate);
+  let fallbackUsed = false;
+  if (R === null) {
+    const anyWithRate = COUNT_PLATFORM_KEYS.filter(hasRate);
+    if (anyWithRate.length) { R = weighted(anyWithRate); fallbackUsed = R !== null; }
+  }
+  if (R !== null) R = Math.round(R * 10) / 10;
+  let neighborCount = null;
+  if (R !== null) {
+    let sum = 0;
+    for (const k of present) sum += (stack[k] || 0) * (hasRate(k) ? rates[k] : R) / 100;
+    neighborCount = Math.round(sum);
+  }
+  const extrapolatedPlatforms = R === null ? [] : present.filter((k) => !hasRate(k));
+  return {
+    stack, rates, present, R, fallbackUsed, neighborCount,
+    extrapolatedPlatforms,
+    allReal: present.length > 0 && extrapolatedPlatforms.length === 0,
+  };
+}
+
+// Geography-breakdown completion (the Momentum award + Sig
+// prompt read this one definition): local rates supplied for
+// the matched channels the creator actually has (Instagram,
+// Facebook, YouTube if added), plus their market splits saved.
+// A creator with no matched channel present completes on any
+// supplied rate instead. Supplying an extra platform's rate is
+// a bonus, never a requirement. `links` is the caller's merged
+// platform-links map (router's platformLinksOf), so presence
+// can rest on a link alone; the stored platformLinks ride the
+// record and are merged in here as a floor.
+function geoBreakdownState(user, links) {
+  const c = (user && user.creator) || {};
+  const model = localRateModel(c);
+  const mergedLinks = { ...normalizePlatformLinks(c.platformLinks), ...(links || {}) };
+  const presentSet = new Set([...model.present, ...Object.keys(mergedLinks)]);
+  const presentMatched = MATCHED_LOCAL_PLATFORMS.filter((k) => presentSet.has(k));
+  const missingPlatforms = presentMatched.filter((k) => model.rates[k] === undefined);
+  const splitsDone = Array.isArray(c.audienceMarkets);
+  const anyRate = Object.keys(model.rates).length > 0;
+  const complete = splitsDone && missingPlatforms.length === 0 && (presentMatched.length > 0 || anyRate);
+  return {
+    complete,
+    missingPlatforms,
+    splitsMissing: !splitsDone,
+    unfilledPlatforms: model.extrapolatedPlatforms,
+    R: model.R,
+    rates: model.rates,
+  };
+}
+
 module.exports = {
   MULTI_MARKET_MIN_PCT,
   MAX_AUDIENCE_MARKETS,
@@ -233,4 +393,13 @@ module.exports = {
   verificationStatusOf,
   verifiedInMarket,
   computeAudienceVerification,
+  AUDIENCE_PLATFORM_KEYS,
+  COUNT_PLATFORM_KEYS,
+  PLATFORM_LABELS,
+  MATCHED_LOCAL_PLATFORMS,
+  stackOf,
+  normalizePlatformLocalPct,
+  normalizePlatformLinks,
+  localRateModel,
+  geoBreakdownState,
 };

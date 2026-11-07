@@ -913,8 +913,19 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
      top:12px with its bottom groups unreachable except by
      dragging the whole page. Bounded to the viewport with its
      own overflow, the rail scrolls independently while the
-     results column scrolls with the page. */
-  .shop-rail { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-right: 2px; }
+     results column scrolls with the page.
+     Build -140 (Jeff, same day, Find offers screenshot): the
+     -139 cap assumed the rail starts at the viewport top. It
+     does not: page chrome above it (workspace head, takeover
+     bar) pushes its rest position 150-200px down, so a rail
+     whose content fell between (100vh - restTop) and
+     (100vh - 24px) was never a scroll container at all and its
+     last groups sat below the fold. --rail-off is the rail's
+     measured rest offset, set per element by fitRails() in
+     app.js at render (default 24px = the old behaviour until
+     measured), so the rail box always ends inside the viewport
+     and the rail alone always reaches its last group. */
+  .shop-rail { position: sticky; top: 12px; max-height: calc(100vh - var(--rail-off, 24px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-right: 2px; }
 }
 
 /* Start a campaign wears the Find creators skeleton (Jeff,
@@ -933,7 +944,7 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 @media (min-width: 900px) {
   .camp-layout { grid-template-columns: 272px minmax(0, 1fr); grid-template-areas: "rail main"; }
   .camp-main { grid-area: main; min-width: 0; }
-  .camp-rail { grid-area: rail; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .camp-rail { grid-area: rail; position: sticky; top: 12px; max-height: calc(100vh - var(--rail-off, 24px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 }
 #offer-composer .bookseg { display: flex; background: var(--paper2); border-radius: 999px; padding: 3px; gap: 2px; }
 #offer-composer .bookseg button { flex: 1; border: 0; background: transparent; border-radius: 999px; padding: 8px 10px; font-weight: 600; color: var(--ink2); cursor: pointer; }
@@ -1027,7 +1038,38 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
   .pdp-actionbar .btn { flex: 1 1 0; }
   .pdp-bar-spacer { display: block; height: 66px; }
 }
-.pdp-sim-img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: var(--paper2); display: block; }
+/* Build -140 (Jeff): the sim rail wears the Shelf's 4/3 frame.
+   The old 16/9 frame cropped logos vertically and, on the
+   no-image tile, read as a tall empty box; 4/3 matches the
+   Shelf exactly, and flex:none keeps the media box from being
+   stretched or squeezed by the card's column layout, so every
+   card's media is the same height. */
+.pdp-sim-img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; background: var(--paper2); display: block; flex: none; }
+/* Build -140: Similar creators sits at the very bottom of the
+   profile, below the booking box, behind a clear divider — an
+   after-you-are-done section, not mid-flow. */
+.pdp-similar-bottom { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 18px; }
+/* Build -140: the audience geography section + platform links.
+   Rows reuse .pdp-spec; city sub-rows indent under their metro. */
+.pdp-spec.sub { padding-left: 20px; }
+.pdp-spec.sub span { color: var(--ink2); }
+.pdp-smallprint { font-size: .78rem; color: var(--ink2); margin: 6px 0 0; line-height: 1.45; }
+.pdp-links { display: flex; flex-direction: column; }
+.pdp-links a, .pdp-links .pdp-link-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line2); padding: 7px 0; font-size: .92rem; text-decoration: none; }
+.pdp-links a:hover .pdp-link-handle { text-decoration: underline; }
+.pdp-link-plat { font-weight: 700; color: var(--ink); }
+.pdp-link-handle { color: var(--azure); }
+/* Build -140: profile setup — add-a-platform row + the
+   local-%-by-platform rows. Plain form furniture, same field
+   language as the rest of setup. */
+.pf-addrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.pf-addrow select { flex: 1 1 200px; }
+.lp-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--line2); }
+.lp-row:last-child { border-bottom: 0; }
+.lp-row .lp-tx { flex: 1 1 auto; min-width: 0; }
+.lp-row .lp-name { font-weight: 700; font-size: .92rem; }
+.lp-row .lp-note { font-size: .8rem; color: var(--ink2); margin-top: 2px; line-height: 1.4; }
+.lp-row input { width: 92px; flex: none; }
 /* Batch fix (Jeff, 2026-11-06): card media. The initial tile
    avatarHtml emits carries .avatar-initial, which nothing in
    this card styled — the letter sat tiny in the top-left of a
@@ -1055,7 +1097,9 @@ img.media-contain { object-fit: contain !important; }
 .pdp-day { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 7px 12px; font: 600 .85rem 'Instrument Sans', system-ui, sans-serif; cursor: pointer; display: flex; flex-direction: column; align-items: center; }
 .pdp-day small { font-weight: 500; color: var(--ink2); }
 .pdp-day.on { border-color: var(--ink); background: var(--paper2); }
-.pdp-send { width: 100%; }
+/* Build -140 (Jeff): Send offer takes the natural .btn width,
+   like the profile's other primary actions — the old width:100%
+   stretched it across the whole booking box. */
 .cc-neighbors { font-weight: 700; margin-top: 6px; }
 .mirror-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
 @media (min-width: 1280px) { .mirror-grid { grid-template-columns: repeat(3, 1fr); } }
