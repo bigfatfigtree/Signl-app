@@ -19038,6 +19038,23 @@ async function marketingSentToday138(now) {
   return n;
 }
 
+// Batched sends (Jeff fix, 2026-11-07): one invocation of a
+// marketing send is capped, the same discipline as the founding
+// outreach engine's per-run batch. A function invocation has a
+// hard time budget and dozens of sequential SMTP sends do not
+// fit in it — the Magpie rename announcement (72 recipients)
+// was killed at 31 and sat in "sending" with nobody ever
+// picking it up again. The mkrecipient rows are the durable
+// truth of who actually got the message, so a capped run saves
+// its progress, stays in "sending", and the next invocation —
+// the campaign sweep once the run goes stale, or an admin
+// pressing Resume — skips everyone already sent and picks up
+// where the last one stopped. A send in flight keeps the
+// campaign's updatedAt fresh; only a stale "sending" campaign
+// is treated as interrupted and resumed.
+const MARKETING_SEND_BATCH_138 = 25;
+const MARKETING_SEND_STALE_MS = 10 * 60 * 1000;
+
 // The send itself. Recipients are the list frozen at approval;
 // exclusions re-apply at send time (an account deleted or
 // unsubscribed since approval drops out, counted, never silently).
@@ -19046,16 +19063,30 @@ async function marketingSentToday138(now) {
 async function marketingSend138(campaign, senderAdmin) {
   const suppressed = await marketingSuppression138();
   const now = new Date();
-  let sent = 0, failed = 0, excluded = 0;
+  // Claim the run before looping: status + a fresh updatedAt
+  // are the heartbeat the sweep reads (see marketingDuePass138).
+  campaign.status = "sending";
+  campaign.updatedAt = nowIso();
+  await store.set(`mkcampaign:${campaign.id}`, campaign);
+  let sent = 0, failed = 0, excluded = 0, attempted = 0;
   const failures = [];
+  let complete = true;
   for (const userId of campaign.recipientIds || []) {
-    const u = await store.get(`user:${userId}`);
     const recId = `${campaign.id}:${userId}`;
+    // Idempotent re-entry: the recipient row is the durable
+    // truth. Anyone already sent or excluded is counted and
+    // skipped — a resumed send can never email them twice.
+    const prior = await store.get(`mkrecipient:${recId}`);
+    if (prior && prior.status === "sent") { sent += 1; continue; }
+    if (prior && prior.status === "excluded") { excluded += 1; continue; }
+    const u = await store.get(`user:${userId}`);
     if (!u || isTester(u) || (u.email && suppressed.has(String(u.email).toLowerCase()))) {
       excluded += 1;
       await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u ? u.email : null, channel: "email", status: "excluded", reason: !u ? "account_deleted" : isTester(u) ? "tester_account" : "unsubscribed", at: nowIso() });
       continue;
     }
+    if (attempted >= MARKETING_SEND_BATCH_138) { complete = false; break; }
+    attempted += 1;
     const values = automationTokenValues138(u, campaign.text);
     values.unsubscribeLine = MARKETING_UNSUB_LINE_138;
     let text = templatesLib.substitute(campaign.text, values);
@@ -19071,6 +19102,19 @@ async function marketingSend138(campaign, senderAdmin) {
       await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u.email, channel: "email", status: "failed", reason: result.reason || "send_failed", at: nowIso() });
     }
   }
+  if (!complete) {
+    // Batch cap reached with people still waiting: save the
+    // progress and stay in "sending". The final "sent" state
+    // and the completion event below belong to a run that
+    // actually reached the end of the list — nobody may write
+    // them early.
+    campaign.status = "sending";
+    campaign.sendProgress = { sent, failed, excluded, at: nowIso(), channel: "email" };
+    campaign.updatedAt = nowIso();
+    await store.set(`mkcampaign:${campaign.id}`, campaign);
+    return campaign;
+  }
+  delete campaign.sendProgress;
   campaign.status = "sent";
   campaign.sentAt = nowIso();
   campaign.sentBy = senderAdmin ? senderAdmin.id : null;
@@ -19091,17 +19135,30 @@ async function marketingSend138(campaign, senderAdmin) {
 // keep other audiences off this channel.
 async function marketingSendPlatform138(campaign, senderAdmin) {
   const suppressed = await marketingSuppression138();
-  let sent = 0, failed = 0, excluded = 0;
+  // Same batched-send discipline as the email lane (see
+  // MARKETING_SEND_BATCH_138): claim the run, skip recipients
+  // the durable rows say are done, cap the invocation, and
+  // only write the final state on true completion.
+  campaign.status = "sending";
+  campaign.updatedAt = nowIso();
+  await store.set(`mkcampaign:${campaign.id}`, campaign);
+  let sent = 0, failed = 0, excluded = 0, attempted = 0;
   const failures = [];
+  let complete = true;
   const segmentLabel = (campaign.segment && (campaign.segment.cityLabel || campaign.segment.market)) || null;
   for (const userId of campaign.recipientIds || []) {
-    const u = await store.get(`user:${userId}`);
     const recId = `${campaign.id}:${userId}`;
+    const prior = await store.get(`mkrecipient:${recId}`);
+    if (prior && prior.status === "sent") { sent += 1; continue; }
+    if (prior && prior.status === "excluded") { excluded += 1; continue; }
+    const u = await store.get(`user:${userId}`);
     if (!u || isTester(u) || (u.email && suppressed.has(String(u.email).toLowerCase()))) {
       excluded += 1;
       await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u ? u.email : null, channel: "platform", status: "excluded", reason: !u ? "account_deleted" : isTester(u) ? "tester_account" : "unsubscribed", at: nowIso() });
       continue;
     }
+    if (attempted >= MARKETING_SEND_BATCH_138) { complete = false; break; }
+    attempted += 1;
     try {
       const text = templatesLib.substitute(campaign.text, automationTokenValues138(u, campaign.text));
       const r = await sendPlatformMessage(senderAdmin, u, text, { scope: "segment", segmentMarket: segmentLabel });
@@ -19113,6 +19170,14 @@ async function marketingSendPlatform138(campaign, senderAdmin) {
       await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u.email, channel: "platform", status: "failed", reason: "platform_send_failed", at: nowIso() });
     }
   }
+  if (!complete) {
+    campaign.status = "sending";
+    campaign.sendProgress = { sent, failed, excluded, at: nowIso(), channel: "platform" };
+    campaign.updatedAt = nowIso();
+    await store.set(`mkcampaign:${campaign.id}`, campaign);
+    return campaign;
+  }
+  delete campaign.sendProgress;
   campaign.status = "sent";
   campaign.sentAt = nowIso();
   campaign.sentBy = senderAdmin ? senderAdmin.id : null;
@@ -19127,14 +19192,22 @@ async function marketingSendPlatform138(campaign, senderAdmin) {
 // campaign sweep's tick (the same claim-throttled pass ops already
 // runs). Only campaigns an approver approved AND scheduled can be
 // here — the status machine has no other road to "scheduled".
+// The same pass also resumes interrupted sends: a campaign in
+// "sending" whose last write is stale (MARKETING_SEND_STALE_MS)
+// was cut off mid-loop — by the batch cap or by a killed
+// invocation — and the send functions' recipient-row skips make
+// resuming it safe. A send genuinely in flight refreshes its
+// updatedAt when it starts, so it is never picked up live.
 async function marketingDuePass138() {
   const rows = await store.list("mkcampaign:");
   const now = Date.now();
   let fired = 0;
   for (const r of rows) {
     const c = r.value;
-    if (!c || c.status !== "scheduled" || !c.approvedBy || !c.runAt) continue;
-    if (Date.parse(c.runAt) > now) continue;
+    if (!c || !c.approvedBy) continue;
+    const due = c.status === "scheduled" && !!c.runAt && Date.parse(c.runAt) <= now;
+    const stuck = c.status === "sending" && !!c.updatedAt && (now - Date.parse(c.updatedAt) > MARKETING_SEND_STALE_MS);
+    if (!due && !stuck) continue;
     // A text campaign can never be scheduled in v1 (the schedule
     // guard refuses while the rail is dark); this skip is the
     // belt to that suspender — the sweep never texts anyone.
@@ -22166,6 +22239,39 @@ async function route(event) {
           }
           mc.status = "sending"; mc.updatedAt = nowIso();
           await store.set(`mkcampaign:${mc.id}`, mc);
+          const done = await marketingSend138(mc, user);
+          return json(200, { campaign: done });
+        }
+        if (seg[4] === "resume") {
+          if (!canApproveM) return err(403, "Sending marketing email is not part of your role.");
+          if (mc.status !== "sending") return err(400, "Only a campaign stuck in Sending can be resumed — this one is not sending.");
+          const channel = mc.channel || "email";
+          if (channel === "sms") {
+            const sms = smsRailState138();
+            if (!sms.connected) return err(400, sms.note);
+            return err(400, "The Twilio keys are in the app, but the in-app texting lane is not switched on in this build yet — nothing was sent.");
+          }
+          if (channel === "platform") {
+            const doneP = await marketingSendPlatform138(mc, user);
+            return json(200, { campaign: doneP });
+          }
+          // The ceiling is re-checked against only the people
+          // still waiting: the recipient rows are the durable
+          // record of who already got this campaign, and the
+          // already-sent were counted against the ceiling when
+          // they went out.
+          const recRows = await store.list("mkrecipient:");
+          const doneIds = new Set();
+          for (const r of recRows) {
+            const v = r.value;
+            if (v && v.campaignId === mc.id && (v.status === "sent" || v.status === "excluded")) doneIds.add(v.userId);
+          }
+          const remainder = (mc.recipientIds || []).filter((id) => !doneIds.has(id)).length;
+          const sentTodayTotal = (await campaignSentToday(new Date())) + (await marketingSentToday138(new Date()));
+          const remaining = campaignDailyCeiling() - sentTodayTotal;
+          if (remainder > remaining) {
+            return err(400, `That resume would pass today's sending ceiling: ${sentTodayTotal} already sent today across Magpie's lists, the ceiling is ${campaignDailyCeiling()}, and ${remainder} people are still waiting on this campaign. The rest can go tomorrow — the sweep keeps what is already sent.`);
+          }
           const done = await marketingSend138(mc, user);
           return json(200, { campaign: done });
         }

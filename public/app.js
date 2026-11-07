@@ -25468,11 +25468,13 @@ async function loadAdminMarketing138() {
     const campRow = (c) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(c.subject)}</strong><span class="small muted">${channelLabel[c.channel || "email"]} · ${statusLabel[c.status] || c.status} · by ${esc(c.authorName || "—")}${c.approverName ? ` · approved by ${esc(c.approverName)}` : ""}${c.recipientCount != null ? ` · ${c.recipientCount} recipients` : ""}${c.runAt ? ` · runs ${a138When(c.runAt)}` : ""}${c.sentAt ? ` · sent ${a138When(c.sentAt)}` : ""}</span>
       ${c.changesNote ? `<span class="small muted">Changes asked: ${esc(c.changesNote)}</span>` : ""}
       ${c.channel === "sms" && c.status !== "sent" && d.sms && !d.sms.connected ? `<span class="small muted">${esc(d.sms.note)}</span>` : ""}
-      ${c.results ? `<span class="small">Result: ${c.results.sent} sent · ${c.results.failed} failed · ${c.results.excluded} dropped at send time (deleted, unsubscribed or tester)</span>` : ""}</div>
+      ${c.results ? `<span class="small">Result: ${c.results.sent} sent · ${c.results.failed} failed · ${c.results.excluded} dropped at send time (deleted, unsubscribed or tester)</span>` : ""}
+      ${c.status === "sending" && c.sendProgress ? `<span class="small">Sent so far: ${c.sendProgress.sent} sent · ${c.sendProgress.failed} failed · ${c.sendProgress.excluded} dropped — sends go in batches, and the rest follows on its own or with Resume.</span>` : ""}</div>
       <div class="a138-row-side a138-actions">
         ${(c.status === "draft" || c.status === "changes_requested") && d.canDraft ? `<button type="button" class="btn small-btn ghost" onclick="return a138MkEdit('${c.id}')">Edit</button><button type="button" class="btn small-btn" onclick="return a138MkAct('${c.id}','submit')">Send for approval</button>` : ""}
         ${c.status === "in_review" && d.canApprove ? `<button type="button" class="btn small-btn" onclick="return a138MkAct('${c.id}','approve')">Approve</button><button type="button" class="btn small-btn ghost" onclick="return a138MkChanges('${c.id}')">Request changes</button>` : ""}
         ${c.status === "approved" && d.canApprove ? `<button type="button" class="btn small-btn" onclick="return a138MkAct('${c.id}','send')">Send now</button>${c.channel !== "sms" ? `<input type="datetime-local" id="a138-mk-when-${c.id}"><button type="button" class="btn small-btn ghost" onclick="return a138MkSchedule('${c.id}')">Schedule</button>` : ""}` : ""}
+        ${c.status === "sending" && d.canApprove ? `<button type="button" class="btn small-btn" onclick="return a138MkAct('${c.id}','resume')">Resume send</button>` : ""}
       </div></div>`;
     el.innerHTML = `<h3>Marketing</h3>
     <p class="muted">Messages to Magpie's own lists — email from ${esc(d.from)}, an in-app message in their Magpie Messages, or a text. The audience can be any market, or any city where sign-ups are gathering before launch. Nothing here sends itself: a person writes it, a second person approves it, and the send button is a human press. Today: ${d.sentToday} emails sent across Magpie's lists · ceiling ${d.dailyCeiling}. Deleted accounts are erased from Magpie entirely, so they can never be on a list; ${d.suppressionCount} address${d.suppressionCount === 1 ? "" : "es"} on the suppression list are always left out.</p>
@@ -25565,7 +25567,7 @@ async function a138MkUpdate(id) {
   return false;
 }
 async function a138MkAct(id, action) {
-  try { const r = await api("POST", `/admin/marketing/campaigns/${id}/${action}`, {}); if (action === "send") showToast(r.campaign.channel === "platform" ? `Sent: ${r.campaign.results ? r.campaign.results.sent : 0} in-app messages` : `Sent: ${r.campaign.results ? r.campaign.results.sent : 0} emails`); else showToast("Done"); a138.mkCampaign = null; loadAdminMarketing138(); }
+  try { const r = await api("POST", `/admin/marketing/campaigns/${id}/${action}`, {}); if ((action === "send" || action === "resume") && r.campaign.status === "sending") { const p = r.campaign.sendProgress || {}; showToast(`Sending in batches: ${p.sent || 0} sent so far — the rest follows on its own, or press Resume send.`); } else if (action === "send" || action === "resume") showToast(r.campaign.channel === "platform" ? `Sent: ${r.campaign.results ? r.campaign.results.sent : 0} in-app messages` : `Sent: ${r.campaign.results ? r.campaign.results.sent : 0} emails`); else showToast("Done"); a138.mkCampaign = null; loadAdminMarketing138(); }
   catch (e) { alert(e.message); }
   return false;
 }
