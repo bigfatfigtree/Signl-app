@@ -35,7 +35,7 @@
 // stored on the user record (router side); tokens from the
 // exchange are used once and discarded.
 //
-// APPLY PREFILL: a Google identity with no SIGNL account does not
+// APPLY PREFILL: a Google identity with no Magpie account does not
 // get an account created for it by the callback (an application
 // needs a market, a handle, the Terms — the form's job). The
 // callback instead issues a short-lived prefill token (30
@@ -57,7 +57,7 @@ const STATE_TTL_MS = 1000 * 60 * 10;
 const PREFILL_TTL_MS = 1000 * 60 * 30;
 
 function appBaseUrl() {
-  return (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+  return (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
 }
 
 // One Google Cloud project serves sign-in and YouTube connect:

@@ -1,4 +1,4 @@
-// SIGNL API entrypoint (Netlify Function). All logic lives in lib/.
+// Magpie API entrypoint (Netlify Function). All logic lives in lib/.
 const { route } = require("./lib/router");
 const { BUILD_ID } = require("./lib/build");
 
@@ -14,7 +14,7 @@ exports.handler = async (event) => {
     }
     return out;
   } catch (e) {
-    console.error("SIGNL API error:", e);
+    console.error("Magpie API error:", e);
     return {
       statusCode: 500,
       headers: { "Content-Type": "application/json", "x-signl-build": BUILD_ID },

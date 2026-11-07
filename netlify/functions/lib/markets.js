@@ -1,8 +1,8 @@
-// SIGNL markets and their published city lists.
+// Magpie markets and their published city lists.
 // The 11 founding markets (US metros) come from the Service schema
-// (areaServed) published on joinsignl.com/cities.html and
-// joinsignl.com/businesses.html (2026-10-17). On 2026-10-18 Jeff made
-// SIGNL universal: 12 more US cities plus London, Manchester, and
+// (areaServed) published on magpielocal.com/cities.html and
+// magpielocal.com/businesses.html (2026-10-17). On 2026-10-18 Jeff made
+// Magpie universal: 12 more US cities plus London, Manchester, and
 // Dubai (a core market) were added as single-city markets, and later
 // the same day 13 more core markets from Bella Hausen's focus list:
 // Abu Dhabi, Riyadh, Doha, Astana, Bishkek, Sydney, Melbourne, Perth,
@@ -568,11 +568,11 @@ function tierForFollowers(n) {
   return "Neighbors";
 }
 
-// The minimum audience to join SIGNL (Jeff's ruling, 2026-11-01:
+// The minimum audience to join Magpie (Jeff's ruling, 2026-11-01:
 // "500 followers needs to be the minimum everywhere. Everywhere.").
 // TOTAL followers, stacked across every platform the creator posts
 // on (the same total the tiers run on). Plain-words statement used
-// wherever joining requirements are described: "SIGNL starts at
+// wherever joining requirements are described: "Magpie starts at
 // 500 total followers across your platforms."
 const MIN_TOTAL_AUDIENCE = 500;
 
@@ -730,7 +730,7 @@ const PLANS = [
 // £75 founding credit (first months £74/£194/£474), 3-month
 // minimum, founding rate held while the plan stays active,
 // unused visits roll one month. London is sold ONLY through
-// SIGNL's UK launch partner (the partner remits VAT on the
+// Magpie's UK launch partner (the partner remits VAT on the
 // full price; these figures are ex-VAT). PLANS above stay the
 // USD constants the public side reads — this book is ledger
 // and Admin data, reached through planBookFor(currency). Plan
@@ -747,7 +747,7 @@ const GBP_PLANS = [
     firstMonthPriceMonthly: 74,
     minMonths: 3,
     visitsPerMonth: 5,
-    vatNote: "Plus VAT. Sold through SIGNL's UK launch partner.",
+    vatNote: "Plus VAT. Sold through Magpie's UK launch partner.",
     features: [
       "Book from the ranked local roster",
       "5 creator visits a month",
@@ -763,7 +763,7 @@ const GBP_PLANS = [
     firstMonthPriceMonthly: 194,
     minMonths: 3,
     visitsPerMonth: 10,
-    vatNote: "Plus VAT. Sold through SIGNL's UK launch partner.",
+    vatNote: "Plus VAT. Sold through Magpie's UK launch partner.",
     features: [
       "Everything in Self-Service",
       "10 creator visits a month",
@@ -780,7 +780,7 @@ const GBP_PLANS = [
     firstMonthPriceMonthly: 474,
     minMonths: 3,
     visitsPerMonth: 20,
-    vatNote: "Plus VAT. Sold through SIGNL's UK launch partner.",
+    vatNote: "Plus VAT. Sold through Magpie's UK launch partner.",
     features: [
       "Everything in Growth",
       "20 creator visits a month",
@@ -1181,7 +1181,7 @@ const US_STATE_BY_CODE = {};
 for (const [name, code] of Object.entries(US_STATE_CODES)) US_STATE_BY_CODE[code] = name;
 
 // The state(s) each market sits in, for tie-breaking only. Most
-// SIGNL markets are single-state; Washington DC spans DC/MD/VA and
+// Magpie markets are single-state; Washington DC spans DC/MD/VA and
 // Charlotte reaches into South Carolina (Rock Hill, Fort Mill).
 // The Build -52 footprint lists added three more cross-state
 // metros: Chicago reaches into Indiana (Gary, Hammond),
@@ -1293,7 +1293,7 @@ function parseTypedCity(raw, hints) {
       if (s === "PR") country = country || "Puerto Rico";
     }
     // Anything else (a province, a county) is ignored: it cannot
-    // disambiguate between SIGNL markets today.
+    // disambiguate between Magpie markets today.
   }
   if (!state) state = stateCodeOf(h.state);
   if (!country) country = countryNameOf(h.country);

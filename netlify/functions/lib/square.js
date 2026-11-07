@@ -1,7 +1,7 @@
 // Square Connect (Build -44): the register plug-in from the POS
 // automation blueprint (goal files, 2026-10-30). A business
 // connects its Square register once, from Proof Controls, through
-// Square's own OAuth screen. From then on SIGNL reads back the
+// Square's own OAuth screen. From then on Magpie reads back the
 // orders its creators' codes touched and writes the SAME counted
 // register events (redevent: records) the typed tally writes, so
 // Score v2 counts register-fed and till-typed months off one
@@ -11,7 +11,7 @@
 // HONESTY LOCKS (blueprint §2, binding):
 //   - Nothing is backfilled: orders from before the connect are
 //     never read into the count.
-//   - Only orders carrying a provisioned SIGNL code (creator
+//   - Only orders carrying a provisioned Magpie code (creator
 //     code, audience code, or a Came-Back Pass code) ever become
 //     events. Non-code orders are never read into any number;
 //     the business's total Square sales are never stored, shown,
@@ -63,7 +63,7 @@ const SYNC_OVERLAP_MS = 48 * 60 * 60 * 1000;
 // The minimum the counting runs on, each with its plain-words
 // reason for the connect screen (blueprint §2.2). ITEMS_READ /
 // ITEMS_WRITE are what §2.3's provisioning runs on: a creator
-// code can only become a discount on the register if SIGNL may
+// code can only become a discount on the register if Magpie may
 // put it there. Nothing else is requested: no catalog edits
 // beyond the code discounts, no customer list, no write access
 // to orders or payments.
@@ -327,7 +327,7 @@ async function connectSquare(businessId, code) {
     lastSyncSummary: (existing && existing.lastSyncSummary) || null,
     catalog: (existing && existing.catalog) || {},
   };
-  if (!conn.accessTokenEnc) throw new Error("Square connected, but SIGNL could not store the token safely, so nothing was saved.");
+  if (!conn.accessTokenEnc) throw new Error("Square connected, but Magpie could not store the token safely, so nothing was saved.");
   await saveSquareConnection(conn);
   const merchant = await fetchMerchant(conn).catch(() => null);
   if (merchant && merchant.business_name) conn.businessName = merchant.business_name;
@@ -339,7 +339,7 @@ async function connectSquare(businessId, code) {
     if (!conn.selectedLocationIds.length) conn.selectedLocationIds = locations.map((l) => l.id);
   }
   await saveSquareConnection(conn);
-  await provisionCatalog(conn).catch((e) => console.error("SIGNL Square provisioning after connect failed:", e));
+  await provisionCatalog(conn).catch((e) => console.error("Magpie Square provisioning after connect failed:", e));
   const sync = await syncSquareBusiness(businessId).catch((e) => ({ state: "error", error: String((e && e.message) || e) }));
   return { conn: await getSquareConnection(businessId), sync };
 }
@@ -365,7 +365,7 @@ async function disconnectSquare(businessId) {
 }
 
 // ---------- catalog provisioning ----------
-// Each active SIGNL code becomes one discount on the business's
+// Each active Magpie code becomes one discount on the business's
 // own Square catalog, named exactly the code (that is the word
 // the customer says at the till). A code whose booking carries
 // a real percentage becomes that percentage discount; a code
@@ -804,7 +804,7 @@ async function syncSquareBusiness(businessId, opts = {}) {
       await markPaused(conn, (e && e.message) || undefined);
       return { state: "paused", pausedAt: conn.pausedAt };
     }
-    console.error(`SIGNL Square sync failed for ${businessId}:`, e);
+    console.error(`Magpie Square sync failed for ${businessId}:`, e);
     return { state: "error", error: String((e && e.message) || e) };
   }
 }

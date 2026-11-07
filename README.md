@@ -1,9 +1,9 @@
-# SIGNL App (app.joinsignl.com)
+# Magpie App (app.magpielocal.com)
 
-The public, production SIGNL platform. Local businesses comp local
+The public, production Magpie platform. Local businesses comp local
 creators a meal or service; creators post honestly within 48 hours;
 every visit and post is tracked. This is the deployable successor to
-the private "SIGNL Platform Core" staging artifact: same flows, same
+the private "Magpie Platform Core" staging artifact: same flows, same
 data model, real self-serve accounts.
 
 Stack: static SPA (public/) + one Netlify Function (netlify/functions/)
@@ -17,12 +17,12 @@ The public launch is **creator founding sign-up only**:
   approved, land on a **Founding Creator status page** for their
   market: their profile, their founding priority position, and the
   launch message. Markets open to businesses in the next **60 to 90
-  days**; SIGNL emails creators at the address they registered with
+  days**; Magpie emails creators at the address they registered with
   when their market opens; early sign-ups get priority when businesses
   search (discovery's default sort is sign-up order).
 - **Businesses join a founding list; they get no product access
   yet.** Business registration (in the app, and via the founding
-  business form on joinsignl.com, which stays the top of funnel)
+  business form on magpielocal.com, which stays the top of funnel)
   is founding-list intake: the full form, plan interest recorded
   honestly (founding rates: $199/mo Self-Service, $349/mo Growth,
   $699/mo Managed, $100 off the first month on any plan, 3-month
@@ -73,7 +73,7 @@ The public launch is **creator founding sign-up only**:
   account that an admin has ACTIVATED (founding-list businesses
   cannot browse at all, in any market, live or not). The one exception, added 2026-10-19: each
   **approved** creator has a single shareable public profile page at
-  `app.joinsignl.com/c/<handle>` (their own link to advertise, never
+  `app.magpielocal.com/c/<handle>` (their own link to advertise, never
   a listing or an index). It serves a strict whitelist of public-safe
   fields (see below); pending and rejected creators answer 404 there,
   exactly like unknown handles. Photo rule (changed 2026-10-19 with
@@ -87,7 +87,7 @@ The public launch is **creator founding sign-up only**:
 - Real registration (email + password, scrypt-hashed). Accounts start
   as **pending**; the admin approves or rejects before an account can
   use the app.
-- Admin account (jeff@joinsignl.com) with an applications queue
+- Admin account (jeff@magpielocal.com) with an applications queue
   (founding priority and queue positions shown per creator), a Markets
   tab for activation, an event log viewer, and per-market stats.
 - **Creator registration is the full founding profile builder.**
@@ -134,14 +134,14 @@ The public launch is **creator founding sign-up only**:
   Impact Score when computable, Momentum points, and the banded
   founding standing ("in the first 100 in <market>"). Since the
   richer-profiles build (below) it also carries the creator's best
-  work links, their SIGNL track record, and any business reviews.
+  work links, their Magpie track record, and any business reviews.
   Never the email, never internal or admin fields. The SPA renders it
   at `/c/<handle>` for logged-out and signed-in visitors alike, and
   approved creators get a "Your public profile" link + copy button in
   their profile.
 - Business discovery: browse approved creators in a market and search
   them the way businesses actually shop (spec:
-  `signl-business-search-spec.md` in the SIGNL goal workspace). Filters,
+  `signl-business-search-spec.md` in the Magpie goal workspace). Filters,
   all server-side over stored fields: market, neighborhood/area text
   match, tier band, content category, comp category fit, follower
   range, minimum local audience %, open-to-paid-campaigns, name/handle
@@ -178,7 +178,7 @@ The public launch is **creator founding sign-up only**:
   honest billing status are stored on the account. Stripe checkout is
   the later wiring step. (At launch this whole path is gated off with
   the rest of the business side; founding businesses lock the same
-  prices via the list on joinsignl.com.)
+  prices via the list on magpielocal.com.)
 - Event-level data capture on every state change (full list below).
   This dataset is the asset: keep it that way.
 
@@ -187,7 +187,7 @@ The public launch is **creator founding sign-up only**:
 ```
 npm install
 SIGNL_LOCAL=1 ADMIN_PASSWORD='choose-a-password' npm run dev
-# http://localhost:8899  (admin: jeff@joinsignl.com / the password above)
+# http://localhost:8899  (admin: jeff@magpielocal.com / the password above)
 ```
 
 Verification (each suite spins up its own throwaway server and
@@ -200,7 +200,7 @@ node scripts/verify-launch.mjs      # 233 checks: the launch shape itself
 node scripts/verify-compliance.mjs  # 112 checks: stacking, compliance, Momentum v2, round-2 ops
 node scripts/verify-campaign.mjs    # 121 checks: creator outreach campaigns (stub mailer only)
 node scripts/verify-paidlane.mjs    # 60 checks: paid lane, creator reviews, review links, Managed budget
-node scripts/verify-roas.mjs        # 70 checks: SIGNL ROAS Score, creator codes, register tallies
+node scripts/verify-roas.mjs        # 70 checks: Magpie ROAS Score, creator codes, register tallies
 node scripts/verify-business.mjs    # 92 checks: founding gate, admin activation, offer lifecycle v2
 npm run verify                      # all eight, in order (804 total)
 ```
@@ -303,7 +303,7 @@ approved.** Nothing is estimated or self-reported.
   the deploy that shipped it, the handler claims the blob flag
   `config:recruiterKitEmailV1Sent` and emails every currently
   approved creator exactly once (subject "Your Founding Creator
-  badge is ready": badge links hosted on joinsignl.com under
+  badge is ready": badge links hosted on magpielocal.com under
   `/assets/badges/`, invite link, benefits block, optional story
   ask, no-pressure close, signed by Jeff). Each send is logged as
   `recruiter_kit_email_queued` / `_sent` / `_not_sent` events, plus
@@ -389,11 +389,11 @@ the preview profile:
   Instagram, TikTok, or YouTube including the vm./vt. short domains).
   They render as labeled outbound link cards ("Watch: Instagram
   reel", platform from the host). No third-party embeds.
-- **SIGNL track record.** Computed only from stored bookings and
+- **Magpie track record.** Computed only from stored bookings and
   posts (`summarizeTrackRecord`): visits completed (bookings with a
   redemption), posts delivered, on-time %, and the distinct business
   names from redeemed bookings. Before any activity the honest zero
-  state renders: "New to SIGNL: no visits yet. Founding creator,
+  state renders: "New to Magpie: no visits yet. Founding creator,
   first 100 in <market>." Never invented numbers.
 - **Business reviews (plumbing).** `POST /api/bookings/:id/review`:
   a business can leave ONE review per booking it owns once the
@@ -432,7 +432,7 @@ Impact Score are unchanged (the % stays Instagram-based).
 **The Standard Visit and the rights ladder.** One package for every
 comped visit, defined once server-side (`STANDARD_VISIT` in lib/router.js)
 and shipped in bootstrap, on public profiles, and on discovery cards
-as "Every SIGNL comped visit includes": 1 post or reel + 1 story that
+as "Every Magpie comped visit includes": 1 post or reel + 1 story that
 shares the post within 48 hours of the visit, honest and disclosed,
 live at least 30 days, tracked delivery proof. Paid bookings set
 their deliverables in the booking's own terms instead. What the business may do with the post
@@ -487,7 +487,7 @@ stamped on the booking before the action fires. Admins watch it all
 in the Compliance tab (`GET /api/admin/compliance`: visits by status
 with creator, business, redeemed-at, deadline, hard stop, ban date,
 proof link, standing, and reinstate buttons). Reminder emails send
-from hello@ via the existing SMTP transport with the "The SIGNL
+from hello@ via the existing SMTP transport with the "The Magpie
 team" sign-off; when email is not configured they are logged as
 `*_email_not_sent` events, never faked as sent. Sign-up now requires
 the plain-language post-rule agreement (`agreedPostCompliance`,
@@ -598,15 +598,15 @@ mail already does.
   platforms, and its template (`crossoverEmail()` in lib/router.js,
   dispatched per campaign by `campaignEmailFor()`) carries a
   different, additive pitch. Subject: "Your national platforms,
-  plus a local layer in {Market}". The copy is explicit that SIGNL
+  plus a local layer in {Market}". The copy is explicit that Magpie
   is non-exclusive and asks nobody to leave platforms like Grin,
   Cohley, or Momfluence; it sells the local layer on top: comps
   from businesses in their own city, honest posts within 48
   hours, a tracked public track record, and two local money
   routes (their own paid rate on their profile, of which they
   keep 97 percent while the business covers another 3 percent and
-  SIGNL escrows the payment until the post is live; and 15k+
-  creators first in line for paid cash campaigns), because SIGNL
+  Magpie escrows the payment until the post is live; and 15k+
+  creators first in line for paid cash campaigns), because Magpie
   leads with the share of a creator's audience that lives in the
   business's market. Founding mechanics match the founding
   template (free profile, spot in sign-up order, same market
@@ -716,7 +716,7 @@ package. Verified in `scripts/verify-paidlane.mjs` (58 checks).
   creator is banned under the compliance ladder, or when an honor
   report voids the visit (`business_did_not_honor`). **Pre-Stripe
   honesty:** `paymentNote` reads "Paid visit recorded, no card
-  charged. SIGNL holds the payment until the post is live." No
+  charged. Magpie holds the payment until the post is live." No
   charge is ever simulated anywhere.
 - **Creator reviews of businesses (Momentum correction).**
   `POST /api/bookings/:id/review-business` (creator, own booking,
@@ -755,7 +755,7 @@ package. Verified in `scripts/verify-paidlane.mjs` (58 checks).
 - **Managed talent budget.** `business.monthlyTalentBudget`
   (default 500 at registration and normalized onto legacy records
   at plan selection; editable via `PATCH /api/me/profile`, Plan
-  tab). It is a spending cap + authorization the SIGNL coordinator
+  tab). It is a spending cap + authorization the Magpie coordinator
   spends on paid creator bookings, NOT a held deposit; each
   booking escrows individually. The Managed plan's feature list
   says so. In the Business Preview dashboard, the budget displays
@@ -779,17 +779,17 @@ package. Verified in `scripts/verify-paidlane.mjs` (58 checks).
   of: "Comp-only is always fine. Pay only when you want a specific
   creator who charges." No em dashes in any of the new UI copy.
 
-## The SIGNL ROAS Score: creator codes and register attribution (2026-10-19)
+## The Magpie ROAS Score: creator codes and register attribution (2026-10-19)
 
-Jeff's model, built the same day. SIGNL's own return-on-spend
-system, labeled everywhere it renders **"SIGNL ROAS Score, our
+Jeff's model, built the same day. Magpie's own return-on-spend
+system, labeled everywhere it renders **"Magpie ROAS Score, our
 own model"**. Design rationale and the sales framing live in the
-spec (`signl-standard-visit-and-compliance.md`, "The SIGNL ROAS
+spec (`signl-standard-visit-and-compliance.md`, "The Magpie ROAS
 Score"); this section is the runbook.
 
 - **Constants.** One object in `netlify/functions/lib/router.js`:
   `ROAS_MODEL = { cpm: 22, like: 0.10, comment: 0.50, share: 1.00, suggestedDiscountPct: 20 }`
-  (SIGNL's published model rates). `GET /api/bootstrap` ships it
+  (Magpie's published model rates). `GET /api/bootstrap` ships it
   as `roasModel` with the label. Change rates there and only
   there. `suggestedDiscountPct` is a suggestion shown to a
   business when it enables code discounts; it is never stamped
@@ -942,7 +942,7 @@ I doing".
   a Business Home section rendered from a `home` object that
   previewDashboard() computes over the same simulated bookings:
   visits used/remaining against the plan cap, posts live, the
-  SIGNL ROAS headline; the attention list (overdue post, running
+  Magpie ROAS headline; the attention list (overdue post, running
   clock, unreported tally, closing window); the visit pipeline
   as cumulative stage reach (invited, claimed, visit set, 48h
   clock, live); plan pace; content that is working ranked by
@@ -1035,18 +1035,18 @@ production. Locally they go in the shell.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| ADMIN_PASSWORD | Yes | Password for the admin account (jeff@joinsignl.com, or ADMIN_EMAIL if set). The admin account is created automatically on first request if it does not exist. Pick a strong one; it is never stored in code. |
-| ADMIN_EMAIL | No | Defaults to jeff@joinsignl.com. |
-| APP_URL | No | Defaults to https://app.joinsignl.com. Used inside QR codes. |
+| ADMIN_PASSWORD | Yes | Password for the admin account (jeff@magpielocal.com, or ADMIN_EMAIL if set). The admin account is created automatically on first request if it does not exist. Pick a strong one; it is never stored in code. |
+| ADMIN_EMAIL | No | Defaults to jeff@magpielocal.com. |
+| APP_URL | No | Defaults to https://app.magpielocal.com. Used inside QR codes. |
 | SIGNL_LOCAL | Local only | Set to 1 for the file-backed local store. Never set in Netlify. |
 | SIGNL_LOCAL_DB | Local only | Path of the local JSON database file. |
 | SIGNL_TEST_ALLOW_BUSINESS | Tests only | Set to 1 ONLY by the verify suites: re-opens business registration and treats all markets as live so gated flows can be tested. **Never set in Netlify.** Production behavior with it unset: business sign-up closed, markets founding-only until activated. |
 | NETLIFY_BLOBS_SITE_ID | Yes (this site) | Netlify site API ID. This site's function runtime does not receive the automatic Blobs context, so the store uses explicit config (added 2026-10-18 after a MissingBlobsEnvironmentError). |
 | NETLIFY_BLOBS_TOKEN | Yes (this site) | Netlify personal access token used with the site ID above for Blobs access. |
-| SIGNL_SMTP_USER | For email | Mailbox that sends transactional email, hello@joinsignl.com. Without SIGNL_SMTP_USER/PASS, sign-up confirmation and approval emails are queued as events and never sent. |
+| SIGNL_SMTP_USER | For email | Mailbox that sends transactional email, hello@magpielocal.com. Without SIGNL_SMTP_USER/PASS, sign-up confirmation and approval emails are queued as events and never sent. |
 | SIGNL_SMTP_PASS | For email | A Gmail App Password for that mailbox (requires 2-Step Verification on the account). Never the account's real password. |
 | SIGNL_SMTP_HOST / SIGNL_SMTP_PORT | No | Default smtp.gmail.com / 465 (implicit TLS). |
-| SIGNL_MAIL_FROM | No | Default "SIGNL <hello@joinsignl.com>". |
+| SIGNL_MAIL_FROM | No | Default "Magpie <hello@magpielocal.com>". |
 | SIGNL_SWEEP_TOKEN | For the scheduled sweeps | Shared secret the Netlify scheduled functions (compliance-sweep.mjs, campaign-sweep.mjs) send as the `x-signl-sweep-token` header to POST /api/admin/compliance/sweep and /api/admin/campaign/sweep. Without it, the compliance sweep still runs via the admin endpoint and the opportunistic in-request trigger; the campaign sweep runs via the admin endpoint only. |
 | SIGNL_CAMPAIGN_PACE_MS | No | Delay in milliseconds between sends inside one campaign sweep run (batch pacing). Default 400. |
 | SIGNL_MAIL_STUB | Tests only | Set to 1 ONLY by verify-campaign.mjs: sendEmail never touches the network; addresses containing "stubfail" report failure, everything else reports sent. **Never set in Netlify.** |
@@ -1200,7 +1200,7 @@ from these records plus the booking/post tables.
   Components are exposed on the profile so the number is never a black
   box.
 
-## Deploy runbook: app.joinsignl.com
+## Deploy runbook: app.magpielocal.com
 
 Everything below assumes this directory is the repo root.
 
@@ -1218,22 +1218,22 @@ Everything below assumes this directory is the repo root.
 3. **Set the environment variables** from the table above
    (ADMIN_PASSWORD at minimum) on the new site.
 4. **Attach the domain.** In the new site: Domain management, add
-   app.joinsignl.com. Then add DNS where joinsignl.com's DNS is
+   app.magpielocal.com. Then add DNS where magpielocal.com's DNS is
    managed: a CNAME record `app` pointing at the new site's
    `<site-name>.netlify.app` hostname. Netlify provisions the TLS
    certificate automatically once DNS resolves.
 5. **Netlify Blobs** needs no setup; the "signl-data" store is created
    on first write. Production starts empty on purpose: the staging
    artifact's test accounts (Maya Ellis, Harbor Table) do not migrate.
-6. **First sign-in:** visit https://app.joinsignl.com, sign in as
-   jeff@joinsignl.com with the ADMIN_PASSWORD from step 3. The admin
+6. **First sign-in:** visit https://app.magpielocal.com, sign in as
+   jeff@magpielocal.com with the ADMIN_PASSWORD from step 3. The admin
    account is created on that first request. Change nothing else; the
    Applications tab is where real sign-ups will land.
 7. **Point the marketing site at the app** (separate small change in
    the signl-site repo, not this one): once the domain in step 4 is
-   live, the **creator** CTAs on joinsignl.com should link to
-   https://app.joinsignl.com (that is where founding profiles are
-   built). The **business** CTAs stay on joinsignl.com/businesses.html:
+   live, the **creator** CTAs on magpielocal.com should link to
+   https://app.magpielocal.com (that is where founding profiles are
+   built). The **business** CTAs stay on magpielocal.com/businesses.html:
    that page's founding business form is list-mode and stays the
    top of funnel. The app's own For Businesses page is the same
    founding-list intake, never product access. Decide whether the

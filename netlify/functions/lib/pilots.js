@@ -2,7 +2,7 @@
 // 2026-11-02). A pilot partner is NOT a media partner and NOT a
 // recruiter: a local funder (a credit union, a Main Street group)
 // puts up a fund that pays for FIRST creator visits at businesses
-// it chooses in one city, ahead of SIGNL's launch there. The
+// it chooses in one city, ahead of Magpie's launch there. The
 // partner gets its own login, the Impact Portal, and sees exactly
 // where its money went and what came back: which businesses were
 // chosen, what each first visit cost, which posts went live, and
@@ -58,7 +58,7 @@
 // business's real records advance the step on read: a booking
 // exists -> visit_booked; a visit finished -> visited; a post is
 // live for it -> posted. Declined and completed are final and
-// never derived over. "Continued" (the business joined SIGNL on a
+// never derived over. "Continued" (the business joined Magpie on a
 // plan of its own) is derived only from a live plan state (an
 // active business, or a subscription in an active state): a
 // founding plan picked at sign-up but not yet active does not
@@ -103,7 +103,7 @@ const STEP_LABELS = {
   visit_booked: "Visit booked",
   visited: "Visit done",
   posted: "Post live",
-  continued: "Joined SIGNL",
+  continued: "Joined Magpie",
   declined: "Said no",
   completed: "Finished",
 };
@@ -206,7 +206,7 @@ function linkedBookings(pb, bookings) {
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
 
-// Per-booking customer counts, split the way every SIGNL results
+// Per-booking customer counts, split the way every Magpie results
 // surface splits them (the same rule as the router's
 // bookingMoneyFrom): register events win when they exist (those
 // customers are COUNTED), the business's own reported tally is
@@ -391,7 +391,7 @@ async function syncAutoSpend(pilot, actorId) {
       amountCents: Math.round(Number(firstPaid.paidLane.rate) * 100),
       bookingId: firstPaid.id,
       kind: "booking",
-      note: "First visit, booked through SIGNL",
+      note: "First visit, booked through Magpie",
       date: firstPaid.createdAt || nowIso(),
       createdBy: actorId || null,
       createdAt: nowIso(),
@@ -443,7 +443,7 @@ async function invitePilotPartner({ pilot, contactName, email, actorId }) {
   // never wired the welcome builder.
   if (deps.issuePasswordResetToken && deps.deliverEmail && (deps.partnerWelcomeEmail || deps.passwordResetEmail)) {
     token = await deps.issuePasswordResetToken(user);
-    const base = process.env.APP_URL || "https://app.joinsignl.com";
+    const base = process.env.APP_URL || "https://app.magpielocal.com";
     const link = `${base}/?reset=${token}`;
     const rawMail = deps.partnerWelcomeEmail ? deps.partnerWelcomeEmail(user, link) : deps.passwordResetEmail(user, link);
     // Co-brand (Build -105): the funder's invite carries
@@ -461,7 +461,7 @@ async function sendPartnerInviteEmail(user, actorId, pilot) {
   let token = null;
   if (deps.issuePasswordResetToken && deps.deliverEmail && (deps.partnerWelcomeEmail || deps.passwordResetEmail)) {
     token = await deps.issuePasswordResetToken(user);
-    const base = process.env.APP_URL || "https://app.joinsignl.com";
+    const base = process.env.APP_URL || "https://app.magpielocal.com";
     const link = `${base}/?reset=${token}`;
     const rawMail = deps.partnerWelcomeEmail ? deps.partnerWelcomeEmail(user, link) : deps.passwordResetEmail(user, link);
     const mail = deps.partnerBrandedMail ? deps.partnerBrandedMail(pilot.brand, rawMail) : { ...rawMail, fromName: null };
@@ -489,7 +489,7 @@ async function pilotForSessionUser(user, query) {
   if (!user) return { error: [401, "Sign in first"] };
   if (user.role === "pilot_partner") {
     const pilot = await pilotForUser(user);
-    if (!pilot) return { error: [404, "Your pilot is not set up yet. Email jeff@joinsignl.com and we will sort it out."] };
+    if (!pilot) return { error: [404, "Your pilot is not set up yet. Email jeff@magpielocal.com and we will sort it out."] };
     return { pilot };
   }
   if (user.role === "partner") {
@@ -501,7 +501,7 @@ async function pilotForSessionUser(user, query) {
       if (org && org.role === "partner") scopeSource = org;
     }
     const scopes = (scopeSource.partner && Array.isArray(scopeSource.partner.scopes) ? scopeSource.partner.scopes : []).filter((s) => s && s.kind === "pilot" && s.pilotId);
-    if (!scopes.length) return { error: [403, "The Impact Portal is for SIGNL pilot partners."] };
+    if (!scopes.length) return { error: [403, "The Impact Portal is for Magpie pilot partners."] };
     const wanted = query && typeof query.pilot === "string" && query.pilot ? query.pilot : null;
     const scope = wanted ? scopes.find((s) => s.pilotId === wanted) : (scopes.length === 1 ? scopes[0] : null);
     if (!scope) return { error: wanted ? [403, "That pilot is not one of your scopes."] : [400, "Name the pilot to open: your login carries more than one."] };
@@ -509,14 +509,14 @@ async function pilotForSessionUser(user, query) {
     if (!pilot) return { error: [404, "That pilot is not set up yet."] };
     return { pilot };
   }
-  return { error: [403, "The Impact Portal is for SIGNL pilot partners."] };
+  return { error: [403, "The Impact Portal is for Magpie pilot partners."] };
 }
 
 async function handlePilotApi({ method, seg, user, query }) {
   const resolved = await pilotForSessionUser(user, query);
   if (resolved.error) return err(resolved.error[0], resolved.error[1]);
   const pilot = resolved.pilot;
-  if (method !== "GET") return err(405, "The Impact Portal is read-only: it shows where the fund went. Email jeff@joinsignl.com if something looks wrong.");
+  if (method !== "GET") return err(405, "The Impact Portal is read-only: it shows where the fund went. Email jeff@magpielocal.com if something looks wrong.");
   const sub = seg[1] || "me";
   await syncAutoSpend(pilot, user.id);
   const ctx = await pilotContext(pilot);
@@ -606,7 +606,7 @@ async function handlePilotApi({ method, seg, user, query }) {
     const slug = String(pilot.partnerName || "pilot").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "pilot";
     return {
       statusCode: 200,
-      headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="signl-pilot-pack-${slug}.csv"` },
+      headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="magpie-pilot-pack-${slug}.csv"` },
       body: csv,
     };
   }
@@ -783,7 +783,7 @@ async function handleAdminPilots({ method, seg, event, user }) {
       };
     } else {
       const name = String(b.name || "").trim().slice(0, 100);
-      if (!name) return err(400, "Pick a business on SIGNL, or type the business's name.");
+      if (!name) return err(400, "Pick a business on Magpie, or type the business's name.");
       if (existing.some((x) => !x.businessId && x.name.toLowerCase() === name.toLowerCase())) return err(409, "That business is already in this pilot.");
       pb = {
         id: crypto.randomUUID(),

@@ -1,4 +1,4 @@
-// Storage layer for SIGNL.
+// Storage layer for Magpie.
 // Production: Netlify Blobs (store name "signl-data"), key-per-record.
 // Local dev / verification: a single JSON file on disk, selected when
 // SIGNL_LOCAL=1. The rest of the app only sees this interface:

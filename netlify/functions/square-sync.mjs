@@ -1,7 +1,7 @@
-// SIGNL Square read-back trigger (Build -44).
+// Magpie Square read-back trigger (Build -44).
 //
 // The Square Connect read-back (lib/square.js) turns register
-// orders carrying SIGNL codes into counted events. This
+// orders carrying Magpie codes into counted events. This
 // scheduled function is its clock: it POSTs to the app's own
 // sweep endpoint every two hours, which runs syncAllSquare()
 // and answers with the per-business summary. Modeled exactly on
@@ -15,16 +15,16 @@
 export const config = { schedule: "13 */2 * * *" };
 
 export default async () => {
-  const base = process.env.APP_URL || "https://app.joinsignl.com";
+  const base = process.env.APP_URL || "https://app.magpielocal.com";
   const headers = { "Content-Type": "application/json" };
   if (process.env.SIGNL_SWEEP_TOKEN) headers["x-signl-sweep-token"] = process.env.SIGNL_SWEEP_TOKEN;
   try {
     const res = await fetch(`${base}/api/admin/square/sync`, { method: "POST", headers, body: "{}" });
     const text = await res.text();
-    console.log(`SIGNL square sync: HTTP ${res.status} ${text.slice(0, 300)}`);
+    console.log(`Magpie square sync: HTTP ${res.status} ${text.slice(0, 300)}`);
     return new Response(JSON.stringify({ ok: res.ok, status: res.status }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
-    console.error("SIGNL square sync call failed:", e);
+    console.error("Magpie square sync call failed:", e);
     return new Response(JSON.stringify({ ok: false, error: String(e && e.message || e) }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 };

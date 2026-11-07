@@ -1,4 +1,4 @@
-// SIGNL minimal service worker (Build -87, audit Finding 11).
+// Magpie minimal service worker (Build -87, audit Finding 11).
 // Its job is installability + a network-first shell: it never
 // caches API responses and never serves stale app data.
 const CACHE = "signl-shell-v1";

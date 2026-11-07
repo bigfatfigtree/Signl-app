@@ -53,7 +53,7 @@ const YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly";
 const OAUTH_STATE_TTL_MS = 1000 * 60 * 10;
 
 function appBaseUrl() {
-  return (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+  return (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
 }
 
 // Build -123: one Google Cloud project serves both YouTube
@@ -281,7 +281,7 @@ async function saveYouTubeConnection(userId, tokens, channel) {
 // Login), long-lived tokens stored server-side only, refresh,
 // profile + audience-city fetches. It ships DARK: until Meta's
 // App Review approves instagram_business_manage_insights on the
-// SIGNL app (gate G4, Access Verification in review since
+// Magpie app (gate G4, Access Verification in review since
 // 2026-10-18) no real creator can grant the insights scope, and
 // with the Meta app credentials absent from the environment the
 // row renders "in_review" and the start route bounces back

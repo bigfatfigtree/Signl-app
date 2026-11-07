@@ -1,5 +1,5 @@
-/* SIGNL app theme: SLOTTED DESIGN SYSTEM (2026-10-25).
-   Jeff approved Slotted's final design and ordered the SIGNL app
+/* Magpie app theme: SLOTTED DESIGN SYSTEM (2026-10-25).
+   Jeff approved Slotted's final design and ordered the Magpie app
    restyled to match it: mint + black ONLY as the accent system
    (mint #A9E8C9, deep mint #8FD3AC, accent blue #006AFC —
    the deep-green accent was retired 2026-10-26 — pale mint #B9F1D6 /
@@ -294,7 +294,7 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
 .msg.mine { background: var(--grad-soft); border-color: var(--line); }
 .msg .meta { color: var(--ink3); }
 
-/* Platform thread (Build -40): the SIGNL team conversation is
+/* Platform thread (Build -40): the Magpie team conversation is
    visually distinct from offer/visit threads on both sides. */
 .thread-platform { border-left: 4px solid var(--mint-dot); }
 .msg.platform-msg { background: var(--mint-pale); border-color: var(--mint-soft); }
@@ -2391,7 +2391,7 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; top: 0; right: au
    it (a "Language" eyebrow over a bare "Español" chip) read as a
    language switcher and confused exactly the person it was built
    for. The toggle now spells out what it filters and wears the
-   deep SIGNL green (#0C7A43, the --blue/--mint-deep accent in V4)
+   deep Magpie green (#0C7A43, the --blue/--mint-deep accent in V4)
    filled at rest, so it stands apart from the white category
    chips below it. ON goes a shade darker with an inset ring and
    the check, so the state is unmistakable without borrowing the
@@ -2432,7 +2432,7 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; top: 0; right: au
 
 
 /* ============================================================
-   OVERHAUL V4 — SIGNL-native fields (Jeff, 2026-10-27)
+   OVERHAUL V4 — Magpie-native fields (Jeff, 2026-10-27)
    Design: files/signl-overhaul-v4/DESIGN.md
    Composition is full-bleed COLOR FIELDS (ink → mint → white →
    photo), not cards on gray. Chrome is ink; the active
@@ -2611,7 +2611,7 @@ body.v3-on .counter-cta svg { color: var(--mint); }
 
 /* ---------- V4 refinements (from the first screenshot pass) ---------- */
 /* The azure accent is retired: --mint-deep (repurposed to #006AFC by an
-   earlier theme) resolves to a deep SIGNL green everywhere in V4, so
+   earlier theme) resolves to a deep Magpie green everywhere in V4, so
    icons, links and fit labels stay in the mint family. */
 body.v3-on { --mint-deep: #006AFC; }
 
@@ -2643,12 +2643,12 @@ body.v3-on .kpi-card .kpi-sub { color: rgba(255,255,255,.66); }
 body.v3-on .counter-cta p, body.v3-on .counter-cta .muted { color: rgba(255,255,255,.72); }
 body.v3-on .counter-cta .btn.ws-primary { background: var(--mint); color: var(--ink); border-color: var(--mint); }
 
-/* Dashboard links speak in the deep SIGNL green, never default blue. */
+/* Dashboard links speak in the deep Magpie green, never default blue. */
 body.v3-on #tab-body a:not(.btn) { color: var(--mint-deep); }
 
 /* Last azure remnants in the signed-in app: the legacy --blue token
    (focus rings, info badges, notice text) and the success ring go
-   deep SIGNL green. Signed-out/public surfaces keep their palette. */
+   deep Magpie green. Signed-out/public surfaces keep their palette. */
 body.v3-on { --blue: #006AFC; }
 body.v3-on .success-check circle { stroke: #006AFC; }
 
@@ -2782,7 +2782,7 @@ body.v3-on .tab-item.on .tab-sig-img { box-shadow: 0 0 0 2px var(--ink); }
    ============================================================ */
 
 /* --- Tokens: azure retires on these surfaces too, exactly
-   the way body.v3-on retires it (deep SIGNL green #0C7A43),
+   the way body.v3-on retires it (deep Magpie green #0C7A43),
    plus the three hardcoded azure spots the V4 layer also
    patches: notice text, Momentum points, lifetime stars. --- */
 body.admin-on, body.preview-on {

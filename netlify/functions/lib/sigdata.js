@@ -200,7 +200,7 @@ function buildAdminFacts(d) {
     brandName: (brandViewOf(u.partner && u.partner.brand) || {}).displayName || "",
     hasLogo: !!(brandViewOf(u.partner && u.partner.brand) || {}).logoUrl,
     // Team seats (Build -107): the org's seat rollup with the
-    // minter split (partner-invited vs SIGNL-invited).
+    // minter split (partner-invited vs Magpie-invited).
     team: (d.teamByPartner || {})[u.id] || null,
   }));
   const flags = d.marketFlags || {};
@@ -632,18 +632,18 @@ function factsLines(role, f) {
       lines.push(`London district race: state ${r.state}${r.startsAt ? `, started ${String(r.startsAt).slice(0, 10)}, backstop ${String(r.endsAt || "").slice(0, 10)}` : ""}. Districts (approved founding creators / founding businesses, targets 40 and 15): ${r.districts.map((x) => `${x.name} ${x.creators}/${x.businesses} (score ${x.score})`).join("; ")}. Outside the race field: ${r.outsideField.creators} creators, ${r.outsideField.businesses} businesses. London totals: ${r.totals.creators} creators, ${r.totals.businesses} businesses.${r.winner ? ` Winner: ${(r.districts.find((x) => x.id === r.winner) || {}).name || r.winner}.` : ""}`);
     }
     const teamOrgs = f.partners.list.filter((p) => p.team && p.team.total > 0);
-    if (teamOrgs.length) lines.push(`Partner team seats: ${teamOrgs.map((p) => `${p.name}: ${p.team.total} seats (${p.team.byPartner} invited by the partner's own team admin, ${p.team.byAdmin} invited by SIGNL): ${p.team.seats.map((s) => `${s.name} (${s.kind}, ${s.scope}, ${s.status})`).join("; ")}`).join(". ")}.`);
+    if (teamOrgs.length) lines.push(`Partner team seats: ${teamOrgs.map((p) => `${p.name}: ${p.team.total} seats (${p.team.byPartner} invited by the partner's own team admin, ${p.team.byAdmin} invited by Magpie): ${p.team.seats.map((s) => `${s.name} (${s.kind}, ${s.scope}, ${s.status})`).join("; ")}`).join(". ")}.`);
     return lines;
   }
   if (role === "partner") {
     const lines = [];
     const sym = f.earnings.currency === "GBP" ? "£" : "$";
     const mny = (n) => sym + (Math.round(n0(n) * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
-    lines.push(`This partner is ${f.name || "a SIGNL partner"}${f.demo ? " (the demo partner; its records are samples)" : ""}. Their markets: ${f.markets.join(", ") || "none yet"}. Everything in this sheet is their own record only.`);
+    lines.push(`This partner is ${f.name || "a Magpie partner"}${f.demo ? " (the demo partner; its records are samples)" : ""}. Their markets: ${f.markets.join(", ") || "none yet"}. Everything in this sheet is their own record only.`);
     lines.push(`Their funnel: ${fmt(f.creatorStages.claimed)} creators claimed (${fmt(f.creatorStages.approved)} approved, ${fmt(f.creatorStages.complete)} complete), ${fmt(f.businessStages.applied)} businesses joined (${fmt(f.businessStages.active)} active), ${fmt(f.totals.offersLive)} offers live, ${fmt(f.totals.visitsCompleted)} visits completed, ${fmt(f.totals.postsLive)} posts live.`);
     lines.push(`Their earnings (${f.earnings.basis === "deal" ? `deal basis${f.earnings.dealLabel ? `, "${f.earnings.dealLabel}"` : ""}` : "share-only basis"}, ${f.earnings.currency}): share ${f.earnings.sharePct === null ? "not set" : f.earnings.sharePct + "%"}, subscription revenue on file ${mny(f.earnings.monthlyRevenue)} a month, accrued ${mny(f.earnings.accruedTotal)} in total (${mny(f.earnings.accruedMonthly)} this month), paid ${mny(f.earnings.paidTotal)}, owed ${mny(f.earnings.owedTotal)}. Accrued means earned on paper; it is paid only when a payment is recorded.${f.earnings.guaranteeState ? ` Guarantee: ${f.earnings.guaranteeState}.` : ""}`);
     if (f.territory.length) lines.push(`Territory they hold: ${f.territory.map((x) => `${x.market} (${x.attributionScope === "sourced_only" ? "only businesses they brought in count" : "the whole market counts"}, exclusivity ${x.exclusivity === "market_conditional" ? "conditional" : "none"})`).join("; ")}.`);
-    lines.push(f.brand ? `Their portal is co-branded as ${f.brand.displayName || "their own name"}${f.brand.logoUrl ? ", with their logo" : ", no logo on file"}, with Powered by SIGNL underneath. Branding is set by the SIGNL team, not by the partner.` : "Their portal carries SIGNL branding only; no co-brand is set. Branding is set by the SIGNL team, not by the partner.");
+    lines.push(f.brand ? `Their portal is co-branded as ${f.brand.displayName || "their own name"}${f.brand.logoUrl ? ", with their logo" : ", no logo on file"}, with Powered by Magpie underneath. Branding is set by the Magpie team, not by the partner.` : "Their portal carries Magpie branding only; no co-brand is set. Branding is set by the Magpie team, not by the partner.");
     lines.push(f.frozenMonths.length ? `Frozen month packs ready to download: ${f.frozenMonths.map((m) => m.label).join(", ")}. The newest is ${f.frozenMonths[0].label}; the pack lives on their Wallet view.` : "No month has been frozen for them yet, so no final pack exists; an open month can still be downloaded as a live snapshot from their Wallet.");
     if (f.scopes.length > 1) lines.push(`Their login carries ${fmt(f.scopes.length)} scopes: the license view plus ${f.scopes.filter((s) => s.kind === "pilot").map((s) => `the ${s.name || "pilot"} Impact Portal`).join(", ")}. Each scope's numbers stay on their own lines and are never added together.`);
     if (f.race) lines.push(`London district race (their market): state ${f.race.state}. Districts (creators / businesses, targets 40 / 15): ${f.race.districts.map((x) => `${x.name} ${x.creators}/${x.businesses}`).join("; ")}.`);
@@ -657,7 +657,7 @@ function factsLines(role, f) {
     lines.push(`This funder is ${f.partnerName || "a pilot funder"}; their pilot is "${f.pilotName}" in ${f.marketName}. The pilot is ${f.closed ? "CLOSED: the numbers are the final record" : "active"}. Everything in this sheet is their own pilot only.`);
     lines.push(`The fund: ${dm(f.fund.committedCents)} put in, ${dm(f.fund.spentCents)} spent, ${dm(f.fund.remainingCents)} left. Results: ${fmt(f.counts.businesses)} businesses chosen, ${fmt(f.counts.visitsDone)} visits done, ${fmt(f.counts.postsLive)} posts live.`);
     lines.push(`Customers: ${fmt(f.counts.countedCustomers)} counted at the register and ${fmt(f.counts.recordedCustomers)} recorded by the businesses. These are two different counts and are never added together.`);
-    lines.push(`${fmt(f.counts.continued)} businesses joined SIGNL afterwards${f.counts.continued ? `, ${fmt(f.continuedOnFounding)} of them on the $199 founding rate (from their own plan records)` : ""}.${f.closed ? " Their end-of-pilot pack is ready on the Report view." : ""}`);
+    lines.push(`${fmt(f.counts.continued)} businesses joined Magpie afterwards${f.counts.continued ? `, ${fmt(f.continuedOnFounding)} of them on the $199 founding rate (from their own plan records)` : ""}.${f.closed ? " Their end-of-pilot pack is ready on the Report view." : ""}`);
     if (f.team && f.team.isAdmin) lines.push(`They are the pilot's team admin. Their pilot team seats: ${f.team.seats.length ? f.team.seats.map((s) => `${s.name} (${s.scope}, ${s.status})`).join("; ") : "none yet"}. They can invite people onto this pilot and revoke those seats, in this chat by a confirm button or on the Team view.`);
     return lines;
   }
@@ -676,9 +676,9 @@ function factsLines(role, f) {
     if (f.receiptReady) lines.push(`${f.receiptReady.monthLabel}'s receipt is ready to forward: that month ended with real activity. The forwardable monthly receipt export lives in Results: counted, recorded, and intent figures in three separate sections, visits used and rolled over, founding credit state, and licence end dates.`);
     if (f.setup) lines.push(f.setup.allDone
       ? `Their setup checklist on Home is fully done, all ${fmt(f.setup.total)} items, so the checklist has retired and Home shows nothing for it.`
-      : `Their setup checklist on Home (titled Get the most from SIGNL) has ${fmt(f.setup.doneCount)} of ${fmt(f.setup.total)} items done. Still to do: ${f.setup.remaining.map((i) => i.label).join("; ")}. The Square register connects from that checklist on Home, not from Results: Results keeps the register status and the counted numbers, and the connect button lives on the checklist.${f.setup.square && f.setup.square.state === "paused" ? " Their register is PAUSED right now: reconnecting also lives with the connection, in Results under Proof controls, and on the checklist." : ""}${f.setup.square && !f.setup.square.configured ? " Square is not switched on for this account yet: connecting happens on the setup call, and the checklist item says so." : ""}`);
+      : `Their setup checklist on Home (titled Get the most from Magpie) has ${fmt(f.setup.doneCount)} of ${fmt(f.setup.total)} items done. Still to do: ${f.setup.remaining.map((i) => i.label).join("; ")}. The Square register connects from that checklist on Home, not from Results: Results keeps the register status and the counted numbers, and the connect button lives on the checklist.${f.setup.square && f.setup.square.state === "paused" ? " Their register is PAUSED right now: reconnecting also lives with the connection, in Results under Proof controls, and on the checklist." : ""}${f.setup.square && !f.setup.square.configured ? " Square is not switched on for this account yet: connecting happens on the setup call, and the checklist item says so." : ""}`);
     if (f.setup) lines.push(f.setup.pos
-      ? `The till they told us they run: ${f.setup.pos.label}${f.setup.pos.other ? ` (${f.setup.pos.other})` : ""}. Visit codes count at any till today. ${f.setup.pos.provider === "square" ? "Square is the register SIGNL can connect directly today." : f.setup.pos.provider === "none" ? "They run no register system; codes are counted by hand at the counter with the staff PIN." : `A direct ${f.setup.pos.label} connection is on the roadmap once enough businesses declare it; no date is promised, and their codes already count at the till in the meantime.`}`
+      ? `The till they told us they run: ${f.setup.pos.label}${f.setup.pos.other ? ` (${f.setup.pos.other})` : ""}. Visit codes count at any till today. ${f.setup.pos.provider === "square" ? "Square is the register Magpie can connect directly today." : f.setup.pos.provider === "none" ? "They run no register system; codes are counted by hand at the counter with the staff PIN." : `A direct ${f.setup.pos.label} connection is on the roadmap once enough businesses declare it; no date is promised, and their codes already count at the till in the meantime.`}`
       : "They have not told us which till (register system) they run yet. It is one tap on the setup checklist on Home or on their business page, and it only changes how visits get counted later; codes count at every till today.");
     if (f.deals && (f.deals.waitingOnMe.length || f.deals.waitingOnThem.length)) {
       const dl = (x) => `${x.withName} — "${x.title}" at $${Math.round(x.amount || 0)}${x.expiresAt ? `, answer by ${String(x.expiresAt).slice(0, 10)}` : ""}`;
@@ -693,7 +693,7 @@ function factsLines(role, f) {
   lines.push(`Their market is ${f.market || "unknown"} and it is ${f.marketLive ? "OPEN (live)" : "NOT open yet (founding)"}. Their application status is ${f.status || "unknown"}. Their profile is ${f.profileComplete ? "finished, so businesses can see them" : "NOT finished yet; still missing: " + (f.missingLabels.join(", ") || "nothing recorded") + ". A finished profile is the gate for being seen by businesses."}`);
   lines.push(f.publicRoster && f.publicRoster.length
     ? `Public roster pages they appear on right now: ${f.publicRoster.map((r) => `${r.market} (${r.url})`).join(", ")}. A market's public roster page opens only when at least 5 finished public profiles are listed there; these are public web pages, separate from the in-app roster businesses browse.`
-    : "They are not on a public roster page yet: a market's public roster opens once at least 5 finished public profiles are listed in it. Businesses inside SIGNL can still find a finished profile in the app; the public page is the web version of the same roster.");
+    : "They are not on a public roster page yet: a market's public roster opens once at least 5 finished public profiles are listed in it. Businesses inside Magpie can still find a finished profile in the app; the public page is the web version of the same roster.");
   lines.push(`Their Momentum is ${fmt(f.momentumPoints)} points, level ${lv ? lv.name : "Starter"}${lv && lv.nextName ? `, with ${fmt(lv.nextAt - f.momentumPoints)} points to ${lv.nextName}` : ", the top level"}. Their tier is ${f.tier || "not set yet"}${f.audienceTotal != null ? ` on ${fmt(f.audienceTotal)} total followers across platforms` : ""}. Local audience in their home market: ${f.localPct != null ? f.localPct + "%" : "not reported"}. Markets they are listed in: ${f.listedMarkets.length ? f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}`).join(", ") : "just their home market"}.`);
   lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${cmoney(f, f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid outside the app). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
   const avLine = f.audienceVerification || {};
@@ -709,7 +709,7 @@ function factsLines(role, f) {
   if (f.paidRate) lines.push(`Their listed paid rate is ${cmoney(f, f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${cmoney(f, f.licenseFee)}` : ""}.`);
   else if (f.rateStarting) lines.push(`They have not set a paid rate yet. The Profile rate boxes pre-fill a starting point for their ${f.rateStarting.tier} tier: paid rate ${cmoney(f, f.rateStarting.paidRate)} and licensing fee ${cmoney(f, f.rateStarting.licensingFee)}. Those are starting points only, filled in because the fields were blank. They are editable, they are not a price the creator has to use, and nothing is stored until the creator saves.`);
   if (!f.payoutsReady && (f.paidBookings > 0 || f.paidRecordedNet > 0)) lines.push(`Their payouts are not set up yet (status: ${f.payoutsStatus || "not_started"}), and they have paid bookings or recorded earnings on file. Payout setup lives on their Profile, in the paid lane. Before the first setup, an explainer on that surface says what Stripe will ask for and why: identity details, address, bank account, and tax information. Paid bookings are recorded in the app and settled with help until the payout rail fully opens; no payout date is promised.`);
-  lines.push("Creator terms in plain words live at https://joinsignl.com/creator-terms.html. When a creator asks about terms, that link goes with the answer.");
+  lines.push("Creator terms in plain words live at https://magpielocal.com/creator-terms.html. When a creator asks about terms, that link goes with the answer.");
   if (f.pendingLicenses && f.pendingLicenses.length) lines.push(`Licence requests waiting on their decision: ${f.pendingLicenses.map((l) => `${l.businessName} at their ${cmoney(f, l.fee)} fee${l.renewal ? " (a renewal of a licence that is ending)" : ""}`).join("; ")}. Each is decided in their Wallet: approve starts a fresh 90 days that day; decline leaves the post native share only.`);
   if (f.paidPostingTerms && f.paidPostingTerms.length) lines.push(`Agreed posting terms on their paid bookings: ${f.paidPostingTerms.map((t) => `${t.businessName} ("${t.title}"): ${t.line}`).join("; ")}. A paid visit's post clock runs off these agreed terms, not the comped 48-hour ladder.`);
   if (f.businessAvailability && f.businessAvailability.length) lines.push(`Standing availability at businesses they can book with: ${f.businessAvailability.map((b) => `${b.businessName}: ${b.summary}`).join("; ")}. A business that is not listed here has not set its hours; the offer's own window and note are what applies.`);
@@ -835,17 +835,17 @@ function answerAdmin(f, q, t) {
       if (!gbpDeals.length) return "No London (GBP) deal is on file yet, so there is no London split to report. A split is set per deal when one is signed; nothing is assumed by default. London founding prices live in the GBP book: £149 / £269 / £549 a month plus VAT, with a £75 founding credit.";
       return gbpDeals.map((x) => `${x.label} (${x.partnerName || "partner"}, ${x.status}): ${x.partnerPct === null ? "no split entered yet — nothing accrues until one is" : `partner split ${x.partnerPct}% as entered`}.`).join(" ") + " Pounds and dollars are always reported on separate lines, never added together.";
     }
-    return "London prices live in the GBP book: Self-Service £149, Growth £269, Managed £549 a month, all plus VAT, with a £75 founding credit (first months £74 / £194 / £474) and a 3-month minimum. London is sold through the UK launch partner, so those amounts are recorded, never charged through SIGNL checkout.";
+    return "London prices live in the GBP book: Self-Service £149, Growth £269, Managed £549 a month, all plus VAT, with a £75 founding credit (first months £74 / £194 / £474) and a 3-month minimum. London is sold through the UK launch partner, so those amounts are recorded, never charged through Magpie checkout.";
   }
 
   // Team seats (Build -107): any org's seats and who minted
   // them — the rollup Admin keeps without being the bottleneck.
   if (hasWord(t, "team", "seat", "seats") && !hasWord(t, "recruiter", "recruiters")) {
     const orgs = (f.partners.list || []).filter((p) => p.team && p.team.total > 0);
-    if (!orgs.length) return "No partner team seats yet. Partners seat their own people once SIGNL names a team admin on the partner record; every seat so far is a login SIGNL created.";
+    if (!orgs.length) return "No partner team seats yet. Partners seat their own people once Magpie names a team admin on the partner record; every seat so far is a login Magpie created.";
     const named = orgs.find((p) => p.name && q.toLowerCase().includes(p.name.toLowerCase()));
     const show = named ? [named] : orgs;
-    return linked(`${show.map((p) => `${p.name}: ${p.team.total} seats (${p.team.byPartner} invited by the partner's team admin, ${p.team.byAdmin} invited by SIGNL): ${p.team.seats.filter((s) => s.status !== "revoked").map((s) => `${s.name} (${s.kind}, ${s.scope}, ${s.status}, ${s.mintedBy === "partner" ? "partner-invited" : "SIGNL-invited"})`).join("; ")}`).join(". ")}. The full rollup sits on each partner's Admin detail.`, "Open Partners", "admin-partners");
+    return linked(`${show.map((p) => `${p.name}: ${p.team.total} seats (${p.team.byPartner} invited by the partner's team admin, ${p.team.byAdmin} invited by Magpie): ${p.team.seats.filter((s) => s.status !== "revoked").map((s) => `${s.name} (${s.kind}, ${s.scope}, ${s.status}, ${s.mintedBy === "partner" ? "partner-invited" : "Magpie-invited"})`).join("; ")}`).join(". ")}. The full rollup sits on each partner's Admin detail.`, "Open Partners", "admin-partners");
   }
 
   // Territory (Build -104): who holds a market, whether it
@@ -897,7 +897,7 @@ function answerAdmin(f, q, t) {
     bits.push(branded.length ? `${fmt(branded.length)} of ${fmt(f.partners.total)} ${plural(f.partners.total, "partner")} ${plural(branded.length, "carries", "carry")} a co-brand: ${branded.map((p) => `${p.name}${p.brandName ? ` (shown as ${p.brandName})` : ""}`).join("; ")}` : `No partner has a co-brand set yet`);
     if (unbranded.length) bits.push(`No brand set: ${unbranded.map((p) => p.name).join("; ")}`);
     if (noLogo.length) bits.push(`Branded but no logo on file: ${noLogo.map((p) => p.name).join("; ")}`);
-    return linked(bits.join(". ") + ". A partner's brand leads their portal and invite emails, with Powered by SIGNL underneath; it never replaces the SIGNL name.", "Set branding on Partners", "admin-partners");
+    return linked(bits.join(". ") + ". A partner's brand leads their portal and invite emails, with Powered by Magpie underneath; it never replaces the Magpie name.", "Set branding on Partners", "admin-partners");
   }
 
   // Partners
@@ -1057,17 +1057,17 @@ function answerBusiness(f, q, t) {
   // Creator terms (Build -98, item 4): when a business asks
   // about creator terms, the plain-words page link rides along.
   if (hasWord(t, "terms") && hasPhrase(t, "creator")) {
-    return linked("Creator terms in plain words are on the creator terms page: https://joinsignl.com/creator-terms.html. The short version for your side: a comped visit is native share only, and a paid booking includes one standard licence for 90 days, never longer.", "Read creator terms in plain words", "cr-terms");
+    return linked("Creator terms in plain words are on the creator terms page: https://magpielocal.com/creator-terms.html. The short version for your side: a comped visit is native share only, and a paid booking includes one standard licence for 90 days, never longer.", "Read creator terms in plain words", "cr-terms");
   }
   // Setup checklist (Build -99): the ONE setup surface on
   // Home. Sig answers what is left from the same records the
   // checklist renders, and walks the business to Home, where
   // every item's own button lands on its real surface.
-  if (hasPhrase(t, "whats left to set up", "what is left to set up", "left to set up", "finish setting up", "setup checklist", "set up checklist", "my checklist", "the checklist", "what do i still need", "still need to set up", "what should i set up", "get the most from signl", "get the most out of signl")) {
-    if (!f.setup) return linked("Your setup checklist lives on Home, under Get the most from SIGNL. Every item there is read from your real records, and the list goes away when all nine are done.", "Open the setup checklist", "biz-home");
+  if (hasPhrase(t, "whats left to set up", "what is left to set up", "left to set up", "finish setting up", "setup checklist", "set up checklist", "my checklist", "the checklist", "what do i still need", "still need to set up", "what should i set up", "get the most from magpie", "get the most out of magpie")) {
+    if (!f.setup) return linked("Your setup checklist lives on Home, under Get the most from Magpie. Every item there is read from your real records, and the list goes away when all nine are done.", "Open the setup checklist", "biz-home");
     if (f.setup.allDone) return linked("Nothing is left to set up: all nine items on your setup checklist are done, so the checklist has retired from Home. Your register, your page, your hours, and your first campaign draft are all in place.", "Open Home", "biz-home");
     const left = f.setup.remaining.map((i) => i.label).join("; ");
-    return linked(`You have ${fmt(f.setup.doneCount)} of ${fmt(f.setup.total)} setup items done. Still to do: ${left}. The whole list is on Home, under Get the most from SIGNL, and each item's button takes you straight to where that step lives.`, "Open the setup checklist", "biz-home");
+    return linked(`You have ${fmt(f.setup.doneCount)} of ${fmt(f.setup.total)} setup items done. Still to do: ${left}. The whole list is on Home, under Get the most from Magpie, and each item's button takes you straight to where that step lives.`, "Open the setup checklist", "biz-home");
   }
   // Square register connect (Build -99): the connect action
   // moved from Proof Controls in Results to the setup
@@ -1077,7 +1077,7 @@ function answerBusiness(f, q, t) {
   if (hasPhrase(t, "which till", "what till", "my till", "till do i", "register system", "pos system", "point of sale", "what pos", "which pos", "which register", "what register", "do i use square", "do i use clover", "do i use toast", "clover", "toast", "lightspeed")) {
     const pos = f.setup && f.setup.pos;
     if (!pos) return linked("You have not told us which till you run yet. It is one tap on the setup checklist on Home (Tell us which till you run) or on your business page, and it only changes how visits get counted later: visit codes count at every till today, whichever system it is.", "Open the setup checklist", "biz-home");
-    if (pos.provider === "square") return linked("You told us Square, and Square is the register SIGNL connects directly today: connect it from the setup checklist on Home and code visits count themselves from the register.", "Open the setup checklist", "biz-home");
+    if (pos.provider === "square") return linked("You told us Square, and Square is the register Magpie connects directly today: connect it from the setup checklist on Home and code visits count themselves from the register.", "Open the setup checklist", "biz-home");
     if (pos.provider === "none") return linked("You told us you run no register system. That is fine: visit codes are redeemed at the counter with your staff PIN, and that tap is what counts the visit.", "Open the setup checklist", "biz-home");
     return linked(`You told us ${pos.label}${pos.other ? ` (${pos.other})` : ""}. Your visit codes count at the till today. A direct ${pos.label} connection is on the roadmap once enough businesses ask for it; no date is promised, and nothing about your counting waits on it. You can change the answer any time on your business page.`, "Open your business page", "biz-profile");
   }
@@ -1087,7 +1087,7 @@ function answerBusiness(f, q, t) {
     if (sq && sq.state === "connected") return linked("Your Square register is connected, and code visits and come-backs count themselves from it. The connection, its locations, and the disconnect live in Results, under your proof controls; Results is also where the counted numbers land.", "Open Results", "biz-results");
     if (sq && sq.state === "paused") return linked("Your register is paused: Square stopped sharing checks, and your codes still count at the till. Reconnect from the setup checklist on Home, or from Results under your proof controls.", "Open the setup checklist", "biz-home");
     if (sq && !sq.configured) return linked("Your register connects on your setup call: we plug into your register with you, one tap on your end. Until then your codes count on the register you already have. The setup checklist on Home holds the item and says the same.", "Open the setup checklist", "biz-home");
-    return linked("Your register is not connected yet. Connect it from the setup checklist on Home, under Get the most from SIGNL: tap Connect Square there and sign in once, and after that code visits and come-backs count themselves from the register. Not on Square? Skip it; the codes count your visits either way.", "Connect Square from the checklist", "biz-home");
+    return linked("Your register is not connected yet. Connect it from the setup checklist on Home, under Get the most from Magpie: tap Connect Square there and sign in once, and after that code visits and come-backs count themselves from the register. Not on Square? Skip it; the codes count your visits either way.", "Connect Square from the checklist", "biz-home");
   }
   // Monthly receipt export (Build -96)
   if (hasPhrase(t, "monthly receipt", "receipt export", "export my receipt", "forward my receipt", "forward the receipt", "receipt for my bookkeeper", "bookkeeper", "download my receipt", "my receipt", "the receipt")) {
@@ -1112,7 +1112,7 @@ function answerBusiness(f, q, t) {
   // Page views (Build -131): not tracked, for anyone; point at
   // what IS tracked instead.
   if (hasPhrase(t, "who viewed", "who saw my", "viewed my", "page views", "profile views", "who looked at my", "who visited my page", "who viewed me")) {
-    return linked("SIGNL does not track page views, so there is no list of who looked at your business page, for anyone. What is tracked: applicants on your offers, visits booked, and the saves and shares your posts draw, all in Results.", "See Results", "biz-results");
+    return linked("Magpie does not track page views, so there is no list of who looked at your business page, for anyone. What is tracked: applicants on your offers, visits booked, and the saves and shares your posts draw, all in Results.", "See Results", "biz-results");
   }
   // Visits left
   if ((hasWord(t, "visit", "visits") && hasPhrase(t, "left", "remaining", "do i have")) || hasPhrase(t, "visits left", "visits remaining")) {
@@ -1237,7 +1237,7 @@ function answerCreator(f, q, t) {
   // Creator terms (Build -98, item 4): a terms question always
   // carries the plain-words terms page link with it.
   if (hasWord(t, "terms") || hasPhrase(t, "creator terms")) {
-    return linked("The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer. The full version is on the creator terms page: https://joinsignl.com/creator-terms.html", "Read creator terms in plain words", "cr-terms");
+    return linked("The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer. The full version is on the creator terms page: https://magpielocal.com/creator-terms.html", "Read creator terms in plain words", "cr-terms");
   }
   // Payout setup paperwork (Build -98, 11h): the explainer's
   // content, from the creator's own payout state, linked to
@@ -1249,9 +1249,9 @@ function answerCreator(f, q, t) {
     // market gets the UK explainer's words and never hears
     // about Form 1099-K; a US creator never hears sort codes.
     if (f.currencyCode === "GBP") {
-      return linked(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and a UK bank account, your sort code and account number, so money can go to your bank by Faster Payments; bank details go to Stripe, never to SIGNL. Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's. You are responsible for your own UK tax position, and SIGNL does not withhold tax from your earnings. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${stateLine}`, "Set up payouts on my Profile", "cr-profile");
+      return linked(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and a UK bank account, your sort code and account number, so money can go to your bank by Faster Payments; bank details go to Stripe, never to Magpie. Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's. You are responsible for your own UK tax position, and Magpie does not withhold tax from your earnings. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${stateLine}`, "Set up payouts on my Profile", "cr-profile");
     }
-    return linked(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to SIGNL. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${stateLine}`, "Set up payouts on my Profile", "cr-profile");
+    return linked(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to Magpie. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${stateLine}`, "Set up payouts on my Profile", "cr-profile");
   }
   // Rate starting points (Build -98, 11g): the tier defaults
   // that pre-fill blank rate boxes, stated as editable
@@ -1311,7 +1311,7 @@ function answerCreator(f, q, t) {
     const av = f.audienceVerification || {};
     if (av.igConnected) return linked("Your Instagram is already connected. Your local shares are checked against it on every sync, and Sync now on your Profile re-checks them today.", "Open my Profile", "cr-profile");
     if (!av.igConfigured) return "Instagram connect is still in review with Meta, so it is not open yet. Your local shares stay self-reported until it clears, and the connect button appears on your Profile the day it does.";
-    return linked("Connecting Instagram lets SIGNL check your local audience shares against Instagram's own city data. Markets that match within 10 points earn the Verified mark. The connect button is in the audience stack on your Profile.", "Connect Instagram on my Profile", "cr-profile");
+    return linked("Connecting Instagram lets Magpie check your local audience shares against Instagram's own city data. Markets that match within 10 points earn the Verified mark. The connect button is in the audience stack on your Profile.", "Connect Instagram on my Profile", "cr-profile");
   }
   // Connected accounts (Build -123): what is connected, what
   // each connection does, and the honest gates on the rest.
@@ -1329,7 +1329,7 @@ function answerCreator(f, q, t) {
       if (hasWord(t, "youtube")) {
         if (cn.youtube && cn.youtube.connected) return linked(`Your YouTube is already connected${cn.youtube.accountLabel ? ` as ${cn.youtube.accountLabel}` : ""}${cn.youtube.lastSyncAt ? `, subscribers last checked ${day(cn.youtube.lastSyncAt)}` : ""}. Sync now on your Profile re-reads it today.`, "Open my Profile", "cr-profile");
         if (!cn.ytConfigured) return "YouTube connect is being switched on. Until it opens, your subscriber count stays typed by you and labeled Self-reported.";
-        return linked("Connecting YouTube lets SIGNL read your real subscriber count from YouTube itself: it verifies itself and stays up to date on its own, and businesses see a Synced mark. The connect button is in the audience stack on your Profile, and in Connected accounts right below it.", "Connect YouTube on my Profile", "cr-profile");
+        return linked("Connecting YouTube lets Magpie read your real subscriber count from YouTube itself: it verifies itself and stays up to date on its own, and businesses see a Synced mark. The connect button is in the audience stack on your Profile, and in Connected accounts right below it.", "Connect YouTube on my Profile", "cr-profile");
       }
       if (hasWord(t, "tiktok")) return "TikTok connect is being prepared, so it is not open yet. For now your TikTok count stays typed by you and labeled Self-reported; the day connect opens, it starts verifying itself like YouTube does.";
       return "Facebook connect is covered by the same Meta review as Instagram, so it is not open yet. Your Facebook Page link lives in Your links on your Profile, and your Facebook count stays typed by you until the review clears.";
@@ -1376,10 +1376,10 @@ function answerCreator(f, q, t) {
     if (!f.offersOpen) return "No open offers in your markets right now. New offers land in your Offers deck, and higher Momentum sees them earlier.";
     return linked(`${fmt(f.offersOpen)} open offers in your markets right now${f.directInvites ? `, including ${fmt(f.directInvites)} direct ${plural(f.directInvites, "invite")} sent to you` : ""}. They are in your Offers deck, newest first.`, "Open Offers", "cr-offers");
   }
-  // Profile views (Build -131): SIGNL does not track them, for
+  // Profile views (Build -131): Magpie does not track them, for
   // anyone; say so plainly and point at what IS tracked.
   if (hasPhrase(t, "who viewed", "who saw my", "viewed my", "profile views", "views of my profile", "who looked at my", "who visited my profile", "who has seen my", "who viewed me")) {
-    return linked(`SIGNL does not track profile views, so there is no list of who looked at your profile, for anyone. What is tracked is intent on your posts: ${f.intentTotal > 0 ? `${fmt(f.intentTotal)} saves and shares recorded across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}` : "saves and shares on your posts, once you report their numbers"}. That lives on your Numbers page.`, "Open Your numbers", "cr-numbers");
+    return linked(`Magpie does not track profile views, so there is no list of who looked at your profile, for anyone. What is tracked is intent on your posts: ${f.intentTotal > 0 ? `${fmt(f.intentTotal)} saves and shares recorded across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}` : "saves and shares on your posts, once you report their numbers"}. That lives on your Numbers page.`, "Open Your numbers", "cr-numbers");
   }
   // Applications pending
   if (hasWord(t, "application", "applications") && hasPhrase(t, "my", "pending", "waiting", "applied", "how many")) {
@@ -1416,7 +1416,7 @@ function answerCreator(f, q, t) {
   // My rate / fee
   if (hasPhrase(t, "my rate", "my listed rate", "rate did i", "my license fee", "my licensing fee")) {
     if (!f.paidRate && !f.licenseFee) return linked(`No paid rate on your profile yet. Your rate is yours to set on your Profile, with a ${f.currencySymbol || "$"}${f.paidFloor || 50} floor for paid bookings.`, "Set my rates", "cr-profile");
-    return linked(`Your listed paid rate is ${f.paidRate ? cmoney(f, f.paidRate) : "not set"}${f.licenseFee ? `, and your licensing fee is ${cmoney(f, f.licenseFee)}` : ""}. You keep 97% of both when they book or license through SIGNL.`, "Open my Profile", "cr-profile");
+    return linked(`Your listed paid rate is ${f.paidRate ? cmoney(f, f.paidRate) : "not set"}${f.licenseFee ? `, and your licensing fee is ${cmoney(f, f.licenseFee)}` : ""}. You keep 97% of both when they book or license through Magpie.`, "Open my Profile", "cr-profile");
   }
   return null;
 }
@@ -1473,7 +1473,7 @@ function teamIntentAnswer(f, question, t, isFunder) {
     return null;
   }
   if (!f.team.isAdmin) {
-    if (hasWord(t, "team", "seat", "seats", "invite", "revoke")) return { text: "Team seats open when SIGNL names you your org's team admin. Once that is set, you can invite people into your own markets and pilots from here or the Team view, and revoke them the same way." };
+    if (hasWord(t, "team", "seat", "seats", "invite", "revoke")) return { text: "Team seats open when Magpie names you your org's team admin. Once that is set, you can invite people into your own markets and pilots from here or the Team view, and revoke them the same way." };
     return null;
   }
   const raw = String(question || "");
@@ -1504,7 +1504,7 @@ function answerPartner(f, question, t) {
   if (hasWord(t, "pack", "export", "download", "spreadsheet") || (hasWord(t, "month", "monthly", "close", "closed") && hasWord(t, "numbers", "figures", "report", "final"))) {
     if (f.frozenMonths.length) {
       const newest = f.frozenMonths[0];
-      return linked(`${newest.label} is frozen: your pack for that month is final and matches the numbers SIGNL closed with. ${f.frozenMonths.length > 1 ? `Also frozen: ${f.frozenMonths.slice(1, 4).map((m) => m.label).join(", ")}. ` : ""}Download it from your Wallet: pick the month and tap Download the month pack.`, "Get the pack in your Wallet", "partner-earnings");
+      return linked(`${newest.label} is frozen: your pack for that month is final and matches the numbers Magpie closed with. ${f.frozenMonths.length > 1 ? `Also frozen: ${f.frozenMonths.slice(1, 4).map((m) => m.label).join(", ")}. ` : ""}Download it from your Wallet: pick the month and tap Download the month pack.`, "Get the pack in your Wallet", "partner-earnings");
     }
     return linked("No month has been frozen for you yet, so there is no final pack. You can still download any open month from your Wallet as a live snapshot; it is labeled as one, and it can move until the month closes.", "Open Wallet", "partner-earnings");
   }
@@ -1531,13 +1531,13 @@ function answerPartner(f, question, t) {
   }
   // Brand / how the portal looks (Build -105's partner-side gate).
   if (hasWord(t, "brand", "branding", "logo") || hasPhrase(t, "how does my portal look", "what does my portal look", "how my portal looks")) {
-    if (!f.brand) return "Your portal runs on SIGNL branding only: no co-brand is set for you. When the SIGNL team sets one, your name and logo lead your portal and your invite emails, with Powered by SIGNL underneath. It is set by the SIGNL team; there is nothing you need to upload.";
-    return `Your portal is co-branded: ${f.brand.displayName ? `it leads with ${f.brand.displayName}` : "it leads with your logo"}${f.brand.logoUrl ? " and your logo" : " (no logo on file yet)"}, and Powered by SIGNL sits underneath. Your invite emails carry ${f.brand.emailFromName || f.brand.displayName || "your name"} as the sender name. Branding changes are made by the SIGNL team.`;
+    if (!f.brand) return "Your portal runs on Magpie branding only: no co-brand is set for you. When the Magpie team sets one, your name and logo lead your portal and your invite emails, with Powered by Magpie underneath. It is set by the Magpie team; there is nothing you need to upload.";
+    return `Your portal is co-branded: ${f.brand.displayName ? `it leads with ${f.brand.displayName}` : "it leads with your logo"}${f.brand.logoUrl ? " and your logo" : " (no logo on file yet)"}, and Powered by Magpie sits underneath. Your invite emails carry ${f.brand.emailFromName || f.brand.displayName || "your name"} as the sender name. Branding changes are made by the Magpie team.`;
   }
   // Scopes.
   if (hasWord(t, "scope", "scopes", "pilot", "pilots") || hasPhrase(t, "impact portal")) {
     const pilots = f.scopes.filter((s) => s.kind === "pilot");
-    if (!pilots.length) return "Your login carries one scope: your license view, this dashboard. If you also fund a pilot, the SIGNL team can attach it to this same login and it appears here as its own view; you never need a second login.";
+    if (!pilots.length) return "Your login carries one scope: your license view, this dashboard. If you also fund a pilot, the Magpie team can attach it to this same login and it appears here as its own view; you never need a second login.";
     return `Your login carries ${fmt(f.scopes.length)} scopes: this license view, plus ${pilots.map((s) => `the ${s.name || "pilot"} Impact Portal (${s.marketName || "its market"})`).join(" and ")}. Switch from the scopes card on your Home: each scope keeps its own numbers, and nothing is ever added across scopes.`;
   }
   // Funnel / standing.
@@ -1563,12 +1563,12 @@ function answerPilot(f, question, t) {
     return `The fund: ${dm(f.fund.committedCents)} put in, ${dm(f.fund.spentCents)} spent so far, ${dm(f.fund.remainingCents)} left. It pays only for the first creator visit at each chosen business, at the creator's own listed rate.`;
   }
   if (hasWord(t, "joined", "continued", "conversion", "afterwards", "signed up")) {
-    if (!f.counts.continued) return "No business has joined SIGNL on its own plan after its pilot visit yet. When one does, it shows here and on the Report, counted from its own plan record.";
-    return `${fmt(f.counts.continued)} businesses joined SIGNL after their pilot visit${f.counts.continued ? `, and ${fmt(f.continuedOnFounding)} of them are on the $199 founding rate, read from their own plan records` : ""}.`;
+    if (!f.counts.continued) return "No business has joined Magpie on its own plan after its pilot visit yet. When one does, it shows here and on the Report, counted from its own plan record.";
+    return `${fmt(f.counts.continued)} businesses joined Magpie after their pilot visit${f.counts.continued ? `, and ${fmt(f.continuedOnFounding)} of them are on the $199 founding rate, read from their own plan records` : ""}.`;
   }
   if (hasWord(t, "brand", "branding", "logo") || hasPhrase(t, "how does my portal look", "what does my portal look")) {
-    if (!f.brand) return "Your portal runs on SIGNL branding only: no co-brand is set for your pilot. When the SIGNL team sets one, your name and logo lead the portal and your invite emails, with Powered by SIGNL underneath.";
-    return `Your portal is co-branded: it leads with ${f.brand.displayName || "your name"}${f.brand.logoUrl ? " and your logo" : " (no logo on file yet)"}, with Powered by SIGNL underneath. Your invite emails carry ${f.brand.emailFromName || f.brand.displayName || "your name"} as the sender name.`;
+    if (!f.brand) return "Your portal runs on Magpie branding only: no co-brand is set for your pilot. When the Magpie team sets one, your name and logo lead the portal and your invite emails, with Powered by Magpie underneath.";
+    return `Your portal is co-branded: it leads with ${f.brand.displayName || "your name"}${f.brand.logoUrl ? " and your logo" : " (no logo on file yet)"}, with Powered by Magpie underneath. Your invite emails carry ${f.brand.emailFromName || f.brand.displayName || "your name"} as the sender name.`;
   }
   if (hasWord(t, "businesses", "visits", "posts", "results", "standing", "stand", "numbers")) {
     return `${fmt(f.counts.businesses)} businesses chosen, ${fmt(f.counts.visitsDone)} visits done, ${fmt(f.counts.postsLive)} posts live. ${fmt(f.counts.countedCustomers)} customers counted at the register, ${fmt(f.counts.recordedCustomers)} recorded by the businesses (separate counts, never added).${f.closed ? " The pilot has wrapped up; the Report holds the final record." : ""}`;
@@ -1592,29 +1592,29 @@ const PRIVACY_DATA_NOUNS = ["followers", "follower", "audience", "reach", "earni
 function privacyRefusal(role, kind) {
   if (role === "business") {
     if (kind === "creator") return linked("I only see your own business's numbers, so I can't pull up a creator's account details. Their public profile and listed rate live in Find creators, and your own numbers I can do right now: visits left, results, applicants waiting.", "Find creators", "biz-discover");
-    return linked("I only see your own business's numbers, so I can't pull up anyone else's account or SIGNL's company totals. Yours I can do right now: visits left, results, applicants waiting.", "See your results", "biz-results");
+    return linked("I only see your own business's numbers, so I can't pull up anyone else's account or Magpie's company totals. Yours I can do right now: visits left, results, applicants waiting.", "See your results", "biz-results");
   }
-  if (role === "partner") return linked("I only see your own markets and links, so I can't pull up anyone else's numbers or SIGNL's company totals. Yours I can do right now: your funnel, what you have accrued, your month packs.", "See your markets", "partner-markets");
-  if (role === "pilot_partner") return linked("I only see your own pilot, so I can't pull up anyone else's numbers or SIGNL's company totals. Yours I can do right now: the fund, the visits done, the counted and recorded customers.", "Open the Report", "pilot-report");
-  return linked("I only see your own account, so I can't pull up anyone else's numbers or SIGNL's company totals. Yours I can do right now: your followers, your Momentum, what you owe, what is waiting on you.", "See your numbers", "cr-numbers");
+  if (role === "partner") return linked("I only see your own markets and links, so I can't pull up anyone else's numbers or Magpie's company totals. Yours I can do right now: your funnel, what you have accrued, your month packs.", "See your markets", "partner-markets");
+  if (role === "pilot_partner") return linked("I only see your own pilot, so I can't pull up anyone else's numbers or Magpie's company totals. Yours I can do right now: the fund, the visits done, the counted and recorded customers.", "Open the Report", "pilot-report");
+  return linked("I only see your own account, so I can't pull up anyone else's numbers or Magpie's company totals. Yours I can do right now: your followers, your Momentum, what you owe, what is waiting on you.", "See your numbers", "cr-numbers");
 }
-const NAME_STOPWORDS = new Set(["how", "what", "when", "where", "who", "why", "tell", "show", "give", "list", "does", "did", "can", "could", "please", "the", "signl", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]);
+const NAME_STOPWORDS = new Set(["how", "what", "when", "where", "who", "why", "tell", "show", "give", "list", "does", "did", "can", "could", "please", "the", "magpie", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]);
 function sigPrivacyScreen(role, facts, question) {
   if (!role || role === "admin") return null;
   const raw = String(question || "");
   // Collapse the possessive token normQ leaves behind
-  // ("signl's revenue" normalizes to "signl s revenue").
+  // ("magpie's revenue" normalizes to "magpie s revenue").
   const t = normQ(raw).replace(/ s /g, " ");
   const firstPerson = hasPhrase(t, " my ", " mine ", " i ", " me ", " do i ", " have i ");
   const dataNoun = PRIVACY_DATA_NOUNS.some((w) => hasWord(t, w));
   // 1. The admin / the company's own contact and account data.
-  if ((hasWord(t, "admin", "admins", "administrator") || hasPhrase(t, "the owner", "the founder", "who runs signl", "who owns signl", "jeff"))
+  if ((hasWord(t, "admin", "admins", "administrator") || hasPhrase(t, "the owner", "the founder", "who runs magpie", "who owns magpie", "jeff"))
       && hasWord(t, "email", "phone", "account", "password", "login", "address", "data", "records", "number")) {
     return privacyRefusal(role, "company");
   }
   // 2. Company revenue and money, unless it is plainly the
   //    asker's own money ("my revenue", "have I earned").
-  if ((hasWord(t, "revenue", "profit", "profits", "mrr", "arr") || hasPhrase(t, "how much money does signl", "how much does signl make", "how much signl makes", "how much signl earns", "signl make money", "does signl make"))
+  if ((hasWord(t, "revenue", "profit", "profits", "mrr", "arr") || hasPhrase(t, "how much money does magpie", "how much does magpie make", "how much magpie makes", "how much magpie earns", "magpie make money", "does magpie make"))
       && !firstPerson && !hasPhrase(t, " i have ", " have i ")) {
     return privacyRefusal(role, "company");
   }
@@ -1633,7 +1633,7 @@ function sigPrivacyScreen(role, facts, question) {
     const businessRoster = role === "business" && hasWord(t, "creators")
       && (hasPhrase(t, "my market", "near me", "around me", "can i book", "roster", "bookable", "do i have") || (facts && facts.market && t.includes(" " + String(facts.market).toLowerCase() + " ")));
     if (countAsk && subject && !attributed && !planShape && !businessRoster) return privacyRefusal(role, "company");
-    if (!firstPerson && hasPhrase(t, "total creators", "total businesses", "total partners", "total signups", "creators on signl", "businesses on signl", "creators on the platform", "on the platform in total")) return privacyRefusal(role, "company");
+    if (!firstPerson && hasPhrase(t, "total creators", "total businesses", "total partners", "total signups", "creators on magpie", "businesses on magpie", "creators on the platform", "on the platform in total")) return privacyRefusal(role, "company");
   }
   // 5. A named person's or business's data: an @handle that is
   //    not the asker's own, a possessive name, a two-word
@@ -1657,7 +1657,7 @@ function sigPrivacyScreen(role, facts, question) {
     if (hasPhrase(t, "her followers", "his followers", "their followers", "her audience", "his audience", "their audience", "her earnings", "his earnings", "their earnings", "her rate", "his rate", "their rate", "her bookings", "his bookings", "their bookings", "she earns", "he earns", "she makes", "he makes", "their email", "her email", "his email") ) return privacyRefusal(role, "other");
     if (hasPhrase(t, "another creator", "another business", "another partner", "other creator", "other business", "other partner", "someone else", "somebody else") && dataNoun) return privacyRefusal(role, "other");
     if (hasPhrase(t, "email address", "email for", "email of", "phone number", "contact info", "contact details")
-        && !firstPerson && !hasPhrase(t, "your email", "signl email", "support", "hello")) return privacyRefusal(role, "other");
+        && !firstPerson && !hasPhrase(t, "your email", "magpie email", "support", "hello")) return privacyRefusal(role, "other");
   }
   return null;
 }
@@ -1848,7 +1848,7 @@ function buildHomeState(role, f) {
     if (f.closed) chips.push("Your end-of-pilot pack is ready");
     if (f.counts && f.counts.visitsDone) chips.push(`${fmt(f.counts.visitsDone)} ${plural(f.counts.visitsDone, "visit")} done`);
     if (f.counts && f.counts.postsLive) chips.push(`${fmt(f.counts.postsLive)} ${plural(f.counts.postsLive, "post")} live`);
-    if (f.counts && f.counts.continued) chips.push(`${fmt(f.counts.continued)} ${plural(f.counts.continued, "business", "businesses")} joined SIGNL afterwards`);
+    if (f.counts && f.counts.continued) chips.push(`${fmt(f.counts.continued)} ${plural(f.counts.continued, "business", "businesses")} joined Magpie afterwards`);
     if (f.team && f.team.isAdmin) {
       const stale = (f.team.seats || []).find((s) => s.status === "invited" && s.invitedAt && Date.now() - Date.parse(s.invitedAt) > 7 * 86400000);
       if (stale) chips.push(`${(stale.name || "A seat").split(" ")[0]} hasn't accepted their invite yet`);

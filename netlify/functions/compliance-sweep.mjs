@@ -1,4 +1,4 @@
-// SIGNL post-compliance sweep trigger (Jeff, 2026-10-19).
+// Magpie post-compliance sweep trigger (Jeff, 2026-10-19).
 //
 // The compliance timeline (48h reminder, day-5 reminder, day-8 final
 // warning + account pause, day-9 ban for a redeemed visit with no
@@ -17,16 +17,16 @@
 export const config = { schedule: "23 */6 * * *" };
 
 export default async () => {
-  const base = process.env.APP_URL || "https://app.joinsignl.com";
+  const base = process.env.APP_URL || "https://app.magpielocal.com";
   const headers = { "Content-Type": "application/json" };
   if (process.env.SIGNL_SWEEP_TOKEN) headers["x-signl-sweep-token"] = process.env.SIGNL_SWEEP_TOKEN;
   try {
     const res = await fetch(`${base}/api/admin/compliance/sweep`, { method: "POST", headers, body: "{}" });
     const text = await res.text();
-    console.log(`SIGNL compliance sweep: HTTP ${res.status} ${text.slice(0, 300)}`);
+    console.log(`Magpie compliance sweep: HTTP ${res.status} ${text.slice(0, 300)}`);
     return new Response(JSON.stringify({ ok: res.ok, status: res.status }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
-    console.error("SIGNL compliance sweep call failed:", e);
+    console.error("Magpie compliance sweep call failed:", e);
     return new Response(JSON.stringify({ ok: false, error: String(e && e.message || e) }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 };

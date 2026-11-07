@@ -1,12 +1,12 @@
 {
   "hampton-roads": {
-    "source": "existing SIGNL bundle photo (market-vb.jpg)",
-    "license": "SIGNL bundle asset",
+    "source": "existing Magpie bundle photo (market-vb.jpg)",
+    "license": "Magpie bundle asset",
     "page": null
   },
   "nashville": {
-    "source": "existing SIGNL bundle photo (market-nashville.jpg)",
-    "license": "SIGNL bundle asset",
+    "source": "existing Magpie bundle photo (market-nashville.jpg)",
+    "license": "Magpie bundle asset",
     "page": null
   },
   "london": {

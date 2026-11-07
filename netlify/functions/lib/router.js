@@ -1,4 +1,4 @@
-// SIGNL API router. One Netlify Function (api.js) delegates here.
+// Magpie API router. One Netlify Function (api.js) delegates here.
 // All routes are under /api/*. Every state change writes an event via
 // lib/events.js and stamps updatedAt on the record it touches.
 const crypto = require("crypto");
@@ -167,7 +167,7 @@ function offerEarlyAccessUntil(offer, marketLive, nowMs) {
   const until = anchor + CHARTER_EARLY_ACCESS_MS;
   return nowMs < until ? new Date(until).toISOString() : null;
 }
-// Book-me page themes (SIGNL palette only) and featured posts.
+// Book-me page themes (Magpie palette only) and featured posts.
 const PAGE_THEMES = ["ink", "mint", "deep", "pale"];
 function pageThemeOf(c) {
   return c && PAGE_THEMES.includes(c.pageTheme) ? c.pageTheme : "ink";
@@ -230,13 +230,13 @@ function creatorSocialLinks(c) {
 // Non-circumvention reminder lines (Amendment 1, Jeff,
 // 2026-10-29). One line, plain and friendly, at the two moments
 // a booking relationship starts in-product.
-const THREAD_STARTED_LINE = "This conversation started on SIGNL, so bookings from it run through SIGNL, where the Visit Guarantee and payment protection apply.";
-const BOOKING_STARTED_LINE = "This booking started on SIGNL, so it runs through SIGNL, where the Visit Guarantee and payment protection apply.";
+const THREAD_STARTED_LINE = "This conversation started on Magpie, so bookings from it run through Magpie, where the Visit Guarantee and payment protection apply.";
+const BOOKING_STARTED_LINE = "This booking started on Magpie, so it runs through Magpie, where the Visit Guarantee and payment protection apply.";
 
 // ------------------------------------------------------------------
 // Launch shape (Jeff, 2026-10-18): creator founding sign-up is the
 // only public account type at launch. Business registration is
-// disabled (businesses join the founding list on joinsignl.com), and
+// disabled (businesses join the founding list on magpielocal.com), and
 // the marketplace (discovery, offers, bookings, counter, posts,
 // messages) stays inactive in a market until an admin flips that
 // market's "live" flag. All 38 markets default to NOT live
@@ -379,7 +379,7 @@ const STANDARD_VISIT = {
     "The post stays live on the creator's profile for at least 30 days",
   ],
   summary:
-    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. The 48-hour goal and these standards apply to comped visits; paid visits follow the posting terms agreed on the booking. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
+    "Every Magpie comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. The 48-hour goal and these standards apply to comped visits; paid visits follow the posting terms agreed on the booking. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
 };
 
 // ---------- The paid lane (Jeff, 2026-10-19) ----------
@@ -388,7 +388,7 @@ const STANDARD_VISIT = {
 // its deliverables are negotiated and set in the booking's terms.
 // The platform fee is 6% of the
 // rate, split evenly: the business pays rate + 3%, the creator
-// keeps 97% of her rate, and SIGNL holds the payment in escrow
+// keeps 97% of her rate, and Magpie holds the payment in escrow
 // until the post is live. The subscription is the business; 6% is
 // deliberately the lowest take in the industry, split evenly.
 // Comp-only is always fine, forever: paid is an optional
@@ -406,7 +406,7 @@ const PAID_LANE = {
   creatorFeePct: 3,
   minRate: 50,
   escrowHoldHoursAfterProof: 48,
-  paymentNote: "Paid visit recorded, no card charged. SIGNL holds the payment until the post is live.",
+  paymentNote: "Paid visit recorded, no card charged. Magpie holds the payment until the post is live.",
 };
 function paidMath(rate) {
   const r = Math.round(Number(rate) * 100) / 100;
@@ -479,7 +479,7 @@ function fmtPriceS(n) {
   return fmtMoneyS(v);
 }
 // Managed-plan businesses carry a monthly talent budget: a
-// spending cap + authorization the SIGNL coordinator spends on
+// spending cap + authorization the Magpie coordinator spends on
 // paid creator bookings. It is NOT a held deposit; each booking
 // escrows on its own. Suggested default $500.
 const MANAGED_TALENT_BUDGET_DEFAULT = 500;
@@ -505,11 +505,11 @@ const MANAGED_TALENT_BUDGET_DEFAULT = 500;
 //    count to one short of the limit (probation), so one more
 //    expired window pauses the account again.
 // 4. The creator free line, word for word, everywhere creators
-//    meet SIGNL. It is carefully worded to stay true: joining,
+//    meet Magpie. It is carefully worded to stay true: joining,
 //    listing, and comp bookings are free; the only creator-side
 //    fee anywhere is the 3% share of the 6% platform fee on PAID
 //    bookings, and that math never sits next to the word free.
-const CREATOR_FREE_LINE = "SIGNL is free for creators. Always. Businesses pay the platform. You never pay to join, to list, or to get booked.";
+const CREATOR_FREE_LINE = "Magpie is free for creators. Always. Businesses pay the platform. You never pay to join, to list, or to get booked.";
 const PAID_BRIEF_MAX = 500;
 const PAID_BRIEF_GUIDANCE = "Key points only: what to feature, names, dates. Creators post honestly in their own words. No scripts, no required praise, no post pre-approval.";
 const STRIKE_LIMIT = 3;
@@ -532,7 +532,7 @@ function coversText(record) {
 // (Jeff, 2026-11-02, from the Chelsea call.) A third deal kind,
 // "coupon": the business pays with a coupon (money off, a percent
 // off, or store credit) and the creator accepts the coupon as
-// their payment. No cash moves through SIGNL on a coupon deal,
+// their payment. No cash moves through Magpie on a coupon deal,
 // there is no 97/3 split on it, and it counts against the plan's
 // monthly creator visits exactly like a comped visit
 // (planAllowanceFor counts every non-paid booking). Rights on a
@@ -1377,8 +1377,8 @@ async function eraseAccount(target, via) {
   const id = target.id;
   const role = target.role;
   const counterpartNote = role === "creator"
-    ? "A creator deleted their SIGNL account, so this is cancelled. Nothing is owed on it."
-    : "A business deleted its SIGNL account, so this is cancelled. Nothing is owed on it.";
+    ? "A creator deleted their Magpie account, so this is cancelled. Nothing is owed on it."
+    : "A business deleted its Magpie account, so this is cancelled. Nothing is owed on it.";
   // Applications in flight: a creator's pending applications
   // are withdrawn; a business's received applications go with
   // its offers below.
@@ -1408,7 +1408,7 @@ async function eraseAccount(target, via) {
     d.updatedAt = nowIso();
     await store.set(row.key, d);
     const otherId = d.businessId === id ? d.creatorId : d.businessId;
-    await notifyUser(otherId, "deal_withdrawn", "A deal was closed because the other side deleted their SIGNL account.", { dealId: d.id }).catch(() => {});
+    await notifyUser(otherId, "deal_withdrawn", "A deal was closed because the other side deleted their Magpie account.", { dealId: d.id }).catch(() => {});
   }
   // Bookings: future ones cancel (counterparty told, held
   // money back); past ones stay, anonymised, in the other
@@ -1478,21 +1478,21 @@ async function eraseAccount(target, via) {
 // come back fresh if it was a mistake or they change their
 // mind. It never promises the old data survives. It does not.
 function accountDeletionEmail() {
-  const base = process.env.APP_URL || "https://app.joinsignl.com";
+  const base = process.env.APP_URL || "https://app.magpielocal.com";
   return {
-    subject: "Your SIGNL account has been deleted",
+    subject: "Your Magpie account has been deleted",
     text: [
-      "Your SIGNL account has been deleted, along with your profile, your sign-in, your public page, your referral links and your notification settings.",
+      "Your Magpie account has been deleted, along with your profile, your sign-in, your public page, your referral links and your notification settings.",
       "",
       "Anything still in flight was settled this way: pending applications withdrawn, open offers and deals closed, and bookings that had not happened yet cancelled.",
       "",
-      "Thank you for being part of the SIGNL community. We are sorry to see you go, and we mean that.",
+      "Thank you for being part of the Magpie community. We are sorry to see you go, and we mean that.",
       "",
       `If this was a mistake, or you change your mind, you are welcome back any time. Sign in or start fresh here: ${base}/`,
       "",
       "Your old account and its data are gone for good, so coming back means a new account. Nothing from the old one carries over.",
       "",
-      "SIGNL",
+      "Magpie",
     ].join("\n"),
   };
 }
@@ -1567,7 +1567,7 @@ function noShowStrikesOf(user) {
 }
 
 function strikePauseReason() {
-  return "Booked visit windows expired unused. The account is paused pending a SIGNL review.";
+  return "Booked visit windows expired unused. The account is paused pending a Magpie review.";
 }
 
 function strikePaused(user) {
@@ -1580,13 +1580,13 @@ function strikePaused(user) {
 // must never promise that route for it.
 function pausedPickMessage(creator) {
   return strikePaused(creator)
-    ? "That creator is paused pending a SIGNL review. Pick another creator for now."
+    ? "That creator is paused pending a Magpie review. Pick another creator for now."
     : "That creator is paused until a late post lands. Pick another creator for now.";
 }
 
 function pausedSelfMessage(user) {
   return strikePaused(user)
-    ? "Your account is paused pending a SIGNL review after booked visit windows expired unused. The team reviews every pause by hand; questions: hello@joinsignl.com."
+    ? "Your account is paused pending a Magpie review after booked visit windows expired unused. The team reviews every pause by hand; questions: hello@magpielocal.com."
     : "Your account is paused until the late post from your last visit is checked off. Paste the post link under My Visits and offers open again.";
 }
 
@@ -1619,7 +1619,7 @@ function silentStrikesOf(user) {
 function silentStrikeStatusLine(user) {
   const n = silentStrikesOf(user);
   if (!n) return null;
-  return `Silent no-show strikes: ${n} of ${SILENT_STRIKE_LIMIT}. A visit you redeemed and then went silent on (no post, no message to the business or to SIGNL) counts as a strike; ${SILENT_STRIKE_LIMIT} strikes remove you from the platform.`;
+  return `Silent no-show strikes: ${n} of ${SILENT_STRIKE_LIMIT}. A visit you redeemed and then went silent on (no post, no message to the business or to Magpie) counts as a strike; ${SILENT_STRIKE_LIMIT} strikes remove you from the platform.`;
 }
 
 // The late-streak pause (Phase C): while it stands, the creator
@@ -1638,15 +1638,15 @@ function lateStreakPauseMessage(user) {
 // reason Admin sees and the creator is told, worded so the state
 // is never confused with a pause.
 function consumedCompReason() {
-  return "Inactive: comp consumed, no post after one month. This account is no longer active for further opportunities unless SIGNL reinstates it.";
+  return "Inactive: comp consumed, no post after one month. This account is no longer active for further opportunities unless Magpie reinstates it.";
 }
 function silentRemovalReason() {
-  return "Removed: two silent no-shows. A redeemed visit ended with no post and no word from the creator, twice. This account is no longer active unless SIGNL reinstates it.";
+  return "Removed: two silent no-shows. A redeemed visit ended with no post and no word from the creator, twice. This account is no longer active unless Magpie reinstates it.";
 }
 
 // What counts as "communication" for the silent no-show test
 // (Phase C): an in-app message the creator sent to THIS booking's
-// business, or to the SIGNL platform thread, at or after the
+// business, or to the Magpie platform thread, at or after the
 // visit was redeemed. Those message records are the contact
 // events the codebase already stores; no new channel is invented.
 async function creatorCommunicatedFor(booking) {
@@ -1664,7 +1664,7 @@ async function creatorCommunicatedFor(booking) {
 
 // Plan payment stays concierge (Jeff, 2026-10-20): the plan is
 // recorded in-app at sign-up, NO card is charged by the app, and
-// no payment link is shown in the app. When SIGNL activates a
+// no payment link is shown in the app. When Magpie activates a
 // business, Jeff sends the payment step by hand.
 
 // ---------- Offer flow v2: open offers, applications, backfill ----------
@@ -1911,9 +1911,9 @@ function offerTimeline({ applyWindowDays = 3, windowDays = 7, windowStartAt = nu
 }
 
 
-// ---------- The SIGNL ROAS Score (Jeff, 2026-10-19) ----------
-// SIGNL's own return-on-spend model, and the math is published
-// wherever the score renders: it is always labeled "SIGNL ROAS
+// ---------- The Magpie ROAS Score (Jeff, 2026-10-19) ----------
+// Magpie's own return-on-spend model, and the math is published
+// wherever the score renders: it is always labeled "Magpie ROAS
 // Score, our own model", with its component lines shown. Two
 // honesty rules are baked into the framing strings below and must
 // never drift: the register side is TRACKED spend rung up with a
@@ -1927,7 +1927,7 @@ function offerTimeline({ applyWindowDays = 3, windowDays = 7, windowStartAt = nu
 //   - The booking carries a creatorCode: this creator's audience
 //     code at this business. The creator shares it in the post,
 //     and every use is rung up at the business's own register
-//     (SIGNL never integrates with a POS, ever). A code DISCOUNT
+//     (Magpie never integrates with a POS, ever). A code DISCOUNT
 //     is the business's choice, never a default (Jeff,
 //     2026-10-19): the business turns code discounts on and picks
 //     the percentage (discountEnabled / discountPct on the
@@ -1957,9 +1957,9 @@ function offerTimeline({ applyWindowDays = 3, windowDays = 7, windowStartAt = nu
 // business when it turns code discounts on; it is never applied
 // as a default stamp (see discountSettingOf below).
 const ROAS_MODEL = { cpm: 22, like: 0.10, comment: 0.50, share: 1.00, suggestedDiscountPct: 20 };
-const ROAS_LABEL = "SIGNL ROAS Score, our own model";
+const ROAS_LABEL = "Magpie ROAS Score, our own model";
 const ROAS_REGISTER_BASIS = "Register value is spend tracked through the creator's audience code, rung up at the business's own register. It is a floor: customers who never used a code are not counted.";
-const ROAS_MEDIA_BASIS = `Media value is modeled at SIGNL's published rates ($${ROAS_MODEL.cpm} per 1,000 views, $${ROAS_MODEL.like.toFixed(2)} per like, $${ROAS_MODEL.comment.toFixed(2)} per comment, $${ROAS_MODEL.share.toFixed(2)} per share) on the creator's reported post numbers.`;
+const ROAS_MEDIA_BASIS = `Media value is modeled at Magpie's published rates ($${ROAS_MODEL.cpm} per 1,000 views, $${ROAS_MODEL.like.toFixed(2)} per like, $${ROAS_MODEL.comment.toFixed(2)} per comment, $${ROAS_MODEL.share.toFixed(2)} per share) on the creator's reported post numbers.`;
 
 function roasRound2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -2075,7 +2075,7 @@ function roasFor(bookings) {
   const registerSource = registerValue > 0 && estimatedRegisterValue > 0 ? "mixed" : registerValue > 0 ? "tracked" : estimatedRegisterValue > 0 ? "estimated" : "none";
   return {
     // Build -43 (FIX A): the legacy figure is a modeled estimate
-    // and wears that name. "SIGNL ROAS Score" belongs to Score v2
+    // and wears that name. "Magpie ROAS Score" belongs to Score v2
     // alone (scoreV2ForBusiness keeps ROAS_LABEL).
     label: "Modeled estimate, our own model",
     value,
@@ -2296,7 +2296,7 @@ function platformTotals126(users) {
 }
 
 // Build -138 (open signup everywhere, Jeff 2026-11-06): demand
-// in cities SIGNL has not listed. Signup is open in every city —
+// in cities Magpie has not listed. Signup is open in every city —
 // an unlisted-city creator completes a full sign-up and is
 // counted exactly like a listed-city claim — and this is the
 // census Jeff graduates cities from. One row per typed place:
@@ -2627,7 +2627,7 @@ function previewTargets126(users) {
 // made 2026-11-01 20:17 ET; records created at or after that
 // moment are under the new minimum. A record with no readable
 // createdAt predates reliable stamps and reads as grandfathered.
-const MIN_AUDIENCE_LINE = "SIGNL starts at 500 total followers across your platforms.";
+const MIN_AUDIENCE_LINE = "Magpie starts at 500 total followers across your platforms.";
 const MIN_AUDIENCE_RULE_SINCE_MS = Date.parse("2026-11-02T01:17:00.000Z");
 function audienceMinimumApplies(user) {
   const t = Date.parse((user && user.createdAt) || "");
@@ -2979,7 +2979,7 @@ async function syncAllConnectedAudiences() {
 // ---------- Campus identity (Jeff, 2026-10-21) ----------
 // A creator may name the university they attend. It is optional
 // profile color, never a completion gate: signup and profile edit
-// accept free text, the datalist suggests the schools SIGNL is
+// accept free text, the datalist suggests the schools Magpie is
 // actively recruiting around, and the stored value is mirrored on
 // the user record and the creator profile so every surface reads
 // the same school. Creators from the same school form a campus
@@ -3456,7 +3456,7 @@ async function getMarketFlags() {
     // A store failure must not 500 the public bootstrap (its handler
     // reads this via marketLiveMap): degrade to "no markets live",
     // the founding state. See INCIDENT-2026-10-25.md.
-    console.error("SIGNL getMarketFlags failed (treating all markets as not live):", e);
+    console.error("Magpie getMarketFlags failed (treating all markets as not live):", e);
     return {};
   }
 }
@@ -3564,7 +3564,7 @@ const MOMENTUM_POINTS = {
   neverPostedPenalty: -50,
 };
 
-// ---------- Referral ladder v2 + SIGNL Elite (Jeff, 2026-10-21) ----------
+// ---------- Referral ladder v2 + Magpie Elite (Jeff, 2026-10-21) ----------
 // Jeff rejected v1's product guarantees ("the guarantees scare me"):
 // the ladder pays BADGES and BONUS MOMENTUM POINTS only. Points
 // already order the business-facing creator list, so points are
@@ -3583,7 +3583,7 @@ const REFERRAL_MILESTONES = [
   { milestone: 5, id: "roster_builder", name: "Roster Builder", bonus: 75 },
   { milestone: 10, id: "city_lead", name: "City Lead", bonus: 150 },
 ];
-// SIGNL Elite (Jeff, 2026-10-21: "let's make our own elite"): an
+// Magpie Elite (Jeff, 2026-10-21: "let's make our own elite"): an
 // earned status badge for creators who do the work at volume and
 // are rated highly for it. Computed, never stored, and lost
 // automatically when the inputs drop.
@@ -3678,7 +3678,7 @@ function createMomentum(data) {
       && onTimePosts >= ELITE_RULE.minOnTimePosts
       && rating.ratingCount >= ELITE_RULE.minRatings
       && rating.ratingAvg !== null && rating.ratingAvg >= ELITE_RULE.minRatingAvg;
-    if (qualified) badges.push({ id: "signl_elite", name: "SIGNL Elite", kind: "elite" });
+    if (qualified) badges.push({ id: "signl_elite", name: "Magpie Elite", kind: "elite" });
     const nextM = milestones.find((m) => m.state !== "unlocked") || null;
     const next = nextM ? { milestone: nextM.milestone, name: nextM.name, state: nextM.state, needed: Math.max(0, nextM.milestone - approvedList.length), trippingHandle: nextM.trippingHandle } : null;
     const campusLead = campusLeadFor(user);
@@ -3975,7 +3975,7 @@ async function momentumContext() {
 
 function inviteUrlForUser(user) {
   return user && user.creator && user.creator.handle
-    ? `https://app.joinsignl.com/?ref=${encodeURIComponent(user.creator.handle)}`
+    ? `https://app.magpielocal.com/?ref=${encodeURIComponent(user.creator.handle)}`
     : null;
 }
 
@@ -4039,7 +4039,7 @@ function publicFounding(summary) {
 // founding creator's home celebrates with, computed live from
 // stored records only. Two pieces:
 //   localRank: the creator's rank in their market BY LOCAL REACH
-//     (the ordering SIGNL sells), among approved, profile-complete
+//     (the ordering Magpie sells), among approved, profile-complete
 //     creators who have reported a local %. Ties break by founding
 //     order (earliest sign-up first), the platform's standing
 //     fairness rule. Null until the creator is approved, complete,
@@ -4247,7 +4247,7 @@ function automationTokenValues138(user, builtText) {
     resetLink: grab(/https?:\/\/\S*reset\S*/),
     signinLink: grab(/https?:\/\/\S*(?:sign-in|signin|magic|login)\S*/),
     postLink: grab(/https?:\/\/\S*\/p\/\S*/),
-    unsubscribeLine: "You are getting this because you have a SIGNL account. Manage your email in Settings in the app.",
+    unsubscribeLine: "You are getting this because you have a Magpie account. Manage your email in Settings in the app.",
   };
 }
 
@@ -4303,14 +4303,14 @@ async function deliverEmail(kind, user, subject, text, band, opts) {
     // event stays (it is the dataset); the failure ALSO goes to the
     // function log, where Netlify surfaces it, and is readable in
     // one call through GET /api/admin/email-health.
-    console.error(`SIGNL email not sent: kind=${kind} profile=${profile} domain=${emailDomainOf(user.email)} reason=${result.reason || "unknown"}`);
+    console.error(`Magpie email not sent: kind=${kind} profile=${profile} domain=${emailDomainOf(user.email)} reason=${result.reason || "unknown"}`);
     await logEvent({ type: `${kind}_email_not_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { ...base, reason: result.reason || "unknown" } });
   }
   return result;
 }
 
 // ---------- platform messages (Build -40, Jeff, 2026-10-30) ----------
-// A direct line from the SIGNL team to a creator, inside the
+// A direct line from the Magpie team to a creator, inside the
 // creator's existing Messages surface. The sender is a platform
 // identity, not Jeff's personal user record: every creator has
 // exactly one platform thread, keyed by the same sorted-pair
@@ -4331,7 +4331,7 @@ const MESSAGE_TEMPLATES = [
   {
     id: "golden_ticket",
     label: "Golden Ticket reminder",
-    body: "Quick one. When you finished your SIGNL profile you got two Golden Tickets, founding seats you can hand to two creators by name. The seat is held for them until {market} launches, and when they finish, it earns you 100 points, which moves you up when businesses search.\n\nWho are your two? Send the tickets from your founding page, or just tell me the names and I will make sure the right people get them.",
+    body: "Quick one. When you finished your Magpie profile you got two Golden Tickets, founding seats you can hand to two creators by name. The seat is held for them until {market} launches, and when they finish, it earns you 100 points, which moves you up when businesses search.\n\nWho are your two? Send the tickets from your founding page, or just tell me the names and I will make sure the right people get them.",
   },
 ];
 function platformThreadId(creatorId) {
@@ -4339,18 +4339,18 @@ function platformThreadId(creatorId) {
 }
 function platformMessageEmail(creator, body) {
   const preview = String(body || "").trim().slice(0, 120).replace(/\s+/g, " ");
-  const base = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+  const base = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
   return {
-    subject: "You have a new message on SIGNL",
+    subject: "You have a new message on Magpie",
     text: [
-      "Jeff from SIGNL sent you a message.",
+      "Jeff from Magpie sent you a message.",
       "",
       `"${preview}"`,
       "",
-      "Read and reply in SIGNL:",
+      "Read and reply in Magpie:",
       `${base}/?open=messages`,
       "",
-      "This email is only a notification; the conversation lives in SIGNL.",
+      "This email is only a notification; the conversation lives in Magpie.",
     ].join("\n"),
   };
 }
@@ -4371,7 +4371,7 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   const priorNotes = await store.list(`note:${creator.id}:`);
   const alreadySignaled = priorNotes.some((r) => r.value && r.value.kind === "message_received" && !r.value.readAt && r.value.data && r.value.data.threadId === threadId);
   if (!alreadySignaled) {
-    await notifyUser(creator.id, "message_received", "SIGNL sent you a message.", { threadId, messageId: msg.id, fromId: PLATFORM_PEER_ID, platform: true });
+    await notifyUser(creator.id, "message_received", "Magpie sent you a message.", { threadId, messageId: msg.id, fromId: PLATFORM_PEER_ID, platform: true });
   }
   await logEvent({
     type: "platform_message_sent",
@@ -4392,10 +4392,10 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
     const mail = platformMessageEmail(creator, body);
     emailResult = await deliverEmail("platform_message", creator, mail.subject, mail.text, null);
     if (!emailResult.sent) {
-      console.error(`SIGNL platform message email not sent: to=${creator.email} reason=${emailResult.reason || "unknown"}`);
+      console.error(`Magpie platform message email not sent: to=${creator.email} reason=${emailResult.reason || "unknown"}`);
     }
   } catch (e) {
-    console.error(`SIGNL platform message email failed: to=${creator.email}:`, e);
+    console.error(`Magpie platform message email failed: to=${creator.email}:`, e);
     emailResult = { sent: false, reason: String(e && e.message || e).slice(0, 200) };
   }
   return { message: msg, email: emailResult };
@@ -4415,7 +4415,7 @@ function paidCampaignLine(user) {
 function signupConfirmationEmail(user, band) {
   const first = greetingName(user);
   const paidLine = paidCampaignLine(user);
-  const subject = "Your SIGNL founding creator profile is in";
+  const subject = "Your Magpie founding creator profile is in";
   if (user.market === UNLISTED) {
     const place = `${user.city}, ${user.country || user.state || ""}`;
     const lines = [
@@ -4427,7 +4427,7 @@ function signupConfirmationEmail(user, band) {
     if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. That founding standing never expires.`);
     lines.push(
       "",
-      `You're in, and you're early. ${user.city} isn't one of our launch markets yet; it's building right now. We're opening SIGNL city by city, and sign-ups like yours are how we pick what's next: when ${user.city} gets close, founding creators there hear first and get first pick.`,
+      `You're in, and you're early. ${user.city} isn't one of our launch markets yet; it's building right now. We're opening Magpie city by city, and sign-ups like yours are how we pick what's next: when ${user.city} gets close, founding creators there hear first and get first pick.`,
       "",
       "The deal, as agreed: businesses comp you a meal or service, the goal is to post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
       "",
@@ -4437,14 +4437,14 @@ function signupConfirmationEmail(user, band) {
       ...rosterBenefitsLines(user, user.city),
       MIN_AUDIENCE_LINE,
       "",
-      "Sign in any time to check your status: https://app.joinsignl.com",
+      "Sign in any time to check your status: https://app.magpielocal.com",
       "",
-      "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
+      "You agreed to Magpie's Terms of Service and Privacy Policy, and to receive account and marketing emails from Magpie. You can unsubscribe from marketing emails at any time.",
       "",
       "National platforms sell reach. We sell regulars.",
       "Jeff",
-      "Founder, SIGNL",
-      "hello@joinsignl.com",
+      "Founder, Magpie",
+      "hello@magpielocal.com",
     );
     return { subject, text: lines.join("\n") };
   }
@@ -4457,7 +4457,7 @@ function signupConfirmationEmail(user, band) {
   if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. That founding standing never expires.`);
   lines.push(
     "",
-    `What happens next: when you are approved, we email you again and your founding status page opens at app.joinsignl.com. ${marketTalkName(user.market)} is a founding market, and founding creators get first pick of offers when it opens to businesses.`,
+    `What happens next: when you are approved, we email you again and your founding status page opens at app.magpielocal.com. ${marketTalkName(user.market)} is a founding market, and founding creators get first pick of offers when it opens to businesses.`,
     "",
     "The deal, as agreed: businesses comp you a meal or service, the goal is to post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
     "",
@@ -4467,14 +4467,14 @@ function signupConfirmationEmail(user, band) {
     ...rosterBenefitsLines(user, user.market),
     MIN_AUDIENCE_LINE,
     "",
-    "Sign in any time to check your status: https://app.joinsignl.com",
+    "Sign in any time to check your status: https://app.magpielocal.com",
     "",
-    "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
+    "You agreed to Magpie's Terms of Service and Privacy Policy, and to receive account and marketing emails from Magpie. You can unsubscribe from marketing emails at any time.",
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   );
   return { subject, text: lines.join("\n") };
 }
@@ -4499,7 +4499,7 @@ function completionChecklistLines(user) {
 // so nobody mistakes the claim for a finished profile.
 function claimConfirmationEmail(user, band) {
   const first = greetingName(user);
-  const subject = "Your SIGNL founding spot is claimed";
+  const subject = "Your Magpie founding spot is claimed";
   if (user.market === UNLISTED) {
     const place = `${user.city}, ${user.country || user.state || ""}`;
     const lines = [
@@ -4509,7 +4509,7 @@ function claimConfirmationEmail(user, band) {
       "Every founding application gets a decision or a clear status within 2 business days.",
     ];
     if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. Founding spots are held in sign-up order, and that standing never expires.`);
-    if (user.creator && user.creator.handle) lines.push("", `Your booking page is already live: https://app.joinsignl.com/c/${user.creator.handle}`, "Put it in your bio. Anyone who taps it sees your page and your rate card.");
+    if (user.creator && user.creator.handle) lines.push("", `Your booking page is already live: https://app.magpielocal.com/c/${user.creator.handle}`, "Put it in your bio. Anyone who taps it sees your page and your rate card.");
     lines.push(
       "",
       `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on.`,
@@ -4523,14 +4523,14 @@ function claimConfirmationEmail(user, band) {
       ...rosterBenefitsLines(user, user.city),
       MIN_AUDIENCE_LINE,
       "",
-      "Sign in any time to check your status: https://app.joinsignl.com",
+      "Sign in any time to check your status: https://app.magpielocal.com",
       "",
-      "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
+      "You agreed to Magpie's Terms of Service and Privacy Policy, and to receive account and marketing emails from Magpie. You can unsubscribe from marketing emails at any time.",
       "",
       "National platforms sell reach. We sell regulars.",
       "Jeff",
-      "Founder, SIGNL",
-      "hello@joinsignl.com",
+      "Founder, Magpie",
+      "hello@magpielocal.com",
     );
     return { subject, text: lines.join("\n") };
   }
@@ -4541,7 +4541,7 @@ function claimConfirmationEmail(user, band) {
     "Every founding application gets a decision or a clear status within 2 business days.",
   ];
   if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. Founding spots are held in sign-up order, and that standing never expires.`);
-  if (user.creator && user.creator.handle) lines.push("", `Your booking page is already live: https://app.joinsignl.com/c/${user.creator.handle}`, "Put it in your bio. Anyone who taps it sees your page and your rate card.");
+  if (user.creator && user.creator.handle) lines.push("", `Your booking page is already live: https://app.magpielocal.com/c/${user.creator.handle}`, "Put it in your bio. Anyone who taps it sees your page and your rate card.");
   lines.push(
     "",
     `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${marketTalkName(user.market)} is a founding market, and founding creators with finished profiles get first pick of offers when it opens to businesses.`,
@@ -4553,14 +4553,14 @@ function claimConfirmationEmail(user, band) {
     ...rosterBenefitsLines(user, user.market),
     MIN_AUDIENCE_LINE,
     "",
-    "Sign in any time to check your status: https://app.joinsignl.com",
+    "Sign in any time to check your status: https://app.magpielocal.com",
     "",
-    "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
+    "You agreed to Magpie's Terms of Service and Privacy Policy, and to receive account and marketing emails from Magpie. You can unsubscribe from marketing emails at any time.",
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   );
   return { subject, text: lines.join("\n") };
 }
@@ -4580,7 +4580,7 @@ function profileCompletionReminderEmail(user) {
   const unlisted = user.market === UNLISTED;
   const place = unlisted ? user.city : marketTalkName(user.market);
   const handle = user.creator && user.creator.handle ? user.creator.handle : null;
-  const subject = "Finish your SIGNL profile to be launch-ready";
+  const subject = "Finish your Magpie profile to be launch-ready";
   const lines = [
     `Hi ${first},`,
     "",
@@ -4588,8 +4588,8 @@ function profileCompletionReminderEmail(user) {
     "",
     `Still to do: ${missing}.`,
     ...(completion.missing.includes("audience") && audienceMinimumApplies(user) ? [MIN_AUDIENCE_LINE] : []),
-    "Finish it here: https://app.joinsignl.com/?open=profile (a few minutes, start to finish).",
-    ...(handle ? [`Your public booking page is already live: https://app.joinsignl.com/c/${handle}`] : []),
+    "Finish it here: https://app.magpielocal.com/?open=profile (a few minutes, start to finish).",
+    ...(handle ? [`Your public booking page is already live: https://app.magpielocal.com/c/${handle}`] : []),
     "",
     unlisted
       ? `${user.city} is building right now, and finished founding profiles are one of the counts that moves a city toward opening. Finish yours and you're in the founding circle when it opens, and first pick goes to completed founding profiles.`
@@ -4597,8 +4597,8 @@ function profileCompletionReminderEmail(user) {
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   ];
   return { subject, text: lines.join("\n") };
 }
@@ -4608,19 +4608,19 @@ function profileCompletionReminderEmail(user) {
 function silentRemovalEmail(creator) {
   const first = greetingName(creator);
   return {
-    subject: "Your SIGNL account has been removed",
+    subject: "Your Magpie account has been removed",
     text: [
       `Hi ${first},`,
       "",
-      "A visit you redeemed ended with no post and no word from you, for the second time. Silence is the one thing SIGNL cannot work with: the business gave you the visit, heard nothing, and got nothing.",
+      "A visit you redeemed ended with no post and no word from you, for the second time. Silence is the one thing Magpie cannot work with: the business gave you the visit, heard nothing, and got nothing.",
       "",
       "Your account is no longer active, so businesses cannot send you new offers. Visits already posted stay on your record.",
       "",
-      "If something real kept you from those visits, reply to this email and tell us. A person reads every reply, and SIGNL can reinstate an account when the story checks out.",
+      "If something real kept you from those visits, reply to this email and tell us. A person reads every reply, and Magpie can reinstate an account when the story checks out.",
       "",
       "Jeff",
-      "Founder, SIGNL",
-      "hello@joinsignl.com",
+      "Founder, Magpie",
+      "hello@magpielocal.com",
     ].join("\n"),
   };
 }
@@ -4629,7 +4629,7 @@ function consumedCompEmail(creator, booking) {
   const first = greetingName(creator);
   const biz = (booking && booking.businessName) || "your visit";
   return {
-    subject: "Your SIGNL account is no longer active",
+    subject: "Your Magpie account is no longer active",
     text: [
       `Hi ${first},`,
       "",
@@ -4637,11 +4637,11 @@ function consumedCompEmail(creator, booking) {
       "",
       "Your account is no longer active for further opportunities, so businesses cannot send you new offers. What you already posted stays on your record.",
       "",
-      "If something went wrong, reply to this email and tell us. A person reads every reply, and SIGNL can reinstate an account when the story checks out.",
+      "If something went wrong, reply to this email and tell us. A person reads every reply, and Magpie can reinstate an account when the story checks out.",
       "",
       "Jeff",
-      "Founder, SIGNL",
-      "hello@joinsignl.com",
+      "Founder, Magpie",
+      "hello@magpielocal.com",
     ].join("\n"),
   };
 }
@@ -4658,8 +4658,8 @@ function lateStreakPauseEmail(creator) {
       "",
       `New offers are paused until ${until}. Visits you already have booked are not affected, and the pause lifts on its own on that date. An on-time post is what keeps this from happening: the goal is one post and one story within 48 hours of the visit.`,
       "",
-      "The SIGNL team",
-      "hello@joinsignl.com",
+      "The Magpie team",
+      "hello@magpielocal.com",
     ].join("\n"),
   };
 }
@@ -4684,9 +4684,9 @@ function approvalEmail(user, band) {
     "",
     "One step left: finish your profile to be launch-ready. Four basics make you visible to businesses: your home city, your audience counts, at least one content category, and your local audience %.",
     MIN_AUDIENCE_LINE,
-    "Finish your profile: https://app.joinsignl.com/?open=profile",
-    "Your founding status page: https://app.joinsignl.com/?open=status",
-    ...(handle ? [`Your public booking page is already live: https://app.joinsignl.com/c/${handle}`] : []),
+    "Finish your profile: https://app.magpielocal.com/?open=profile",
+    "Your founding status page: https://app.magpielocal.com/?open=status",
+    ...(handle ? [`Your public booking page is already live: https://app.magpielocal.com/c/${handle}`] : []),
     "Until the basics are done, businesses cannot see you and you cannot take offers. Momentum is the priority score that orders the list businesses see, and finishing your profile earns it.",
   ];
   const inviteLines = (place) => {
@@ -4702,8 +4702,8 @@ function approvalEmail(user, band) {
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   ];
   if (user.market === UNLISTED) {
     const subject = `You are approved: founding creator for ${user.city}`;
@@ -4724,7 +4724,7 @@ function approvalEmail(user, band) {
     );
     return { subject, text: lines.join("\n") };
   }
-  const subject = "You are approved: welcome to the SIGNL founding roster";
+  const subject = "You are approved: welcome to the Magpie founding roster";
   const lines = [
     `Hi ${first},`,
     "",
@@ -4771,7 +4771,7 @@ function rejectionEmail(user, reason) {
   const lines = [
     `Hi ${first},`,
     "",
-    `Thank you for applying to be a SIGNL Founding Creator in ${place}. Your application was reviewed by a person, and it is not a fit for this round.`,
+    `Thank you for applying to be a Magpie Founding Creator in ${place}. Your application was reviewed by a person, and it is not a fit for this round.`,
   ];
   if (reasonLine) {
     lines.push("", `The honest reason: ${reasonLine}.`);
@@ -4785,8 +4785,8 @@ function rejectionEmail(user, reason) {
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   );
   return { subject, text: lines.join("\n") };
 }
@@ -4800,9 +4800,9 @@ function rejectionEmail(user, reason) {
 // the first request after deploy fires it and no request ever fires
 // it again, even if a send fails midway.
 const RECRUITER_KIT_FLAG_KEY = "config:recruiterKitEmailV1Sent";
-const BADGE_SQUARE_URL = "https://joinsignl.com/assets/badges/signl-founding-creator-badge-square.png";
-const BADGE_PORTRAIT_URL = "https://joinsignl.com/assets/badges/signl-founding-creator-badge-portrait.png";
-const CREATOR_FILM_URL = "https://joinsignl.com/creators.html";
+const BADGE_SQUARE_URL = "https://magpielocal.com/assets/badges/signl-founding-creator-badge-square.png";
+const BADGE_PORTRAIT_URL = "https://magpielocal.com/assets/badges/signl-founding-creator-badge-portrait.png";
+const CREATOR_FILM_URL = "https://magpielocal.com/creators.html";
 
 function recruiterKitEmail(user) {
   const first = greetingName(user);
@@ -4812,7 +4812,7 @@ function recruiterKitEmail(user) {
   const lines = [
     `Hi ${first},`,
     "",
-    `Thank you for being first. You are on the SIGNL founding roster in ${place}, approved before the market opens, and this platform gets built on creators who show up early like you did.`,
+    `Thank you for being first. You are on the Magpie founding roster in ${place}, approved before the market opens, and this platform gets built on creators who show up early like you did.`,
     "",
     "Your Founding Creator badge is ready. It is yours to save and post anywhere:",
     `Square (best for feed posts): ${BADGE_SQUARE_URL}`,
@@ -4829,8 +4829,8 @@ function recruiterKitEmail(user) {
     "National platforms sell reach. We sell regulars.",
     "",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   ];
   return { subject, text: lines.join("\n") };
 }
@@ -4988,15 +4988,15 @@ function reviewLinksView(business) {
 }
 // Business referral-program tie-in (Jeff, 2026-10-25): a
 // business that already runs a referral program in its own
-// POS/booking stack keeps it; SIGNL feeds it instead of
+// POS/booking stack keeps it; Magpie feeds it instead of
 // competing with it. The business saves its tracked referral
 // link, an optional short code, and a one-line note on what it
 // earns; creators see all three on the business's opportunities
 // and on their booked visits, and carry the link/code in their
 // post so the bookings land in the business's own dashboard.
-// SIGNL never touches referral money and never guarantees the
+// Magpie never touches referral money and never guarantees the
 // business's rewards: they are the business's program, under
-// the business's terms, on top of the SIGNL comp or pay.
+// the business's terms, on top of the Magpie comp or pay.
 // Stored FLAT on the business record (referralUrl,
 // referralCode, referralNote); all optional, all empty = off.
 // The link points at the business's own stack, so there is NO
@@ -5091,7 +5091,7 @@ function validateReferralProgram(input, business) {
 }
 // Audience-code discounts (Jeff, 2026-10-19): OPT-IN, always.
 // A business may offer its creators' audiences a discount for
-// using the creator's code; SIGNL never forces one and never
+// using the creator's code; Magpie never forces one and never
 // applies a default percentage. The setting lives on the
 // business record: discountEnabled (default false) and
 // discountPct (the business's own choice, 5..50, only meaningful
@@ -5898,7 +5898,7 @@ function businessTrackRecordFor(businessId, bookings, posts) {
   };
 }
 
-// ---------- SIGNL track record + business reviews ----------
+// ---------- Magpie track record + business reviews ----------
 // The track record is the differentiator (Jeff, 2026-10-19: profiles
 // must be detailed and robust, because the platform sells the
 // connection). Every figure is computed ONLY from stored bookings and
@@ -5906,7 +5906,7 @@ function businessTrackRecordFor(businessId, bookings, posts) {
 // delivered = posts actually submitted, on-time % from those posts,
 // businesses worked with = the distinct business names on redeemed
 // bookings. Before any activity exists the zero state is the honest
-// answer (isNew) and the UI says "New to SIGNL: no visits yet" -
+// answer (isNew) and the UI says "New to Magpie: no visits yet" -
 // nothing here is ever invented, estimated, or seeded.
 function summarizeTrackRecord(bookings, posts, creatorId) {
   const mine = bookings.filter((b) => b.creatorId === creatorId);
@@ -5984,7 +5984,7 @@ function reviewDisplay(r) {
   return {
     stars: r.stars,
     comment: r.comment || "",
-    businessName: r.businessName || "A SIGNL business",
+    businessName: r.businessName || "A Magpie business",
     createdAt: r.createdAt,
   };
 }
@@ -6339,7 +6339,7 @@ async function publicCreator(u, viewer, foundingPriority, marketContext) {
 // ---------- public creator profile ----------
 // One approved creator's shareable profile (Jeff, 2026-10-19): the
 // roster is never public (no listing, no browsing, no search), but a
-// creator can share their OWN page, app.joinsignl.com/c/<handle>,
+// creator can share their OWN page, app.magpielocal.com/c/<handle>,
 // the way creators elsewhere advertise a bio link. The payload is a
 // strict whitelist of public-safe fields built field by field; the
 // full user record never leaves this function. This lookup is the
@@ -6437,7 +6437,7 @@ function claimPagePayload(u) {
 // rejected, incomplete, unknown, and deeper paths like
 // /c/<handle>/proof) gets the app shell back byte-identical, so
 // human UX is unchanged and the profile API keeps its 404.
-const FALLBACK_APP_SHELL = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>SIGNL - Local Creator Marketing Platform</title>\n<meta name=\"description\" content=\"SIGNL connects local businesses with local creators. Businesses comp a meal or service, creators post honestly within 48 hours, and every post is tracked.\">\n<meta name=\"robots\" content=\"noindex\">\n<link rel=\"stylesheet\" href=\"/styles.css\">\n<link rel=\"stylesheet\" href=\"/theme-v2.css\">\n</head>\n<body>\n<main id=\"app\"><div class=\"loading\">Loading SIGNL...</div></main>\n<script src=\"/app.js\"></script>\n</body>\n</html>";
+const FALLBACK_APP_SHELL = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Magpie - Local Creator Marketing Platform</title>\n<meta name=\"description\" content=\"Magpie connects local businesses with local creators. Businesses comp a meal or service, creators post honestly within 48 hours, and every post is tracked.\">\n<meta name=\"robots\" content=\"noindex\">\n<link rel=\"stylesheet\" href=\"/styles.css\">\n<link rel=\"stylesheet\" href=\"/theme-v2.css\">\n</head>\n<body>\n<main id=\"app\"><div class=\"loading\">Loading Magpie...</div></main>\n<script src=\"/app.js\"></script>\n</body>\n</html>";
 let appShellCache = null;
 async function loadAppShell(event) {
   if (appShellCache) return appShellCache;
@@ -6453,7 +6453,7 @@ async function loadAppShell(event) {
     // Deployed functions are bundled without public/ beside them:
     // fetch the shell the CDN is already serving for this host.
     try {
-      const host = (event && event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+      const host = (event && event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.magpielocal.com";
       const res = await fetch(`https://${host}/index.html`);
       if (res.ok) html = await res.text();
     } catch (e) { html = null; }
@@ -6605,7 +6605,7 @@ async function publicProfilePayload(u) {
     // one-line intro, shown at the top of the profile.
     pitchLine: c.pitchLine || null,
     // Portfolio Sample Post (Build -33): one existing post,
-    // labeled a sample everywhere, never a SIGNL visit.
+    // labeled a sample everywhere, never a Magpie visit.
     portfolioSample: c.portfolioSample ? { url: c.portfolioSample, embedUrl: `${String(c.portfolioSample).replace(/\/?$/, "/")}embed` } : null,
     tierBand: normalizeTierBand(c.tierBand) || null,
     followerCount: c.followerCount || 0,
@@ -6667,7 +6667,7 @@ async function publicProfilePayload(u) {
     ratingCount: showPublicRating ? rating.ratingCount : 0,
     visitIncludes: STANDARD_VISIT.summary,
     // Real People Check (Build -35): shown only where a human
-    // on the SIGNL team actually checked this account.
+    // on the Magpie team actually checked this account.
     realPeopleChecked: !!c.realPeopleCheck,
     // Build -36: the level badge (Level 2 and up) rides public
     // payloads from the stamped level; the points number itself
@@ -6686,7 +6686,7 @@ async function publicProfilePayload(u) {
 //     audience stack, NO contact path beyond the header's
 //     social quick links.
 //   Tier 1 (signed-in business without a paid, active account):
-//     the showcase plus the Book on SIGNL action. No messaging.
+//     the showcase plus the Book on Magpie action. No messaging.
 //   Tier 2 (business with a paid, active account): Tier 1 plus
 //     the in-platform Message action (the social channel links
 //     ride every tier since Build -66, below).
@@ -6783,7 +6783,7 @@ async function bookMePayload(u, viewer) {
     visitIncludes: full.visitIncludes,
     bio: c.bio || "",
     charter: c.charter === true,
-    // Real People Check (Build -35): a human on the SIGNL team
+    // Real People Check (Build -35): a human on the Magpie team
     // checked this account. Business-facing reassurance, shown
     // only where it is true.
     realPeopleChecked: !!c.realPeopleCheck,
@@ -6793,7 +6793,7 @@ async function bookMePayload(u, viewer) {
     viewerTier: t.tier,
     viewerIsOwner: !!t.owner,
     canBook: !!t.canBook,
-    // Proof Card (Build -34, M7): SIGNL-counted aggregates only,
+    // Proof Card (Build -34, M7): Magpie-counted aggregates only,
     // safe at every tier: visits, register counts, came-backs,
     // tracked spend in total. No business is named here, ever.
     // Build -39: the public view honors Proof Card sharing and
@@ -6940,7 +6940,7 @@ async function withPostState(booking) {
   let creatorReview = null;
   const myCreatorReview = (await allReviews()).find((r) => r.bookingId === booking.id);
   if (myCreatorReview) creatorReview = { stars: myCreatorReview.stars, comment: myCreatorReview.comment || "", createdAt: myCreatorReview.createdAt };
-  // SIGNL ROAS (Jeff, 2026-10-19): every booking payload carries
+  // Magpie ROAS (Jeff, 2026-10-19): every booking payload carries
   // its own score, computed by the one helper from the stored
   // facts (redemption tally, reported cost, the post's reported
   // numbers, the business's plan allocation when its plan is
@@ -7058,7 +7058,7 @@ const COMPLIANCE = {
 //     creator is a strike (user.silentStrikes). "Communication"
 //     means a real contact event already in the codebase: an
 //     in-app message from the creator to the booking's business,
-//     or to the SIGNL platform thread, sent at or after
+//     or to the Magpie platform thread, sent at or after
 //     redemption (an honor report voids the clock entirely, so
 //     it never reaches this test). TWO strikes remove the
 //     creator (standing "banned", source "silent_strikes").
@@ -7578,7 +7578,7 @@ async function maybeRunAutoDecisionCleanup() {
 }
 
 // ---------- visit windows + weekly cap (Jeff, 2026-10-19 r2) ----------
-// There are NO appointments on SIGNL. An accepted offer carries a
+// There are NO appointments on Magpie. An accepted offer carries a
 // redemption WINDOW: the creator redeems any time inside it. Two
 // shapes only, picked in the composer: "7days" (redeem within
 // COMPLIANCE.visitWindowDays of accepting; the default) and
@@ -7703,14 +7703,14 @@ function postPerformanceEmail(creator, booking) {
     text: [
       `Hi ${first},`,
       "",
-      `It has been a week since your post for ${biz} went up. Two quick numbers help the business see what a visit is worth, and they build your own SIGNL track record: your post's views and likes.`,
+      `It has been a week since your post for ${biz} went up. Two quick numbers help the business see what a visit is worth, and they build your own Magpie track record: your post's views and likes.`,
       "",
       "Add them in the app: open My Visits, find the visit, and use Add post numbers. It takes ten seconds, and reporting earns you +5 Momentum points.",
       "",
-      "Sign in: https://app.joinsignl.com",
+      "Sign in: https://app.magpielocal.com",
       "",
-      "The SIGNL team",
-      "hello@joinsignl.com",
+      "The Magpie team",
+      "hello@magpielocal.com",
     ].join("\n"),
   };
 }
@@ -7732,14 +7732,14 @@ function postPerformanceUpdateEmail(creator, booking) {
     text: [
       `Hi ${first},`,
       "",
-      `Your post for ${biz} is still collecting views, and the numbers on file are from a while back. Fresh numbers show the full picture: the business sees these numbers on their results for your visit, and they build your own SIGNL track record.`,
+      `Your post for ${biz} is still collecting views, and the numbers on file are from a while back. Fresh numbers show the full picture: the business sees these numbers on their results for your visit, and they build your own Magpie track record.`,
       "",
       "Update them in the app: open My Visits, find the visit, and update your views, likes, comments, and shares. It takes ten seconds.",
       "",
-      "Sign in: https://app.joinsignl.com",
+      "Sign in: https://app.magpielocal.com",
       "",
-      "The SIGNL team",
-      "hello@joinsignl.com",
+      "The Magpie team",
+      "hello@magpielocal.com",
     ].join("\n"),
   };
 }
@@ -7750,7 +7750,7 @@ function complianceReminderEmail(creator, booking, stage) {
   const deadline = booking.postDeadline ? new Date(booking.postDeadline).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "";
   const howTo = [
     "How to check off (takes 20 seconds):",
-    "1. Open SIGNL and go to My Visits.",
+    "1. Open Magpie and go to My Visits.",
     "2. Find this visit and paste the link to your post under Post your proof.",
     "3. That link is your check-off. We verify delivery from it.",
     "The post must be your honest experience with the comp disclosed, as you agreed.",
@@ -7762,7 +7762,7 @@ function complianceReminderEmail(creator, booking, stage) {
   const standardsScope = isCompedLane(booking) ? "These standards are for comped visits. Paid visits follow the posting terms agreed on the booking." : "";
   if (stage === 1) {
     return {
-      subject: `Your SIGNL post is due for ${biz}`,
+      subject: `Your Magpie post is due for ${biz}`,
       text: [
         `Hi ${first},`,
         "",
@@ -7775,8 +7775,8 @@ function complianceReminderEmail(creator, booking, stage) {
         "",
         "If you already posted, this email crossed with your check-off and you can ignore it.",
         "",
-        "The SIGNL team",
-        "hello@joinsignl.com",
+        "The Magpie team",
+        "hello@magpielocal.com",
       ].join("\n"),
     };
   }
@@ -7795,13 +7795,13 @@ function complianceReminderEmail(creator, booking, stage) {
         "",
         "If something went wrong with the visit itself, reply to this email and tell us. We would rather hear it than guess.",
         "",
-        "The SIGNL team",
-        "hello@joinsignl.com",
+        "The Magpie team",
+        "hello@magpielocal.com",
       ].join("\n"),
     };
   }
   return {
-    subject: "Final warning: your SIGNL post is still missing",
+    subject: "Final warning: your Magpie post is still missing",
     text: [
       `Hi ${first},`,
       "",
@@ -7812,14 +7812,14 @@ function complianceReminderEmail(creator, booking, stage) {
       consequence,
       ...(standardsScope ? ["", standardsScope] : []),
       "",
-      "The SIGNL team",
-      "hello@joinsignl.com",
+      "The Magpie team",
+      "hello@magpielocal.com",
     ].join("\n"),
   };
 }
 
 function bannedNoticeReason() {
-  return "A comped visit was redeemed and no post was ever delivered inside the window. This account cannot be booked again unless SIGNL reinstates it.";
+  return "A comped visit was redeemed and no post was ever delivered inside the window. This account cannot be booked again unless Magpie reinstates it.";
 }
 
 // The strike pause email (refinement bundle, 2026-10-20): sent once
@@ -7827,19 +7827,19 @@ function bannedNoticeReason() {
 // the count, what happens next, and the review route. No em dashes.
 function strikePauseEmail(creator) {
   const first = greetingName(creator);
-  const subject = "Your SIGNL account is paused for review";
+  const subject = "Your Magpie account is paused for review";
   const lines = [
     `Hi ${first},`,
     "",
     `Booked visits on your account reached the end of their redemption windows without being used. ${strikeStatusLine(creator) || ""}`,
     "",
-    "Your account is paused while the SIGNL team reviews it. While it is paused, businesses cannot send you new offers and you cannot take new ones. Visits you already redeemed are not affected.",
+    "Your account is paused while the Magpie team reviews it. While it is paused, businesses cannot send you new offers and you cannot take new ones. Visits you already redeemed are not affected.",
     "",
     "If something kept you from those visits, reply to this email and tell us what happened. Reviews are done by a person. If your account is reinstated, it restarts on probation, and another expired window can pause it again.",
     "",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   ];
   return { subject, text: lines.join("\n") };
 }
@@ -7902,7 +7902,7 @@ async function runComplianceSweep() {
     // is first stamped. No post exists (this loop only sees
     // unposted bookings); the only remaining question is whether
     // the creator said anything. A message to the business or to
-    // SIGNL since redemption means it was not silent: no strike.
+    // Magpie since redemption means it was not silent: no strike.
     // The second strike removes the account on the spot.
     const assessSilentStrike = async () => {
       if (!isCompedLane(booking) || booking.compliance.silentStrikeAt) return;
@@ -7921,8 +7921,8 @@ async function runComplianceSweep() {
       await logEvent({ type: "creator_silent_strike", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, strikes, limit: SILENT_STRIKE_LIMIT } });
       summary.silentStrikes = (summary.silentStrikes || 0) + 1;
       await notifyUser(creator.id, "silent_strike", strikes >= SILENT_STRIKE_LIMIT
-        ? "A redeemed visit ended with no post and no word from you, for the second time. Your SIGNL account has been removed. Reply to the email we sent if something kept you from that visit."
-        : "A redeemed visit ended with no post and no word from you. That is one silent no-show strike; a second one removes your account. If something went wrong, message the business or SIGNL in the app: a word from you is what keeps a miss from counting as silent.", { bookingId: booking.id, strikes, limit: SILENT_STRIKE_LIMIT });
+        ? "A redeemed visit ended with no post and no word from you, for the second time. Your Magpie account has been removed. Reply to the email we sent if something kept you from that visit."
+        : "A redeemed visit ended with no post and no word from you. That is one silent no-show strike; a second one removes your account. If something went wrong, message the business or Magpie in the app: a word from you is what keeps a miss from counting as silent.", { bookingId: booking.id, strikes, limit: SILENT_STRIKE_LIMIT });
       if (strikes >= SILENT_STRIKE_LIMIT && standingState(creator) !== "banned") {
         creator.standing = { state: "banned", source: "silent_strikes", reason: silentRemovalReason(), at: nowIso(), bookingId: booking.id };
         creator.updatedAt = nowIso();
@@ -8005,7 +8005,7 @@ async function runComplianceSweep() {
         await store.set(`user:${creator.id}`, creator);
         await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, banAt: booking.compliance.banAt, cause: comped ? "consumed_comp" : "paid_terms" } });
         if (comped) {
-          await notifyUser(creator.id, "account_inactive", "A month has passed since a comped visit was redeemed and no post landed. Your SIGNL account is no longer active for further opportunities. Reply to the email we sent if something went wrong.", { bookingId: booking.id });
+          await notifyUser(creator.id, "account_inactive", "A month has passed since a comped visit was redeemed and no post landed. Your Magpie account is no longer active for further opportunities. Reply to the email we sent if something went wrong.", { bookingId: booking.id });
           const mail = consumedCompEmail(creator, booking);
           await deliverEmail("consumed_comp_inactive", creator, mail.subject, mail.text);
           summary.inactivated = (summary.inactivated || 0) + 1;
@@ -8061,7 +8061,7 @@ async function runComplianceSweep() {
         strikeCreator.standing = { state: "paused", source: "strikes", reason: strikePauseReason(), at: nowIso(), bookingId: booking.id };
         strikeCreator.updatedAt = nowIso();
         await store.set(`user:${strikeCreator.id}`, strikeCreator);
-        await notifyUser(strikeCreator.id, "account_paused_strikes", "Your SIGNL account is paused for review: booked visit windows expired unused. Reply to the email we sent if something kept you from those visits.", { strikes, limit: STRIKE_LIMIT });
+        await notifyUser(strikeCreator.id, "account_paused_strikes", "Your Magpie account is paused for review: booked visit windows expired unused. Reply to the email we sent if something kept you from those visits.", { strikes, limit: STRIKE_LIMIT });
         const mail = strikePauseEmail(strikeCreator);
         await deliverEmail("strike_pause", strikeCreator, mail.subject, mail.text);
         await logEvent({ type: "account_paused_strikes", actorId: null, actorRole: "system", subjectId: strikeCreator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, strikes, limit: STRIKE_LIMIT } });
@@ -8273,7 +8273,7 @@ async function runOfferSweep() {
           await deliverEmail("offer_nudge", biz, `No applications yet on "${offer.title}"`, [
             `Hi ${greetingName(biz)},`,
             ``,
-            `Your SIGNL offer "${offer.title}" has been open for 48 hours with no applications yet. That is fixable, and the two changes that move offers most are one tap each on the offer card under My Offers in the app:`,
+            `Your Magpie offer "${offer.title}" has been open for 48 hours with no applications yet. That is fixable, and the two changes that move offers most are one tap each on the offer card under My Offers in the app:`,
             ``,
             `1. Raise the comp value. Offers priced at or above the typical range for the tier fill first.`,
             `2. Widen the redemption window. Longer windows give creators room to fit the visit in.`,
@@ -8281,7 +8281,7 @@ async function runOfferSweep() {
             `Your offer stays live while you decide. Creators apply with one tap, and you pick from the stack.`,
             ``,
             `Jeff`,
-            `Founder, SIGNL`,
+            `Founder, Magpie`,
           ].join("\n"), null);
         } catch (e) { /* email is best-effort; the nudge event and attention item are the record */ }
       }
@@ -8384,7 +8384,7 @@ async function maybeRunProfileReminderSweep() {
 // by message, #8 the stalled-profile rescue sequence. Ideas #4,
 // #6 and #7 were excluded by Jeff and are NOT built here.
 //
-//   A. SIG CONCIERGE. Inside the creator's SIGNL team platform
+//   A. SIG CONCIERGE. Inside the creator's Magpie team platform
 //      thread, Sig asks for the profile-completion gate fields
 //      one question at a time; each answer writes into the real
 //      profile through the same primitives a profile save uses.
@@ -8423,7 +8423,7 @@ const FINISH_TOUCH2_AFTER_MS = 3 * DAY_MS;
 const FINISH_TOUCH3_AFTER_MS = 7 * DAY_MS;
 const FINISH_ENGINE_TEMPLATE_KEYS = ["rescue1", "rescue2", "rescue3", "finishMoment"];
 const FINISH_ENGINE_DEFAULT_TEMPLATES = {
-  rescue1: "Hi {firstName}, Sig from the SIGNL team. Straight with you: your profile is not finished, and while it is unfinished, no business can book you. Not for a comped visit (a meal, a service, or an experience in exchange for your post) and not for paid work at your own rate, where you keep 97%.\n\nFinished creators are the ones businesses can find, book, and pay. Finishing takes a few minutes.\n\nWant me to finish it with you right here? Reply and I will walk you through it, one question at a time.",
+  rescue1: "Hi {firstName}, Sig from the Magpie team. Straight with you: your profile is not finished, and while it is unfinished, no business can book you. Not for a comped visit (a meal, a service, or an experience in exchange for your post) and not for paid work at your own rate, where you keep 97%.\n\nFinished creators are the ones businesses can find, book, and pay. Finishing takes a few minutes.\n\nWant me to finish it with you right here? Reply and I will walk you through it, one question at a time.",
   rescue2: "Hi {firstName}, Sig again. When you finish your profile, you get your own booking page: your name on it, your categories, your local audience, your rate. It is sitting there switched off until your profile is finished, and it turns on the moment you finish.\n\nThen your page is one switch away in your profile, ready to send anywhere.\n\nReply here and I will finish your profile with you, one question at a time. Or open the app and finish it there, either way works.",
   rescue3: "Hi {firstName}, one more from Sig. {market} has not opened yet, and creators who finish before it opens hold founding status for good: when offers start posting, you see each new one a full day before everyone else.\n\nThat window closes the day the market opens, and it does not come back.\n\nYour profile is still unfinished. Reply here and I will finish it with you now, one question at a time.",
   finishMoment: "{firstName}, you finished. Your profile is complete.\n\n{pageLine}\n\n{turnedOnLine}\n{charterLine}",
@@ -8432,7 +8432,7 @@ const FINISH_OPTOUT_RE = /^(stop|unsubscribe|opt[ -]?out|end|quit|leave me alone
 const FINISH_PAUSE_RE = /^(later|pause|not now|not right now|busy|brb)$/;
 
 function finishAppBase() {
-  return (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+  return (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
 }
 
 async function finishEngineRaw() {
@@ -8730,7 +8730,7 @@ async function startFinishConcierge(adminUser, creatorId, via) {
   rec.updatedAt = nowIso();
   await store.set(`user:${rec.id}`, rec);
   await logEvent({ type: "sig_concierge_started", actorId: adminUser ? adminUser.id : null, actorRole: adminUser ? "admin" : "system", subjectId: rec.id, market: rec.market, data: { via, currentField: missing[0] } });
-  const body = `Hi ${greetingName(rec)}, Sig from the SIGNL team. I can finish your profile with you right here, one question at a time. Every answer saves straight to your profile, and you can stop any time.\n\nFirst one: ${conciergeQuestionFor(rec, missing[0])}`;
+  const body = `Hi ${greetingName(rec)}, Sig from the Magpie team. I can finish your profile with you right here, one question at a time. Every answer saves straight to your profile, and you can stop any time.\n\nFirst one: ${conciergeQuestionFor(rec, missing[0])}`;
   await sendPlatformMessage(adminUser, rec, body, { engine: "sig_concierge" });
   return { ok: true };
 }
@@ -9027,7 +9027,7 @@ const DEFAULT_CAMPAIGN_ID = "founding-creators-2026-10";
 // Second campaign (Jeff, 2026-10-19): platform-crossover creators,
 // the ones already working national platforms (Grin, Cohley,
 // Momfluence and the like). Same machinery, different email: the
-// pitch is additive and non-exclusive. SIGNL is the local layer on
+// pitch is additive and non-exclusive. Magpie is the local layer on
 // top of the national deals they keep, never a replacement.
 const CROSSOVER_CAMPAIGN_ID = "founding-crossover-2026-10";
 // Third campaign (Jeff, 2026-10-23): the founding BUSINESS wave.
@@ -9049,7 +9049,7 @@ const BUSINESS_CAMPAIGN_ID = "founding-businesses-2026-10";
 // The one difference is the sender. The founding campaign sends
 // from the creators@ signlteam mailbox, which is warming up
 // under its 25/day cap; this lane's stored config keeps
-// fromMailbox "default", so it sends from hello@joinsignl.com
+// fromMailbox "default", so it sends from hello@magpielocal.com
 // under the shared daily ceiling alone, and founding-creator
 // outreach volume is not throttled by one new mailbox's warm-up.
 const HELLO_CAMPAIGN_ID = "founding-creators-hello-2026-10";
@@ -9070,7 +9070,7 @@ function campaignDailyCeiling() {
   return Number.isNaN(n) || n <= 0 ? CAMPAIGN_DAILY_CEILING_DEFAULT : n;
 }
 // Sender mailboxes (Jeff, 2026-10-24): a campaign sends from the
-// default profile (hello@joinsignl.com) unless its config names
+// default profile (hello@magpielocal.com) unless its config names
 // one of the signlteam.com profiles from lib/email.js (creators@,
 // team@, hello@ on the second sending domain). The stored value is
 // normalized through campaignFromMailbox, so a missing or junk
@@ -9092,7 +9092,7 @@ function campaignStoredMailbox(cfg) {
 // batch failed, the run stopped after 3 failures, and the queue
 // sat paused (founding-creators-2026-10, 3 queued, Oct 2026).
 // A campaign whose stored config still names the retired
-// mailbox now resolves to the default hello@joinsignl.com
+// mailbox now resolves to the default hello@magpielocal.com
 // identity — the transport approval mail already uses — so the
 // next sweep sends its queue from hello@. The resolution is
 // LOUD, never silent (the 2026-10-24 wrong-identity rule
@@ -9202,7 +9202,7 @@ function campaignMarketParagraph(market) {
 
 function campaignClaimLink(recipient) {
   const market = String(recipient.market || "");
-  return `app.joinsignl.com/?handle=${encodeURIComponent(String(recipient.handle || "").replace(/^@/, ""))}&market=${encodeURIComponent(market)}`;
+  return `app.magpielocal.com/?handle=${encodeURIComponent(String(recipient.handle || "").replace(/^@/, ""))}&market=${encodeURIComponent(market)}`;
 }
 
 // The Jeff-approved outreach email (2026-10-19), rendered server
@@ -9216,9 +9216,9 @@ function campaignEmail(recipient) {
   const lines = [
     `Hi ${campaignFirstName(recipient.name)},`,
     "",
-    `I'm Jeff, founder of SIGNL. I found you through ${String(recipient.opener || "").trim()}. You're exactly the kind of local voice we're building around.`,
+    `I'm Jeff, founder of Magpie. I found you through ${String(recipient.opener || "").trim()}. You're exactly the kind of local voice we're building around.`,
     "",
-    "Local businesses book creators two ways on SIGNL: they comp you a meal, service or experience for an honest post, or they pay your own listed rate (you keep 97%). Most founding creators do both. Either way, you post honestly about it within 48 hours. No script, no required praise, full disclosure. Businesses get real local posts, and your founding profile is live and shareable from day one.",
+    "Local businesses book creators two ways on Magpie: they comp you a meal, service or experience for an honest post, or they pay your own listed rate (you keep 97%). Most founding creators do both. Either way, you post honestly about it within 48 hours. No script, no required praise, full disclosure. Businesses get real local posts, and your founding profile is live and shareable from day one.",
     "",
     "We don't rank you by followers. We rank you by how much of your audience actually lives here. That share is your local reach, and it is the number businesses look at first. Every post you deliver on time earns Momentum points, and those points raise your visibility to businesses.",
     "",
@@ -9232,8 +9232,8 @@ function campaignEmail(recipient) {
     "Two minutes. " + CREATOR_FREE_LINE + " If it's not for you, you won't hear from me again.",
     "",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com | joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com | magpielocal.com",
     "National platforms sell reach. We sell regulars.",
   ];
   return { subject, text: lines.join("\n") };
@@ -9242,7 +9242,7 @@ function campaignEmail(recipient) {
 // The crossover email (Jeff, 2026-10-19), for creators already
 // working national platforms. The positioning is additive and
 // non-exclusive by design: they keep every national deal they
-// have, and SIGNL is the local layer on top, in their own city.
+// have, and Magpie is the local layer on top, in their own city.
 // Same rules as the founding template: plain text, first name
 // only sign-off, no em dashes, claim link prefilled.
 function crossoverEmail(recipient) {
@@ -9251,15 +9251,15 @@ function crossoverEmail(recipient) {
   const lines = [
     `Hi ${campaignFirstName(recipient.name)},`,
     "",
-    `I'm Jeff, founder of SIGNL. I found you through ${String(recipient.opener || "").trim()}.`,
+    `I'm Jeff, founder of Magpie. I found you through ${String(recipient.opener || "").trim()}.`,
     "",
-    "You already know how the national platforms work, platforms like Grin, Cohley, or Momfluence. SIGNL is not asking you to leave any of them, and nothing about SIGNL is exclusive. Keep every national deal you have. SIGNL is the local layer on top: the work in your own city that the national platforms cannot see.",
+    "You already know how the national platforms work, platforms like Grin, Cohley, or Momfluence. Magpie is not asking you to leave any of them, and nothing about Magpie is exclusive. Keep every national deal you have. Magpie is the local layer on top: the work in your own city that the national platforms cannot see.",
     "",
     `Here is what that layer looks like in ${market}. Local businesses comp you a meal, a service, or an experience, and you post honestly about it within 48 hours. No script, no required praise, full disclosure. Every visit is tracked, and your delivered posts build a public track record that businesses near you can see.`,
     "",
-    "There is local money in it too, two ways. First, you can set a paid rate on your SIGNL profile for direct local bookings: you keep 97 percent of your rate, the business covers another 3 percent on their side, and SIGNL holds the payment and releases it when your post is live. Second, creators with 15k+ followers are first in line for paid cash campaigns when local businesses run them.",
+    "There is local money in it too, two ways. First, you can set a paid rate on your Magpie profile for direct local bookings: you keep 97 percent of your rate, the business covers another 3 percent on their side, and Magpie holds the payment and releases it when your post is live. Second, creators with 15k+ followers are first in line for paid cash campaigns when local businesses run them.",
     "",
-    "Why local pays differently: the followers who live near you are the customers local businesses actually want, and a national platform cannot tell a business what share of a creator's audience lives in its market. SIGNL leads with exactly that number.",
+    "Why local pays differently: the followers who live near you are the customers local businesses actually want, and a national platform cannot tell a business what share of a creator's audience lives in its market. Magpie leads with exactly that number.",
     "",
     campaignMarketParagraph(market),
     "",
@@ -9271,8 +9271,8 @@ function crossoverEmail(recipient) {
     "If it's not for you, no hard feelings, and you won't hear from me again.",
     "",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com | joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com | magpielocal.com",
     "National platforms sell reach. We sell regulars.",
   ];
   return { subject, text: lines.join("\n") };
@@ -9292,7 +9292,7 @@ function businessSignupLink(recipient) {
     ["src", "business-wave"],
   ];
   const qs = pairs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
-  return `https://app.joinsignl.com/?${qs}`;
+  return `https://app.magpielocal.com/?${qs}`;
 }
 
 // The founding business wave email (Jeff's copy, 2026-10-23).
@@ -9302,11 +9302,11 @@ function businessSignupLink(recipient) {
 // updates as launch approaches.
 function businessWaveEmail(recipient) {
   const business = String(recipient.businessName || "your business");
-  const subject = `Your SIGNL founding spot is pre-built, ${business}`;
+  const subject = `Your Magpie founding spot is pre-built, ${business}`;
   const lines = [
     `Hi ${String(recipient.greeting || "there")},`,
     "",
-    "I'm Jeff, founder of SIGNL. We connect local businesses in Hampton Roads with local creators: a creator visits, posts honestly about it, and we track what the post brings in.",
+    "I'm Jeff, founder of Magpie. We connect local businesses in Hampton Roads with local creators: a creator visits, posts honestly about it, and we track what the post brings in.",
     "",
     `We're opening Hampton Roads in November, and I've pre-built a founding spot for ${business}, my pick for the ${String(recipient.category || "business")} spot in ${String(recipient.neighborhood || "your neighborhood")}. Your registration is already filled in. One click claims it:`,
     "",
@@ -9315,7 +9315,7 @@ function businessWaveEmail(recipient) {
     `Claiming it costs nothing and commits you to nothing. It puts ${business} in early, ahead of the public launch, and you'll get updates from me as we get close to opening day. If you decide to activate when the market opens, founding pricing is locked at $199, $349 or $699 a month depending on the creator visits you want, with $100 off your first month on any plan. If you never activate, that's fine too.`,
     "",
     "Jeff",
-    "Founder, SIGNL",
+    "Founder, Magpie",
   ];
   return { subject, text: lines.join("\n") };
 }
@@ -9614,7 +9614,7 @@ function campaignView(cfg, counts, sentToday, sentTodayByLane) {
     dailyCeiling: campaignDailyCeiling(),
     sentToday: typeof sentToday === "number" ? sentToday : null,
     // Per-lane sends today, keyed by sender profile ("creators" =
-    // creators@signlteam.com, "default" = hello@joinsignl.com, plus
+    // creators@signlteam.com, "default" = hello@magpielocal.com, plus
     // "team" / "hello_team" when those mailboxes send). Global across
     // campaigns, exactly like sentToday: the ceiling protects the
     // sending domain, and the Admin tab reads the split from here.
@@ -9635,10 +9635,10 @@ function campaignView(cfg, counts, sentToday, sentTodayByLane) {
 // so no preview email can exist.
 function staffNoticeEmail(creator, booking, trigger) {
   const c = creator.creator || {};
-  const photo = c.hasPhoto ? `https://app.joinsignl.com/api/users/${creator.id}/photo` : "(no photo on file yet)";
-  const happening = trigger === "checkin" ? `${creator.name} (@${c.handle || ""}) just checked in at your business on SIGNL.` : `${creator.name} (@${c.handle || ""}) is redeeming their SIGNL comp right now.`;
+  const photo = c.hasPhoto ? `https://app.magpielocal.com/api/users/${creator.id}/photo` : "(no photo on file yet)";
+  const happening = trigger === "checkin" ? `${creator.name} (@${c.handle || ""}) just checked in at your business on Magpie.` : `${creator.name} (@${c.handle || ""}) is redeeming their Magpie comp right now.`;
   return {
-    subject: trigger === "checkin" ? `SIGNL check-in: ${creator.name} is here` : `SIGNL visit now: ${creator.name} is redeeming their comp`,
+    subject: trigger === "checkin" ? `Magpie check-in: ${creator.name} is here` : `Magpie visit now: ${creator.name} is redeeming their comp`,
     text: [
       happening,
       "",
@@ -9647,10 +9647,10 @@ function staffNoticeEmail(creator, booking, trigger) {
       `Comp: ${booking.whatComped} (cap $${fmtMoneyS(booking.dollarCap)})`,
       `Booking code: ${booking.code}`,
       "",
-      "How it works: the creator shows this code, you redeem it in the app at the Counter tab, and their 48 hour post clock starts at that moment. Ring the comp in your own system the way you normally do; SIGNL never touches your register.",
+      "How it works: the creator shows this code, you redeem it in the app at the Counter tab, and their 48 hour post clock starts at that moment. Ring the comp in your own system the way you normally do; Magpie never touches your register.",
       "",
-      "The SIGNL team",
-      "hello@joinsignl.com",
+      "The Magpie team",
+      "hello@magpielocal.com",
     ].join("\n"),
   };
 }
@@ -9743,11 +9743,11 @@ async function performCounterRedeem(booking, actor) {
         ? `Your visit to ${booking.businessName || "the business"} is redeemed. ${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app.`
         : `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
       paidVisit
-        ? `Your post is due under the agreed terms: ${booking.businessName || "your SIGNL visit"}`
-        : `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
+        ? `Your post is due under the agreed terms: ${booking.businessName || "your Magpie visit"}`
+        : `Your ${clockH} hour post clock started: ${booking.businessName || "your Magpie visit"}`,
       paidVisit
-        ? [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n")
-        : [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+        ? [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n")
+        : [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
       { bookingId: booking.id });
   }
   return booking;
@@ -9999,7 +9999,7 @@ function previewQrSvg(code) {
   try {
     const qrcode = require("qrcode-generator");
     const qr = qrcode(0, "M");
-    const base = process.env.APP_URL || "https://app.joinsignl.com";
+    const base = process.env.APP_URL || "https://app.magpielocal.com";
     qr.addData(`${base}/counter?code=${code}`);
     qr.make();
     return qr.createSvgTag({ cellSize: 6, margin: 8, scalable: true });
@@ -10024,7 +10024,7 @@ async function previewDisplayCode(used) {
 }
 
 // A display-only audience code for a simulated booking (the
-// SIGNL ROAS creator code). Derived from the creator's handle
+// Magpie ROAS creator code). Derived from the creator's handle
 // like the real ones; never written to the ccode: index, so a
 // simulated code can never be reported against or collide with
 // a real tally.
@@ -10073,7 +10073,7 @@ function previewDashChecklist(b) {
       key: "disclosure",
       label: "Comp disclosed in the post (FTC)",
       state: b.post ? "done" : "pending",
-      detail: b.post ? "Disclosed, as every SIGNL post must be" : "Required on every post; a post without it does not check off",
+      detail: b.post ? "Disclosed, as every Magpie post must be" : "Required on every post; a post without it does not check off",
     },
     {
       key: "live30",
@@ -10141,7 +10141,7 @@ async function previewDashboard() {
       paidBrief: null,
       dollarCap: brief.dollarCap,
       compCostModeled: brief.compCost || null,
-      // SIGNL ROAS simulation (Jeff, 2026-10-19): the audience
+      // Magpie ROAS simulation (Jeff, 2026-10-19): the audience
       // code this creator would share for Salt & Ember, the
       // discount it carries (Salt & Ember opted in at 20 percent;
       // see PREVIEW_DASH_DISCOUNT), the register tally the
@@ -10240,7 +10240,7 @@ async function previewDashboard() {
   const totalViews = delivered.reduce((s, b) => s + (b.post.views || 0), 0);
   const totalLikes = delivered.reduce((s, b) => s + (b.post.likes || 0), 0);
   const compValueGiven = bookings.reduce((s, b) => s + (b.redeemedAt ? b.compCostModeled || 0 : 0), 0);
-  // SIGNL ROAS (Jeff, 2026-10-19): the returns story is the
+  // Magpie ROAS (Jeff, 2026-10-19): the returns story is the
   // score now, computed by the one helper over the delivered
   // bookings: register spend tracked through each creator's
   // audience code plus media value at the published model rates,
@@ -10291,7 +10291,7 @@ async function previewDashboard() {
   const managedPaid = [];
   const paidSlots = [
     { slot: 2, rate: 250, escrowState: "released", escrowNote: "Post live and the 48 hour hold passed: released to the creator" },
-    { slot: 1, rate: 180, escrowState: "held", escrowNote: "Post live, inside the 48 hour hold: still held by SIGNL" },
+    { slot: 1, rate: 180, escrowState: "held", escrowNote: "Post live, inside the 48 hour hold: still held by Magpie" },
   ];
   for (let i = 0; i < paidSlots.length; i++) {
     const creator = slotCreator(paidSlots[i].slot);
@@ -10325,7 +10325,7 @@ async function previewDashboard() {
       spentThisMonth: managedSpent,
       remaining: Math.round((MANAGED_TALENT_BUDGET_DEFAULT - managedSpent) * 100) / 100,
       paidBookings: managedPaid,
-      note: "A spending cap and authorization, not a held deposit: each paid booking escrows on its own, held by SIGNL until the post is live.",
+      note: "A spending cap and authorization, not a held deposit: each paid booking escrows on its own, held by Magpie until the post is live.",
     },
   };
   // Business Home (dashboard concept merge, Jeff 2026-10-20): the
@@ -10624,7 +10624,7 @@ function homeAnalyticsExtras(triples, plan, now, apps = []) {
 // ---------- Build -91: business wishlist + roster drops + proof kit ----------
 // Item 6 (strategy doc, Tier 1): a business keeps its OWN private
 // list of creators it already wants — Chelsea's spreadsheet, inside
-// SIGNL. Rows live at wishlist:{businessId}:{normalizedHandle} and
+// Magpie. Rows live at wishlist:{businessId}:{normalizedHandle} and
 // are read by exactly one surface: that business's own wishlist
 // view. The note on a row is the business's private hook; it never
 // rides a creator payload, a public page, or another business's
@@ -10716,36 +10716,36 @@ function wishlistAlertEmail(biz, creator, kind) {
   const bizName = (biz.business && biz.business.businessName) || "your business";
   if (kind === "ready") {
     return {
-      subject: `@${handle} finished their SIGNL profile`,
+      subject: `@${handle} finished their Magpie profile`,
       text: [
         `Hi ${first},`,
         "",
-        `@${handle} is on the creator wishlist at ${bizName}, and they just finished their SIGNL profile. They are ready to invite.`,
+        `@${handle} is on the creator wishlist at ${bizName}, and they just finished their Magpie profile. They are ready to invite.`,
         "",
-        "Open Find creators in SIGNL and tap Invite to draft on their wishlist row: the invite starts as a draft with their name on it, ready for opening day.",
+        "Open Find creators in Magpie and tap Invite to draft on their wishlist row: the invite starts as a draft with their name on it, ready for opening day.",
         "",
-        "Open SIGNL: https://app.joinsignl.com",
+        "Open Magpie: https://app.magpielocal.com",
         "",
         "Jeff",
-        "Founder, SIGNL",
-        "hello@joinsignl.com",
+        "Founder, Magpie",
+        "hello@magpielocal.com",
       ].join("\n"),
     };
   }
   return {
-    subject: `@${handle} claimed their SIGNL profile`,
+    subject: `@${handle} claimed their Magpie profile`,
     text: [
       `Hi ${first},`,
       "",
-      `@${handle} is on the creator wishlist at ${bizName}, and they just claimed their SIGNL profile. Their profile is not finished yet, so there is nothing to do today.`,
+      `@${handle} is on the creator wishlist at ${bizName}, and they just claimed their Magpie profile. Their profile is not finished yet, so there is nothing to do today.`,
       "",
       "We will email you again the moment their profile is finished and they are ready to invite.",
       "",
-      "Open SIGNL: https://app.joinsignl.com",
+      "Open Magpie: https://app.magpielocal.com",
       "",
       "Jeff",
-      "Founder, SIGNL",
-      "hello@joinsignl.com",
+      "Founder, Magpie",
+      "hello@magpielocal.com",
     ].join("\n"),
   };
 }
@@ -10772,7 +10772,7 @@ async function alertWishlistBusinesses(creator, kind) {
     await store.set(r.key, row);
     const noteText = kind === "ready"
       ? `@${creator.creator.handle}, on your wishlist, finished their profile and is ready to invite.`
-      : `@${creator.creator.handle}, on your wishlist, claimed their SIGNL profile. We will tell you when their profile is finished.`;
+      : `@${creator.creator.handle}, on your wishlist, claimed their Magpie profile. We will tell you when their profile is finished.`;
     await notifyUser(biz.id, kind === "ready" ? "wishlist_ready" : "wishlist_claimed", noteText, { creatorId: creator.id, handle: creator.creator.handle, wishlist: true });
     try {
       const mail = wishlistAlertEmail(biz, creator, kind);
@@ -10838,17 +10838,17 @@ async function runRosterDigestSweep(opts = {}) {
     const text = [
       `Hi ${greetingName(biz)},`,
       "",
-      `${mine.length} new ${place} creator${mine.length === 1 ? "" : "s"} finished their SIGNL profile this week${breakdown ? ` (${breakdown})` : ""}:`,
+      `${mine.length} new ${place} creator${mine.length === 1 ? "" : "s"} finished their Magpie profile this week${breakdown ? ` (${breakdown})` : ""}:`,
       "",
       ...mine.map((d) => `- @${d.handle}${(d.categories || []).length ? ` — ${d.categories.join(", ")}` : ""}`),
       "",
-      "Open Find creators in SIGNL to save the ones who fit, or invite one straight into a draft campaign from Sig's queue on your Home page.",
+      "Open Find creators in Magpie to save the ones who fit, or invite one straight into a draft campaign from Sig's queue on your Home page.",
       "",
-      "Open SIGNL: https://app.joinsignl.com",
+      "Open Magpie: https://app.magpielocal.com",
       "",
       "Jeff",
-      "Founder, SIGNL",
-      "hello@joinsignl.com",
+      "Founder, Magpie",
+      "hello@magpielocal.com",
     ].join("\n");
     try { await deliverEmail("roster_digest", biz, subject, text, null); } catch (e) { /* best-effort; the note below is the in-app record */ }
     await notifyUser(biz.id, "roster_digest", `${mine.length} new ${place} creator${mine.length === 1 ? "" : "s"} finished this week${breakdown ? ` (${breakdown})` : ""}. Save or invite them from Find creators.`, { count: mine.length, market: biz.market, creators: mine.map((d) => ({ creatorId: d.creatorId, handle: d.handle })) });
@@ -11209,7 +11209,7 @@ function standingAvailabilityView(biz) {
 
 // (b) The forwardable Monthly Receipt export: the same real
 // records the on-screen Receipt reads, for one chosen month,
-// shaped for a bookkeeper who has never seen SIGNL. Counted,
+// shaped for a bookkeeper who has never seen Magpie. Counted,
 // recorded, and intent ride as three SEPARATE labeled sections
 // and are never summed. Counted comes from the Receipt's own
 // Score v2 cohort helper, so the export can never disagree with
@@ -11276,7 +11276,7 @@ function csvCell(v) { const s = String(v === null || v === undefined ? "" : v); 
 function monthlyReceiptCsv(exp) {
   const rows = [];
   const row = (...cells) => rows.push(cells.map(csvCell).join(","));
-  row("SIGNL monthly receipt");
+  row("Magpie monthly receipt");
   row("Business", exp.businessName);
   row("Month", exp.monthLabel);
   row("Plan", exp.plan ? `${exp.plan.name} ($${exp.plan.priceMonthly} a month, ${exp.plan.visitsPerMonth} visits a month)` : "No plan on record");
@@ -12045,7 +12045,7 @@ async function getAuthUser(event) {
     // (public routes still serve; signed-in routes answer 401)
     // instead of 500ing every route for cookie-bearing browsers.
     // See INCIDENT-2026-10-25.md.
-    console.error("SIGNL getAuthUser session lookup failed (treating request as signed out):", e);
+    console.error("Magpie getAuthUser session lookup failed (treating request as signed out):", e);
     return { user: null, token: null, session: null };
   }
 }
@@ -12114,7 +12114,7 @@ async function handleRegister(event) {
   const claimPlatform = normalizePrimaryPlatform(b.primaryPlatform);
   if (quickClaim) {
     if (!claimHandle) return err(400, `Your ${primaryPlatformLabel(claimPlatform)} handle is required`);
-    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
+    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
   }
   // Business registration is founding-list intake (Jeff restored
   // the standing launch shape, 2026-10-20): a business registers
@@ -12135,7 +12135,7 @@ async function handleRegister(event) {
   // stays founding-gated like every founding business, and their
   // sign-up counts toward opening the market. Nobody dead-ends.
   const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
-  if (!market) return err(400, "Choose one of the SIGNL markets");
+  if (!market) return err(400, "Choose one of the Magpie markets");
   let customCity = "";
   let customCountry = "";
   let customState = "";
@@ -12143,8 +12143,8 @@ async function handleRegister(event) {
     customCity = (b.customCity || "").trim().slice(0, 60);
     customCountry = (b.customCountry || "").trim().slice(0, 60);
     customState = (b.customState || "").trim().slice(0, 60);
-    if (!customCity) return err(400, "Tell us your city, so your sign-up counts toward opening SIGNL there");
-    if (!customCountry) return err(400, "Tell us your country, so your sign-up counts toward opening SIGNL there");
+    if (!customCity) return err(400, "Tell us your city, so your sign-up counts toward opening Magpie there");
+    if (!customCountry) return err(400, "Tell us your country, so your sign-up counts toward opening Magpie there");
     if (customState.length === 2) customState = customState.toUpperCase();
   }
 
@@ -12380,7 +12380,7 @@ async function handleRegister(event) {
     }
     const localPct = Math.max(0, Math.min(100, Number(b.localAudiencePct)));
     if (Number.isNaN(localPct)) return err(400, "Local audience percentage must be a number from 0 to 100");
-    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
+    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
     // Audience stacking (Jeff, 2026-10-19): the sign-up's follower
     // count is the count on the creator's PRIMARY platform (Jeff,
     // 2026-10-22: it was the Instagram count when Instagram was the
@@ -12492,7 +12492,7 @@ async function handleRegister(event) {
       brokerage: "",
     };
   } else {
-    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
+    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
     if (!b.businessName) return err(400, "Business name is required");
     const bizCity = (b.city || "").trim();
     if (bizCity && market.cities.length && !market.cities.includes(bizCity)) return err(400, `Choose your city in the ${market.name} market`);
@@ -12563,7 +12563,7 @@ async function handleRegister(event) {
       // sign-up. The business may save its own tracked referral
       // link/code/note from its POS or booking stack (Plan tab);
       // creators then see it on the business's opportunities and
-      // booked visits. SIGNL never touches referral money.
+      // booked visits. Magpie never touches referral money.
       referralUrl: "",
       referralCode: "",
       referralNote: "",
@@ -12826,19 +12826,19 @@ function resetTokenHash(token) {
 
 function passwordResetEmail(user, resetUrl) {
   const first = greetingName(user);
-  const subject = "Reset your SIGNL password";
+  const subject = "Reset your Magpie password";
   const lines = [
     `Hi ${first},`,
     "",
-    "We got a request to reset the password on your SIGNL account. Open this link to set a new one:",
+    "We got a request to reset the password on your Magpie account. Open this link to set a new one:",
     resetUrl,
     "",
     "The link works once and expires in one hour. If you did not ask for a reset, you can ignore this email: your password stays exactly as it is.",
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   ];
   return { subject, text: lines.join("\n") };
 }
@@ -12853,13 +12853,13 @@ function passwordResetEmail(user, resetUrl) {
 // it is for actual forgot-password requests.
 function recruiterWelcomeEmail(user, link) {
   const first = greetingName(user);
-  const subject = "You're a SIGNL recruiter";
+  const subject = "You're a Magpie recruiter";
   const lines = [
     `Hi ${first},`,
     "",
-    "Welcome to SIGNL — you've been set up as a recruiter.",
+    "Welcome to Magpie — you've been set up as a recruiter.",
     "",
-    "The short version: you get your own tracked link, and every creator and business who joins SIGNL through it is credited to you.",
+    "The short version: you get your own tracked link, and every creator and business who joins Magpie through it is credited to you.",
     "",
     "Set your password and open your recruiter home here:",
     link,
@@ -12868,20 +12868,20 @@ function recruiterWelcomeEmail(user, link) {
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   ];
   return { subject, text: lines.join("\n") };
 }
 function partnerWelcomeEmail(user, link) {
   const first = greetingName(user);
-  const subject = "You're a SIGNL partner";
+  const subject = "You're a Magpie partner";
   const lines = [
     `Hi ${first},`,
     "",
-    "Welcome to SIGNL — you've been set up as a partner.",
+    "Welcome to Magpie — you've been set up as a partner.",
     "",
-    "The short version: you fund first visits for local businesses, SIGNL lines up the creators and runs the visits, and you see exactly what came back.",
+    "The short version: you fund first visits for local businesses, Magpie lines up the creators and runs the visits, and you see exactly what came back.",
     "",
     "Set your password and open your partner home here:",
     link,
@@ -12890,18 +12890,18 @@ function partnerWelcomeEmail(user, link) {
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   ];
   return { subject, text: lines.join("\n") };
 }
 function teamWelcomeEmail(user, link, rolePhrase) {
   const first = greetingName(user);
-  const subject = "You've been invited to SIGNL";
+  const subject = "You've been invited to Magpie";
   const lines = [
     `Hi ${first},`,
     "",
-    `Welcome to SIGNL — you've been set up ${rolePhrase || "as a team member"}.`,
+    `Welcome to Magpie — you've been set up ${rolePhrase || "as a team member"}.`,
     "",
     "Set your password and open your account here:",
     link,
@@ -12910,8 +12910,8 @@ function teamWelcomeEmail(user, link, rolePhrase) {
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   ];
   return { subject, text: lines.join("\n") };
 }
@@ -12958,7 +12958,7 @@ async function handleForgot(event) {
     const user = idx ? await store.get(`user:${idx.userId}`) : null;
     if (user && attempts.length <= 5) {
       const token = await issuePasswordResetToken(user);
-      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      const base = process.env.APP_URL || "https://app.magpielocal.com";
       const mail = passwordResetEmail(user, `${base}/?reset=${token}`);
       await deliverEmail("password_reset", user, mail.subject, mail.text, null);
       // Test hook, same trust boundary as SIGNL_TEST_ALLOW_BUSINESS
@@ -12974,7 +12974,7 @@ async function handleForgot(event) {
     // log line — the request simply vanished (Build -46). Log it
     // loudly and record the failure event best-effort, so a broken
     // store or mail path is diagnosable after the fact.
-    console.error(`SIGNL password reset request failed: domain=${emailDomainOf(email)} error=${String(e && e.message || e).slice(0, 200)}`);
+    console.error(`Magpie password reset request failed: domain=${emailDomainOf(email)} error=${String(e && e.message || e).slice(0, 200)}`);
     try {
       await logEvent({ type: "password_reset_failed", actorId: null, actorRole: null, subjectId: null, market: null, data: { domain: emailDomainOf(email), error: String(e && e.message || e).slice(0, 200) } });
     } catch (logErr) { /* the failure log must never throw */ }
@@ -13052,7 +13052,7 @@ async function handleChangePassword(event, ctx) {
 //       awaiting approval; Google never approves anyone);
 //   (d) linking from Settings is bound to the signed-in user by
 //       the state record, and one Google identity can only ever
-//       be linked to one SIGNL account (a second account asking
+//       be linked to one Magpie account (a second account asking
 //       hears about the conflict, in plain words).
 
 async function linkGoogleIdentity(user, identity, via) {
@@ -13095,7 +13095,7 @@ async function handleGoogleCallback(event, ctx) {
     const tokens = await googleAuth.exchangeGoogleCode(q.code, stateRec.codeVerifier);
     identity = await googleAuth.verifyGoogleIdToken(tokens.id_token, stateRec.nonce);
   } catch (e) {
-    console.error("SIGNL Google sign-in failed:", e && e.message);
+    console.error("Magpie Google sign-in failed:", e && e.message);
     return back("google=error");
   }
 
@@ -13192,19 +13192,19 @@ async function issueSigninLinkToken(targetUser) {
 
 function signinLinkEmail(user, signinUrl) {
   const first = greetingName(user);
-  const subject = "Your SIGNL sign-in link";
+  const subject = "Your Magpie sign-in link";
   const lines = [
     `Hi ${first},`,
     "",
-    "Tap this link to sign in to SIGNL. No password needed:",
+    "Tap this link to sign in to Magpie. No password needed:",
     signinUrl,
     "",
     "The link works once and expires in 30 minutes. Your password stays exactly as it is; this link is just another way in. If you did not ask for it, you can ignore this email: nobody can use the link once it expires, and asking for one changes nothing on your account.",
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
   ];
   return { subject, text: lines.join("\n") };
 }
@@ -13228,7 +13228,7 @@ async function handleSigninLinkRequest(event) {
     const user = idx ? await store.get(`user:${idx.userId}`) : null;
     if (user && attempts.length <= 5) {
       const token = await issueSigninLinkToken(user);
-      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      const base = process.env.APP_URL || "https://app.magpielocal.com";
       const mail = signinLinkEmail(user, `${base}/?signinlink=${token}`);
       await deliverEmail("signin_link", user, mail.subject, mail.text, null);
       // Test hook, same trust boundary as the reset flow's:
@@ -13236,7 +13236,7 @@ async function handleSigninLinkRequest(event) {
       if (TEST_MODE) payload.devSigninToken = token;
     }
   } catch (e) {
-    console.error(`SIGNL sign-in link request failed: domain=${emailDomainOf(email)} error=${String(e && e.message || e).slice(0, 200)}`);
+    console.error(`Magpie sign-in link request failed: domain=${emailDomainOf(email)} error=${String(e && e.message || e).slice(0, 200)}`);
     try {
       await logEvent({ type: "signin_link_failed", actorId: null, actorRole: null, subjectId: null, market: null, data: { domain: emailDomainOf(email), error: String(e && e.message || e).slice(0, 200) } });
     } catch (logErr) { /* the failure log must never throw */ }
@@ -13287,7 +13287,7 @@ async function handleSigninLinkConsume(event) {
 // held and the creator is prompted; nothing strands at Stripe.
 // With no Stripe keys, none of this runs: bookings carry no
 // funds object and the recorded-ledger behavior is untouched.
-const FUNDS_HELD_NOTE = "SIGNL is holding this payment until the post is live.";
+const FUNDS_HELD_NOTE = "Magpie is holding this payment until the post is live.";
 
 function storedPayouts(user) {
   const p = (user && user.creator && user.creator.payouts) || null;
@@ -13321,7 +13321,7 @@ async function refreshCreatorPayouts(user) {
     await store.set(`user:${user.id}`, user);
     return next;
   } catch (e) {
-    console.error("SIGNL payout refresh failed:", e);
+    console.error("Magpie payout refresh failed:", e);
     return current;
   }
 }
@@ -13393,7 +13393,7 @@ async function releasePaidFunds(booking) {
         await notifyMilestone(creator.id, "payout_setup_needed",
           `Your $${fmtMoneyS(lane.creatorNet)} from ${booking.businessName || "a paid visit"} is ready to release, but your payouts are not set up yet. Finish payout setup under Profile so it can reach your bank.`,
           `Your $${fmtMoneyS(lane.creatorNet)} is waiting: finish payout setup`,
-          [`Your paid visit for ${booking.businessName || "a business"} delivered, and your share of ${currencySymbolForMarket(booking.market)}${fmtMoneyS(lane.creatorNet)} is ready to release.`, "", "It cannot reach your bank until payout setup is finished. It takes a couple of minutes, inside the app under Profile, in the Paid bookings section: Stripe holds the bank details, SIGNL never sees them.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+          [`Your paid visit for ${booking.businessName || "a business"} delivered, and your share of ${currencySymbolForMarket(booking.market)}${fmtMoneyS(lane.creatorNet)} is ready to release.`, "", "It cannot reach your bank until payout setup is finished. It takes a couple of minutes, inside the app under Profile, in the Paid bookings section: Stripe holds the bank details, Magpie never sees them.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
           { bookingId: booking.id });
       }
     }
@@ -13458,7 +13458,7 @@ async function promptCreatorPayoutSetup(booking, creator) {
   await notifyMilestone(creator.id, "payout_setup_needed",
     `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(lane.rate || 0)}. Set up payouts under Profile so your $${fmtMoneyS(lane.creatorNet || 0)} can reach your bank when your post is live.`,
     `Paid booking: set up payouts so your money can reach you`,
-    [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(lane.rate || 0)}. Your share is $${fmtMoneyS(lane.creatorNet || 0)}.`, "", "Paid bookings pay out to your bank after your post is live, and that needs payout setup first: a couple of minutes under Profile, in the Paid bookings section. Stripe holds the bank details; SIGNL never sees them. Comp visits never need this.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+    [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(lane.rate || 0)}. Your share is $${fmtMoneyS(lane.creatorNet || 0)}.`, "", "Paid bookings pay out to your bank after your post is live, and that needs payout setup first: a couple of minutes under Profile, in the Paid bookings section. Stripe holds the bank details; Magpie never sees them. Comp visits never need this.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
     { bookingId: booking.id });
 }
 
@@ -13569,7 +13569,7 @@ async function findBusinessForStripe({ businessId = null, customerId = null, sub
 // lost from activation day one. Capture fixes that: every charge
 // and refund the webhook sees is written to a stored charge
 // ledger (keys charge:stripe:<objectId>) BEFORE Jeff's activation
-// sitting, so the first real charge is on SIGNL's own books.
+// sitting, so the first real charge is on Magpie's own books.
 //
 // The ledger key is Stripe's own object id — the invoice id for a
 // subscription charge, the PaymentIntent id for a paid booking or
@@ -13685,7 +13685,7 @@ async function captureStripeCharge(evt, obj) {
     return;
   }
   if (type === "payment_intent.succeeded" || type === "payment_intent.payment_failed") {
-    // A paid-booking or license charge: SIGNL's own PaymentIntents
+    // A paid-booking or license charge: Magpie's own PaymentIntents
     // carry the booking, business and creator in metadata
     // (lib/connect.js createHeldCharge). Intents without that
     // metadata — a subscription's own intent, a concierge link —
@@ -13771,7 +13771,7 @@ async function handleStripeWebhook(event) {
   // the ledger write must never be lost because a snapshot update
   // below failed, and a capture fault must never block the
   // subscription state the rest of this handler maintains.
-  try { await captureStripeCharge(evt, obj); } catch (e) { console.error("SIGNL Stripe charge capture error:", e); }
+  try { await captureStripeCharge(evt, obj); } catch (e) { console.error("Magpie Stripe charge capture error:", e); }
   try {
     if (evt.type === "checkout.session.completed" && obj.mode === "setup") {
       // Card on file (Connect phase 2, 2026-10-26): a setup-mode
@@ -13848,13 +13848,13 @@ async function handleStripeWebhook(event) {
   } catch (e) {
     // The signature verified, so the event is authentic; a data
     // problem on our side should not put Stripe into a retry loop.
-    console.error("SIGNL Stripe webhook handling error:", e);
+    console.error("Magpie Stripe webhook handling error:", e);
   }
   return json(200, { received: true });
 }
 
 // ---------- Founding business applications (site safety net) ----------
-// The founding business application form lives on joinsignl.com and
+// The founding business application form lives on magpielocal.com and
 // posts to Netlify Forms as its system of record. On 2026-10-28 a real
 // applicant (GleekOps, Denver) hit the form's error state and her
 // submission never reached Netlify: no record, no notification. This
@@ -13865,7 +13865,7 @@ async function handleStripeWebhook(event) {
 // failure is noted on the record and the applicant still succeeds.
 // Validation contract: a malformed payload gets a 400 and writes
 // nothing, which doubles as the daily health check's safe probe.
-const FOUNDING_APPLICATION_ORIGINS = ["https://joinsignl.com", "https://www.joinsignl.com"];
+const FOUNDING_APPLICATION_ORIGINS = ["https://magpielocal.com", "https://www.magpielocal.com"];
 
 function foundingApplicationCors(event) {
   const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || "";
@@ -13923,7 +13923,7 @@ async function handleFoundingApplication(event) {
   let emailReason = null;
   try {
     const result = await sendEmail({
-      to: "hello@joinsignl.com",
+      to: "hello@magpielocal.com",
       subject: `Founding business application: ${rec.businessName}`,
       text: [
         "A founding business application arrived through the site safety net (the primary form path failed for this visitor, so the site used the backup capture).",
@@ -13945,7 +13945,7 @@ async function handleFoundingApplication(event) {
     emailReason = result && result.reason ? result.reason : null;
   } catch (e) {
     emailReason = String(e && e.message ? e.message : e);
-    console.error("SIGNL founding application notification failed (application saved):", e);
+    console.error("Magpie founding application notification failed (application saved):", e);
   }
   if (!emailSent) {
     try {
@@ -14123,7 +14123,7 @@ function bookingMoneyFrom(booking, events) {
   }
   return { source: "none", customers: 0, spend: 0, returns: 0, returnSpend: 0 };
 }
-// M7: the creator's proof, minted from SIGNL's own counted
+// M7: the creator's proof, minted from Magpie's own counted
 // records only. Aggregates travel; a business's identity and
 // raw totals never do (per-business lines live on /me/proof-card
 // and follow the opt-in rule there).
@@ -14346,7 +14346,7 @@ const HALO_WORDS = "Halo estimates the visits a post likely brought in that no c
 const HALO_CONFIDENCE_WORDS = {
   early: "Halo is young. Treat the estimate as a rough sketch until more registers report in.",
   building: "The estimate is learning from real registers, yours included.",
-  established: "The estimate is tuned on a thousand-plus counted first visits across SIGNL.",
+  established: "The estimate is tuned on a thousand-plus counted first visits across Magpie.",
 };
 
 function haloMaturity(ageDays) {
@@ -14775,7 +14775,7 @@ async function goldenTicketView(t, marketLive) {
 //      payload carries a creator count — no totals, no "showing
 //      X", no filter counts, no pagination counts (the -30 rule,
 //      extended to every bench surface and lookup).
-//   3. SIGNL never renders an empty or near-empty collection. The
+//   3. Magpie never renders an empty or near-empty collection. The
 //      bench slot is state-based: FOUNDING (no list at all, the
 //      founding frame + Golden Tickets), INTRODUCTION (Sig names
 //      ONE person as a personal card — correct at n=1), and BENCH
@@ -15096,7 +15096,7 @@ async function cancelCompanionForPrimary(primaryBooking) {
 // with their own code, and never another partner's anything.
 const PARTNER_SRC_PREFIX = "partner-";
 const PARTNER_DEMO_CODE = "demo";
-const PARTNER_DEMO_EMAIL = "jeff+partnerdemo@joinsignl.com";
+const PARTNER_DEMO_EMAIL = "jeff+partnerdemo@magpielocal.com";
 // The locked model's average partner market at full fill (Jeff's
 // investment model, 2026-10-28): about 330 businesses at the
 // blended $2,958 a year. Used once, labeled modeled, for the
@@ -15114,8 +15114,8 @@ function partnerCodeOf(user) {
 // Partner co-brand (Build -105, Tier 3 item 14): the small
 // brand block a partner's portal, reports and invite emails
 // carry — display name, logo URL, accent color, email sender
-// name. NOT white-label: SIGNL's name and mark stay on every
-// surface; the brand leads, "Powered by SIGNL" sits under it.
+// name. NOT white-label: Magpie's name and mark stay on every
+// surface; the brand leads, "Powered by Magpie" sits under it.
 // Admin-set only (the deal-terms doctrine: partners never
 // self-edit the record). Validation mirrors the business
 // media packet's logo rule (https only) plus a strict hex.
@@ -15146,7 +15146,7 @@ function brandViewOf(brand) {
 }
 // The one helper every partner-sent email inherits: the
 // sender DISPLAY NAME becomes the partner's (the address
-// stays SIGNL's, for deliverability), the subject is
+// stays Magpie's, for deliverability), the subject is
 // prefixed with the partner's name, and the body's first
 // line names the partnership. No brand → the mail is
 // byte-identical to before.
@@ -15156,8 +15156,8 @@ function partnerBrandedMail(brand, mail) {
   const name = b.emailFromName || b.displayName || "";
   if (!name) return { subject: mail.subject, text: mail.text, fromName: null };
   return {
-    subject: `${name} + SIGNL: ${mail.subject}`,
-    text: `${name} works with SIGNL. This email comes from SIGNL on their behalf.\n\n${mail.text}`,
+    subject: `${name} + Magpie: ${mail.subject}`,
+    text: `${name} works with Magpie. This email comes from Magpie on their behalf.\n\n${mail.text}`,
     fromName: name,
   };
 }
@@ -15212,7 +15212,7 @@ async function findPartnerByCode(code, users) {
 }
 
 function partnerLinksFor(partner, origin) {
-  const base = origin || process.env.APP_URL || "https://app.joinsignl.com";
+  const base = origin || process.env.APP_URL || "https://app.magpielocal.com";
   const src = partnerSrcFor(partner.code);
   // Two links, two landings (Build -47, audit P2): a bare
   // market+src arrival belongs to the CREATOR claim by the
@@ -15603,9 +15603,9 @@ async function revokeTeamSeat(seat, actor) {
 // helper). It never borrows the bare password template.
 async function sendSeatInviteEmail(orgUser, seatUser, actorId, seatKind) {
   const token = await issuePasswordResetToken(seatUser);
-  const base = process.env.APP_URL || "https://app.joinsignl.com";
+  const base = process.env.APP_URL || "https://app.magpielocal.com";
   const link = `${base}/?reset=${token}`;
-  const rolePhrase = seatKind === "recruiter" ? "as a SIGNL recruiter" : orgUser && orgUser.role === "partner" ? "as a member of this partner's team" : "as a member of the SIGNL team";
+  const rolePhrase = seatKind === "recruiter" ? "as a Magpie recruiter" : orgUser && orgUser.role === "partner" ? "as a member of this partner's team" : "as a member of the Magpie team";
   const rawMail = teamWelcomeEmail(seatUser, link, rolePhrase);
   const brand = orgUser.role === "partner" ? brandViewOf(orgUser.partner && orgUser.partner.brand) : null;
   const mail = brand ? partnerBrandedMail(brand, rawMail) : { ...rawMail, fromName: null };
@@ -15857,7 +15857,7 @@ function ccOverview(P) {
       // never added together.
       dollarsFlowing: (() => { const agg = ccMoneyAgg(P); return { recorded: agg.recorded.totals.flowed, charged: agg.charged.netTotal }; })(),
       // Money owed (Build -57): the owed ledger's own totals —
-      // what SIGNL owes out (creators held + partners accrued
+      // what Magpie owes out (creators held + partners accrued
       // less paid) with what businesses owe kept as its own
       // figure beside it, never netted against it.
       moneyOwed: ccOwedTile(P),
@@ -16109,7 +16109,7 @@ function ccMoneyAgg(P) {
     creatorsEarned: sum(licGr, (l) => l.creatorNet), partnersEarned: 0, count: licGr.length,
   };
   // Split invariant (§4.2): what the business paid is exactly
-  // what the creator kept plus what SIGNL kept, on every record.
+  // what the creator kept plus what Magpie kept, on every record.
   const invariantHolds = (list, get) => list.every((x) => { const m = get(x); return Math.abs((m.businessTotal || 0) - ((m.creatorNet || 0) + (m.platformFee || 0))) < 0.005; });
   const splitsHold = invariantHolds(paidRel, (b) => b.paidLane) && invariantHolds(licGr, (l) => l);
   // Recorded subscriptions: plan selections on business records,
@@ -17177,9 +17177,9 @@ async function ccReconAgg(P) {
   const splitBad = [];
   const splitOf = (x) => ({ businessTotal: Number(x.businessTotal), creatorNet: Number(x.creatorNet), platformFee: Number(x.platformFee) });
   const splitBroken = (x) => { const s = splitOf(x); return [s.businessTotal, s.creatorNet, s.platformFee].every(Number.isFinite) && Math.abs(s.businessTotal - (s.creatorNet + s.platformFee)) >= 0.005; };
-  for (const b of P.visBookings) { if (isPaidVisit(b) && b.paidLane && splitBroken(b.paidLane)) splitBad.push({ id: b.id, label: `Paid booking · ${bizName(b.businessId) || "business"} → ${creatorName(b.creatorId) || "creator"}`, detail: `Business paid ${splitOf(b.paidLane).businessTotal}, creator keeps ${splitOf(b.paidLane).creatorNet}, SIGNL keeps ${splitOf(b.paidLane).platformFee} — they do not add up.` }); }
-  for (const l of P.visLicenses) { if (splitBroken(l)) splitBad.push({ id: l.id, label: `License · ${bizName(l.businessId) || "business"} → ${creatorName(l.creatorId) || "creator"}`, detail: `Business paid ${splitOf(l).businessTotal}, creator keeps ${splitOf(l).creatorNet}, SIGNL keeps ${splitOf(l).platformFee} — they do not add up.` }); }
-  if (splitBad.length) alerts.push({ kind: "split_mismatch", count: splitBad.length, text: `${splitBad.length} paid ${splitBad.length === 1 ? "record's splits do" : "records' splits do"} not add up — what the business paid should equal what the creator kept plus what SIGNL kept.`, items: splitBad.slice(0, 50) });
+  for (const b of P.visBookings) { if (isPaidVisit(b) && b.paidLane && splitBroken(b.paidLane)) splitBad.push({ id: b.id, label: `Paid booking · ${bizName(b.businessId) || "business"} → ${creatorName(b.creatorId) || "creator"}`, detail: `Business paid ${splitOf(b.paidLane).businessTotal}, creator keeps ${splitOf(b.paidLane).creatorNet}, Magpie keeps ${splitOf(b.paidLane).platformFee} — they do not add up.` }); }
+  for (const l of P.visLicenses) { if (splitBroken(l)) splitBad.push({ id: l.id, label: `License · ${bizName(l.businessId) || "business"} → ${creatorName(l.creatorId) || "creator"}`, detail: `Business paid ${splitOf(l).businessTotal}, creator keeps ${splitOf(l).creatorNet}, Magpie keeps ${splitOf(l).platformFee} — they do not add up.` }); }
+  if (splitBad.length) alerts.push({ kind: "split_mismatch", count: splitBad.length, text: `${splitBad.length} paid ${splitBad.length === 1 ? "record's splits do" : "records' splits do"} not add up — what the business paid should equal what the creator kept plus what Magpie kept.`, items: splitBad.slice(0, 50) });
   else passing.push("Every paid booking and license split adds up.");
 
   // Money events with no matching record.
@@ -17564,7 +17564,7 @@ async function ccExportCsv(P, ledger) {
       ["Charged", "Licenses", money.charged.rows.licenses.count, money.charged.rows.licenses.net, "", "", "", ""],
       ["Charged", "Refunds", money.charged.rows.refunds.count, money.charged.rows.refunds.net, "", "", "", ""],
       ["Charged", "Net total", "", money.charged.netTotal, "", "", "", ""],
-      ["Counted", "Register counts", money.counted.visitsCounted, money.counted.total, "", "", "", "Businesses' till money, counted by SIGNL — not platform revenue"],
+      ["Counted", "Register counts", money.counted.visitsCounted, money.counted.total, "", "", "", "Businesses' till money, counted by Magpie — not platform revenue"],
       ["Modeled", "Halo estimate", modeled.postsMeasured, modeled.estValue === null ? "" : modeled.estValue, "", "", "", `ESTIMATE ONLY — never in any total. Confidence ${modeled.confidence}`],
     ];
     return ccCsvOf(["class", "line", "count", "amount", "signl_kept_or_gross", "creators_or_credit", "partners", "note"], rows);
@@ -18272,7 +18272,7 @@ function demoShowcaseVisibleTo(viewer) {
 // persona's category so the Build -79 in-platform embeds render
 // live video instead of dead placeholder IDs. Every link was
 // embed-verified live on 2026-11-02. No post comes from any real
-// SIGNL creator or prospect. Production refresh after a seed
+// Magpie creator or prospect. Production refresh after a seed
 // change still needs Admin Remove -> Load (the loader skips
 // records already carrying the batch flag).
 const DEMO_SHOWCASE_ROSTER = [
@@ -18307,7 +18307,7 @@ async function fetchDemoPhoto(url) {
           return { contentType: "image/jpeg", dataBase64: buf.toString("base64"), bytes: buf.length, uploadedAt: nowIso() };
         }
       } catch (e) { /* not on disk here: fall through to the origin fetch */ }
-      const base = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+      const base = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
       const r = await fetch(base + url);
       if (!r.ok) return null;
       const buf = Buffer.from(await r.arrayBuffer());
@@ -18700,7 +18700,7 @@ async function demoShowcaseStatus() {
 // passes them through.
 function adminGate138(user, seg, method, query) {
   if (perms138.isSuper(user)) return null;
-  const deny = (msg) => err(403, msg || "That room is not part of your role on SIGNL. Ask Jeff if it should be.");
+  const deny = (msg) => err(403, msg || "That room is not part of your role on Magpie. Ask Jeff if it should be.");
   const need = (flag) => (perms138.hasPerm(user, flag) ? null : deny());
   switch (seg[1]) {
     case "automations": case "connections": case "marketing": case "social":
@@ -18784,17 +18784,17 @@ function automationDefaultPreview138(entry) {
       case "rejection": return { ...mailShape138(rejectionEmail(C, "fit")), sms: null, note: null };
       case "profile_completion_reminder": return { ...mailShape138(profileCompletionReminderEmail(C)), sms: null, note: null };
       case "recruiter_kit": return { ...mailShape138(recruiterKitEmail(C)), sms: null, note: null };
-      case "password_reset": return { ...mailShape138(passwordResetEmail(C, "https://app.joinsignl.com/?reset=sampletoken")), sms: null, note: null };
-      case "recruiter_welcome": return { ...mailShape138(recruiterWelcomeEmail(C, "https://app.joinsignl.com/?reset=sampletoken")), sms: null, note: null };
-      case "partner_welcome": return { ...mailShape138(partnerWelcomeEmail(C, "https://app.joinsignl.com/?reset=sampletoken")), sms: null, note: null };
-      case "team_welcome": return { ...mailShape138(teamWelcomeEmail(C, "https://app.joinsignl.com/?reset=sampletoken", "as a member of the SIGNL team")), sms: null, note: null };
-      case "signin_link": return { ...mailShape138(signinLinkEmail(C, "https://app.joinsignl.com/?signinlink=sampletoken")), sms: null, note: null };
+      case "password_reset": return { ...mailShape138(passwordResetEmail(C, "https://app.magpielocal.com/?reset=sampletoken")), sms: null, note: null };
+      case "recruiter_welcome": return { ...mailShape138(recruiterWelcomeEmail(C, "https://app.magpielocal.com/?reset=sampletoken")), sms: null, note: null };
+      case "partner_welcome": return { ...mailShape138(partnerWelcomeEmail(C, "https://app.magpielocal.com/?reset=sampletoken")), sms: null, note: null };
+      case "team_welcome": return { ...mailShape138(teamWelcomeEmail(C, "https://app.magpielocal.com/?reset=sampletoken", "as a member of the Magpie team")), sms: null, note: null };
+      case "signin_link": return { ...mailShape138(signinLinkEmail(C, "https://app.magpielocal.com/?signinlink=sampletoken")), sms: null, note: null };
       case "account_deletion": return { ...mailShape138(accountDeletionEmail(C)), sms: null, note: null };
       case "silent_removal": return { ...mailShape138(silentRemovalEmail(C)), sms: null, note: null };
       case "consumed_comp_inactive": return { ...mailShape138(consumedCompEmail(C)), sms: null, note: null };
       case "late_streak_pause": return { ...mailShape138(lateStreakPauseEmail(C)), sms: null, note: null };
       case "strike_pause": return { ...mailShape138(strikePauseEmail(C)), sms: null, note: null };
-      case "platform_message": return { ...mailShape138(platformMessageEmail(C, "A sample message from the SIGNL team.")), sms: null, note: null };
+      case "platform_message": return { ...mailShape138(platformMessageEmail(C, "A sample message from the Magpie team.")), sms: null, note: null };
       case "campaign_creator": return { ...mailShape138(campaignEmail({ name: "Sample Creator", email: "sample@fixtures.dev", handle: "samplecreator", market: "Nashville" })), sms: null, note: null };
       case "campaign_crossover": return { ...mailShape138(crossoverEmail({ name: "Sample Creator", email: "sample@fixtures.dev", handle: "samplecreator", market: "Nashville" })), sms: null, note: null };
       case "campaign_business": return { ...mailShape138(businessWaveEmail({ name: "Sample Owner", email: "owner@fixtures.dev", businessName: "Sample Bakery", market: "Nashville" })), sms: null, note: null };
@@ -18808,9 +18808,9 @@ async function automationLivePreview138(entry) {
   const ov = await templatesLib.currentOverride(entry.templateRef);
   if (!ov) return { ...base, overridden: false };
   const values = automationTokenValues138(FIXTURE_CREATOR_138, base.text || "");
-  if (!values.claimLink) values.claimLink = "https://app.joinsignl.com/claim?handle=samplecreator&market=Nashville&src=email";
-  if (!values.resetLink) values.resetLink = "https://app.joinsignl.com/?reset=sampletoken";
-  if (!values.signinLink) values.signinLink = "https://app.joinsignl.com/?signinlink=sampletoken";
+  if (!values.claimLink) values.claimLink = "https://app.magpielocal.com/claim?handle=samplecreator&market=Nashville&src=email";
+  if (!values.resetLink) values.resetLink = "https://app.magpielocal.com/?reset=sampletoken";
+  if (!values.signinLink) values.signinLink = "https://app.magpielocal.com/?signinlink=sampletoken";
   const out = { ...base, overridden: true, overrideVersion: ov.v };
   if (entry.editLevel === "full" && ov.text) {
     out.text = templatesLib.substitute(ov.text, values);
@@ -18867,13 +18867,13 @@ async function connectionsBoard138() {
     rows.push({ id, name, doesPlain, state, source, asOf: asOf || null, note: notes[id] || null });
   };
   const liveOrStale = (fn) => { try { return fn(); } catch (e) { return "Could not check just now"; } };
-  push("smtp_default", "Email — hello@joinsignl.com", "Sends account and lifecycle email from the main SIGNL mailbox.",
+  push("smtp_default", "Email — hello@magpielocal.com", "Sends account and lifecycle email from the main Magpie mailbox.",
     liveOrStale(() => (senderProfile("default").available ? "Sending" : "Not sending — its mailbox credentials are not set")), "live");
   push("smtp_creators", "Email — creators@signlteam.com", "The founding-outreach mailbox on the signlteam domain.",
     liveOrStale(() => (senderProfileAvailable("creators@signlteam.com") ? "Sending" : "Down — its last checks failed; sends from it are paused")), "live");
   push("twilio", "Texts — Twilio", "Sends the notification rail's text messages.",
     liveOrStale(() => (ps.sms !== "sandbox" ? "Live" : "Sandbox — texts are recorded in the outbox, not sent")), "live");
-  push("twilio_a2p", "Texts — A2P registration", "The carrier registration that lets SIGNL text US numbers.",
+  push("twilio_a2p", "Texts — A2P registration", "The carrier registration that lets Magpie text US numbers.",
     "In review when last checked: brand submitted as low-volume; the campaign filing comes next.", "note", "2026-11-05");
   push("resend", "Texts & email — Resend (rail email)", "Sends the notification rail's email leg when configured.",
     liveOrStale(() => (ps.email !== "sandbox" ? `Live via ${ps.email}` : "Sandbox — rail email is recorded in the outbox, not sent")), "live");
@@ -18881,13 +18881,13 @@ async function connectionsBoard138() {
     liveOrStale(() => (stripe.billingConfigured() ? "Connected — a key is present" : "Off — no secret key in the app, so no business can be charged")), "live");
   push("stripe_connect", "Stripe Connect — creator payouts", "Would pay creators their 97% on paid bookings.",
     liveOrStale(() => (connect.connectConfigured() ? "Connected" : "Off — payouts are not wired to a live key yet")), "live");
-  push("ga4", "Google Analytics — website numbers", "Reads joinsignl.com traffic for the Stats room's Website section.",
+  push("ga4", "Google Analytics — website numbers", "Reads magpielocal.com traffic for the Stats room's Website section.",
     liveOrStale(() => (gaLib.configured() ? "Connected" : "Not connected yet — needs the Google service-account hookup")), "live");
   push("google_signin", "Google — sign-in and YouTube connect", "Powers Continue with Google and creator YouTube linking.",
     liveOrStale(() => (googleAuth.googleConfigured() ? "Keys present" : "Off — the Google keys are not in the app yet")), "live");
   push("klaviyo", "Klaviyo", "Email marketing tool, connected outside this app.",
     "Managed outside the app — the Klaviyo account is connected to Muse, not to this app. Nothing in the app reads or sends through it, and the app never will for product notifications (the rail rule).", "record");
-  push("meta_app", "Meta — the SIGNL app", "Would power Instagram connect and metric sync for creators.",
+  push("meta_app", "Meta — the Magpie app", "Would power Instagram connect and metric sync for creators.",
     "In development. Access Verification has been in review since Oct 18; App Review not submitted yet.", "note", "2026-11-06");
   push("instagram_connect", "Instagram — creator connect", "Lets a creator link Instagram so their numbers sync.",
     "Built, but stays dark until Meta approves the app. YouTube linking is the one live lane today.", "note", "2026-11-06");
@@ -18905,7 +18905,7 @@ async function connectionsBoard138() {
 // outside the reader's market scope. Deleted accounts are erased
 // from the store entirely (Build -132), so they cannot appear in
 // any list — that is stated on the surface rather than counted.
-const MARKETING_UNSUB_LINE_138 = "You're getting this because you have a SIGNL account. Don't want marketing email from SIGNL? Reply to this email and we'll take you off the list.";
+const MARKETING_UNSUB_LINE_138 = "You're getting this because you have a Magpie account. Don't want marketing email from Magpie? Reply to this email and we'll take you off the list.";
 
 async function marketingSuppression138() {
   const rec = (await store.get("config:unsubscribes")) || { emails: [] };
@@ -19085,7 +19085,7 @@ async function marketingSend138(campaign, senderAdmin) {
 // as email (deleted, tester, suppressed — the suppression list
 // is honoured on every channel), delivered through the existing
 // platform-message rail: one message in each creator's own
-// SIGNL thread, written as the SIGNL team, with the rail's own
+// Magpie thread, written as the Magpie team, with the rail's own
 // email knock riding behind it. Creators only — the rail's
 // threads are creator threads, and the create/update guards
 // keep other audiences off this channel.
@@ -19170,7 +19170,7 @@ async function learnEnsureSeeded138() {
     if (!a || !a.slug) continue;
     await store.set(`learnarticle:${a.slug}`, {
       slug: a.slug, headline: a.title || a.headline || "", topic: a.topic || "", audience: a.audience || "",
-      heroImage: a.image || a.heroImage || "", status: "live", url: `https://joinsignl.com/learn/${a.slug}.html`,
+      heroImage: a.image || a.heroImage || "", status: "live", url: `https://magpielocal.com/learn/${a.slug}.html`,
       publishedAt: a.date || null, source: "import", updatedAt: nowIso(),
     });
   }
@@ -19243,7 +19243,7 @@ async function route(event) {
       try {
         await auth.ensureAdmin(logEvent);
       } catch (e) {
-        console.error("SIGNL ensureAdmin failed (continuing; admin bootstrap delayed):", e);
+        console.error("Magpie ensureAdmin failed (continuing; admin bootstrap delayed):", e);
       }
     })(),
     // One-time recruiter kit email: fires on the first request
@@ -19363,7 +19363,7 @@ async function route(event) {
       const lock = await store.get("learn:publish-lock");
       if (lock && lock.jobId === job.id) await store.del("learn:publish-lock");
       if (b.ok) {
-        job.status = "live"; job.url = String(b.url || `https://joinsignl.com/learn/${job.slug}.html`); job.completedAt = nowIso();
+        job.status = "live"; job.url = String(b.url || `https://magpielocal.com/learn/${job.slug}.html`); job.completedAt = nowIso();
         await store.set(`learnpublish:${job.id}`, job);
         await store.set(`learnarticle:${job.slug}`, {
           slug: job.slug, headline: job.article.headline, topic: job.article.topic || "", audience: job.article.audience || "",
@@ -19420,7 +19420,7 @@ async function route(event) {
       // payout setup + card-on-file surfaces from this flag;
       // false keeps every money surface exactly as it was.
       payments: { connectLive: connect.connectConfigured(), billingLive: stripe.billingConfigured() },
-      // UK privacy (Build -109, item 20): SIGNL's ICO
+      // UK privacy (Build -109, item 20): Magpie's ICO
       // registration number renders in the UK privacy wording
       // only once Jeff has filed and set it; absent, the line
       // does not render at all (never a placeholder number).
@@ -19470,7 +19470,7 @@ async function route(event) {
   }
 
   // Founding business application safety net: public, cross-origin
-  // from joinsignl.com (see handleFoundingApplication above).
+  // from magpielocal.com (see handleFoundingApplication above).
   if (seg[0] === "founding-application" && seg.length === 1) {
     if (method === "OPTIONS") {
       return { statusCode: 204, headers: foundingApplicationCors(event), body: "" };
@@ -19507,7 +19507,7 @@ async function route(event) {
   }
 
   // App sitemap (SEO, 2026-11-01): every FINISHED, public
-  // creator profile on app.joinsignl.com, generated live. The
+  // creator profile on app.magpielocal.com, generated live. The
   // membership rule is the public page's own rule (roster +
   // complete + page on + not banned, the findPublicProfileUser
   // predicate), so the sitemap can never list a page that does
@@ -19516,7 +19516,7 @@ async function route(event) {
   // per the 2026-10-23 ruling. netlify.toml rewrites
   // /sitemap.xml here; robots.txt points crawlers at it.
   if (method === "GET" && seg.length === 1 && seg[0] === "sitemap.xml") {
-    const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+    const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.magpielocal.com";
     const escXml = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const all = await allUsers();
     const eligible = finishedPublicCreators(all)
@@ -19560,7 +19560,7 @@ async function route(event) {
       const claimed = await findClaimPageUser(sanitizePublicHandle(seg[1]));
       if (!claimed) return htmlPage(shell);
       const cp = claimPagePayload(claimed);
-      const chost = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+      const chost = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.magpielocal.com";
       return htmlPage(buildClaimPageHtml(shell, {
         name: cp.name,
         handle: cp.handle,
@@ -19569,7 +19569,7 @@ async function route(event) {
       }));
     }
     const p = await publicProfilePayload(target);
-    const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+    const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.magpielocal.com";
     const place = p.unlisted ? p.city : p.market;
     return htmlPage(buildProfilePageHtml(shell, {
       name: p.name,
@@ -19617,7 +19617,7 @@ async function route(event) {
     if (seg.length === 3 && !category) return notFound;
     const rows = rosterMembers(await allUsers(), market.name, category);
     if (rows.length < ROSTER_MIN) return notFound;
-    const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+    const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.magpielocal.com";
     return htmlPage(buildRosterPageHtml({
       marketName: market.name,
       marketSlug: slugifyName(market.name),
@@ -19668,7 +19668,7 @@ async function route(event) {
   if (method === "POST" && seg[0] === "c" && seg.length === 3 && seg[2] === "message") {
     if (!user) return err(401, "Sign in required");
     if (user.role !== "business") return err(403, "Businesses only");
-    if (!businessPaidActive(user)) return err(403, "Messaging a creator from their page opens with a paid, active SIGNL account.");
+    if (!businessPaidActive(user)) return err(403, "Messaging a creator from their page opens with a paid, active Magpie account.");
     const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
     if (!target) return err(404, "Creator not found");
     if (target.id === user.id) return err(400, "You cannot message yourself");
@@ -19698,7 +19698,7 @@ async function route(event) {
   }
 
   // The Local List (Build -31, Jeff, 2026-10-29): the public,
-  // cross-origin feed behind joinsignl.com/local-list pages.
+  // cross-origin feed behind magpielocal.com/local-list pages.
   // Opted-in book-me creators only, grouped by category, and the
   // payload carries NO counts: no totals, no per-category
   // numbers, nothing a page could print as a roster size.
@@ -19972,7 +19972,7 @@ async function route(event) {
     // before anyone types the PIN. The code is the printed
     // identifier on the register card; the PIN is the secret.
     const biz = await businessByStaffCode(query.code || "");
-    if (!biz) return err(404, "That business code does not match a SIGNL business. Check the code on the register card and try again.");
+    if (!biz) return err(404, "That business code does not match a Magpie business. Check the code on the register card and try again.");
     return json(200, { businessName: biz.business.businessName, market: biz.market });
   }
 
@@ -20201,16 +20201,16 @@ async function route(event) {
     // no repeated pitch, no dark patterns. Sig never performs
     // the deletion itself; the type-DELETE confirmation lives
     // on that screen only.
-    if ((user.role === "creator" || user.role === "business") && /\bdelete\b[^.?!]{0,40}\b(account|profile|signl)\b/i.test(q)) {
+    if ((user.role === "creator" || user.role === "business") && /\bdelete\b[^.?!]{0,40}\b(account|profile|magpie)\b/i.test(q)) {
       const dest = user.role === "creator" ? "cr-settings" : "biz-settings";
       const link = { label: "Open Settings → Account", dest };
-      const askedBefore = history.some((h) => h && h.who === "user" && /\bdelete\b[^.?!]{0,40}\b(account|profile|signl)\b/i.test(h.text || "")) || history.some((h) => h && h.who === "sig" && /Delete my account/.test(h.text || ""));
+      const askedBefore = history.some((h) => h && h.who === "user" && /\bdelete\b[^.?!]{0,40}\b(account|profile|magpie)\b/i.test(h.text || "")) || history.some((h) => h && h.who === "sig" && /Delete my account/.test(h.text || ""));
       if (askedBefore) {
         return json(200, { source: "data", text: "Of course. Settings, then Account, then \"Delete my account\" at the bottom. The screen explains exactly what goes and asks you to type DELETE to confirm. That is the whole route.", link });
       }
       const live = facts && typeof facts.marketLive === "boolean" ? facts.marketLive : await isMarketLive(user.market);
       const reminder = user.role === "creator"
-        ? "Before you do: SIGNL is free for creators, always. Keeping your account keeps your founding creator status, your Momentum, your referral link, and your place in line for offers when your market opens."
+        ? "Before you do: Magpie is free for creators, always. Keeping your account keeps your founding creator status, your Momentum, your referral link, and your place in line for offers when your market opens."
         : "Before you do: keeping your account keeps your founding rate locked for as long as your plan stays active. Deleting gives that up, and any banked founding credit (like the $100 first-month credit) is lost with it.";
       const warning = live ? "" : " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new.";
       const route = " If you still want to go ahead: Settings, then Account, then \"Delete my account\" at the bottom. The screen explains exactly what goes and what happens to anything still in flight, and asks you to type DELETE to confirm, so it cannot happen by accident. I cannot delete it from here; that last step is yours, on that screen.";
@@ -20316,10 +20316,10 @@ async function route(event) {
     if (planIdWanted && !priceId) return err(503, "Founding pricing is not configured for that plan yet, so checkout cannot start. No card was charged.");
     // A price id handed in directly must be one of the founding
     // ids; anything else (including every legacy id) is refused.
-    if (priceId && !foundingPriceIds().includes(priceId)) return err(400, "Choose one of the three SIGNL plans.");
+    if (priceId && !foundingPriceIds().includes(priceId)) return err(400, "Choose one of the three Magpie plans.");
     const plan = priceId ? stripePlanForPrice(priceId) : null;
-    if (!priceId || !plan) return err(400, "Choose one of the three SIGNL plans.");
-    const appUrl = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+    if (!priceId || !plan) return err(400, "Choose one of the three Magpie plans.");
+    const appUrl = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
     const existingCustomer = biz.business && biz.business.subscription && biz.business.subscription.customerId;
     // Founding credit (Build -64): every founding-plan checkout
     // carries the $100 first-invoice coupon when the live
@@ -20341,7 +20341,7 @@ async function route(event) {
         ...(existingCustomer ? { customer: existingCustomer } : { customer_email: biz.email }),
       });
     } catch (e) {
-      console.error("SIGNL Stripe checkout error:", e);
+      console.error("Magpie Stripe checkout error:", e);
       return err(502, "Stripe could not start checkout. Please try again.");
     }
     await logEvent({ type: "billing_checkout_started", actorId: user.id, actorRole: user.role, subjectId: biz.id, market: biz.market || null, data: { planId: plan.id, priceId, sessionId: session.id || null } });
@@ -20369,7 +20369,7 @@ async function route(event) {
     // recreated (its country is immutable in Stripe); the
     // refresh path below handles it whatever its country.
     if (!storedPayouts(record).accountId && !connect.payoutCountryFor(record)) {
-      return err(503, "Payout setup for your market is handled with help from the SIGNL team for now. Paid bookings are recorded in the app and settled by hand until self-serve setup opens for your market.");
+      return err(503, "Payout setup for your market is handled with help from the Magpie team for now. Paid bookings are recorded in the app and settled by hand until self-serve setup opens for your market.");
     }
     try {
       let payouts = storedPayouts(record);
@@ -20383,13 +20383,13 @@ async function route(event) {
       } else {
         payouts = await refreshCreatorPayouts(record);
       }
-      const appUrl = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+      const appUrl = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
       const url = await connect.createAccountLink(payouts.accountId, `${appUrl}/?payouts=refresh`, `${appUrl}/?payouts=return`);
       if (!url) throw new Error("Stripe did not return an onboarding link");
       await logEvent({ type: "payout_setup_started", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { status: payouts.status } });
       return json(200, { url, payouts: payoutsClientView(record) });
     } catch (e) {
-      console.error("SIGNL payout setup error:", e);
+      console.error("Magpie payout setup error:", e);
       return err(502, "Stripe could not open payout setup. Please try again.");
     }
   }
@@ -20443,7 +20443,7 @@ async function route(event) {
       await logEvent({ type: "platform_connected", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { platform: "youtube", accountLabel: channel.title || null, syncStatus: synced.status } });
       return { statusCode: 302, headers: { Location: `${base}/?yt=connected` }, body: "" };
     } catch (e) {
-      console.error("SIGNL YouTube connect error:", e);
+      console.error("Magpie YouTube connect error:", e);
       return { statusCode: 302, headers: { Location: `${base}/?yt=error` }, body: "" };
     }
   }
@@ -20502,7 +20502,7 @@ async function route(event) {
       await logEvent({ type: "platform_connected", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { platform: "instagram", accountLabel: profile.username ? `@${profile.username}` : null, syncStatus: synced.status } });
       return { statusCode: 302, headers: { Location: `${base}/?ig=connected` }, body: "" };
     } catch (e) {
-      console.error("SIGNL Instagram connect error:", e);
+      console.error("Magpie Instagram connect error:", e);
       return { statusCode: 302, headers: { Location: `${base}/?ig=error` }, body: "" };
     }
   }
@@ -20535,7 +20535,7 @@ async function route(event) {
   // ---------- Square Connect: the business's register (Build -44) ----------
   // The Proof Controls register plug-in (POS blueprint §2). A
   // business connects its Square register through Square's own
-  // OAuth screen; SIGNL never sees the owner's Square password
+  // OAuth screen; Magpie never sees the owner's Square password
   // and stores only encrypted tokens (lib/square.js). Start and
   // callback are full-page navigations answering 302s, exactly
   // like the YouTube connect above. With the Square app
@@ -20571,7 +20571,7 @@ async function route(event) {
       await logEvent({ type: "square_connected", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market || null, data: { env: conn.env || square.squareEnv(), businessName: conn.businessName || null, locations: (conn.locations || []).map((l) => l.name), codesProvisioned: Object.keys(conn.catalog || {}).length } });
       return { statusCode: 302, headers: { Location: `${base}/?sq=connected` }, body: "" };
     } catch (e) {
-      console.error("SIGNL Square connect error:", e);
+      console.error("Magpie Square connect error:", e);
       return { statusCode: 302, headers: { Location: `${base}/?sq=error` }, body: "" };
     }
   }
@@ -20637,7 +20637,7 @@ async function route(event) {
         record.updatedAt = nowIso();
         await store.set(`user:${record.id}`, record);
       }
-      const appUrl = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+      const appUrl = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
       const session = await connect.createCardSetupSession(record, {
         customerId: record.business.billing.customerId,
         successUrl: `${appUrl}/?card=saved`,
@@ -20646,7 +20646,7 @@ async function route(event) {
       await logEvent({ type: "billing_card_setup_started", actorId: user.id, actorRole: user.role, subjectId: biz.id, market: biz.market || null, data: { sessionId: session.id || null } });
       return json(200, { url: session.url, sessionId: session.id || null });
     } catch (e) {
-      console.error("SIGNL card setup error:", e);
+      console.error("Magpie card setup error:", e);
       return err(502, "Stripe could not open card setup. Please try again.");
     }
   }
@@ -20677,14 +20677,14 @@ async function route(event) {
   // the same number under the usual multi-market rules.
   if (method === "POST" && seg[0] === "me" && seg[1] === "market") {
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
-    if (user.status !== "pending" && user.status !== "approved") return err(403, "This account cannot change its market here. Email hello@joinsignl.com and we will help you move it.");
+    if (user.status !== "pending" && user.status !== "approved") return err(403, "This account cannot change its market here. Email hello@magpielocal.com and we will help you move it.");
     const b = parseBody(event);
     const fromMarket = user.market;
     const fromCity = user.city || "";
     const via = user.status === "approved" ? "profile_self_serve" : "pending_self_serve";
     const unlisted = b.market === UNLISTED;
     const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
-    if (!market) return err(400, "Choose one of the SIGNL markets");
+    if (!market) return err(400, "Choose one of the Magpie markets");
     // Build -129: the approved-move audience preservation, run
     // by both filing branches below (an explicit canonical pick
     // and the one-tap candidate pick) before the record's
@@ -20714,12 +20714,12 @@ async function route(event) {
       }
     };
     if (unlisted) {
-      if (user.status === "approved") return err(400, "Pick one of the SIGNL markets in the list. If your city is not in a market yet, email hello@joinsignl.com and we will set you up.");
+      if (user.status === "approved") return err(400, "Pick one of the Magpie markets in the list. If your city is not in a market yet, email hello@magpielocal.com and we will set you up.");
       const customCity = String(b.customCity || "").trim().slice(0, 60);
       const customCountry = String(b.customCountry || "").trim().slice(0, 60);
       let customState = String(b.customState || "").trim().slice(0, 60);
-      if (!customCity) return err(400, "Tell us your city, so your sign-up counts toward opening SIGNL there");
-      if (!customCountry) return err(400, "Tell us your country, so your sign-up counts toward opening SIGNL there");
+      if (!customCity) return err(400, "Tell us your city, so your sign-up counts toward opening Magpie there");
+      if (!customCountry) return err(400, "Tell us your country, so your sign-up counts toward opening Magpie there");
       if (customState.length === 2) customState = customState.toUpperCase();
       user.market = UNLISTED;
       user.city = customCity;
@@ -20788,7 +20788,7 @@ async function route(event) {
       const PAGE_FIELDS = ["businessName", "category", "city", "neighborhood", "zip", "about", "preferredLanguage", "musicOpen", "musicLive", "musicCreated", "studentOpen", "assetPacket", "moment", "standingAvailability", "posProvider", "posOther"];
       const extra = Object.keys(b || {}).filter((k) => !PAGE_FIELDS.includes(k));
       if (extra.length) {
-        return err(403, "Your business page is yours to edit now. Plan settings and the product tools open when SIGNL activates your business.");
+        return err(403, "Your business page is yours to edit now. Plan settings and the product tools open when Magpie activates your business.");
       }
     }
     const ts = nowIso();
@@ -21117,7 +21117,7 @@ async function route(event) {
       // about a place the creator loves, validated with the
       // same Instagram post rules as featured posts. It is
       // labeled a portfolio sample everywhere it shows and is
-      // never presented as a SIGNL visit. Empty clears it.
+      // never presented as a Magpie visit. Empty clears it.
       if (b.portfolioSample !== undefined) {
         if (b.portfolioSample === null || b.portfolioSample === "") {
           changes.portfolioSample = [c.portfolioSample || null, null];
@@ -21191,7 +21191,7 @@ async function route(event) {
         user.universityStatus = status;
       }
       // Multi-market audience shares (Jeff, 2026-11-01): the
-      // creator reports, per other SIGNL market, the share of
+      // creator reports, per other Magpie market, the share of
       // their audience that lives there. Normalized against the
       // home market at write (the home share is localAudiencePct
       // below, never an entry here; unknown markets and junk
@@ -21437,7 +21437,7 @@ async function route(event) {
       // Looking-You-Up numbers (Build -34, M5): the business's
       // own Google figures for the current month, entered by the
       // business, stored under the month key, and always labeled
-      // as Google's numbers on the receipt, never SIGNL's.
+      // as Google's numbers on the receipt, never Magpie's.
       if (b.googleStats !== undefined && b.googleStats && typeof b.googleStats === "object") {
         const gs = {};
         for (const k of ["searches", "directions", "calls", "reviews"]) {
@@ -21649,7 +21649,7 @@ async function route(event) {
   // response clears the session cookie; every other session
   // was revoked inside the routine.
   if (method === "DELETE" && seg[0] === "me" && seg[1] === "account") {
-    if (user.role !== "creator" && user.role !== "business") return err(403, "Self-serve deletion covers creator and business accounts. Partner and admin accounts are handled by SIGNL directly.");
+    if (user.role !== "creator" && user.role !== "business") return err(403, "Self-serve deletion covers creator and business accounts. Partner and admin accounts are handled by Magpie directly.");
     const b = parseBody(event);
     if (String(b.confirmText || "").trim() !== "DELETE") return err(400, "Type DELETE to confirm. Deleting your account cannot be undone.");
     const who = { id: user.id, role: user.role, email: user.email, name: user.name, market: user.market };
@@ -21676,7 +21676,7 @@ async function route(event) {
       const cfg = await ensureStaffCode(user);
       const pinRec = await staffPinRecord(user.id);
       const sessions = (await store.list("staffsession:")).filter((r) => r.value && r.value.businessId === user.id && Date.parse(r.value.expiresAt) > Date.now());
-      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      const base = process.env.APP_URL || "https://app.magpielocal.com";
       return json(200, {
         staffPinSet: !!pinRec,
         staffPinSetAt: pinRec ? pinRec.setAt : null,
@@ -21719,7 +21719,7 @@ async function route(event) {
       try {
         const qrcode = require("qrcode-generator");
         const qr = qrcode(0, "M");
-        const base = process.env.APP_URL || "https://app.joinsignl.com";
+        const base = process.env.APP_URL || "https://app.magpielocal.com";
         qr.addData(`${base}/redeem/${cfg.staffCode}`);
         qr.make();
         const svg = qr.createSvgTag({ cellSize: 6, margin: 8, scalable: true });
@@ -21835,7 +21835,7 @@ async function route(event) {
     // ---- Build -138: Automations & connections (Area 1) ----
     if (seg[1] === "automations") {
       if (!perms138.hasPerm(user, "connections.view") && !perms138.hasPerm(user, "automations.manage")) {
-        return err(403, "Automations are not part of your role on SIGNL.");
+        return err(403, "Automations are not part of your role on Magpie.");
       }
       if (method === "GET" && seg.length === 2) {
         const disabled = await templatesLib.disabledEntryIds();
@@ -21905,7 +21905,7 @@ async function route(event) {
     // ---- Build -138: connections board (Area 1) ----
     if (seg[1] === "connections") {
       if (method === "GET" && seg.length === 2) {
-        if (!perms138.hasPerm(user, "connections.view") && !perms138.hasPerm(user, "connections.manage")) return err(403, "Connections are not part of your role on SIGNL.");
+        if (!perms138.hasPerm(user, "connections.view") && !perms138.hasPerm(user, "connections.manage")) return err(403, "Connections are not part of your role on Magpie.");
         return json(200, { rows: await connectionsBoard138(), canManage: perms138.hasPerm(user, "connections.manage") });
       }
       if (method === "POST" && seg.length === 4 && seg[3] === "note") {
@@ -21926,7 +21926,7 @@ async function route(event) {
     // ---- Build -138: Template Studio (Area 6) ----
     if (seg[1] === "templates") {
       const canViewT = perms138.hasPerm(user, "templates.view") || perms138.hasPerm(user, "templates.edit");
-      if (!canViewT) return err(403, "Templates are not part of your role on SIGNL.");
+      if (!canViewT) return err(403, "Templates are not part of your role on Magpie.");
       const canEditT = perms138.hasPerm(user, "templates.edit");
       if (method === "GET" && seg.length === 2) {
         const recs = await templatesLib.listRecords();
@@ -22024,7 +22024,7 @@ async function route(event) {
     if (seg[1] === "marketing") {
       const canDraftM = perms138.hasPerm(user, "marketing.draft");
       const canApproveM = perms138.hasPerm(user, "marketing.approve");
-      if (!canDraftM && !canApproveM) return err(403, "Marketing is not part of your role on SIGNL.");
+      if (!canDraftM && !canApproveM) return err(403, "Marketing is not part of your role on Magpie.");
       if (method === "GET" && seg.length === 2) {
         const suppressedSet = await marketingSuppression138();
         const all = await allUsers();
@@ -22042,7 +22042,7 @@ async function route(event) {
         const sentTodayTotal = (await campaignSentToday(new Date())) + (await marketingSentToday138(new Date()));
         return json(200, {
           segments: defs, campaigns, canDraft: canDraftM, canApprove: canApproveM,
-          from: "hello@joinsignl.com",
+          from: "hello@magpielocal.com",
           dailyCeiling: campaignDailyCeiling(), sentToday: sentTodayTotal,
           sms: smsRailState138(),
           suppression: canApproveM ? [...suppressedSet] : undefined, suppressionCount: suppressedSet.size,
@@ -22073,7 +22073,7 @@ async function route(event) {
         if (!text) return err(400, channel === "email" ? "A campaign email needs a subject and a body." : "Write the message first.");
         if (channel === "email" && !subject) return err(400, "A campaign email needs a subject and a body.");
         if (!b.segment || !b.segment.audience) return err(400, "Pick who this goes to first.");
-        if (channel === "platform" && b.segment.audience !== "creators") return err(400, "In-app messages go to creators — their SIGNL Messages thread is the one thread the team writes in. Businesses and partners get email.");
+        if (channel === "platform" && b.segment.audience !== "creators") return err(400, "In-app messages go to creators — their Magpie Messages thread is the one thread the team writes in. Businesses and partners get email.");
         const campaign = { id: crypto.randomUUID(), authorId: user.id, channel, subject: subject || text.slice(0, 60), text, segment: b.segment, templateRefId: b.templateRefId || null, status: "draft", recipientIds: null, createdAt: nowIso(), updatedAt: nowIso() };
         await store.set(`mkcampaign:${campaign.id}`, campaign);
         await logEvent({ type: "marketing_draft_created", actorId: user.id, actorRole: "admin", subjectId: campaign.id, market: campaignScopeMarket138(b.segment), data: { subject: campaign.subject, channel, city: (b.segment && b.segment.cityLabel) || null } });
@@ -22095,7 +22095,7 @@ async function route(event) {
           if (b.text) mc.text = String(b.text).trim();
           if (b.segment) mc.segment = b.segment;
           if (b.channel && ["email", "platform", "sms"].includes(b.channel)) {
-            if (b.channel === "platform" && mc.segment && mc.segment.audience !== "creators") return err(400, "In-app messages go to creators — their SIGNL Messages thread is the one thread the team writes in. Businesses and partners get email.");
+            if (b.channel === "platform" && mc.segment && mc.segment.audience !== "creators") return err(400, "In-app messages go to creators — their Magpie Messages thread is the one thread the team writes in. Businesses and partners get email.");
             mc.channel = b.channel;
           }
           mc.updatedAt = nowIso();
@@ -22162,7 +22162,7 @@ async function route(event) {
           const sentTodayTotal = (await campaignSentToday(new Date())) + (await marketingSentToday138(new Date()));
           const remaining = campaignDailyCeiling() - sentTodayTotal;
           if ((mc.recipientIds || []).length > remaining) {
-            return err(400, `That send would pass today's sending ceiling: ${sentTodayTotal} already sent today across SIGNL's lists, the ceiling is ${campaignDailyCeiling()}, and this list is ${(mc.recipientIds || []).length}. It can go tomorrow, or to a smaller segment today.`);
+            return err(400, `That send would pass today's sending ceiling: ${sentTodayTotal} already sent today across Magpie's lists, the ceiling is ${campaignDailyCeiling()}, and this list is ${(mc.recipientIds || []).length}. It can go tomorrow, or to a smaller segment today.`);
           }
           mc.status = "sending"; mc.updatedAt = nowIso();
           await store.set(`mkcampaign:${mc.id}`, mc);
@@ -22177,7 +22177,7 @@ async function route(event) {
     // ---- Build -138: Social (Area 3) ----
     if (seg[1] === "social") {
       const canViewS = perms138.hasPerm(user, "social.view") || perms138.hasPerm(user, "social.draft") || perms138.hasPerm(user, "social.approve");
-      if (!canViewS) return err(403, "Social is not part of your role on SIGNL.");
+      if (!canViewS) return err(403, "Social is not part of your role on Magpie.");
       const canDraftS = perms138.hasPerm(user, "social.draft");
       const canApproveS = perms138.hasPerm(user, "social.approve");
       if (method === "GET" && seg.length === 2) {
@@ -22252,7 +22252,7 @@ async function route(event) {
 
     // ---- Build -138: Team & permissions (Area 4) ----
     if (seg[1] === "team") {
-      if (!perms138.hasPerm(user, "team.manage")) return err(403, "Team is not part of your role on SIGNL.");
+      if (!perms138.hasPerm(user, "team.manage")) return err(403, "Team is not part of your role on Magpie.");
       if (method === "GET" && seg.length === 2) {
         const admins = (await allUsers()).filter((u) => u.role === "admin");
         const members = admins.map((u) => {
@@ -22306,7 +22306,7 @@ async function route(event) {
         const name = String(b.name || "").trim();
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return err(400, "That doesn't look like an email address.");
         if (!name) return err(400, "Give the person a name.");
-        if (await store.get(`email:${email}`)) return err(409, "That email already has a SIGNL account.");
+        if (await store.get(`email:${email}`)) return err(409, "That email already has a Magpie account.");
         let snapshot;
         let templateId = null;
         if (b.template && perms138.ROLE_TEMPLATES[b.template]) {
@@ -22337,21 +22337,21 @@ async function route(event) {
         await store.set(`pwreset:${hash}`, { userId: id, email, createdAt: nowIso(), expiresAt });
         await store.set(`pwreset-user:${id}`, { tokenHash: hash, createdAt: nowIso() });
         await store.set(`teaminvite:${hash}`, { userId: id, email, name, template: templateId, invitedBy: user.id, createdAt: nowIso(), expiresAt, usedAt: null });
-        const base = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+        const base = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
         const mail = {
-          subject: "You're invited to the SIGNL admin team",
+          subject: "You're invited to the Magpie admin team",
           text: [
             `Hi ${name.split(/\s+/)[0]},`,
             "",
-            `${user.name || "Jeff"} added you to the SIGNL admin team. Your role covers only the rooms and markets in your invite — nothing else is in your account.`,
+            `${user.name || "Jeff"} added you to the Magpie admin team. Your role covers only the rooms and markets in your invite — nothing else is in your account.`,
             "",
             "Set your password here (the link works once and expires in 48 hours):",
             `${base}/?reset=${token}`,
             "",
-            "Then sign in at app.joinsignl.com and you'll land on your home: Sig up top, your numbers, and your next steps. Anything you can't see isn't part of your role — if that ever looks wrong, ask Jeff.",
+            "Then sign in at app.magpielocal.com and you'll land on your home: Sig up top, your numbers, and your next steps. Anything you can't see isn't part of your role — if that ever looks wrong, ask Jeff.",
             "",
-            "The SIGNL team",
-            "hello@joinsignl.com",
+            "The Magpie team",
+            "hello@magpielocal.com",
           ].join("\n"),
         };
         const emailResult = await deliverEmail("team_invite", member, mail.subject, mail.text, null);
@@ -22402,10 +22402,10 @@ async function route(event) {
           await store.set(`pwreset:${hash}`, { userId: target.id, email: target.email, createdAt: nowIso(), expiresAt });
           await store.set(`pwreset-user:${target.id}`, { tokenHash: hash, createdAt: nowIso() });
           await store.set(`teaminvite:${hash}`, { userId: target.id, email: target.email, name: target.name, template: target.adminPerms ? target.adminPerms.template : null, invitedBy: user.id, createdAt: nowIso(), expiresAt, usedAt: null });
-          const base = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+          const base = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
           const mail = {
-            subject: "Your SIGNL admin invite link (fresh copy)",
-            text: [`Hi ${(target.name || "").split(/\s+/)[0] || "there"},`, "", "Here's a fresh copy of your SIGNL admin invite link — the old one no longer works. It expires in 48 hours:", `${base}/?reset=${token}`, "", "The SIGNL team", "hello@joinsignl.com"].join("\n"),
+            subject: "Your Magpie admin invite link (fresh copy)",
+            text: [`Hi ${(target.name || "").split(/\s+/)[0] || "there"},`, "", "Here's a fresh copy of your Magpie admin invite link — the old one no longer works. It expires in 48 hours:", `${base}/?reset=${token}`, "", "The Magpie team", "hello@magpielocal.com"].join("\n"),
           };
           const emailResult = await deliverEmail("team_invite", target, mail.subject, mail.text, null);
           await logEvent({ type: "team_invite_resent", actorId: user.id, actorRole: "admin", subjectId: target.id, market: null, data: { emailSent: !!emailResult.sent } });
@@ -22418,7 +22418,7 @@ async function route(event) {
     // ---- Build -138: Learn Studio (Area 7) ----
     if (seg[1] === "learn") {
       const canViewL = perms138.hasPerm(user, "learn.view") || perms138.hasPerm(user, "learn.edit") || perms138.hasPerm(user, "learn.publish");
-      if (!canViewL) return err(403, "The Learn studio is not part of your role on SIGNL.");
+      if (!canViewL) return err(403, "The Learn studio is not part of your role on Magpie.");
       const canEditL = perms138.hasPerm(user, "learn.edit");
       const canPublishL = perms138.hasPerm(user, "learn.publish");
       if (method === "GET" && seg.length === 2) {
@@ -22462,11 +22462,11 @@ async function route(event) {
       if (method === "POST" && seg.length === 5 && seg[2] === "drafts" && seg[4] === "preview") {
         const draft = await store.get(`learndraft:${seg[3]}`);
         if (!draft) return err(404, "Draft not found");
-        const hero = draft.heroImage ? `https://joinsignl.com/assets/photos/${draft.heroImage}` : "";
+        const hero = draft.heroImage ? `https://magpielocal.com/assets/photos/${draft.heroImage}` : "";
         const escHtml = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         const sectionsHtml = (draft.sections || []).map((s) => `${s.heading ? `<h2>${escHtml(s.heading)}</h2>` : ""}${(s.paragraphs || []).map((p) => `<p>${escHtml(p)}</p>`).join("")}`).join("");
-        const byline = draft.authorLine === "named" ? "By Jeff Rimmer, Founder, SIGNL" : "By Jeff, Founder, SIGNL";
-        const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(draft.headline)}</title><style>body{font-family:Georgia,serif;max-width:680px;margin:40px auto;padding:0 20px;line-height:1.65;color:#141414}h1{font-size:34px;line-height:1.2}.dek{font-size:19px;color:#444}.byline{color:#777;font-size:14px}img{width:100%;border-radius:12px}</style></head><body><p class="byline">SIGNL Learn — draft preview</p><h1>${escHtml(draft.headline)}</h1><p class="dek">${escHtml(draft.dek)}</p><p class="byline">${byline}</p>${hero ? `<img src="${hero}" alt="">` : ""}<p>${escHtml(draft.lede)}</p>${sectionsHtml}</body></html>`;
+        const byline = draft.authorLine === "named" ? "By Jeff Rimmer, Founder, Magpie" : "By Jeff, Founder, Magpie";
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(draft.headline)}</title><style>body{font-family:Georgia,serif;max-width:680px;margin:40px auto;padding:0 20px;line-height:1.65;color:#141414}h1{font-size:34px;line-height:1.2}.dek{font-size:19px;color:#444}.byline{color:#777;font-size:14px}img{width:100%;border-radius:12px}</style></head><body><p class="byline">Magpie Learn — draft preview</p><h1>${escHtml(draft.headline)}</h1><p class="dek">${escHtml(draft.dek)}</p><p class="byline">${byline}</p>${hero ? `<img src="${hero}" alt="">` : ""}<p>${escHtml(draft.lede)}</p>${sectionsHtml}</body></html>`;
         return json(200, { html });
       }
       if (method === "POST" && seg.length === 3 && seg[2] === "publish") {
@@ -22627,7 +22627,7 @@ async function route(event) {
       const target = await store.get(`user:${seg[2]}`);
       if (!target) return err(404, "Account not found");
       const token = await issuePasswordResetToken(target);
-      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      const base = process.env.APP_URL || "https://app.magpielocal.com";
       const rawMail = passwordResetEmail(target, `${base}/?reset=${token}`);
       // Co-brand (Build -105): a partner's sign-in invite is a
       // partner-sent email — it carries their sender name and
@@ -22881,7 +22881,7 @@ async function route(event) {
       if (b.brand !== undefined) {
         // Co-brand (Build -105): Admin-set only, validated
         // like the rest of the record; an all-empty block
-        // clears the brand back to SIGNL-only rendering.
+        // clears the brand back to Magpie-only rendering.
         const { brand, error } = sanitizePartnerBrand(b.brand);
         if (error) return err(400, error);
         brandPatch = { from: brandViewOf(target.partner.brand), to: brand };
@@ -23069,7 +23069,7 @@ async function route(event) {
       return json(200, { flagged });
     }
     // Platform messages (Build -40): Admin writes to creators in
-    // their SIGNL Messages, as the SIGNL team. One creator gets a
+    // their Magpie Messages, as the Magpie team. One creator gets a
     // message in their own platform thread; a market segment fans
     // out to one individual thread per finished creator (approved,
     // profile complete, on the roster, in good standing) — never
@@ -23366,7 +23366,7 @@ async function route(event) {
       let marketWanted = null;
       if (qs.market) {
         const mm = marketByName(String(qs.market));
-        if (!mm) return err(400, "That is not one of the SIGNL markets.");
+        if (!mm) return err(400, "That is not one of the Magpie markets.");
         marketWanted = mm.name;
       }
       if (q.length < 2) return json(200, { users: [], total: 0, needsQuery: true });
@@ -23415,7 +23415,7 @@ async function route(event) {
       return json(200, { users, total });
     }
     // Admin profile view (Jeff, 2026-10-26): the Requests card's
-    // "View profile" opens the applicant's full SIGNL profile
+    // "View profile" opens the applicant's full Magpie profile
     // exactly as a business would see it. The public /c/ page only
     // resolves for approved, profile-complete creators, so a
     // pending applicant (the very person Jeff is deciding on) had
@@ -23694,13 +23694,13 @@ async function route(event) {
       if (!target || target.role === "admin") return err(404, "Application not found");
       if (target.market !== UNLISTED) return err(400, "That record is already filed under a market");
       const wanted = marketByName(String(b.market || ""));
-      if (!wanted) return err(400, "Choose one of the SIGNL markets");
+      if (!wanted) return err(400, "Choose one of the Magpie markets");
       const res = resolveTypedCity(target.city || "", { state: target.state, country: target.country });
       const candidates = res.status === "unique" ? [res.market] : res.status === "ambiguous" ? res.markets : [];
       if (!candidates.includes(wanted.name)) {
         return err(400, candidates.length
           ? `${target.city || "That city"} resolves to ${candidates.join(" or ")}, not ${wanted.name}`
-          : `${target.city || "That city"} does not belong to any SIGNL market yet`);
+          : `${target.city || "That city"} does not belong to any Magpie market yet`);
       }
       const match = (res.matches || []).find((mm) => mm.market === wanted.name);
       const fromCity = target.city || "";
@@ -23852,7 +23852,7 @@ async function route(event) {
         const filtered = events.filter((e) => (!query.type || e.type === query.type) && (!query.actor || e.actorId === query.actor));
         return json(200, { events: filtered, total: filtered.length });
       } catch (e) {
-        console.error("SIGNL admin events read failed (rendering empty, degraded):", e);
+        console.error("Magpie admin events read failed (rendering empty, degraded):", e);
         return json(200, { events: [], total: 0, degraded: true });
       }
     }
@@ -23893,7 +23893,7 @@ async function route(event) {
         const lastFailure = outcomes.find((o) => o.type.endsWith("_not_sent")) || null;
         return json(200, { transport: { configured: emailEnabled() }, senders, lastFailure, outcomes });
       } catch (e) {
-        console.error("SIGNL admin email-health read failed (degraded):", e);
+        console.error("Magpie admin email-health read failed (degraded):", e);
         return json(200, { transport: { configured: emailEnabled() }, senders: {}, lastFailure: null, outcomes: [], degraded: true });
       }
     }
@@ -24147,7 +24147,7 @@ async function route(event) {
         const zip = ccZipStore(files);
         return {
           statusCode: 200,
-          headers: { "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="signl-accountant-pack-${month}.zip"` },
+          headers: { "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="magpie-accountant-pack-${month}.zip"` },
           body: zip.toString("base64"), isBase64Encoded: true,
         };
       }
@@ -24155,7 +24155,7 @@ async function route(event) {
       if (csv === null) return err(404, "Unknown ledger");
       return {
         statusCode: 200,
-        headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="signl-${ledger}-${ccPeriodSlug(P)}.csv"` },
+        headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="magpie-${ledger}-${ccPeriodSlug(P)}.csv"` },
         body: csv,
       };
     }
@@ -24354,7 +24354,7 @@ async function route(event) {
         const sentStats = await campaignSentTodayStats(new Date());
         return json(200, { campaign: campaignView(cfg, counts, sentStats.total, sentStats.byProfile), counts, recentSends, senderProfiles });
       } catch (e) {
-        console.error("SIGNL admin campaign read failed (rendering zeroed, degraded):", e);
+        console.error("Magpie admin campaign read failed (rendering zeroed, degraded):", e);
         const zeroCounts = { queued: 0, sent: 0, bounced: 0, skipped: 0, total: 0 };
         const fallbackCfg = { id: campaignId, armed: false, armedAt: null, armedBy: null, disarmedAt: null, disarmReason: null, lastError: null, lastRunAt: null, totalSent: 0, fromMailbox: "default", createdAt: null, updatedAt: null };
         return json(200, { campaign: campaignView(fallbackCfg, zeroCounts, null, null), counts: zeroCounts, recentSends: [], senderProfiles, degraded: true });
@@ -24444,7 +24444,7 @@ async function route(event) {
         // campaign never emails a creator the founding campaign
         // already has. The audiences overlap by design (the same
         // creator can sit on national platforms and on local
-        // benches), and nobody gets two SIGNL outreach emails. The
+        // benches), and nobody gets two Magpie outreach emails. The
         // address is recorded on the crossover campaign as skipped
         // with reason cross_campaign, so the tab shows it honestly.
         if (campaignId === CROSSOVER_CAMPAIGN_ID) {
@@ -24492,7 +24492,7 @@ async function route(event) {
     // Sender mailbox selection (Jeff, 2026-10-24): which sender
     // profile a campaign's mail leaves from. Values are the
     // CAMPAIGN_MAILBOXES keys; "default" is the shipped behavior
-    // (hello@joinsignl.com). Selecting a signlteam profile does
+    // (hello@magpielocal.com). Selecting a signlteam profile does
     // not activate it: the profile sends only once its SMTP vars
     // exist in the environment, and until then the sweep skips
     // the campaign rather than send from the wrong identity.
@@ -24780,7 +24780,7 @@ async function route(event) {
       });
     }
     // Preview code redemptions (Jeff, 2026-10-19): the register
-    // side of the SIGNL ROAS Score, simulated with the same
+    // side of the Magpie ROAS Score, simulated with the same
     // discipline as every preview action. Rebuilds the simulated
     // dashboard in memory, applies the reported tally to the one
     // simulated booking, and returns the recomputed scores. The
@@ -24863,7 +24863,7 @@ async function route(event) {
   // ---------- founding business roster preview (first 60 seconds, Jeff, 2026-10-29) ----------
   // The ONE read a founding business gets before activation, and
   // it is a preview, not product access. It exists so a business
-  // that just signed up can SEE what SIGNL is before any payment
+  // that just signed up can SEE what Magpie is before any payment
   // decision. As of BUILD -30 (Jeff, 2026-10-29) the payload
   // carries NO roster counts and NO creator cards: totals and
   // thin-market framing are anti-marketing while rosters are
@@ -24979,7 +24979,7 @@ async function route(event) {
     const slug = String(slugBase).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "partner";
     return {
       statusCode: 200,
-      headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="signl-${slug}-pack-${month}.csv"` },
+      headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="magpie-${slug}-pack-${month}.csv"` },
       body: csv,
     };
   }
@@ -25019,7 +25019,7 @@ async function route(event) {
   // flag is Admin-set) ever sees this surface.
   if (seg[0] === "partner" && seg[1] === "team" && seg.length === 2 && method === "GET") {
     const ctx = teamAdminContext(user);
-    if (!ctx) return err(403, "Team seats are managed by your partner lead. Ask SIGNL to name one for your org.");
+    if (!ctx) return err(403, "Team seats are managed by your partner lead. Ask Magpie to name one for your org.");
     const seats = await teamSeatsForOrg(ctx.org);
     const pilotList = [];
     if (ctx.isFunder) {
@@ -25041,7 +25041,7 @@ async function route(event) {
   }
   if (seg[0] === "partner" && seg[1] === "team" && seg[2] === "invite" && seg.length === 3 && method === "POST") {
     const ctx = teamAdminContext(user);
-    if (!ctx) return err(403, "Team seats are managed by your partner lead. Ask SIGNL to name one for your org.");
+    if (!ctx) return err(403, "Team seats are managed by your partner lead. Ask Magpie to name one for your org.");
     const b = parseBody(event);
     const kind = String(b.kind || "");
     const name = String(b.name || "").trim();
@@ -25086,7 +25086,7 @@ async function route(event) {
   }
   if (seg[0] === "partner" && seg[1] === "team" && (seg[2] === "resend" || seg[2] === "revoke") && seg.length === 3 && method === "POST") {
     const ctx = teamAdminContext(user);
-    if (!ctx) return err(403, "Team seats are managed by your partner lead. Ask SIGNL to name one for your org.");
+    if (!ctx) return err(403, "Team seats are managed by your partner lead. Ask Magpie to name one for your org.");
     const b = parseBody(event);
     const seats = await teamSeatsForOrg(ctx.org);
     const seat = seats.find((s) => s.seatId === String(b.seatId || ""));
@@ -25338,7 +25338,7 @@ async function route(event) {
         (seg[0] === "offers" && (method === "GET" || method === "POST" || method === "PATCH"))
       );
       // Platform messages (Build -40, Jeff: "open up the message
-      // feature for creators"): the SIGNL team thread is the one
+      // feature for creators"): the Magpie team thread is the one
       // message surface that has to work BEFORE a market launches
       // — it is how founding creators get their Golden Ticket
       // reminders and every other platform note. A creator in a
@@ -25487,7 +25487,7 @@ async function route(event) {
       // Build -68: rebook creates an OPEN offer directly, so a
       // founding business is refused outright — its invites
       // live as drafts until activation.
-      if (isFoundingBusiness(user)) return err(403, "Your business is on the founding list, so invites stay drafts for opening day. Rebooking opens when SIGNL activates your business.");
+      if (isFoundingBusiness(user)) return err(403, "Your business is on the founding list, so invites stay drafts for opening day. Rebooking opens when Magpie activates your business.");
       if (!(await isMarketLive(user.market))) return err(403, "Rebooking opens when your market launches. Your favorites and visit history are saved and waiting.");
       const b = parseBody(event);
       const creator = await store.get(`user:${b.creatorId}`);
@@ -25566,7 +25566,7 @@ async function route(event) {
         // paid offer charges the card on file, so the card comes
         // before the offer exists. Rail off: no gate, as before.
         if (connect.connectConfigured() && !businessCardOnFile(user)) {
-          return err(400, "Add a card before posting a paid offer. When you pick a creator, the booking charges your card on file and SIGNL holds the money until the post is live. Add your card in the Plan tab, under Your plan.");
+          return err(400, "Add a card before posting a paid offer. When you pick a creator, the booking charges your card on file and Magpie holds the money until the post is live. Add your card in the Plan tab, under Your plan.");
         }
       } else if (kind === "coupon") {
         // Coupon deal (Build -84): the coupon IS the payment.
@@ -25607,7 +25607,7 @@ async function route(event) {
         // offers warn in the composer only.
         if (!targetCreator && targetTiers) {
           const block = dignityBlock(dollarCap, targetTiers);
-          if (block) return err(400, `A $${fmtMoneyS(dollarCap)} comp is below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}, typical $${fmtPriceS(COMP_GUIDANCE[block.tier].typicalLow)} to $${fmtPriceS(COMP_GUIDANCE[block.tier].typicalHigh)}). Raise the comp value to $${fmtPriceS(block.floor)} or more, or remove ${block.tier} from who can apply. Token comps burn the roster's trust, so SIGNL does not send them.`);
+          if (block) return err(400, `A $${fmtMoneyS(dollarCap)} comp is below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}, typical $${fmtPriceS(COMP_GUIDANCE[block.tier].typicalLow)} to $${fmtPriceS(COMP_GUIDANCE[block.tier].typicalHigh)}). Raise the comp value to $${fmtPriceS(block.floor)} or more, or remove ${block.tier} from who can apply. Token comps burn the roster's trust, so Magpie does not send them.`);
         }
         if (!targetCreator && !targetTiers && dollarCap < COMP_GUIDANCE.Neighbors.floor) {
           return err(400, `A comp offer starts at $${fmtPriceS(COMP_GUIDANCE.Neighbors.floor)} of value. Below that it is a token, and token comps burn the roster's trust. Raise the value, or send a direct offer to one creator instead.`);
@@ -25882,7 +25882,7 @@ async function route(event) {
       // Build -68: a founding business cannot publish at all,
       // even in a live market — activation is the bar, and
       // until it happens the draft stays saved for opening day.
-      if (isFoundingBusiness(user)) return err(403, "Your business is on the founding list, so this draft stays saved for opening day. It goes out when SIGNL activates your business, and we email you that day.");
+      if (isFoundingBusiness(user)) return err(403, "Your business is on the founding list, so this draft stays saved for opening day. It goes out when Magpie activates your business, and we email you that day.");
       if (!(await isMarketLive(user.market))) return err(403, `Offers go live when your market opens. Businesses sign up when we are ready to launch; your draft is saved and ready to publish the day your market opens.`);
       if (kindOf(offer) === "comp" && Array.isArray(offer.targetTiers) && offer.targetTiers.length) {
         const block = dignityBlock(offer.dollarCap, offer.targetTiers);
@@ -26047,7 +26047,7 @@ async function route(event) {
     // released with a notification.
     if (method === "POST" && seg.length === 3 && seg[2] === "select") {
       if (user.role !== "business") return err(403, "Businesses only");
-      if (isFoundingBusiness(user)) return err(403, "Your business is on the founding list, so there is nothing to select yet. Your drafts go out when SIGNL activates your business.");
+      if (isFoundingBusiness(user)) return err(403, "Your business is on the founding list, so there is nothing to select yet. Your drafts go out when Magpie activates your business.");
       if (!(await isMarketLive(user.market))) return err(403, "Selecting creators opens when your market launches.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
@@ -26150,7 +26150,7 @@ async function route(event) {
       // Demo showcase fence (Build -67): a demo creator can never
       // apply to a real offer, whatever state its record is in.
       if (isDemoShowcaseCreator(user)) return err(403, "That account cannot apply to offers.");
-      if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
+      if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@magpielocal.com if you believe this is wrong.");
       if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
       if (lateStreakPaused(user)) return err(403, lateStreakPauseMessage(user));
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before applying: businesses can only pick creators with finished profiles. Your checklist is on your dashboard, under Profile.");
@@ -26232,7 +26232,7 @@ async function route(event) {
       if (isDemoShowcaseCreator(user)) return err(403, "That account cannot accept offers.");
       // Compliance standing gates new bookings: a paused creator
       // delivers the missing post first; a banned creator is done.
-      if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
+      if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@magpielocal.com if you believe this is wrong.");
       if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
       // Phase C: the late-streak pause gates NEW offers for its
       // 14 days; visits already booked are untouched.
@@ -26282,8 +26282,8 @@ async function route(event) {
       await logEvent({ type: "offer_accepted", actorId: user.id, actorRole: "creator", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, visitDate: booking.visitDate } });
       await notifyMilestone(offer.businessId, "booking_confirmed",
         `${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted "${offer.title}". Visit code ${booking.code} is live: redeem it at the counter when they visit.${companion ? ` They are bringing a +1, ${companion.creatorName} (@${companion.creatorHandle}), who is booked on the same visit with their own code and posts their own post and story.` : ""}`,
-        `Booked: ${user.name} accepted your SIGNL offer`,
-        [`Good news: ${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted your offer "${offer.title}" and the visit is booked.`, "", `Their visit code is ${booking.code}. When they visit, redeem the code at the counter (the Counter tab, or staff mode with your PIN). Redemption starts their 48 hour post clock.`, "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+        `Booked: ${user.name} accepted your Magpie offer`,
+        [`Good news: ${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted your offer "${offer.title}" and the visit is booked.`, "", `Their visit code is ${booking.code}. When they visit, redeem the code at the counter (the Counter tab, or staff mode with your PIN). Redemption starts their 48 hour post clock.`, "", "Open Magpie: https://app.magpielocal.com", "", "Magpie"].join("\n"),
         { bookingId: booking.id, offerId: offer.id });
       return json(201, { booking: await withPostState(booking) });
     }
@@ -26385,7 +26385,7 @@ async function route(event) {
         terms = checked.terms;
       }
       if ((terms.kind === "paid" || terms.kind === "mix") && connect.connectConfigured() && !businessCardOnFile(user)) {
-        return err(400, "Add a card before sending a paid deal. When the creator accepts, the booking charges your card on file and SIGNL holds the money until the post is live. Add your card in the Plan tab, under Your plan.");
+        return err(400, "Add a card before sending a paid deal. When the creator accepts, the booking charges your card on file and Magpie holds the money until the post is live. Add your card in the Plan tab, under Your plan.");
       }
       const hours = b.expiresInHours === 24 ? 24 : 48;
       const ts = nowIso();
@@ -27272,7 +27272,7 @@ async function route(event) {
   // the same Standard Visit package. The booking is a normal
   // booking (same code, same redemption, same compliance ladder)
   // plus a paidLane object: the fee math, the escrow state, and the
-  // founding-billing honesty label. SIGNL holds the payment:
+  // founding-billing honesty label. Magpie holds the payment:
   // escrow "held" at booking, "released" by the compliance sweep
   // once proof exists and the 48 hour post-proof hold passes,
   // "refunded" on a no-show or a ban. Paid bookings do NOT consume
@@ -27280,7 +27280,7 @@ async function route(event) {
   // a paid visit is a per-visit purchase on top.
   if (seg[0] === "bookings" && seg.length === 2 && seg[1] === "paid" && method === "POST") {
     if (user.role !== "business") return err(403, "Businesses only");
-    if (!(await isMarketLive(user.market))) return err(403, "SIGNL is not live in your market yet, so paid bookings open with the market.");
+    if (!(await isMarketLive(user.market))) return err(403, "Magpie is not live in your market yet, so paid bookings open with the market.");
     const b = parseBody(event);
     const creator = await store.get(`user:${b.creatorId}`);
     if (!creator || creator.role !== "creator" || creator.status !== "approved" || isTester(creator)) return err(400, "That creator is not on the roster");
@@ -27296,7 +27296,7 @@ async function route(event) {
     // the card comes first. With the rail off this gate does not
     // exist and the recorded flow is exactly as before.
     if (connect.connectConfigured() && !businessCardOnFile(user)) {
-      return err(400, "Add a card before booking paid visits. Paid bookings charge your card on file when you book, and SIGNL holds the money until the creator's post is live. Add your card in the Plan tab, under Your plan.");
+      return err(400, "Add a card before booking paid visits. Paid bookings charge your card on file when you book, and Magpie holds the money until the creator's post is live. Add your card in the Plan tab, under Your plan.");
     }
     const allBk = await allBookings();
     const cap = maxVisitsPerWeekOf(creator);
@@ -27346,7 +27346,7 @@ async function route(event) {
       redeemMethod: null,
       postDeadline: null,
       replacementRequestedAt: null,
-      // SIGNL ROAS (Jeff, 2026-10-19): paid visits carry an
+      // Magpie ROAS (Jeff, 2026-10-19): paid visits carry an
       // audience code too, stamped with this business's own
       // discount opt-in (their percentage, or 0 when codes are
       // off). The cost basis is what the visit cost the business
@@ -27409,9 +27409,9 @@ async function route(event) {
     }
     await logEvent({ type: "paid_booking_created", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: math.rate, businessTotal: math.businessTotal, creatorNet: math.creatorNet, platformFee: math.platformFee, escrowState: "held", hasBrief: !!booking.paidBrief } });
     await notifyMilestone(creator.id, "paid_booking_received",
-      `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}. $${fmtMoneyS(math.creatorNet)} is recorded as held by SIGNL until your post is live. ${booking.postingTermsLine} Visit code ${code}.`,
+      `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}. $${fmtMoneyS(math.creatorNet)} is recorded as held by Magpie until your post is live. ${booking.postingTermsLine} Visit code ${code}.`,
       `Paid booking: ${booking.businessName || "a business"} booked you at $${fmtPriceS(math.rate)}`,
-      [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}.`, "", `${booking.paidLane.paymentNote} Your share is $${fmtMoneyS(math.creatorNet)} of the $${fmtPriceS(math.rate)} rate.`, "", `${booking.postingTermsLine} These are the posting terms agreed on this booking.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}.`, "", `${booking.paidLane.paymentNote} Your share is $${fmtMoneyS(math.creatorNet)} of the $${fmtPriceS(math.rate)} rate.`, "", `${booking.postingTermsLine} These are the posting terms agreed on this booking.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
       { bookingId: booking.id });
     await promptCreatorPayoutSetup(booking, creator);
     await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid", hasBrief: !!booking.paidBrief } });
@@ -27433,7 +27433,7 @@ async function route(event) {
     try {
       const qrcode = require("qrcode-generator");
       const qr = qrcode(0, "M");
-      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      const base = process.env.APP_URL || "https://app.magpielocal.com";
       qr.addData(`${base}/counter?code=${booking.code}`);
       qr.make();
       const svg = qr.createSvgTag({ cellSize: 6, margin: 8, scalable: true });
@@ -27481,11 +27481,11 @@ async function route(event) {
         ? `Your visit to ${booking.businessName || "the business"} is redeemed. ${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app.`
         : `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
       paidVisit
-        ? `Your post is due under the agreed terms: ${booking.businessName || "your SIGNL visit"}`
-        : `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
+        ? `Your post is due under the agreed terms: ${booking.businessName || "your Magpie visit"}`
+        : `Your ${clockH} hour post clock started: ${booking.businessName || "your Magpie visit"}`,
       paidVisit
-        ? [`Your visit to ${booking.businessName || "the business"} was just confirmed.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n")
-        : [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+        ? [`Your visit to ${booking.businessName || "the business"} was just confirmed.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n")
+        : [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
       { bookingId: booking.id });
     return json(200, { booking: await withPostState(booking) });
   }
@@ -27692,8 +27692,8 @@ async function route(event) {
     await store.set(`booking:${booking.id}`, booking);
     await notifyMilestone(booking.businessId, "proof_submitted",
       `${user.name} posted for "${booking.title}"${post.onTime ? " (on time)" : " (late)"}. Open the link, confirm it is live under Posts, then report register tallies as they come in.`,
-      `${user.name} posted for your SIGNL visit`,
-      [`${user.name} just submitted their post for "${booking.title}"${post.onTime ? ", on time" : ", late"}.`, "", `Post: ${url}`, "", "Open it, confirm it is live in the app under Posts, and report register tallies as customers use the creator's code: the tally is what builds this visit's modeled estimate.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+      `${user.name} posted for your Magpie visit`,
+      [`${user.name} just submitted their post for "${booking.title}"${post.onTime ? ", on time" : ", late"}.`, "", `Post: ${url}`, "", "Open it, confirm it is live in the app under Posts, and report register tallies as customers use the creator's code: the tally is what builds this visit's modeled estimate.", "", "Open Magpie: https://app.magpielocal.com", "", "Magpie"].join("\n"),
       { bookingId: booking.id, postId: post.id });
     // A paused creator who delivers unpauses automatically; a banned
     // creator does not (reinstatement is a human decision).
@@ -27745,7 +27745,7 @@ async function route(event) {
       await notifyMilestone(post.creatorId, "post_verified",
         `${booking.businessName || "The business"} confirmed your post is live. This visit is complete.`,
         `Visit complete: ${booking.businessName || "the business"} confirmed your post`,
-        [`${booking.businessName || "The business"} confirmed your post is live, so this visit is complete.`, "", "When the business rates the visit and your post numbers come in, they land on the same booking in the app.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+        [`${booking.businessName || "The business"} confirmed your post is live, so this visit is complete.`, "", "When the business rates the visit and your post numbers come in, they land on the same booking in the app.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
         { bookingId: booking.id, postId: post.id });
     }
     return json(200, { post });
@@ -27796,7 +27796,7 @@ async function route(event) {
     // live, a granted license charges the card on file, so the
     // card comes first. Inert while the rail is off.
     if (connect.connectConfigured() && !businessCardOnFile(user)) {
-      return err(400, "Add a card before licensing posts. Licenses charge your card on file when the creator approves, and SIGNL holds the payment until then. Add your card in the Plan tab, under Your plan.");
+      return err(400, "Add a card before licensing posts. Licenses charge your card on file when the creator approves, and Magpie holds the payment until then. Add your card in the Plan tab, under Your plan.");
     }
     const creator = await store.get(`user:${post.creatorId}`);
     const fee = creator && creator.creator ? Number(creator.creator.licensingFee) : NaN;
@@ -27820,7 +27820,7 @@ async function route(event) {
       licenseDays: LICENSE_WINDOW_DAYS,
       status: "pending",
       escrowState: "held",
-      paymentNote: "License recorded, no card charged. SIGNL holds the payment until the creator decides.",
+      paymentNote: "License recorded, no card charged. Magpie holds the payment until the creator decides.",
       createdAt: ts,
       respondedAt: null,
       windowEndsAt: null,
@@ -28034,7 +28034,7 @@ async function route(event) {
     post.adUseDeclaredBy = user.id;
     post.adUseWindowEndsAt = windowEnd.toISOString();
     await store.set(`post:${post.id}`, post);
-    const bizName = (user.business && user.business.businessName) || post.businessName || "A SIGNL business";
+    const bizName = (user.business && user.business.businessName) || post.businessName || "A Magpie business";
     await logEvent({ type: "ad_use_declared", actorId: user.id, actorRole: "business", subjectId: post.id, market: booking ? booking.market : user.market, data: { bookingId: post.bookingId, creatorId: post.creatorId, visitKind: isPaidVisit ? "paid" : "comp", basis: isPaidVisit ? "paid" : "license", url: post.url, windowEndsAt: post.adUseWindowEndsAt } });
     // In-app notification: a message in the existing thread, so the
     // creator sees it in Messages and on the visit card.
@@ -28096,7 +28096,7 @@ async function route(event) {
       bookingId: booking.id,
       creatorId: booking.creatorId,
       businessId: user.id,
-      businessName: (user.business && user.business.businessName) || booking.businessName || "A SIGNL business",
+      businessName: (user.business && user.business.businessName) || booking.businessName || "A Magpie business",
       stars,
       comment,
       createdAt: nowIso(),
@@ -28106,7 +28106,7 @@ async function route(event) {
     await notifyMilestone(booking.creatorId, "rating_received",
       `${review.businessName} rated your visit ${stars} star${stars === 1 ? "" : "s"}${comment ? `: "${comment}"` : ""}.`,
       `${review.businessName} rated your visit ${stars} star${stars === 1 ? "" : "s"}`,
-      [`${review.businessName} rated your visit to them ${stars} star${stars === 1 ? "" : "s"}.${comment ? ` Their note: "${comment}"` : ""}`, "", "Ratings count toward SIGNL Elite once you have five of them, and they show on your public profile once you have three.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      [`${review.businessName} rated your visit to them ${stars} star${stars === 1 ? "" : "s"}.${comment ? ` Their note: "${comment}"` : ""}`, "", "Ratings count toward Magpie Elite once you have five of them, and they show on your public profile once you have three.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
       { bookingId: booking.id });
     return json(201, { review: reviewDisplay(review) });
   }
@@ -28136,7 +28136,7 @@ async function route(event) {
       bookingId: booking.id,
       creatorId: user.id,
       businessId: booking.businessId,
-      businessName: booking.businessName || "A SIGNL business",
+      businessName: booking.businessName || "A Magpie business",
       stars,
       text,
       createdAt: nowIso(),
@@ -28156,7 +28156,7 @@ async function route(event) {
   // latest snapshot so every existing reader keeps working.
   // post.reportedAt is set by the FIRST report only; Momentum's +5
   // is computed from reportedAt, so it still lands exactly once.
-  // Comments and shares joined the report with the SIGNL ROAS Score
+  // Comments and shares joined the report with the Magpie ROAS Score
   // (Jeff, 2026-10-19): they are two of the four numbers the media
   // side of the score prices. Creator-reported numbers are labeled
   // as such (source "creator_report") until the Meta sync provider
@@ -28207,7 +28207,7 @@ async function route(event) {
       await notifyMilestone(booking.businessId, "performance_reported",
         `${user.name} reported their post numbers for "${booking.title}" (${post.views == null ? "no views figure" : `${post.views} views`}). Your results on this booking are updated.`,
         `${user.name} reported post numbers for your visit`,
-        [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}, ${post.saves == null ? "saves not reported" : `${post.saves} saves`}.`, "", "They feed the media-value side of this booking's modeled estimate. The register side is still yours to report under Bookings.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+        [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}, ${post.saves == null ? "saves not reported" : `${post.saves} saves`}.`, "", "They feed the media-value side of this booking's modeled estimate. The register side is still yours to report under Bookings.", "", "Open Magpie: https://app.magpielocal.com", "", "Magpie"].join("\n"),
         { bookingId: booking.id, postId: post.id });
     } else {
       // Later snapshot updates are quieter: an in-app note for the
@@ -28287,7 +28287,7 @@ async function route(event) {
   }
 
   // Code redemptions (Jeff, 2026-10-19): the register side of the
-  // SIGNL ROAS Score. The creator's audience code is rung up at
+  // Magpie ROAS Score. The creator's audience code is rung up at
   // the business's own register (no POS integration, ever); the
   // business reports the tally back against the booking: how many
   // customers used the code and the total basket value rung with
@@ -28330,7 +28330,7 @@ async function route(event) {
       await notifyMilestone(booking.creatorId, "register_tally",
         `${booking.businessName || "The business"} reports ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""} ($${fmtMoneyS(booking.redemptions.basketTotal)} rung up). That is tracked register spend from your post.`,
         `Your code drove $${fmtMoneyS(booking.redemptions.basketTotal)} at ${booking.businessName || "the register"}`,
-        [`${booking.businessName || "The business"} just reported their register tally for your visit: ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""}, $${fmtMoneyS(booking.redemptions.basketTotal)} rung up in total.`, "", "That tracked register spend sits on your booking and your track record: it is the floor of what your post provably drove.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+        [`${booking.businessName || "The business"} just reported their register tally for your visit: ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""}, $${fmtMoneyS(booking.redemptions.basketTotal)} rung up in total.`, "", "That tracked register spend sits on your booking and your track record: it is the floor of what your post provably drove.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
         { bookingId: booking.id });
     }
     // Build -132: the tally is a labelled CORRECTION tool now —
@@ -28528,14 +28528,14 @@ async function route(event) {
     return json(200, { role: "creator", period, stats: await ccCreatorStats(P, user) });
   }
 
-  // The Receipt (Build -34, M6): "What SIGNL brought you" for
+  // The Receipt (Build -34, M6): "What Magpie brought you" for
   // the current month. Every number is a counted floor with its
   // method available to the client copy: event sums where M1
   // captured them, the reported tally as the labeled fallback,
   // came-backs as their own block, the usual-weeknight line
   // against the business's own baseline, mentions on a separate
   // soft line, Google's numbers under Google's label, and the
-  // SIGNL ROAS Score from the one shared helper. A business
+  // Magpie ROAS Score from the one shared helper. A business
   // with no counted activity yet gets its plan, baseline, and
   // Google strip and nothing invented.
   if (method === "GET" && seg[0] === "me" && seg[1] === "receipt" && seg.length === 2) {
@@ -28659,7 +28659,7 @@ async function route(event) {
     if (seg[2] === "csv") {
       return {
         statusCode: 200,
-        headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="signl-receipt-${rawMonth}.csv"` },
+        headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="magpie-receipt-${rawMonth}.csv"` },
         body: monthlyReceiptCsv(exp),
       };
     }
@@ -29061,9 +29061,9 @@ async function route(event) {
       const pairNewest = (rows, pred) => rows.filter(pred).sort((a, b) => (String(a.createdAt || "") < String(b.createdAt || "") ? 1 : -1))[0] || null;
       for (const t of Object.values(byThread)) {
         // The platform thread (Build -40): the other side is the
-        // SIGNL team identity, not a user record.
+        // Magpie team identity, not a user record.
         if (t.otherId === PLATFORM_PEER_ID) {
-          threads.push({ ...t, otherName: "SIGNL", otherRole: "platform", otherBusinessName: null, otherHandle: null, platform: true });
+          threads.push({ ...t, otherName: "Magpie", otherRole: "platform", otherBusinessName: null, otherHandle: null, platform: true });
           continue;
         }
         const other = await store.get(`user:${t.otherId}`);
@@ -29077,7 +29077,7 @@ async function route(event) {
     if (method === "POST" && seg.length === 1) {
       const b = parseBody(event);
       // Platform thread reply (Build -40): a creator writing to
-      // the SIGNL team. The reply lands in Admin's platform
+      // the Magpie team. The reply lands in Admin's platform
       // messages view and the Event Log; it sends no email.
       if (String(b.toUserId || "") === PLATFORM_PEER_ID) {
         if (user.role !== "creator") return err(403, "Platform messages are for creators");

@@ -15,7 +15,7 @@
 //     and key discipline as Square's (lib/square.js), and never
 //     returned on any payload;
 //   - orders + discounts read from the Clover API shape
-//     (GET /v3/merchants/{id}/orders), SIGNL visit-code
+//     (GET /v3/merchants/{id}/orders), Magpie visit-code
 //     discounts becoming counted-proof rows through the SAME
 //     redevent: seam Square writes (Receipt counted class);
 //   - sync idempotence: each counted row's id is derived from
@@ -160,7 +160,7 @@ async function fetchCloverOrders(conn, sinceMs) {
 
 // A Clover order becomes a counted-proof candidate when it is
 // paid/closed and carries a discount whose name looks like a
-// SIGNL visit code (the codes businesses hand customers; the
+// Magpie visit code (the codes businesses hand customers; the
 // typed path counts the same codes at any till). Amounts in
 // Clover are cents.
 function countedRowsForOrder(businessId, order) {

@@ -3,7 +3,7 @@
     "@netlify/blobs": "^8.1.0",
     "qrcode-generator": "^1.4.4"
   },
-  "description": "SIGNL public platform: local creator marketing app (app.joinsignl.com)",
+  "description": "Magpie public platform: local creator marketing app (app.magpielocal.com)",
   "engines": {
     "node": ">=18"
   },

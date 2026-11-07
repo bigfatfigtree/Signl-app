@@ -1,4 +1,4 @@
-/* SIGNL app theme: PAPER / INK / SIGNAL (Build -119, 2026-11-04).
+/* Magpie app theme: PAPER / INK / SIGNAL (Build -119, 2026-11-04).
    Jeff approved the dashboard redesign concepts (v3) and ordered
    the rebuild: "Yes do it. I love the design." This layer restyles
    the whole app to the approved system: warm Paper background,
@@ -1364,3 +1364,9 @@ table { max-width: 100%; }
    the one intentional escapee — the column's content rules
    (min-width 0, wrapping lines) still hold everything else in. */
 .shelf-tray-col.top-match { overflow: visible; }
+
+/* Magpie flip — "formerly SIGNL" bridge line (flip package item 4.7; removal is item 5.6:
+   delete every .formerly-line span (marked data-bridge="formerly-signl"), unwrap .brand-lockup, drop this block) */
+.brand-lockup{display:inline-flex;flex-direction:column;align-items:flex-start;gap:1px;line-height:1}
+.formerly-line{font-size:9.5px;font-weight:600;letter-spacing:.13em;color:var(--ink3);white-space:nowrap}
+.topbar .formerly-line{color:rgba(255,255,255,.55)}

@@ -149,7 +149,7 @@ function parseCookies(header) {
 }
 
 // The one admin account. Created on first boot from env vars:
-//   ADMIN_EMAIL     (default jeff@joinsignl.com)
+//   ADMIN_EMAIL     (default jeff@magpielocal.com)
 //   ADMIN_PASSWORD  (required to enable admin sign-in; never stored in code)
 // Perf (2026-10-28): once a warm container has seen the admin index
 // record, skip the store read on later requests. The account is
@@ -158,7 +158,7 @@ function parseCookies(header) {
 let adminIndexSeen = false;
 async function ensureAdmin(logEvent) {
   if (adminIndexSeen) return;
-  const email = (process.env.ADMIN_EMAIL || "jeff@joinsignl.com").toLowerCase();
+  const email = (process.env.ADMIN_EMAIL || "jeff@magpielocal.com").toLowerCase();
   const existing = await store.get(`email:${email}`);
   if (existing) { adminIndexSeen = true; return; }
   const password = process.env.ADMIN_PASSWORD;

@@ -1,5 +1,5 @@
 // Matching fit layer (Jeff, 2026-10-23): FIT + EXPLAIN.
-// Pre-launch matching for SIGNL. Given one business and one
+// Pre-launch matching for Magpie. Given one business and one
 // creator profile, it answers two questions in plain language:
 // how well do they fit (0-100), and why. Every point comes from a
 // signal actually stored on the two records, and every point is
@@ -291,7 +291,7 @@ function buildFitNote(fit, business, creator) {
 }
 
 // ---------- learned re-ranker seam (NOT BUILT - identity) ----------
-// When SIGNL has visit outcomes at scale, a learned model can
+// When Magpie has visit outcomes at scale, a learned model can
 // adjust the hand-set score above: which fits actually produced
 // an on-time post, a register tally worth having, a rebook. The
 // outcome fields it will train on are ALREADY being collected:

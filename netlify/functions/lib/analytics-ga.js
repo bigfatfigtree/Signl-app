@@ -134,7 +134,7 @@ function groupFilter(group) {
             {
               filter: {
                 fieldName: "hostName",
-                stringFilter: { matchType: "EXACT", value: "joinsignl.com" },
+                stringFilter: { matchType: "EXACT", value: "magpielocal.com" },
               },
             },
             { notExpression: beginsLearn },
@@ -145,7 +145,7 @@ function groupFilter(group) {
       return {
         filter: {
           fieldName: "hostName",
-          stringFilter: { matchType: "EXACT", value: "app.joinsignl.com" },
+          stringFilter: { matchType: "EXACT", value: "app.magpielocal.com" },
         },
       };
     case "all":

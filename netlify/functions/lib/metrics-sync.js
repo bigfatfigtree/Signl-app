@@ -1,4 +1,4 @@
-// SIGNL post-metrics auto-sync seam (UX redesign section 3, 2026-10-24).
+// Magpie post-metrics auto-sync seam (UX redesign section 3, 2026-10-24).
 //
 // HONESTY BOUNDARY: per-post Instagram metrics cannot be pulled
 // automatically today. Creator-reported numbers are the only numbers
@@ -19,7 +19,7 @@
 //
 // ACTIVATION CHECKLIST (all four, in order, before the flag flips):
 //   1. Meta App Review approval for the
-//      instagram_business_manage_insights permission on the SIGNL
+//      instagram_business_manage_insights permission on the Magpie
 //      Meta app (review not yet filed; Access Verification in
 //      review, deadline 2026-12-21). STILL OPEN — gate G4.
 //   2. Creator Instagram connection flow: BUILT (Build -108) —

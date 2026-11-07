@@ -1,4 +1,4 @@
-// SIGNL Halo recalibration trigger (Build -45).
+// Magpie Halo recalibration trigger (Build -45).
 //
 // Halo (lib/router.js) estimates the visits a creator's post
 // brought in that no code caught, at a modeled intent rate.
@@ -17,16 +17,16 @@
 export const config = { schedule: "37 5 * * 1" };
 
 export default async () => {
-  const base = process.env.APP_URL || "https://app.joinsignl.com";
+  const base = process.env.APP_URL || "https://app.magpielocal.com";
   const headers = { "Content-Type": "application/json" };
   if (process.env.SIGNL_SWEEP_TOKEN) headers["x-signl-sweep-token"] = process.env.SIGNL_SWEEP_TOKEN;
   try {
     const res = await fetch(`${base}/api/admin/halo/calibrate`, { method: "POST", headers, body: "{}" });
     const text = await res.text();
-    console.log(`SIGNL halo calibration: HTTP ${res.status} ${text.slice(0, 300)}`);
+    console.log(`Magpie halo calibration: HTTP ${res.status} ${text.slice(0, 300)}`);
     return new Response(JSON.stringify({ ok: res.ok, status: res.status }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
-    console.error("SIGNL halo calibration call failed:", e);
+    console.error("Magpie halo calibration call failed:", e);
     return new Response(JSON.stringify({ ok: false, error: String(e && e.message || e) }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 };

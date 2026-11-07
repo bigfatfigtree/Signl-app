@@ -55,7 +55,7 @@ const SEED_FLAG_KEY = "config:recruiterSeedsV1";
 const OWNER_MARKETS = ["Austin", "Nashville", "Richmond", "Virginia Beach", "Denver", "Dallas", "Chicago"];
 const PROSPECT_STATUSES = ["to_contact", "sent", "replied", "claimed", "approved", "not_interested", "do_not_contact"];
 const ADVERTISER_PERMIT_STATUSES = ["not_started", "in_progress", "done"];
-const DUBAI_PERMIT_LINE = "Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.";
+const DUBAI_PERMIT_LINE = "Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and Magpie walks founding creators through it.";
 
 let deps = {
   issuePasswordResetToken: null,
@@ -282,7 +282,7 @@ function normalizeProspectInput(raw, marketName, recruiterId, source) {
 // market, a handle (any platform) or an email that is already
 // queued is never queued twice; a queued do_not_contact blocks
 // re-adding the same person; a handle that already belongs to a
-// real creator record lands pre-linked as already-on-SIGNL.
+// real creator record lands pre-linked as already-on-Magpie.
 async function importProspects({ marketName, recruiterId, records, source, actorId }) {
   const existing = await allProspects();
   const users = deps.allUsers ? await deps.allUsers() : [];
@@ -371,17 +371,17 @@ function firstNameOf(name) {
 
 function claimLinkFor(entity, p, channel) {
   const h = channel === "tiktok" && p.tiktokHandle ? p.tiktokHandle : (p.instagramHandle || p.handle || p.tiktokHandle || "");
-  const base = process.env.APP_URL || "https://app.joinsignl.com";
+  const base = process.env.APP_URL || "https://app.magpielocal.com";
   return `${base}/claim?handle=${encodeURIComponent(h)}&market=${encodeURIComponent(p.marketName)}&src=${encodeURIComponent(RECRUITER_SRC_PREFIX + entity.code)}`;
 }
 
 function senderIntro(entity) {
-  if (entity.kind === "owner") return "I'm Jeff, the founder of SIGNL.";
-  return `I'm ${firstNameOf(entity.name)}. I lead SIGNL's launch in ${entity.marketName}.`;
+  if (entity.kind === "owner") return "I'm Jeff, the founder of Magpie.";
+  return `I'm ${firstNameOf(entity.name)}. I lead Magpie's launch in ${entity.marketName}.`;
 }
 function senderSignoff(entity) {
-  if (entity.kind === "owner") return "Jeff\nFounder, SIGNL";
-  return `${firstNameOf(entity.name)}\nSIGNL ${entity.marketName}`;
+  if (entity.kind === "owner") return "Jeff\nFounder, Magpie";
+  return `${firstNameOf(entity.name)}\nMagpie ${entity.marketName}`;
 }
 
 // The approved founding scripts (goal files, 2026-11-02), with the
@@ -398,11 +398,11 @@ function buildDrafts(entity, p) {
     const link = claimLinkFor(entity, p, channel);
     return `Hi ${first}, ${intro}
 
-SIGNL books local creators with local businesses: comped experiences like meals, treatments, and stays, or paid bookings at your own rate, and you keep 97% of paid bookings.
+Magpie books local creators with local businesses: comped experiences like meals, treatments, and stays, or paid bookings at your own rate, and you keep 97% of paid bookings.
 
 You are ranked by how local your audience is to ${market}, not by follower count, so ${category} creators here get seen first.
 
-${market} opens after the founding roster is set, and claiming your page now holds your spot. It is free for creators, and SIGNL starts at 500 total followers across your platforms.
+${market} opens after the founding roster is set, and claiming your page now holds your spot. It is free for creators, and Magpie starts at 500 total followers across your platforms.
 
 Your page: ${link}`;
   };
@@ -411,18 +411,18 @@ Your page: ${link}`;
 
 ${intro} I am putting together the founding creator roster before the market opens.
 
-SIGNL connects local creators with local businesses in the same city. Businesses book you two ways: for comped experiences, like a meal, a treatment, a class, or a stay, in exchange for a post about the real visit; or for paid bookings at the rate you set yourself. On paid bookings you keep 97%. SIGNL takes 3%, and that is the whole split.
+Magpie connects local creators with local businesses in the same city. Businesses book you two ways: for comped experiences, like a meal, a treatment, a class, or a stay, in exchange for a post about the real visit; or for paid bookings at the rate you set yourself. On paid bookings you keep 97%. Magpie takes 3%, and that is the whole split.
 
-What makes SIGNL different is the ranking. Creators are ranked by how local their audience is, not by follower count. For a ${category} creator in ${market}, that means the businesses here see you ahead of bigger accounts whose audiences live somewhere else.
+What makes Magpie different is the ranking. Creators are ranked by how local their audience is, not by follower count. For a ${category} creator in ${market}, that means the businesses here see you ahead of bigger accounts whose audiences live somewhere else.
 
-${market} opens once the founding roster is set. Claiming your page now holds your spot and your local ranking, and it costs nothing to be on the roster. Joining is free for creators, and always is. SIGNL starts at 500 total followers across your platforms.
+${market} opens once the founding roster is set. Claiming your page now holds your spot and your local ranking, and it costs nothing to be on the roster. Joining is free for creators, and always is. Magpie starts at 500 total followers across your platforms.
 
 Claim your page here: ${emailLink}
 ${p.marketId === "dubai" ? `\n${DUBAI_PERMIT_LINE}\n` : ""}
 Happy to answer anything. Just reply here.
 
 ${senderSignoff(entity)}`;
-  const followup = `Hi ${first}, quick follow-up from ${entity.kind === "owner" ? "Jeff" : firstNameOf(entity.name)} at SIGNL. Your founding page for ${market} is still open to claim: ${claimLinkFor(entity, p, "instagram")}
+  const followup = `Hi ${first}, quick follow-up from ${entity.kind === "owner" ? "Jeff" : firstNameOf(entity.name)} at Magpie. Your founding page for ${market} is still open to claim: ${claimLinkFor(entity, p, "instagram")}
 
 It holds your spot and your local ranking for when ${market} opens. Free for creators, and paid bookings always pay you 97% at your own rate.`;
   return {
@@ -806,7 +806,7 @@ async function inviteStaffRecruiter({ name, email, market, actorId, sponsorPartn
   // builder; production always has it.
   if (deps.issuePasswordResetToken && deps.deliverEmail && (deps.recruiterWelcomeEmail || deps.passwordResetEmail)) {
     token = await deps.issuePasswordResetToken(user);
-    const base = process.env.APP_URL || "https://app.joinsignl.com";
+    const base = process.env.APP_URL || "https://app.magpielocal.com";
     const link = `${base}/?reset=${token}`;
     const mail = deps.recruiterWelcomeEmail ? deps.recruiterWelcomeEmail(user, link) : deps.passwordResetEmail(user, link);
     const sent = await deps.deliverEmail(deps.recruiterWelcomeEmail ? "recruiter_welcome" : "password_reset", user, mail.subject, mail.text, null);
@@ -852,7 +852,7 @@ function parsePasteList(text) {
 async function handleRecruiterApi({ method, seg, query, event, user }) {
   if (!user) return err(401, "Sign in first");
   const entity = await entityForUser(user);
-  if (!entity) return err(403, "This console is for SIGNL recruiters.");
+  if (!entity) return err(403, "This console is for Magpie recruiters.");
   const sub = seg[1] || "";
 
   if (method === "GET" && sub === "me") {
@@ -1030,7 +1030,7 @@ async function handleAdminRecruiters({ method, seg, event, user }) {
     let token = null;
     if (deps.issuePasswordResetToken && deps.deliverEmail && (deps.recruiterWelcomeEmail || deps.passwordResetEmail)) {
       token = await deps.issuePasswordResetToken(target);
-      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      const base = process.env.APP_URL || "https://app.magpielocal.com";
       const link = `${base}/?reset=${token}`;
       const mail = deps.recruiterWelcomeEmail ? deps.recruiterWelcomeEmail(target, link) : deps.passwordResetEmail(target, link);
       const sent = await deps.deliverEmail(deps.recruiterWelcomeEmail ? "recruiter_welcome" : "password_reset", target, mail.subject, mail.text, null);

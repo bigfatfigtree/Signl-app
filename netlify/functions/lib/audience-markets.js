@@ -1,10 +1,10 @@
 // Multi-market audience shares (Jeff, 2026-11-01): a creator is
-// listed and ranked in EVERY SIGNL market where the local share of
+// listed and ranked in EVERY Magpie market where the local share of
 // their audience is strong, and can receive offers in all of them,
 // not just their home market.
 //
 // The data is honest and creator-controlled, like the home-market
-// localAudiencePct it extends: the creator reports, per SIGNL
+// localAudiencePct it extends: the creator reports, per Magpie
 // market, the share of their audience that lives there, stored on
 // creator.audienceMarkets as [{ market, pct }]. Nothing here is
 // computed from outside data and no share is ever invented: a

@@ -225,7 +225,7 @@ const ENTRIES = [
   },
   {
     id: "platform_message",
-    name: "Message from the SIGNL team",
+    name: "Message from the Magpie team",
     group: "Visits and posts",
     trigger: "An admin sends a platform message (including Finish Engine system sends)",
     recipient: "The creator",
@@ -724,7 +724,7 @@ const ENTRIES = [
     // locked block in the second-sentence position. It is NOT part
     // of the editable text — the studio renders it as a locked
     // chip, and no saved version may move or remove it.
-    lockedLine: "SIGNL is free for creators. Always.",
+    lockedLine: "Magpie is free for creators. Always.",
   },
   {
     id: "campaign_crossover",
@@ -759,7 +759,7 @@ const ENTRIES = [
     name: "New founding business application — team notice",
     group: "Joining",
     trigger: "A business sends in a founding application",
-    recipient: "The SIGNL team inbox (internal)",
+    recipient: "The Magpie team inbox (internal)",
     lane: "direct",
     kind: "business_application_notice",
     templateRef: "business_application_notice",

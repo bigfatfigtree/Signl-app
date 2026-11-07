@@ -1,4 +1,4 @@
-// SIGNL app (app.joinsignl.com). Single-page client for the SIGNL API.
+// Magpie app (app.magpielocal.com). Single-page client for the Magpie API.
 "use strict";
 
 // Google Analytics 4 (Jeff, 2026-10-21): the same property as the
@@ -190,7 +190,7 @@ async function api(method, path, body) {
     } catch (e) {
       // A network failure says so in plain words, never as a raw
       // status or a browser exception string.
-      throw new Error("We could not reach SIGNL. Check your connection and try again.");
+      throw new Error("We could not reach Magpie. Check your connection and try again.");
     }
     noteServerBuild(res.headers && res.headers.get ? res.headers.get("x-signl-build") : null);
     const data = await res.json().catch(() => ({}));
@@ -391,13 +391,13 @@ function parseBizParams(params) {
 }
 
 // Public creator profile (Jeff, 2026-10-19): an approved creator's
-// shareable page, app.joinsignl.com/c/<handle>. The server answers a
+// shareable page, app.magpielocal.com/c/<handle>. The server answers a
 // whitelist payload for approved creators only; everyone else reads
 // as "not public". The roster itself stays private: this is one
 // creator's own link, never a listing.
 function publicProfileUrl(u) {
   const handle = u && u.creator && u.creator.handle;
-  return handle ? `https://app.joinsignl.com/c/${encodeURIComponent(handle)}` : "";
+  return handle ? `https://app.magpielocal.com/c/${encodeURIComponent(handle)}` : "";
 }
 
 async function copyPublicProfile() {
@@ -415,12 +415,12 @@ async function copyPublicProfile() {
 // profile page sets its own document title and Open Graph /
 // Twitter meta from the loaded profile, so a link the creator
 // pastes into Messages, WhatsApp, or their bio unfurls as their
-// name, photo, and market instead of a generic SIGNL card. Since
+// name, photo, and market instead of a generic Magpie card. Since
 // Jeff's 2026-10-23 ruling, approved + profile-complete profiles
 // ALSO get this meta server-rendered with index,follow (the
 // cpage route in the router); this client shell remains the
 // in-app fallback and keeps SPA navigation consistent.
-const DEFAULT_PAGE_TITLE = "SIGNL - Local Creator Marketing Platform";
+const DEFAULT_PAGE_TITLE = "Magpie - Local Creator Marketing Platform";
 function setShareMeta(key, attr, content) {
   if (!content) return;
   let el = document.head.querySelector(`meta[${attr}="${key}"][data-signl-meta]`);
@@ -446,22 +446,22 @@ function setShareCanonical(href) {
   el.setAttribute("href", href);
 }
 function applyProfileShareShell(p, place) {
-  document.title = `${p.name} (@${p.handle}) on SIGNL${place ? ` | ${place}` : ""}`;
+  document.title = `${p.name} (@${p.handle}) on Magpie${place ? ` | ${place}` : ""}`;
   // Mirrors profilePageMeta in lib/profile-meta.js exactly,
   // including the multi-market line (2026-11-01), so the
   // in-app head and the server-rendered head never disagree.
   const alsoList = (p.listedMarkets || []).filter((m) => !m.home && typeof m.pct === "number").slice(0, 2);
   const also = alsoList.length ? ` Also ranked in ${alsoList.map((m) => `${m.market} (${m.pct}% of their audience)`).join(" and ")}.` : "";
-  const desc = `${p.name} is a founding creator on SIGNL in ${place || "their market"}${p.tierBand ? ` (${p.tierBand} tier)` : ""}.${typeof p.localAudiencePct === "number" ? ` ${p.localAudiencePct}% of their audience is local.` : ""}${also} Local businesses comp creators for honest posts.`;
-  setShareCanonical(`https://app.joinsignl.com/c/${p.handle}`);
+  const desc = `${p.name} is a founding creator on Magpie in ${place || "their market"}${p.tierBand ? ` (${p.tierBand} tier)` : ""}.${typeof p.localAudiencePct === "number" ? ` ${p.localAudiencePct}% of their audience is local.` : ""}${also} Local businesses comp creators for honest posts.`;
+  setShareCanonical(`https://app.magpielocal.com/c/${p.handle}`);
   setShareMeta("og:title", "property", document.title);
   setShareMeta("og:description", "property", desc);
   setShareMeta("og:type", "property", "profile");
-  if (p.photoUrl) setShareMeta("og:image", "property", p.photoUrl.startsWith("http") ? p.photoUrl : `https://app.joinsignl.com${p.photoUrl}`);
+  if (p.photoUrl) setShareMeta("og:image", "property", p.photoUrl.startsWith("http") ? p.photoUrl : `https://app.magpielocal.com${p.photoUrl}`);
   setShareMeta("twitter:card", "name", p.photoUrl ? "summary_large_image" : "summary");
   setShareMeta("twitter:title", "name", document.title);
   setShareMeta("twitter:description", "name", desc);
-  if (p.photoUrl) setShareMeta("twitter:image", "name", p.photoUrl.startsWith("http") ? p.photoUrl : `https://app.joinsignl.com${p.photoUrl}`);
+  if (p.photoUrl) setShareMeta("twitter:image", "name", p.photoUrl.startsWith("http") ? p.photoUrl : `https://app.magpielocal.com${p.photoUrl}`);
 }
 function clearShareShell() {
   document.title = DEFAULT_PAGE_TITLE;
@@ -478,17 +478,17 @@ function clearShareShell() {
 //     links, no contact path. The handle is text, never a
 //     link out.
 //   Tier 1 (signed-in business, not paid/active): the rate
-//     card + the Book on SIGNL action, plus the locked
+//     card + the Book on Magpie action, plus the locked
 //     socials panel.
 //   Tier 2 (paid, active business): rate, Book, the creator's
 //     social channel rows, and an in-platform Message box.
-// The ONLY booking action routes inside SIGNL. Nothing on this
+// The ONLY booking action routes inside Magpie. Nothing on this
 // page links to the creator's off-platform profiles except the
 // Tier 2 channel rows, which are the paid unlock itself.
-const BOOKME_GUARANTEE_LINE = "Bookings through SIGNL carry the Visit Guarantee and payment protection: payment is held until the post is live. Deals arranged outside SIGNL carry neither.";
-const BOOKME_STAYS_LINE = "Bookings that start on SIGNL stay on SIGNL.";
-const BOOKME_LOCKED_LINE = "Paying businesses can message this creator right here on SIGNL.";
-const BOOKING_STARTED_LINE = "This booking started on SIGNL, so it runs through SIGNL, where the Visit Guarantee and payment protection apply.";
+const BOOKME_GUARANTEE_LINE = "Bookings through Magpie carry the Visit Guarantee and payment protection: payment is held until the post is live. Deals arranged outside Magpie carry neither.";
+const BOOKME_STAYS_LINE = "Bookings that start on Magpie stay on Magpie.";
+const BOOKME_LOCKED_LINE = "Paying businesses can message this creator right here on Magpie.";
+const BOOKING_STARTED_LINE = "This booking started on Magpie, so it runs through Magpie, where the Visit Guarantee and payment protection apply.";
 
 function bookMeBook() {
   const u = state.user;
@@ -609,7 +609,7 @@ function workGridHtml(p) {
   return `
       <h3 class="bookme-h">Work</h3>
       <div class="work-grid">${cells}</div>
-      <p class="small muted">Posts ${esc(p.name)} picked to show their work. They are the creator's own posts, not SIGNL visits.</p>`;
+      <p class="small muted">Posts ${esc(p.name)} picked to show their work. They are the creator's own posts, not Magpie visits.</p>`;
 }
 
 // ---------- profile header facts (Build -66) ----------
@@ -709,11 +709,11 @@ async function renderPublicProfile() {
   } catch (e) { p = null; }
   if (!p) {
     if (serverRendered) return; // the served profile is the page; keep it
-    document.title = "Profile not public | SIGNL";
+    document.title = "Profile not public | Magpie";
     app.innerHTML = `
     <section class="panel center" style="max-width:560px;margin:40px auto">
       <h2>Profile not public</h2>
-      <p class="muted">There is no public SIGNL page at this link. The creator may not have turned their page on, may still be in review, or the link may be wrong.</p>
+      <p class="muted">There is no public Magpie page at this link. The creator may not have turned their page on, may still be in review, or the link may be wrong.</p>
       <div class="cta-row" style="justify-content:center">
         ${state.user ? `<a class="btn" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>`}
       </div>
@@ -750,14 +750,14 @@ async function renderPublicProfile() {
   const rateBlock = `
     <h3 class="bookme-h">Rate card</h3>
     <div class="tint-block" style="margin-top:0">
-      ${rateRows || `<p class="small muted" style="margin:0">This creator takes bookings through SIGNL; rates are set on their dashboard.</p>`}
-      ${p.canBook ? `<div class="cta-row" style="justify-content:flex-start;margin-top:10px"><button class="btn" onclick="return bookMeBook()">Book on SIGNL</button></div>` : tier === 0 ? `<p class="small" style="margin:10px 0 0"><strong>Businesses:</strong> ${state.user ? "booking opens from your dashboard." : `<a class="tlink" href="#" onclick="return go('signin')">sign in</a> to book on SIGNL.`}</p>` : ""}
+      ${rateRows || `<p class="small muted" style="margin:0">This creator takes bookings through Magpie; rates are set on their dashboard.</p>`}
+      ${p.canBook ? `<div class="cta-row" style="justify-content:flex-start;margin-top:10px"><button class="btn" onclick="return bookMeBook()">Book on Magpie</button></div>` : tier === 0 ? `<p class="small" style="margin:10px 0 0"><strong>Businesses:</strong> ${state.user ? "booking opens from your dashboard." : `<a class="tlink" href="#" onclick="return go('signin')">sign in</a> to book on Magpie.`}</p>` : ""}
       <p class="small muted">${BOOKME_GUARANTEE_LINE}</p>
       <p class="small muted">${BOOKME_STAYS_LINE}</p>
     </div>`;
   // Audience visual (2026-11-01): the creator's listed markets
   // as one bar: home market first (deep green), other listed
-  // markets in the SIGNL gradient hues, and the pale remainder
+  // markets in the Magpie gradient hues, and the pale remainder
   // is everywhere else. Every number is the creator's own
   // reported share, labeled as such.
   const bdSegColors = ["#006AFC", "#03C9AB", "#2FE07E", "#019BFC", "#5F7265", "#006AFC"];
@@ -777,8 +777,8 @@ async function renderPublicProfile() {
     </div>` : "")}
     ${p.canMessage ? `
     <div class="bookme-message">
-      <h3 class="bookme-h">Message ${esc(p.name.split(" ")[0] || "them")} on SIGNL</h3>
-      <textarea id="bm-msg" rows="3" maxlength="2000" placeholder="Say hello and what you have in mind. Booking talk stays here, in SIGNL."></textarea>
+      <h3 class="bookme-h">Message ${esc(p.name.split(" ")[0] || "them")} on Magpie</h3>
+      <textarea id="bm-msg" rows="3" maxlength="2000" placeholder="Say hello and what you have in mind. Booking talk stays here, in Magpie."></textarea>
       <div class="cta-row" style="justify-content:flex-start"><button class="btn" onclick="bookMeSendMessage('${esc(p.handle)}')">Message</button></div>
       <p class="small muted" id="bm-msg-note"></p>
     </div>` : ""}` : `
@@ -822,8 +822,8 @@ async function renderPublicProfile() {
           : `<div class="big">${view.pct}%</div><div class="lbl">of their audience is local to ${esc(view.market)}</div>${followersForPct(view.pct, total) ? `<div style="font-weight:800;margin-top:2px">${followersForPct(view.pct, total)} followers</div>` : ""}${total > 0 ? `<div class="cc-neighbors">That&rsquo;s about ${fmtFull(Math.round((view.pct / 100) * total))} neighbors who could actually walk through your door.</div>` : ""}<div class="src">${bd && bd.segments && bd.segments.some((s) => s.market === view.market && s.verified) ? `<span class="badge ok">Verified from Instagram</span>` : (p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
       </div>
       ${breakdownHtml}
-      ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real SIGNL visits, counted by SIGNL, not claimed by the creator.</p></div>` : ""}
-      ${p.engagement && p.engagement.postsWithMetrics >= 3 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Post engagement</span></p><p style="margin:8px 0 0"><strong>${Number(p.engagement.totals.views || 0).toLocaleString("en-US")} views &middot; ${Number(p.engagement.totals.likes || 0).toLocaleString("en-US")} likes &middot; ${Number(p.engagement.totals.shares || 0).toLocaleString("en-US")} shares &middot; ${Number(p.engagement.totals.saves || 0).toLocaleString("en-US")} saves</strong></p><p class="small muted" style="margin:4px 0 0">Per post on average: ${Number(p.engagement.averages.views || 0).toLocaleString("en-US")} views, ${Number(p.engagement.averages.likes || 0).toLocaleString("en-US")} likes, ${Number(p.engagement.averages.shares || 0).toLocaleString("en-US")} shares, ${Number(p.engagement.averages.saves || 0).toLocaleString("en-US")} saves. From ${p.engagement.postsWithMetrics} SIGNL posts with reported numbers. Recorded: the creator's own reported figures.</p></div>` : ""}
+      ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on Magpie</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real Magpie visits, counted by Magpie, not claimed by the creator.</p></div>` : ""}
+      ${p.engagement && p.engagement.postsWithMetrics >= 3 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Post engagement</span></p><p style="margin:8px 0 0"><strong>${Number(p.engagement.totals.views || 0).toLocaleString("en-US")} views &middot; ${Number(p.engagement.totals.likes || 0).toLocaleString("en-US")} likes &middot; ${Number(p.engagement.totals.shares || 0).toLocaleString("en-US")} shares &middot; ${Number(p.engagement.totals.saves || 0).toLocaleString("en-US")} saves</strong></p><p class="small muted" style="margin:4px 0 0">Per post on average: ${Number(p.engagement.averages.views || 0).toLocaleString("en-US")} views, ${Number(p.engagement.averages.likes || 0).toLocaleString("en-US")} likes, ${Number(p.engagement.averages.shares || 0).toLocaleString("en-US")} shares, ${Number(p.engagement.averages.saves || 0).toLocaleString("en-US")} saves. From ${p.engagement.postsWithMetrics} Magpie posts with reported numbers. Recorded: the creator's own reported figures.</p></div>` : ""}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.streets && p.streets.length ? `<p class="small">My streets: ${p.streets.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
@@ -835,7 +835,7 @@ async function renderPublicProfile() {
       ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${esc(p.brokerage)}</p>` : ""}
       ${p.viewerIsOwner ? `<p class="small muted">This is your book-me page, exactly as visitors see it. Edit it any time under Profile.</p><p class="small">${shareBlockHtml(p.handle, p.market || "", "Share your invite")}</p>` : ""}
     </section>
-    ${!state.user ? `<div class="bookme-sticky"><span class="bs-name">Book ${esc(p.firstName || p.name)} on SIGNL</span><a class="btn bs-btn" href="#" onclick="return go('signin')">Book on SIGNL</a></div>` : ""}
+    ${!state.user ? `<div class="bookme-sticky"><span class="bs-name">Book ${esc(p.firstName || p.name)} on Magpie</span><a class="btn bs-btn" href="#" onclick="return go('signin')">Book on Magpie</a></div>` : ""}
   </div>`;
 }
 
@@ -850,10 +850,10 @@ async function renderPublicProfile() {
 function renderClaimedProfile(p) {
   const placeLabel = p.unlisted ? esc(p.city || "") : esc(marketDisplayName(p.market));
   const place = p.unlisted ? (p.city || "") : (p.market || "");
-  document.title = `@${p.handle} on SIGNL${place ? ` | ${place}` : ""}`;
-  setShareCanonical(`https://app.joinsignl.com/c/${p.handle}`);
+  document.title = `@${p.handle} on Magpie${place ? ` | ${place}` : ""}`;
+  setShareCanonical(`https://app.magpielocal.com/c/${p.handle}`);
   setShareMeta("og:title", "property", document.title);
-  setShareMeta("og:description", "property", `@${p.handle} is a founding creator on SIGNL in ${place || "their market"}. Their booking page is live: local businesses book local creators for honest posts, and founding creators get the first look when businesses start booking.`);
+  setShareMeta("og:description", "property", `@${p.handle} is a founding creator on Magpie in ${place || "their market"}. Their booking page is live: local businesses book local creators for honest posts, and founding creators get the first look when businesses start booking.`);
   setShareMeta("og:type", "property", "profile");
   setShareMeta("twitter:card", "name", "summary");
   setShareMeta("twitter:title", "name", document.title);
@@ -880,7 +880,7 @@ function renderClaimedProfile(p) {
         ${p.paidRate ? `<p class="small muted">Paid bookings at ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; payment held until the post is live.</p>` : ""}
         ${p.licensingFee ? `<p class="small muted">Run my post as an ad for 90 days: ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)} &middot; I approve each use &middot; I keep 97%.</p>` : ""}
       </div>
-      <p class="small muted">Booking opens when ${placeLabel} launches on SIGNL. Founding creators get the first look at offers.</p>
+      <p class="small muted">Booking opens when ${placeLabel} launches on Magpie. Founding creators get the first look at offers.</p>
       ${p.viewerIsOwner ? `<p class="small muted">This is your page, exactly as visitors see it. The copyable link is on your status screen and your profile. Finish your profile from your dashboard and your photo, your audience, and your local reach appear here.</p>` : state.user ? "" : `<div class="cta-row" style="justify-content:flex-start"><a class="btn" href="#" onclick="return go('join-business')">Join as a founding business</a> <a class="btn ghost" href="#" onclick="return go('join-creator')">Become a Founding Creator</a></div>`}
     </section>
   </div>`;
@@ -905,11 +905,11 @@ async function renderPublicProof() {
     p = data.profile;
   } catch (e) { p = null; }
   if (!p) {
-    document.title = "Proof sheet not public | SIGNL";
+    document.title = "Proof sheet not public | Magpie";
     app.innerHTML = `
     <section class="panel center" style="max-width:560px;margin:40px auto">
       <h2>Proof sheet not public</h2>
-      <p class="muted">There is no public SIGNL profile at this link yet, so there is no proof sheet to show. Proof sheets exist once a creator is approved and public.</p>
+      <p class="muted">There is no public Magpie profile at this link yet, so there is no proof sheet to show. Proof sheets exist once a creator is approved and public.</p>
       <div class="cta-row" style="justify-content:center">
         ${state.user ? `<a class="btn" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>`}
       </div>
@@ -917,7 +917,7 @@ async function renderPublicProof() {
     return;
   }
   const place = p.unlisted ? (p.city || "") : (p.market || "");
-  document.title = `Listing proof: ${p.name} (@${p.handle}) | SIGNL`;
+  document.title = `Listing proof: ${p.name} (@${p.handle}) | Magpie`;
   const initial = esc((p.name || "").trim().charAt(0).toUpperCase() || "S");
   const tr = p.trackRecord || {};
   const generated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
@@ -938,7 +938,7 @@ async function renderPublicProof() {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${esc(String(p.ratingAvg))} / 5</div><div class="stat-lbl">Rating from ${p.ratingCount} businesses</div></div>`);
   }
   if (tr.postsDelivered > 0) {
-    statCells.push(`<div class="stat-cell"><div class="stat-num">${tr.postsDelivered}</div><div class="stat-lbl">Posts delivered on SIGNL</div></div>`);
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${tr.postsDelivered}</div><div class="stat-lbl">Posts delivered on Magpie</div></div>`);
   }
   if (tr.visitsCompleted > 0) {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${tr.visitsCompleted}</div><div class="stat-lbl">Visits completed</div></div>`);
@@ -960,7 +960,7 @@ async function renderPublicProof() {
           <span class="cc-chip">Founding Creator</span>
         </div>
       </div>
-      <div class="proof-brand">SIGNL</div>
+      <div class="proof-brand">Magpie</div>
     </div>
     ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="proof-hoods">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.streets && p.streets.length ? `<p class="proof-hoods">My streets: ${p.streets.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
@@ -968,8 +968,8 @@ async function renderPublicProof() {
     ${tr.businessesWorkedWith && tr.businessesWorkedWith.length ? `<p class="proof-biz">Businesses posted for: ${tr.businessesWorkedWith.map(esc).join(", ")}</p>` : ""}
     ${p.isRealtor && p.brokerage ? `<p class="proof-brokerage">Brokered by ${esc(p.brokerage)}</p>` : ""}
     <div class="proof-foot">
-      <p>Activity verified by SIGNL &middot; Generated ${esc(generated)}</p>
-      <p class="muted">Every figure on this sheet comes from this creator's real SIGNL record: delivered posts, tracked visits, and business ratings. Local audience share is reported by the creator and labeled with its source above. Nothing here is estimated or projected.</p>
+      <p>Activity verified by Magpie &middot; Generated ${esc(generated)}</p>
+      <p class="muted">Every figure on this sheet comes from this creator's real Magpie record: delivered posts, tracked visits, and business ratings. Local audience share is reported by the creator and labeled with its source above. Nothing here is estimated or projected.</p>
     </div>
     <div class="cta-row no-print" style="justify-content:flex-start;margin-top:16px">
       <button class="btn" onclick="window.print()">Print or save as PDF</button>
@@ -980,7 +980,7 @@ async function renderPublicProof() {
 
 function inviteUrlFor(u) {
   const handle = u && u.creator && u.creator.handle;
-  return handle ? `https://app.joinsignl.com/?ref=${encodeURIComponent(handle)}` : "";
+  return handle ? `https://app.magpielocal.com/?ref=${encodeURIComponent(handle)}` : "";
 }
 
 // One-tap referral sharing (Jeff, 2026-10-21, narrow scope): the
@@ -998,11 +998,11 @@ function displayMarketName(place) {
 
 function sharePayloadFor(place, handle, subjectName) {
   place = displayMarketName(place);
-  const url = `https://app.joinsignl.com/?ref=${encodeURIComponent(handle || "")}`;
+  const url = `https://app.magpielocal.com/?ref=${encodeURIComponent(handle || "")}`;
   const text = subjectName
-    ? `${subjectName} is a founding creator on SIGNL in ${place}. Local businesses comp creators for honest posts, and it is free for creators. Claim your spot:`
-    : `I just became a founding creator on SIGNL in ${place}. Local businesses comp creators for honest posts, and it is free for creators. Claim your spot:`;
-  return { title: "SIGNL", text, url };
+    ? `${subjectName} is a founding creator on Magpie in ${place}. Local businesses comp creators for honest posts, and it is free for creators. Claim your spot:`
+    : `I just became a founding creator on Magpie in ${place}. Local businesses comp creators for honest posts, and it is free for creators. Claim your spot:`;
+  return { title: "Magpie", text, url };
 }
 
 function shareBlockHtml(handle, place, label, subjectName) {
@@ -1694,7 +1694,7 @@ const SETUP_BASIS_LINE = "Your local % is worked out from Instagram, Facebook an
 // When the picked primary platform is not Instagram, this one
 // small-print line says so at the picker, instead of the creator
 // finding out at their first visit with the clock running.
-const PROOF_DISCLOSURE = "Heads up: visit proof is a post link from your main platform, so SIGNL visits get posted where your audience is.";
+const PROOF_DISCLOSURE = "Heads up: visit proof is a post link from your main platform, so Magpie visits get posted where your audience is.";
 function syncProofDisclosure(selectId, noteId) {
   const sel = document.getElementById(selectId);
   const note = document.getElementById(noteId);
@@ -1743,7 +1743,7 @@ function audienceLineHtml(source) {
 // the single source of truth; the fallback text mirrors it).
 function standardVisit() {
   return (state.boot && state.boot.standardVisit) || {
-    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. The 48-hour goal and these standards apply to comped visits; paid visits follow the posting terms agreed on the booking. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
+    summary: "Every Magpie comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. The 48-hour goal and these standards apply to comped visits; paid visits follow the posting terms agreed on the booking. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
   };
 }
 
@@ -1966,7 +1966,7 @@ function dealPlainWordsHtml(o) {
   return `<details class="deal-details"><summary>${T("The deal, in plain words", "El trato, en palabras simples")}</summary><div class="dd-body">
     <div class="showcase-block">
       ${o.kind === "paid"
-        ? `<p class="small"><strong>You get paid:</strong> $${fmtPrice(o.cashRate)} for this paid booking. You keep $${o.paidMath ? fmtMoney(o.paidMath.creatorNet) : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
+        ? `<p class="small"><strong>You get paid:</strong> $${fmtPrice(o.cashRate)} for this paid booking. You keep $${o.paidMath ? fmtMoney(o.paidMath.creatorNet) : ""} (97% of the rate); Magpie holds the payment and releases it when your post is live.</p>`
         : o.kind === "coupon"
           ? `<p class="small"><strong>You'd get:</strong> ${esc(o.couponSummary || couponSummaryClient(o.coupon, o.businessName))}${o.coupon && o.coupon.expiresAt ? `, expires ${esc(fmtDay(o.coupon.expiresAt))}` : ""}. The coupon is your payment for this post. No cash changes hands.</p>`
           : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${fmtMoney(o.dollarCap)}) &middot; ${coversLine(o)}</p>`}
@@ -1986,10 +1986,10 @@ function dealPlainWordsHtml(o) {
 }
 
 // Refinement bundle (2026-10-20): the creator free line, word for
-// word, everywhere creators meet SIGNL. It never sits next to
+// word, everywhere creators meet Magpie. It never sits next to
 // paid-lane fee math. The Visit Guarantee line is the business
 // twin: one sentence on the Plan tab and in the composer.
-const CREATOR_FREE_LINE = "SIGNL is free for creators. Always. Businesses pay the platform. You never pay to join, to list, or to get booked.";
+const CREATOR_FREE_LINE = "Magpie is free for creators. Always. Businesses pay the platform. You never pay to join, to list, or to get booked.";
 const VISIT_GUARANTEE_LINE = "Visit Guarantee: if a booked creator does not show up or does not post, that visit does not count against your monthly visits. It is replaced.";
 const PAID_BRIEF_GUIDANCE = "Key points only: what to feature, names, dates. Creators post honestly in their own words. No scripts, no required praise, no post pre-approval.";
 
@@ -2028,12 +2028,12 @@ function standingBannerHtml(u) {
   if (!st || !st.state || st.state === "good") return "";
   if (st.state === "paused") {
     if (st.source === "strikes") {
-      return `<div class="notice"><strong>Your account is paused for review.</strong> Three booked visit windows expired unused. The SIGNL team reviews every pause by hand, and reinstated accounts restart one strike short of the limit. Questions: hello@joinsignl.com</div>`;
+      return `<div class="notice"><strong>Your account is paused for review.</strong> Three booked visit windows expired unused. The Magpie team reviews every pause by hand, and reinstated accounts restart one strike short of the limit. Questions: hello@magpielocal.com</div>`;
     }
     return `<div class="notice"><strong>Your account is paused.</strong> A post from a comped visit is past due. Paste the post link under My Visits and your account unpauses automatically. Until then, businesses see you greyed out and cannot send you new offers.</div>`;
   }
   if (st.state === "banned") {
-    return `<div class="error-box"><strong>Your account is closed to offers.</strong> ${esc(st.reason || "A comped visit was redeemed and no post was delivered.")}<br>Questions: hello@joinsignl.com</div>`;
+    return `<div class="error-box"><strong>Your account is closed to offers.</strong> ${esc(st.reason || "A comped visit was redeemed and no post was delivered.")}<br>Questions: hello@magpielocal.com</div>`;
   }
   return "";
 }
@@ -2045,7 +2045,7 @@ function strikeStatusHtml(u) {
   // Phase C: the silent no-show count rides beside the window
   // strikes, with its own plain consequence (two removes you).
   const s = u && Number(u.silentStrikes) > 0 ? Math.floor(Number(u.silentStrikes)) : 0;
-  const silent = s ? `<p class="small"><strong>Silent no-show strikes: ${s} of 2.</strong> A visit you redeemed and then went silent on (no post, and no message to the business or to SIGNL) counts as a strike. Two strikes remove you from the platform.</p>` : "";
+  const silent = s ? `<p class="small"><strong>Silent no-show strikes: ${s} of 2.</strong> A visit you redeemed and then went silent on (no post, and no message to the business or to Magpie) counts as a strike. Two strikes remove you from the platform.</p>` : "";
   if (!n) return silent;
   return `<p class="small"><strong>Visit strikes: ${n}.</strong> Letting a booked visit window expire unused counts as a strike, and strikes can pause your account for review.</p>` + silent;
 }
@@ -2093,7 +2093,7 @@ function renderNav() {
       ? `<span class="muted small">${esc(state.staff.businessName)} &middot; Staff mode</span>
          <button class="linklike" onclick="staffExit()">End staff session</button>`
       : `<span class="muted small">Staff redemption</span>
-         <a href="#" onclick="return go('home')">Back to SIGNL home</a>
+         <a href="#" onclick="return go('home')">Back to Magpie home</a>
          <a class="nav-signin" href="#" onclick="return go('signin')">Sign in</a>`;
     renderBottomNav();
     return;
@@ -2153,7 +2153,7 @@ function bnIcon(name) {
     search: `<circle cx="11" cy="11" r="6.5"/><path d="m20.5 20.5-4.6-4.6"/>`,
     check: `<path d="m4.5 12.5 5 5 10-11"/>`,
     // Overhaul V3 icon set (spec §3): single-weight line glyphs
-    // drawn for SIGNL. None of these reuse the V2/Grin glyphs
+    // drawn for Magpie. None of these reuse the V2/Grin glyphs
     // (pulse wave, inbox tray, chart arrow, two people,
     // storefront, chain link, handshake, bare chat bubble, photo
     // frame, gift box, black agent face).
@@ -2535,7 +2535,7 @@ function moreRowsFor() {
       { icon: "person", label: "Your business page", sub: "How creators see your business.", tab: "Profile" },
       { icon: "bubble", label: "Messages", sub: "Talk to a creator about a visit or an offer.", tab: "Messages", badge: b.messages || 0 },
       { icon: "sliders", label: "Settings", sub: "Account, staff PIN, notifications.", tab: "Settings" },
-      { icon: "help", label: "Help", sub: "How SIGNL works, in plain words.", tab: "Help" },
+      { icon: "help", label: "Help", sub: "How Magpie works, in plain words.", tab: "Help" },
     ];
   }
   if (u.role === "creator") {
@@ -2548,7 +2548,7 @@ function moreRowsFor() {
       { icon: "users", label: "Bench", sub: "Creators in your market.", tab: "Bench" },
       { icon: "bubble", label: "Messages", sub: "Talk to a business about a visit or an offer.", tab: "Messages", badge: b.messages || 0 },
       { icon: "sliders", label: "Settings", sub: "Account and notifications.", tab: "Settings" },
-      { icon: "help", label: "Help", sub: "How SIGNL works, in plain words.", tab: "Help" },
+      { icon: "help", label: "Help", sub: "How Magpie works, in plain words.", tab: "Help" },
     ];
     return rows;
   }
@@ -2672,7 +2672,7 @@ function everythingGroups125() {
       { title: "Run the platform", rows: [
         R("notice", "Marketing", "Campaign email to your own lists", "Marketing"),
         R("star", "Learn", "Write and publish Learn articles", "Learn"),
-        R("play", "Social", "What SIGNL posted, and what it did", "Social"),
+        R("play", "Social", "What Magpie posted, and what it did", "Social"),
         R("bolt", "Automations", "Every automatic email and text, and its switch", "Automations"),
         R("deck", "Templates", "The wording behind emails, posts and messages", "Templates"),
         R("users", "Team", "Who can do what in Admin", "Team"),
@@ -2705,8 +2705,8 @@ function everythingGroups125() {
         R("sliders", "Settings", "Account & notifications", "Settings"),
       ] },
       { title: "Help", rows: [
-        R("help", "Help centre", "How SIGNL works, in plain words", "Help"),
-        { icon: "bubble", label: "Talk to support", sub: "hello@joinsignl.com", href: "mailto:hello@joinsignl.com" },
+        R("help", "Help centre", "How Magpie works, in plain words", "Help"),
+        { icon: "bubble", label: "Talk to support", sub: "hello@magpielocal.com", href: "mailto:hello@magpielocal.com" },
       ] },
     ];
   }
@@ -2728,7 +2728,7 @@ function everythingGroups125() {
         R("receipt", "Plan & billing", "In Wallet", "Plan"),
         R("bubble", "Messages", "Talk to a creator about a visit or an offer", "Messages", { badge: b.messages || 0 }),
         R("sliders", "Settings", "Account, staff PIN, notifications", "Settings"),
-        R("help", "Help", "How SIGNL works, in plain words", "Help"),
+        R("help", "Help", "How Magpie works, in plain words", "Help"),
       ] },
     ];
   }
@@ -2839,7 +2839,7 @@ function hamburgerGroups137() {
         R("bubble", "Messages", "Talk to a business about a visit or an offer", "Messages", { badge: b.messages || 0 }),
         ...(founding ? [R("status", "Founding status", "Where your enrollment stands", "Status")] : []),
         R("sliders", "Settings", "Account and notifications", "Settings"),
-        R("help", "Help", "How SIGNL works, in plain words", "Help"),
+        R("help", "Help", "How Magpie works, in plain words", "Help"),
         { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
       ] },
     ];
@@ -2864,7 +2864,7 @@ function hamburgerGroups137() {
         R("receipt", "Wallet", "Your plan, your visits, your billing", "Plan"),
         R("bars", "Stats", "What your campaigns did", "Analytics"),
         R("sliders", "Settings", "Account, staff PIN, notifications", "Settings"),
-        R("help", "Help", "How SIGNL works, in plain words", "Help"),
+        R("help", "Help", "How Magpie works, in plain words", "Help"),
         { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
       ] },
     ];
@@ -2919,7 +2919,7 @@ function hamburgerGroups137() {
       { title: "Run the platform", rows: [
         R("notice", "Marketing", "Campaign email to your own lists", "Marketing"),
         R("star", "Learn", "Write and publish Learn articles", "Learn"),
-        R("play", "Social", "What SIGNL posted, and what it did", "Social"),
+        R("play", "Social", "What Magpie posted, and what it did", "Social"),
         R("bolt", "Automations", "Every automatic email and text, and its switch", "Automations"),
         R("deck", "Templates", "The wording behind emails, posts and messages", "Templates"),
       ] },
@@ -3243,7 +3243,7 @@ function tabBarHtml() {
   const photo = selfAvatarUrl122(u);
   const initial = String(nm || "").trim().charAt(0).toUpperCase() || "S";
   const sub = u.market ? marketDisplayName(u.market) : roleWord;
-  const railhead = `<div class="tab-railhead"><img src="/assets/logo.png" alt="SIGNL"><span class="trh-sub">${esc(roleWord)}</span></div>`;
+  const railhead = `<div class="tab-railhead"><span class="brand-lockup"><img src="/assets/logo.png" alt="Magpie"><span class="formerly-line" data-bridge="formerly-signl">formerly SIGNL</span></span><span class="trh-sub">${esc(roleWord)}</span></div>`;
   const railfoot = `<div class="tab-railfoot"><div class="tab-user tab-user-btn" role="button" tabindex="0" title="Your account" aria-label="Your account menu" onclick="return openIdentityMenu126()">${avaHtml122("tu-ava", "tu-ava", photo, initial)}<span><span class="tu-name">${esc(nm || "")}</span><br><span class="tu-sub">${esc(sub)}</span></span></div></div>`;
   return `${railhead}<div class="tab-main">${btns}${signout}</div>${railfoot}`;
 }
@@ -3271,7 +3271,7 @@ function renderTopBar2(full) {
       ${avaHtml122("tb2-ava txt", "tb2-ava", photo, initial)}
       <span class="tb2-name">${esc(name || "")}</span>
     </button>
-    ${full ? `<button type="button" class="tb2-btn tb2-help130" onclick="return go('dashboard','Help')" aria-label="Help">${bnIcon("help")}</button>` : `<a class="tb2-btn tb2-help130" href="mailto:hello@joinsignl.com" aria-label="Help">${bnIcon("help")}</a>`}
+    ${full ? `<button type="button" class="tb2-btn tb2-help130" onclick="return go('dashboard','Help')" aria-label="Help">${bnIcon("help")}</button>` : `<a class="tb2-btn tb2-help130" href="mailto:hello@magpielocal.com" aria-label="Help">${bnIcon("help")}</a>`}
     <span class="tb2-actions">
       ${full && (live || u.role === "creator") ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Messages')" aria-label="Messages">${bnIcon("bubble")}${b.messages ? `<span class="tab-badge">${b.messages > 99 ? "99+" : b.messages}</span>` : ""}</button>` : ""}
       ${(u.role === "creator" || u.role === "business" || (u.role === "partner" && !state.pilotScopeId)) ? `<button type="button" class="tb2-btn tb2-burger137" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>` : `<button type="button" class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button>`}
@@ -3636,7 +3636,7 @@ function renderRail() {
     return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_125.includes(it.label) ? `rail-primary rail-p-${it.label.toLowerCase()}` : ""} ${active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${oc}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-orb/orb.webp" alt="">` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
   }).join("");
   rail.innerHTML = `
-    <button type="button" class="rail-brand" title="SIGNL" aria-label="SIGNL home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="SIGNL"></button>
+    <button type="button" class="rail-brand" title="Magpie" aria-label="Magpie home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="Magpie"></button>
     ${rows}
     <div class="rail-foot">
       <button type="button" class="rail-item" title="Sign out" aria-label="Sign out" onclick="signOut()"><span class="bn-icon">${bnIcon("signout")}</span><span class="rail-label">Sign out</span></button>
@@ -3693,7 +3693,7 @@ function renderTopRow() {
   // Settings / Sign out), and the spelled-out controls are
   // icons — Everything keeps its name as the panel's title and
   // this button's title/aria-label; help is a help icon.
-  el.innerHTML = `<div class="wrap tr-in"><button type="button" class="tr-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span></button><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button><a class="tr-help126" href="mailto:hello@joinsignl.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a></span></div>`;
+  el.innerHTML = `<div class="wrap tr-in"><button type="button" class="tr-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span></button><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button><a class="tr-help126" href="mailto:hello@magpielocal.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a></span></div>`;
 }
 
 // Build -119: the greeting hour comes from the user's own
@@ -4205,7 +4205,7 @@ async function sendNudge(bookingId, btn) {
   if (btn) { btn.disabled = true; btn.textContent = "Sending"; }
   const first = (b.creatorName || "").trim().split(" ")[0] || "there";
   const biz = (state.user.business && state.user.business.businessName) || "We";
-  const body = `Hi ${first}, ${biz} here on SIGNL. Thanks for visiting${b.redeemedAt ? ` on ${fmtDay(b.redeemedAt)}` : ""}. Your post is due by ${fmtDay(b.postDeadline)}: 1 post + 1 story that shares it. Shout if you need anything.`;
+  const body = `Hi ${first}, ${biz} here on Magpie. Thanks for visiting${b.redeemedAt ? ` on ${fmtDay(b.redeemedAt)}` : ""}. Your post is due by ${fmtDay(b.postDeadline)}: 1 post + 1 story that shares it. Shout if you need anything.`;
   try {
     await api("POST", "/messages", { toUserId: b.creatorId, body });
     if (btn) btn.textContent = "Nudge sent";
@@ -4254,13 +4254,13 @@ function renderSettingsTab() {
     <button class="btn" onclick="saveMyReviewLinks()">Save review pages</button> <span id="rl-ok" class="saved"></span>
     ${u.business.plan === "managed" ? `
     <h3 class="mt">Monthly creator talent budget</h3>
-    <p class="small muted">Your coordinator spends this on paid creator bookings for you. It is a spending cap and an authorization, not a deposit: each booking escrows on its own, and SIGNL holds each payment until the post is live.</p>
+    <p class="small muted">Your coordinator spends this on paid creator bookings for you. It is a spending cap and an authorization, not a deposit: each booking escrows on its own, and Magpie holds each payment until the post is live.</p>
     <div class="field"><label>Budget per month ($)</label><input type="number" id="me-talent-budget" min="0" step="1" value="${esc(String(u.business.monthlyTalentBudget == null ? 500 : u.business.monthlyTalentBudget))}"></div>
     <button class="btn" onclick="saveTalentBudget()">Save budget</button> <span id="tb-ok" class="saved"></span>` : ""}
   </div>
   <div class="panel mt tint">
     <h3>Your referral program</h3>
-    <p class="small muted">Already run a referral program in your booking or register system? Keep it, and let SIGNL feed it. Save your tracked referral link once and it rides on every opportunity and booked visit: creators see it on their cards and carry it in their posts, so the bookings land in the dashboard you already use. SIGNL never touches referral money, and any rewards stay yours to run, under your program's terms.</p>
+    <p class="small muted">Already run a referral program in your booking or register system? Keep it, and let Magpie feed it. Save your tracked referral link once and it rides on every opportunity and booked visit: creators see it on their cards and carry it in their posts, so the bookings land in the dashboard you already use. Magpie never touches referral money, and any rewards stay yours to run, under your program's terms.</p>
     <div class="field"><label>Your tracked referral link</label><input id="rp-url" type="url" value="${esc(u.business.referralUrl || "")}" placeholder="https://your-booking-or-register-link"></div>
     <div class="form-2col">
       <div class="field"><label>Referral code (optional)</label><input id="rp-code" value="${esc(u.business.referralCode || "")}" placeholder="Your program's code, if it uses one"></div>
@@ -4298,7 +4298,7 @@ function railHonestyHtml() {
   if (!np) return "";
   if (np.emailLive && np.smsLive) return `<p class="small" style="margin:0 0 10px"><span class="badge ok">Texts and emails are on</span> Your alerts send by text and email as well as in the app.</p>`;
   if (np.emailLive || np.smsLive) return `<p class="small" style="margin:0 0 10px"><span class="badge info">Partly on</span> ${np.emailLive ? "Emails send now." : "Emails start when email delivery is switched on."} ${np.smsLive ? "Texts send now." : "Texts start when text delivery is switched on."} Everything still lands in the app either way.</p>`;
-  return `<p class="small" style="margin:0 0 10px"><span class="badge info">In-app only for now</span> Texts and emails start when SIGNL switches delivery on — your switches below are saved and take effect the moment it does. Until then, everything lands here in the app.</p>`;
+  return `<p class="small" style="margin:0 0 10px"><span class="badge info">In-app only for now</span> Texts and emails start when Magpie switches delivery on — your switches below are saved and take effect the moment it does. Until then, everything lands here in the app.</p>`;
 }
 
 function notificationPrefsHtml(u) {
@@ -4325,7 +4325,7 @@ function notificationPrefsHtml(u) {
   ${u.role === "creator" ? `
   <div class="panel mt">
     <h3>Match alerts</h3>
-    <p class="small muted">Tell SIGNL what a good offer looks like for you. When a new offer matches, you hear about it straight away. When nothing matches, you hear nothing — no empty alerts, ever.</p>
+    <p class="small muted">Tell Magpie what a good offer looks like for you. When a new offer matches, you hear about it straight away. When nothing matches, you hear nothing — no empty alerts, ever.</p>
     <div id="alert-prefs-box"><p class="small muted">Loading your alerts…</p></div>
   </div>
   <div class="panel mt">
@@ -4431,7 +4431,7 @@ async function saveNotificationPrefs() {
 }
 
 // UK privacy wording (Build -109, item 20): the SAME words as
-// the UK section of joinsignl.com/privacy.html (the parity is
+// the UK section of magpielocal.com/privacy.html (the parity is
 // suite-checked). The partner relationship is described
 // factually only; no controller/processor labels are asserted
 // (that allocation is for Jeff's lawyers, flagged in the Tier 3
@@ -4439,7 +4439,7 @@ async function saveNotificationPrefs() {
 // number is configured; absent, it does not render at all.
 function ukPrivacyText() {
   const ico = state.boot && state.boot.privacy && state.boot.privacy.icoNumber;
-  return `SIGNL runs in the UK through our UK launch partner. When you join SIGNL in a UK market, your information is used under UK data protection law (UK GDPR) on these bases: to run your account and your bookings (contract); to keep the service safe and working (legitimate interests); to meet legal duties (legal obligation); and, for marketing emails, only with your consent, which you can withdraw at any time. Our UK launch partner sees the records for the businesses and creators it brought to SIGNL in its markets: names, handles, business details, and visit and earnings records for those accounts. It does not see other markets' records. It never sees your password, and it never sees your bank details, which are held by Stripe. You can ask us what we hold about you, and ask for it to be corrected or deleted, or object to how it is used, at hello@joinsignl.com. You can also complain to the Information Commissioner's Office (ICO).${ico ? ` SIGNL is registered with the ICO, registration number ${esc(ico)}.` : ""}`;
+  return `Magpie runs in the UK through our UK launch partner. When you join Magpie in a UK market, your information is used under UK data protection law (UK GDPR) on these bases: to run your account and your bookings (contract); to keep the service safe and working (legitimate interests); to meet legal duties (legal obligation); and, for marketing emails, only with your consent, which you can withdraw at any time. Our UK launch partner sees the records for the businesses and creators it brought to Magpie in its markets: names, handles, business details, and visit and earnings records for those accounts. It does not see other markets' records. It never sees your password, and it never sees your bank details, which are held by Stripe. You can ask us what we hold about you, and ask for it to be corrected or deleted, or object to how it is used, at hello@magpielocal.com. You can also complain to the Information Commissioner's Office (ICO).${ico ? ` Magpie is registered with the ICO, registration number ${esc(ico)}.` : ""}`;
 }
 
 function renderHelpTab() {
@@ -4449,7 +4449,7 @@ function renderHelpTab() {
   const biz = u.role === "business";
   const qa = (q, a) => `<details class="help-qa"><summary>${esc(q)}</summary><p class="small">${a}</p></details>`;
   el.innerHTML = `
-  ${wsHead("Help", { sub: "How SIGNL works, in plain words.", subKey: "help" })}
+  ${wsHead("Help", { sub: "How Magpie works, in plain words.", subKey: "help" })}
   <div class="wcard">
   ${biz ? `
     ${isFoundingBusiness(u) ? qa("How founding works", `Your market has not opened yet, and your founding spot is held. Right now you can browse the roster in ${esc(foundingBizPlace(u))}, get your business page ready, and save campaigns as drafts. Nothing is sent to a creator before opening day. When your market opens, we email you that day: your account turns on, your drafts can go out, your plan starts, and your founding rate and $100 first-month credit apply. Nothing is due until then.`) : ""}
@@ -4458,7 +4458,7 @@ function renderHelpTab() {
     ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days from the post date to repost and run ads, never longer. A comped post can be licensed at the creator's listed fee for 90 days from the day the creator approves; the creator approves each use and keeps 97%. Every license shows its end date in Posts & licenses.")}
     ${qa("How fast do I have to answer applicants?", "Every applicant gets an answer within 2 business days. That is the deal. Anyone you do not pick is released with a note, never silence.")}
     ${qa("What if a creator does not show up?", esc(VISIT_GUARANTEE_LINE))}
-    ${qa("What does SIGNL cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
+    ${qa("What does Magpie cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
     ${isUkUser() ? qa("I'm in the UK. How is my data handled?", ukPrivacyText()) : ""}
   ` : `
     ${qa("What do I owe after a visit?", "The goal is one post + one story within 48 hours of your visit. Post within 48 hours to be on time; the hard deadline is one week. If your booking sets its own posting terms, those terms are the ones that count. Always disclose the comp, that is the law and the deal.")}
@@ -4475,8 +4475,8 @@ function renderHelpTab() {
     <h4 style="margin:0 0 8px">Payout setup, in plain words</h4>
     ${payoutExplainerHtml()}
   </div>
-  <p class="small" style="margin-top:14px"><a href="https://joinsignl.com/creator-terms.html" target="_blank" rel="noopener">Creator terms in plain words</a> &middot; <a href="https://joinsignl.com/for-service-providers.html" target="_blank" rel="noopener">SIGNL for service providers</a></p>`}
-  <p class="small muted" style="margin-top:14px">Still stuck? Email <a href="mailto:hello@joinsignl.com">hello@joinsignl.com</a> and a person answers.</p>
+  <p class="small" style="margin-top:14px"><a href="https://magpielocal.com/creator-terms.html" target="_blank" rel="noopener">Creator terms in plain words</a> &middot; <a href="https://magpielocal.com/for-service-providers.html" target="_blank" rel="noopener">Magpie for service providers</a></p>`}
+  <p class="small muted" style="margin-top:14px">Still stuck? Email <a href="mailto:hello@magpielocal.com">hello@magpielocal.com</a> and a person answers.</p>
   </div>`;
 }
 
@@ -5000,7 +5000,7 @@ function sigCtx() {
 // (flow: string or function of ctx returning a label or null).
 function sigBankFor(biz) {
   if (biz) return [
-    { id: "cost", q: "What does SIGNL cost?", ph: ["how much does it cost", "what does it cost", "how much is it", "how much is", "per month", "cost", "price", "pricing"], g: [["plan", "subscription", "month"], ["cost", "price", "much", "pay"]], s: ["cost", "pricing"],
+    { id: "cost", q: "What does Magpie cost?", ph: ["how much does it cost", "what does it cost", "how much is it", "how much is", "per month", "cost", "price", "pricing"], g: [["plan", "subscription", "month"], ["cost", "price", "much", "pay"]], s: ["cost", "pricing"],
       a: "Founding plans: Self-Service is $199 a month for 5 creators a month, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month, so $99, $249, or $599, and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire." },
     { id: "plans", q: "What is the difference between the plans?", ph: ["difference between", "which plan", "compare plans", "growth plan", "managed plan"], g: [["growth", "managed", "self-service", "self service", "tiers"], ["difference", "which", "compare", "best", "include", "get"]], s: ["growth", "managed"],
       a: "The difference is volume and how much is done for you. Self-Service is $199 a month for 5 creators and you run it yourself. Growth is $349 for 10, built for businesses doing paid work and reusing posts, with the license library and renewal tracking. Managed is $699 for 20, the most done for you. Paid bookings and licensing are available on every plan." },
@@ -5010,8 +5010,8 @@ function sigBankFor(biz) {
         if (c.founding) return `${head} Your $${c.planCredit} founding credit is banked for your first month, and your founding rate holds while your plan stays active. Nothing is due and nothing is charged while your market is founding. When ${c.market || "your market"} opens, your plan starts: unused visits roll one month, then expire, and the minimum is 3 months.`;
         return `${head} Your founding rate holds while your plan stays active. Unused visits roll one month, then expire, and the minimum is 3 months. Paid bookings and licensing are on every plan.`;
       } },
-    { id: "howitworks", q: "How does SIGNL work for a business?", ph: ["how does signl work", "how it works", "what is signl", "how does this work"], g: [["signl", "platform", "this"], ["work", "works", "start", "process"]], s: [],
-      a: (c) => "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post to the terms on the booking — on a comped visit, the goal is one post plus one story within 48 hours of the visit. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count. Bookings that start on SIGNL stay on SIGNL, where the Visit Guarantee and payment protection apply." + (c.founding ? " While your market is founding, what you build saves as a draft for opening day; nothing is sent to a creator before the market opens." : ""), flow: "Post an offer" },
+    { id: "howitworks", q: "How does Magpie work for a business?", ph: ["how does magpie work", "how it works", "what is magpie", "how does this work"], g: [["magpie", "platform", "this"], ["work", "works", "start", "process"]], s: [],
+      a: (c) => "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post to the terms on the booking — on a comped visit, the goal is one post plus one story within 48 hours of the visit. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count. Bookings that start on Magpie stay on Magpie, where the Visit Guarantee and payment protection apply." + (c.founding ? " While your market is founding, what you build saves as a draft for opening day; nothing is sent to a creator before the market opens." : ""), flow: "Post an offer" },
     { id: "campaigns", q: "How do campaigns work?", ph: ["how do campaigns work", "campaign work", "how do offers work", "run a campaign", "how do i campaign"], g: [["campaign", "campaigns", "offer", "offers"], ["work", "run", "start", "post", "send", "make"]], s: ["campaign"],
       a: (c) => {
         let t = "Two ways. Post an open call: you post it to your market, creators who fit can apply, and you pick from the stack. Or invite a creator: pick one by name in Find creators, and the invite goes only to them. Either way the creator visits, posts to the terms on the booking (on a comped visit the goal is within 48 hours), and you see the post and its numbers here.";
@@ -5029,7 +5029,7 @@ function sigBankFor(biz) {
     { id: "noshow", q: "What if a creator does not show up?", ph: ["does not show", "doesn't show", "no show", "no-show", "ghost", "never posted", "did not post", "didn't post"], g: [["creator"], ["show", "ghost", "post", "turn up", "cancel"]], s: ["ghost"],
       a: VISIT_GUARANTEE_LINE },
     { id: "honesty", q: "Can I ask for a positive post?", ph: ["positive post", "good review", "approve the post", "what to say", "negative post", "bad post"], g: [["post", "review"], ["positive", "negative", "approve", "require", "script", "say", "honest"]], s: [],
-      a: "No, and that is deliberate. Creators post honestly, in their own words. A business can never require a positive post, a rating, or specific words, and posts are never pre-approved. A brief can give key points, never a script. That honesty is why local posts work. If a post is factually wrong about your business, email hello@joinsignl.com and a person looks at it." },
+      a: "No, and that is deliberate. Creators post honestly, in their own words. A business can never require a positive post, a rating, or specific words, and posts are never pre-approved. A brief can give key points, never a script. That honesty is why local posts work. If a post is factually wrong about your business, email hello@magpielocal.com and a person looks at it." },
     { id: "redeem", q: "How does redeeming a visit work?", ph: ["redeem", "visit code", "check in", "check-in", "counter code"], g: [["code", "counter", "redeem", "pin"], ["enter", "work", "staff", "scan", "check"]], s: ["redeem"],
       a: "The creator arrives with a visit code. Your staff enter it at the counter, which checks the creator in and starts the 48 hour posting clock. If the code does not work, staff can confirm the visit from your side instead. Keeping your staff PIN set keeps the counter quick.", flow: "Redeem a visit" },
     { id: "metrics", q: "How do I see my results?", ph: ["roas", "my results", "analytics", "metrics", "return on", "how am i doing", "track results"], g: [["results", "numbers", "performance", "sales", "returns"], ["see", "track", "measure", "show", "doing"]], s: ["roas", "analytics", "metrics"],
@@ -5043,14 +5043,14 @@ function sigBankFor(biz) {
     { id: "delete-account", q: "How do I delete my account?", ph: ["delete my account", "delete account", "remove my account", "close my account", "erase my account"], g: [["delete", "remove", "close", "erase"], ["account"]], s: [],
       a: (c) => "Before you do: keeping your account keeps your founding rate locked for as long as your plan stays active. Deleting gives that up, and any banked founding credit (like the $100 first-month credit) is lost with it." + (c.founding ? " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new." : "") + " If you still want to go ahead: open Settings, then Account, and choose \"Delete my account\" at the bottom. That screen says exactly what goes (your profile, sign-in, referral links and notification settings) and what happens to anything still in flight: open offers and deals close, and bookings that have not happened yet are cancelled, with any held amount going back to you. You confirm by typing DELETE, so it cannot happen by accident." },
     { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "staff pin", "change my email"], g: [["password", "email", "account", "contact", "support", "human", "help", "pin"], ["change", "reset", "forgot", "update", "talk", "reach", "set"]], s: ["support"],
-      a: "Settings, staff, and counter basics live right in the app. For anything a person needs to handle, email hello@joinsignl.com and a person answers.", flow: "Set the staff PIN" },
+      a: "Settings, staff, and counter basics live right in the app. For anything a person needs to handle, email hello@magpielocal.com and a person answers.", flow: "Set the staff PIN" },
   ];
   return [
     { id: "payout", q: "When and how do I get paid?", ph: ["when do i get paid", "paid out", "payout", "pay out", "when do i get", "how do i get paid", "payment timing"], g: [["paid", "pay", "payout", "payment"], ["when", "how", "long", "timing", "arrive", "receive"]], s: ["payout"],
       a: "For a paid booking, the rate you set is the rate the business books at, and you keep 97% of it. Payout setup runs on Stripe's secure pages: Stripe asks for identity details, your address, your bank account, and tax information, and a first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, and the app does not promise a payout date. Your Wallet keeps the record of every booking and license, so it is always there to check.", flow: (c) => c.live ? "See my wallet" : null },
     { id: "terms98", q: "Where are the creator terms in plain words?", ph: ["creator terms", "terms in plain words", "my terms", "the terms"], g: [["terms", "term"], ["creator", "plain", "where", "read", "my"]], s: ["terms"],
-      a: "Creator terms in plain words: https://joinsignl.com/creator-terms.html. The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer." },
-    { id: "money", q: "How do I make money on SIGNL?", ph: ["make money", "earn money", "making money", "how do i earn", "can i make money", "make some money", "earn cash"], g: [["money", "earn", "earning", "income", "cash", "paid", "pay"], ["how", "can", "do i", "ways", "make", "get"]], s: ["money"],
+      a: "Creator terms in plain words: https://magpielocal.com/creator-terms.html. The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer." },
+    { id: "money", q: "How do I make money on Magpie?", ph: ["make money", "earn money", "making money", "how do i earn", "can i make money", "make some money", "earn cash"], g: [["money", "earn", "earning", "income", "cash", "paid", "pay"], ["how", "can", "do i", "ways", "make", "get"]], s: ["money"],
       a: (c) => {
         let t = "Two ways. First, comped visits: a local business covers your meal, service, or experience, and you post honestly about it. Second, paid bookings: businesses book you at the rate you set, and you keep 97% of it. There is also licensing: if a business wants to reuse your post, they pay your licensing fee and you keep 97% of that too.";
         if (!c.live) t += " Your city is building right now, and you're early. Bookings start when it opens, and a finished profile is what puts you first in line when it does: first pick goes to completed founding profiles.";
@@ -5058,7 +5058,7 @@ function sigBankFor(biz) {
         return t;
       }, flow: (c) => !c.profileComplete ? "Finish my profile" : (c.live ? "See my wallet" : "Check my Momentum") },
     { id: "rates", q: "How do I set my rate?", ph: ["set my rate", "my rate", "how much should i charge", "charge for", "rate"], g: [["rate", "charge", "price"], ["set", "my", "should", "how much", "change", "pick"]], s: ["rate"],
-      a: (c) => `Your paid rate is yours to set, on your profile. Paid bookings start at a ${/london/i.test(c.market || "") ? "£40" : "$50"} floor, and there is no SIGNL price list on top of that.${c.rateStartPaid ? ` Because your boxes were blank, they start at a starting point for ${c.rateTier || "your"} tier: paid rate ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartPaid} and licensing fee ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartFee}. Change them to whatever you charge; a starting point is not a price you have to use.` : ""} Businesses weigh your rate against your local reach, so a strong local audience carries a smaller account a long way. You can also take comped visits whenever you would rather have the experience.`, flow: "Finish my profile" },
+      a: (c) => `Your paid rate is yours to set, on your profile. Paid bookings start at a ${/london/i.test(c.market || "") ? "£40" : "$50"} floor, and there is no Magpie price list on top of that.${c.rateStartPaid ? ` Because your boxes were blank, they start at a starting point for ${c.rateTier || "your"} tier: paid rate ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartPaid} and licensing fee ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartFee}. Change them to whatever you charge; a starting point is not a price you have to use.` : ""} Businesses weigh your rate against your local reach, so a strong local audience carries a smaller account a long way. You can also take comped visits whenever you would rather have the experience.`, flow: "Finish my profile" },
     { id: "audience", q: "How many followers do I have?", ph: ["how many followers", "followers do i have", "my followers", "my audience", "how big is my audience", "how many people follow me", "audience do i have"], g: [["followers", "audience"], ["my", "many", "big", "have", "got", "much"]], s: ["followers"],
       a: (c) => {
         if (!c.audTotal) return "No audience counts are on your record yet, so there is no follower total to show. Add your counts platform by platform in the audience stack on your Profile and they stack into one total; that total and your local share are what businesses rank by.";
@@ -5066,11 +5066,11 @@ function sigBankFor(biz) {
         return `You have ${Number(c.audTotal).toLocaleString("en-US")} followers counted across your platforms${split}.${c.localPct != null ? ` ${c.localPct}% of your audience is local to ${c.market || "your home market"}; that local share is the number businesses rank by, not follower count.` : " You have not reported your local audience share yet; it is the number businesses rank by."}`;
       }, flow: "Finish my profile" },
     { id: "localreach", q: "What is local reach?", ph: ["local reach", "local audience", "local percent", "local %"], g: [["local"], ["reach", "audience", "percent", "%", "share", "followers"]], s: ["reach"],
-      a: "Local reach is the share of your audience that actually lives in your market, applied to your audience size. It is the number businesses rank creators by on SIGNL, not follower count. A smaller account whose people are all here can outrank a huge account whose followers are spread across the country.", flow: (c) => !c.profileComplete ? "Finish my profile" : null },
+      a: "Local reach is the share of your audience that actually lives in your market, applied to your audience size. It is the number businesses rank creators by on Magpie, not follower count. A smaller account whose people are all here can outrank a huge account whose followers are spread across the country.", flow: (c) => !c.profileComplete ? "Finish my profile" : null },
     { id: "momentum", q: "How does Momentum work?", ph: ["momentum", "points", "earn points", "how does momentum"], g: [["momentum", "points"], ["how", "earn", "work", "get", "mean"]], s: ["momentum"],
       a: "Momentum is points for doing the work well. Points order the list businesses see, so they are priority, not cash; they also raise your level, and higher levels see new offers earlier. The big earners: +20 for a post on time, +25 every 5 on-time posts in a row, +25 when a business runs your post as an ad, +10 for each review you write, +5 for a late post inside the week and +5 for reporting a post's numbers. Your profile earns too: photo +10, bio +5, neighborhood +5, local audience +5, audience stack +10, best work links +5 each up to 3. Invites pay +3 when someone joins from your link and +10 when they are approved, and approved referrals unlock badge bonuses up to +150.", flow: "Check my Momentum" },
     { id: "tiers", q: "How do tiers work?", ph: ["tier", "neighbors", "locals", "headliners", "what tier"], g: [["tier", "neighbors", "locals", "headliners"], ["what", "how", "am i", "mean", "work", "level"]], s: ["tier", "headliners"],
-      a: "SIGNL starts at 500 total followers across your platforms. Tiers come from your stacked audience, counted across all your platforms, and they set themselves. Neighbors is 500 to 2,000, Locals is 2,000 to 15,000, Headliners is 15,000 and up. Tier shapes which offers you are eligible for. Paid bookings at your own rate are open to every tier; paid campaigns are a Headliners extra.", flow: "Check my Momentum" },
+      a: "Magpie starts at 500 total followers across your platforms. Tiers come from your stacked audience, counted across all your platforms, and they set themselves. Neighbors is 500 to 2,000, Locals is 2,000 to 15,000, Headliners is 15,000 and up. Tier shapes which offers you are eligible for. Paid bookings at your own rate are open to every tier; paid campaigns are a Headliners extra.", flow: "Check my Momentum" },
     { id: "visits", q: "How does a visit work, start to finish?", ph: ["visit work", "how does a visit", "visit code", "check in", "redeem", "how do visits work"], g: [["visit", "visits"], ["how", "work", "happen", "process", "code", "redeem"]], s: [],
       a: "A business books you, or you apply to an offer and get picked. You receive a visit code; at the business, staff enter it to check you in. Then you post: the goal is one post + one story within 48 hours of your visit. Within 48 hours counts as on time; one week is the hard deadline. If anything goes wrong at the counter, the business can confirm your visit from their side instead.", flow: (c) => c.live ? "Add a post link" : null },
     { id: "owe", q: "What do I owe after a visit?", ph: ["owe", "deliverable", "have to post", "after a visit", "what do i post"], g: [["owe", "deliver", "post", "required"], ["after", "what", "visit", "need"]], s: [],
@@ -5084,7 +5084,7 @@ function sigBankFor(biz) {
     { id: "postingterms", q: "What are posting terms on a paid booking?", ph: ["posting terms", "post by a date", "when is my post due", "paid post due", "special terms"], g: [["posting", "post"], ["terms", "due", "date", "when", "special"]], s: ["posting terms"],
       a: "On a paid booking the business picks the posting terms before you accept: Standard (post within 7 days of the visit), Post by a specific date, or Special terms (a date window with a short note). The exact terms are on the offer and on your visit card, and accepting the booking accepts them. A paid visit's clock runs off those agreed terms, not the comped 48-hour ladder: no late-streak counting and no strikes ever come from a paid visit's terms.", flow: (c) => c.live ? "Add a post link" : null },
     { id: "ladder", q: "What happens if I post late, or never post?", ph: ["post late", "never post", "didn't post", "silent no-show", "strike", "removed", "paused", "late posts in a row"], g: [["post", "strike", "silent"], ["late", "never", "paused", "removed", "strike", "happens"]], s: ["late"],
-      a: "On comped visits: a late post inside the week still counts as delivered, with no on-time Momentum and a hit on your on-time record. Three late posts in a row pause new offers for 14 days. No post at one week pauses your account until the post lands. A redeemed visit that ends with no post and no word from you (no message to the business or to SIGNL) is a silent no-show strike; two strikes remove you. And a comp you consumed with no post a month later makes the account no longer active. If something goes wrong, message the business in the app: a word from you is what keeps a miss from counting as silent." },
+      a: "On comped visits: a late post inside the week still counts as delivered, with no on-time Momentum and a hit on your on-time record. Three late posts in a row pause new offers for 14 days. No post at one week pauses your account until the post lands. A redeemed visit that ends with no post and no word from you (no message to the business or to Magpie) is a silent no-show strike; two strikes remove you. And a comp you consumed with no post a month later makes the account no longer active. If something goes wrong, message the business in the app: a word from you is what keeps a miss from counting as silent." },
     { id: "profilegate", q: "What do I need to finish my profile?", ph: ["finish my profile", "complete my profile", "profile complete", "businesses see me", "not showing up", "why can't businesses"], g: [["profile", "businesses", "roster"], ["finish", "complete", "need", "missing", "see", "visible", "showing"]], s: [],
       a: (c) => {
         let t = "Businesses only see creators with a finished profile, and approval is not the gate; a finished profile is. Finished means four things: your home city, an audience count above zero, at least one category, and your local audience share reported. A photo is not required, but it earns +10 Momentum and makes your card stronger.";
@@ -5096,7 +5096,7 @@ function sigBankFor(biz) {
     { id: "charter", q: "What is a Charter Creator?", ph: ["charter", "founding class", "early access", "24 hours before", "see offers first"], g: [["charter", "founding"], ["what", "mean", "perk", "get", "class"]], s: ["charter"],
       a: "Charter Creators are the founding class: creators who finished their profile and were approved before their market launched. The seal is permanent. The headline perk: you see new paid offers 24 hours before everyone else once your market is live. Your Charter card is on your founding home, and your book-me page settings are on your Profile.", flow: "Finish my profile" },
     { id: "bookme", q: "What is my book-me page?", ph: ["book-me", "book me page", "public page", "my page", "share my link"], g: [["page", "link"], ["public", "book", "share", "turn on", "my"]], s: [],
-      a: "Your book-me page is your public SIGNL page at your profile link. Turn it on under Profile: it shows your handle, your local reach, your categories, and your featured posts, and nothing private. Signed-in businesses see your listed rate and book you inside SIGNL. Businesses with a paid, active account can also see your social channels and message you in the app. Bookings that start on SIGNL stay on SIGNL.", flow: "Finish my profile" },
+      a: "Your book-me page is your public Magpie page at your profile link. Turn it on under Profile: it shows your handle, your local reach, your categories, and your featured posts, and nothing private. Signed-in businesses see your listed rate and book you inside Magpie. Businesses with a paid, active account can also see your social channels and message you in the app. Bookings that start on Magpie stay on Magpie.", flow: "Finish my profile" },
     { id: "offers", q: "How do I get offers?", ph: ["get offers", "no offers", "offers yet", "find work", "get booked", "bookings", "get work"], g: [["offer", "offers", "booked", "work", "gigs", "jobs"], ["how", "get", "find", "none", "no", "why", "any"]], s: [],
       a: (c) => {
         let t = c.live ? "Businesses post offers and invite creators straight from the roster. Finished profiles with strong local reach get invited first. Applying is one tap, and your profile card is the application, so a finished profile is the whole game." : "Your city is building right now, and you're early. Offers start when it opens, and finished founding profiles are literally one of the counts that moves a city toward opening, so finishing yours now brings it closer AND puts you first in line: first pick goes to completed founding profiles.";
@@ -5108,9 +5108,9 @@ function sigBankFor(biz) {
     { id: "markets", q: "When does my market open?", ph: ["market open", "when does", "launch", "my city", "open in", "when will"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "coming"]], s: [],
       a: (c) => c.live ? "Your market is open, and offers are live now." : "Your market is a founding market, and you get an email the moment it opens. Being approved with a finished profile is what puts you on the roster when it does." },
     { id: "delete-account", q: "How do I delete my account?", ph: ["delete my account", "delete account", "remove my account", "close my account", "erase my account", "delete my profile"], g: [["delete", "remove", "close", "erase"], ["account", "profile"]], s: [],
-      a: (c) => "Before you do: SIGNL is free for creators, always. Keeping your account keeps your founding creator status, your Momentum, your referral link, and your place in line for offers when your market opens." + (c.live ? "" : " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new.") + " If you still want to go ahead: open Settings, then Account, and choose \"Delete my account\" at the bottom. That screen says exactly what goes (your profile, sign-in, public page, referral links and notification settings) and what happens to anything still in flight: pending applications are withdrawn, open offers and deals close, and bookings that have not happened yet are cancelled. You confirm by typing DELETE, so it cannot happen by accident." },
+      a: (c) => "Before you do: Magpie is free for creators, always. Keeping your account keeps your founding creator status, your Momentum, your referral link, and your place in line for offers when your market opens." + (c.live ? "" : " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new.") + " If you still want to go ahead: open Settings, then Account, and choose \"Delete my account\" at the bottom. That screen says exactly what goes (your profile, sign-in, public page, referral links and notification settings) and what happens to anything still in flight: pending applications are withdrawn, open offers and deals close, and bookings that have not happened yet are cancelled. You confirm by typing DELETE, so it cannot happen by accident." },
     { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "change my email", "log out"], g: [["password", "email", "account", "contact", "support", "human", "help"], ["change", "reset", "forgot", "update", "talk", "reach"]], s: ["support"],
-      a: "Account basics like your password and notifications live under More, and your profile details live on your Profile. For anything a person needs to handle, email hello@joinsignl.com and a person answers." },
+      a: "Account basics like your password and notifications live under More, and your profile details live on your Profile. For anything a person needs to handle, email hello@magpielocal.com and a person answers." },
   ];
 }
 
@@ -5184,10 +5184,10 @@ function sigFallbackReply(match) {
   const near = (match.scored || []).filter((s) => s.score >= 4).slice(0, 3).map((s) => s.topic);
   const reply = { text: "That one is not in my bag yet.", suggest: [] };
   if (near.length) {
-    reply.text += " The closest things I can answer are right here; tap one and I will tell you straight. For anything else, hello@joinsignl.com reaches a person.";
+    reply.text += " The closest things I can answer are right here; tap one and I will tell you straight. For anything else, hello@magpielocal.com reaches a person.";
     reply.suggest = near.map((topic) => topic.q);
   } else {
-    reply.text += " What I can answer: how SIGNL works, what things cost, your own numbers, and the next step on anything you are setting up. For anything else, hello@joinsignl.com reaches a person.";
+    reply.text += " What I can answer: how Magpie works, what things cost, your own numbers, and the next step on anything you are setting up. For anything else, hello@magpielocal.com reaches a person.";
   }
   return reply;
 }
@@ -5248,7 +5248,7 @@ function sigLinkGo(dest) {
     case "admin-creators": return go("dashboard", "Creators");
     case "cr-settings": state.openDeleteAccount = false; return go("dashboard", "Settings");
     case "biz-settings": state.openDeleteAccount = false; return go("dashboard", "Settings");
-    case "cr-terms": window.open("https://joinsignl.com/creator-terms.html", "_blank", "noopener"); return false;
+    case "cr-terms": window.open("https://magpielocal.com/creator-terms.html", "_blank", "noopener"); return false;
     case "cr-profile": return go("dashboard", "Profile");
     case "admin-applications": return go("dashboard", "Applications");
     case "admin-businesses": ccTab = "businesses"; astView = "businesses"; return go("dashboard", "Stats");
@@ -5549,7 +5549,7 @@ function renderSigTab() {
   ${state.user && state.user.role === "creator" ? sigCreatorStartersHtml() : ""}
   <div class="sig-chat">
     <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers and real actions, with the next step attached. Nothing posts, sends, or saves until you confirm a plain summary.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
-    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${state.user && state.user.role === "business" ? "Ask me anything about how SIGNL works for your business: what your plan includes, how campaigns run, how your results get counted. Or tell me to do something: draft a campaign, find creators, set your staff PIN. I confirm before anything is saved." : state.user && state.user.role === "creator" ? "Ask me anything about how SIGNL works for creators: how visits and points run, what you earn, when your market opens. Or tell me to do something: find offers, finish your profile, show your numbers. I confirm before anything is saved." : "Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved."}</div></div>`}</div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${state.user && state.user.role === "business" ? "Ask me anything about how Magpie works for your business: what your plan includes, how campaigns run, how your results get counted. Or tell me to do something: draft a campaign, find creators, set your staff PIN. I confirm before anything is saved." : state.user && state.user.role === "creator" ? "Ask me anything about how Magpie works for creators: how visits and points run, what you earn, when your market opens. Or tell me to do something: find offers, finish your profile, show your numbers. I confirm before anything is saved." : "Ask me anything about how Magpie works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved."}</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
       <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
       <button class="btn" type="submit">Ask</button>
@@ -5665,7 +5665,7 @@ function sigBizStarterAsk(text) {
 
 function openAgentSheet() {
   // Ask Sig (V3, spec §4.1): guided flows that walk you to the
-  // exact screen, plus straight answers from SIGNL's locked
+  // exact screen, plus straight answers from Magpie's locked
   // facts. This sheet stays a walk-to surface; the operator
   // (Sig doing the doing, confirm-first) lives on the Sig tab.
   // The content is shared with the Sig tab (sigFlowsFor/sigQaFor).
@@ -5814,7 +5814,7 @@ function bizLibraryHtml(h) {
   <div data-libp="creator"><p class="small muted">Seeing a post here is not the right to reuse it. Comped and coupon posts are native share only, with credit, unless you license them from the creator.</p>${lib.map(row).join("")}</div>
   <div data-libp="yours" hidden><p class="small muted">Posts you can repost and run as ads inside the window shown. Every license runs 90 days: from the post date on a paid booking, from the day the creator said yes on a licensed post. The end date is on each post, and a license never runs longer than 90 days.</p>${yours.length ? yours.map(row).join("") : `<div class="feed-empty"><strong>Nothing licensed yet</strong>Paid bookings carry a 90-day standard license. A comped or coupon post can be licensed at the creator's listed fee.</div>`}</div>`;
 }
-// Offers-segment template cards, in SIGNL's own terms.
+// Offers-segment template cards, in Magpie's own terms.
 function bizTemplatesHtml() {
   const card = (kind, icon, name, desc) => `<div class="tmpl-card"><div class="tmpl-tile">${bnIcon(icon)}</div><div class="tmpl-name">${name}</div><div class="tmpl-desc">${desc}</div><button type="button" class="btn small-btn" onclick="return startOfferTemplate('${kind}')">Start</button></div>`;
   return `<div class="tmpl-grid">${card("comp", "offers", "Comped visit", "You cover the meal or service. The creator posts honestly — the standard goal is within 48 hours, unless the booking says otherwise.")}${card("paid", "visits", "Paid booking", "Book at the creator's listed rate. They keep 97%, and a 90-day license is included.")}${card("coupon", "offers", "Coupon post", "Pay with a coupon: money off, a percent off, or store credit. One post, no story, unless you change it.")}${card("open", "join", "Open call", "Post it to your market and let matching creators apply. You pick from the stack.")}</div>`;
@@ -5925,7 +5925,7 @@ function renderHome() {
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
     </div>
-    <p class="small muted mt">Working the register at a SIGNL business? <a class="tlink" href="#" onclick="return goStaff()">Redeem a creator visit</a>: staff mode, your PIN and the creator's code, nothing else.</p>
+    <p class="small muted mt">Working the register at a Magpie business? <a class="tlink" href="#" onclick="return goStaff()">Redeem a creator visit</a>: staff mode, your PIN and the creator's code, nothing else.</p>
     <p class="small muted mt">Founding sign-ups open in all ${(state.boot && state.boot.markets ? state.boot.markets.length : 38)} markets &middot; Decisions within 2 business days</p>
   </section>
   <section style="margin-top:44px">
@@ -6028,7 +6028,7 @@ async function pickCandidateMarket(e, market) {
 
 // Market options are grouped by country (United States first, then the
 // rest alphabetically), cities alphabetical inside each country, so the
-// picker stays scannable as SIGNL goes universal (38 markets: universal
+// picker stays scannable as Magpie goes universal (38 markets: universal
 // 2026-10-18, roster reset 2026-10-23, Miami restored 2026-10-30).
 function marketOptions(selected, forJoin) {
   const byCountry = {};
@@ -6048,7 +6048,7 @@ function marketOptions(selected, forJoin) {
 }
 
 // Options for the per-market audience share rows on the creator
-// Profile (multi-market listing, 2026-11-01): every SIGNL market
+// Profile (multi-market listing, 2026-11-01): every Magpie market
 // except the creator's home market (the home share is the local
 // % field, never a row here), with a blank "pick a market" head.
 // Build -90: grouped by country exactly like the claim form's
@@ -6283,9 +6283,9 @@ function renderSignin() {
       </form>
       <p class="small" id="sl-note" style="margin:8px 0 0"></p>
     </div>
-    <p class="small muted mt">New to SIGNL? <a class="tlink" href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a class="tlink" href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
+    <p class="small muted mt">New to Magpie? <a class="tlink" href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a class="tlink" href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
     <button class="btn ghost mt" style="width:100%" onclick="return goStaff()">Redeem a creator visit</button>
-    <p class="small muted">Staff at a SIGNL business: the button above takes you straight to the register screen. PIN in, creator code in, redeemed.</p>
+    <p class="small muted">Staff at a Magpie business: the button above takes you straight to the register screen. PIN in, creator code in, redeemed.</p>
     </div>
   </section>`;
 }
@@ -6329,7 +6329,7 @@ async function doSigninLink(e) {
     const data = await api("POST", "/auth/signin-link", { email });
     submitBusy(form, false);
     if (note) note.textContent = data && data.emailDown
-      ? "Email is down on our side right now, so no link went out. Try again in a little while, or email hello@joinsignl.com and we will help you in by hand."
+      ? "Email is down on our side right now, so no link went out. Try again in a little while, or email hello@magpielocal.com and we will help you in by hand."
       : "If an account exists for that email, a sign-in link is on its way. It works once and expires in 30 minutes.";
   } catch (err) {
     submitBusy(form, false);
@@ -6349,7 +6349,7 @@ function renderForgot() {
     <h2>Forgot password</h2>
     </div>
     <div class="form-body">
-    <p class="muted">Enter the email on your SIGNL account and we will email you a link to set a new password. The link works once and expires in one hour.</p>
+    <p class="muted">Enter the email on your Magpie account and we will email you a link to set a new password. The link works once and expires in one hour.</p>
     <div id="form-error"></div>
     <form onsubmit="return doForgot(event)">
       <div class="field"><label>Email</label><input type="email" id="fp-email" required autocomplete="email"></div>
@@ -6375,7 +6375,7 @@ async function doForgot(e) {
     <section class="panel center" style="max-width:460px;margin:30px auto">
       <h2>Email is down on our side</h2>
       <p>We cannot send a reset link right now, so none went out. This is a problem on our end, not with your account.</p>
-      <p class="muted">Try again in a little while, or email hello@joinsignl.com and we will help you set a new password by hand.</p>
+      <p class="muted">Try again in a little while, or email hello@magpielocal.com and we will help you set a new password by hand.</p>
       <div class="cta-row" style="justify-content:center">
         <a class="btn ghost" href="#" onclick="return go('signin')">Back to sign in</a>
       </div>
@@ -6386,7 +6386,7 @@ async function doForgot(e) {
     <section class="panel center" style="max-width:460px;margin:30px auto">
       <h2>Check your email</h2>
       <p>If an account exists for that email, a reset link is on its way. The link works once and expires in one hour.</p>
-      <p class="muted">Nothing arrived after a few minutes? Check spam, then request a fresh link. If it keeps not arriving, email hello@joinsignl.com and we will sort it out with you.</p>
+      <p class="muted">Nothing arrived after a few minutes? Check spam, then request a fresh link. If it keeps not arriving, email hello@magpielocal.com and we will sort it out with you.</p>
       <div class="cta-row" style="justify-content:center">
         <a class="btn" href="#" onclick="return go('forgot')">Request another link</a>
         <a class="btn ghost" href="#" onclick="return go('signin')">Back to sign in</a>
@@ -6407,7 +6407,7 @@ function renderReset() {
     <h2>Set a new password</h2>
     </div>
     <div class="form-body">
-    <p class="muted">Pick a new password for your SIGNL account. Setting it signs out every other device on the account.</p>
+    <p class="muted">Pick a new password for your Magpie account. Setting it signs out every other device on the account.</p>
     <div id="form-error"></div>
     <form onsubmit="return doReset(event)">
       <div class="field"><label>New password (10+ characters)</label><input type="password" id="rs-password" required minlength="10" autocomplete="new-password"></div>
@@ -6505,7 +6505,7 @@ function accountHtml(u) {
   return `
   <div class="panel mt">
     <h3>Your account</h3>
-    <p class="small muted">Signed in as <strong>${esc(u.email)}</strong>. This is the email SIGNL uses for your account and launch messages.</p>
+    <p class="small muted">Signed in as <strong>${esc(u.email)}</strong>. This is the email Magpie uses for your account and launch messages.</p>
     ${googleAccountRowHtml(u)}
     <div id="acct-error"></div>
     <form onsubmit="return doChangePassword(event)">
@@ -6534,7 +6534,7 @@ function deleteAccountHtml(u) {
   <div style="margin-top:22px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:14px">
     <button class="btn small-btn ghost" type="button" onclick="document.getElementById('delacct-panel').style.display=''; this.style.display='none'">Delete my account</button>
     <div id="delacct-panel" style="display:none">
-      <h4 style="margin:4px 0 6px">Delete your SIGNL account</h4>
+      <h4 style="margin:4px 0 6px">Delete your Magpie account</h4>
       <p class="small" style="margin:0 0 8px">This deletes, for good:</p>
       <ul class="small" style="margin:0 0 8px;padding-left:18px">
         <li>Your profile${creator ? " and your public page" : ""}, your name, photos and handle</li>
@@ -6590,7 +6590,7 @@ async function doDeleteAccount() {
   try {
     await api("DELETE", "/me/account", { confirmText: word });
     state.user = null;
-    document.body.innerHTML = `<div style="max-width:520px;margin:12vh auto;padding:24px;text-align:center"><h2>Your account is deleted</h2><p>Your SIGNL account and its data are gone, and every device is signed out. A confirmation email is on its way to the address that was on file. If you ever want to come back, you are welcome to sign up fresh.</p></div>`;
+    document.body.innerHTML = `<div style="max-width:520px;margin:12vh auto;padding:24px;text-align:center"><h2>Your account is deleted</h2><p>Your Magpie account and its data are gone, and every device is signed out. A confirmation email is on its way to the address that was on file. If you ever want to come back, you are welcome to sign up fresh.</p></div>`;
     return false;
   } catch (e) { if (note) note.textContent = e.message; return false; }
 }
@@ -6669,8 +6669,8 @@ function syncSuggestedTier() {
   if (line) line.textContent = total >= 500
     ? `Your band: ${suggestedTierId(total)}, set automatically from your total audience across platforms (${total.toLocaleString()} total).`
     : total > 0
-      ? `SIGNL starts at 500 total followers across your platforms. You have ${total.toLocaleString()} counted so far; add every platform you post on and the counts add up.`
-      : "Your band is set automatically from your total audience across platforms. SIGNL starts at 500 total followers across your platforms.";
+      ? `Magpie starts at 500 total followers across your platforms. You have ${total.toLocaleString()} counted so far; add every platform you post on and the counts add up.`
+      : "Your band is set automatically from your total audience across platforms. Magpie starts at 500 total followers across your platforms.";
   syncPaidOption();
 }
 
@@ -6790,7 +6790,7 @@ function sigOpCapabilities() {
     ST("Build your asset packet: logo link, key links, talking points, handle, hashtags.", "Crear tu paquete: enlace del logo, enlaces clave, puntos de conversación, usuario y hashtags."),
     ST("Show your Regulars and draft a repeat visit from the last deal, and flag licences ending soon with a renew request to the creator.", "Mostrar tus clientes habituales y crear una visita repetida desde el último trato, y avisarte de licencias por vencer con una solicitud de renovación al creador."),
     ST("Pull up your forwardable monthly receipt (counted, recorded, and intent kept separate) with the CSV download and print view, and set or change your standing hours in plain words.", "Mostrar tu recibo mensual para reenviar (contado, registrado e intención por separado) con la descarga CSV y la vista de impresión, y fijar o cambiar tu horario habitual en palabras simples."),
-    ST("Answer questions about plans, rights, and how SIGNL works.", "Responder preguntas sobre planes, derechos y cómo funciona SIGNL."),
+    ST("Answer questions about plans, rights, and how Magpie works.", "Responder preguntas sobre planes, derechos y cómo funciona Magpie."),
   ];
   return [
     ST("Find offers that fit you, with the reason, and apply or accept after a summary.", "Buscar ofertas que te convienen, con el motivo, y aplicar o aceptar tras un resumen."),
@@ -6801,7 +6801,7 @@ function sigOpCapabilities() {
     ST("Invite other creators with your link and a ready-to-send message.", "Invitar a otros creadores con tu enlace y un mensaje listo para enviar."),
     ST("Show licence and renewal requests waiting on you, and approve or decline them right here.", "Mostrar las solicitudes de licencia y renovación que te esperan, y aprobarlas o rechazarlas aquí mismo."),
     ST("Explain what payout setup will ask for before you start it, and show the rate starting points for your tier, which are yours to change.", "Explicar qué pedirá la configuración de pagos antes de empezarla, y mostrar las tarifas iniciales de tu nivel, que puedes cambiar."),
-    ST("Answer questions about pay, visits, licensing, and how SIGNL works.", "Responder preguntas sobre pagos, visitas, licencias y cómo funciona SIGNL."),
+    ST("Answer questions about pay, visits, licensing, and how Magpie works.", "Responder preguntas sobre pagos, visitas, licencias y cómo funciona Magpie."),
   ];
 }
 function sigOpIntent(norm) {
@@ -6894,7 +6894,7 @@ async function sigB95Licences() {
     ...rows.map((l) => ({
       label: `Ask to renew: @${l.creatorHandle}`,
       run: async () => sigOpPick(`Ask to renew: @${l.creatorHandle}`, async () => {
-        if (!l.fee) { sigOpSay("This creator has not listed a licensing fee, so this post cannot be renewed through SIGNL. It stays shareable inside Instagram with credit.", sigOpHomeActions()); return; }
+        if (!l.fee) { sigOpSay("This creator has not listed a licensing fee, so this post cannot be renewed through Magpie. It stays shareable inside Instagram with credit.", sigOpHomeActions()); return; }
         sigOpAsk(`Ask to renew the licence on ${l.creatorName}'s post "${l.title}"? It ends ${fmtDay(l.windowEndsAt)}. The request goes to the creator at their $${fmtPrice(l.fee)} fee: you pay $${fmtMoney(Math.round(l.fee * 1.03 * 100) / 100)} only if they approve, the creator keeps $${fmtMoney(Math.round(l.fee * 0.97 * 100) / 100)} (97%), and a fresh 90 days starts the day they approve. Nothing renews unless they say yes.`, [
           { label: "Yes, ask to renew", primary: true, run: async () => sigOpPick("Yes, ask to renew", async () => {
             try {
@@ -6985,13 +6985,13 @@ function sigC98Payout() {
   const c = (state.user && state.user.creator) || {};
   const ready = !!(c.payouts && c.payouts.ready);
   if (isUkUser()) {
-    sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and a UK bank account, your sort code and account number, so money can go to your bank by Faster Payments; bank details go to Stripe, never to SIGNL. Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's. You are responsible for your own UK tax position, and SIGNL does not withhold tax from your earnings. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
+    sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and a UK bank account, your sort code and account number, so money can go to your bank by Faster Payments; bank details go to Stripe, never to Magpie. Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's. You are responsible for your own UK tax position, and Magpie does not withhold tax from your earnings. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
       { label: ST("Open payout setup on my Profile", "Abrir los pagos en mi perfil"), primary: true, run: async () => go("dashboard", "Profile") },
       { label: ST("Read it in Help", "Leerlo en Ayuda"), run: async () => go("dashboard", "Help") },
     ]);
     return;
   }
-  sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to SIGNL. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
+  sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to Magpie. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
     { label: ST("Open payout setup on my Profile", "Abrir los pagos en mi perfil"), primary: true, run: async () => go("dashboard", "Profile") },
     { label: ST("Read it in Help", "Leerlo en Ayuda"), run: async () => go("dashboard", "Help") },
   ]);
@@ -7008,8 +7008,8 @@ function sigC98Rates() {
   ]);
 }
 function sigC98Terms() {
-  sigOpSay(ST("Creator terms in plain words are here: https://joinsignl.com/creator-terms.html. The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer.", "Los términos para creadores en palabras simples están aquí: https://joinsignl.com/creator-terms.html."), [
-    { label: ST("Read creator terms in plain words", "Leer los términos"), primary: true, run: async () => { window.open("https://joinsignl.com/creator-terms.html", "_blank", "noopener"); } },
+  sigOpSay(ST("Creator terms in plain words are here: https://magpielocal.com/creator-terms.html. The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer.", "Los términos para creadores en palabras simples están aquí: https://magpielocal.com/creator-terms.html."), [
+    { label: ST("Read creator terms in plain words", "Leer los términos"), primary: true, run: async () => { window.open("https://magpielocal.com/creator-terms.html", "_blank", "noopener"); } },
   ]);
 }
 async function sigC95Licences() {
@@ -7106,7 +7106,7 @@ async function sigC129MarketStep(f, text, norm) {
     const partial = markets.filter((x) => sigOpNorm(x.name).includes(sigOpNorm(t)) || sigOpNorm(t).includes(sigOpNorm(x.name)));
     const match = exact || (partial.length === 1 ? partial[0] : null);
     if (!match) {
-      sigOpSay(ST("I could not match that to a SIGNL market. Type the market name as it appears in the list, for example Charlotte, Nashville or London. Or say never mind to stop.", "No pude relacionar eso con un mercado de SIGNL. Escribe el nombre del mercado, por ejemplo Charlotte, Nashville o Londres. O di cancelar para parar."), [sigOpCancelAction()]);
+      sigOpSay(ST("I could not match that to a Magpie market. Type the market name as it appears in the list, for example Charlotte, Nashville or London. Or say never mind to stop.", "No pude relacionar eso con un mercado de Magpie. Escribe el nombre del mercado, por ejemplo Charlotte, Nashville o Londres. O di cancelar para parar."), [sigOpCancelAction()]);
       return;
     }
     if (match.name === state.user.market) {
@@ -7158,7 +7158,7 @@ function sigOpSayCards(text, cardKind, cards, cardActs, actions) {
   state.sigThread = state.sigThread || [];
   state.sigThread.push({ who: "sig", text, cardKind, cards, cardActs, actions: actions && actions.length ? actions : undefined });
 }
-// SIGNL's ranking basis: how local a creator's audience is —
+// Magpie's ranking basis: how local a creator's audience is —
 // the local share itself, the same order the Discover deck
 // deals and the number each card leads with.
 function sigLocalPct(c) {
@@ -7392,7 +7392,7 @@ function sigB1AskDeliverables() {
   const std = deliverableStandardClient(d.kind || "comp");
   const isStd = cur.posts === std.posts && cur.story === std.story && cur.windowHours === std.windowHours;
   const winCycle = [24, 48, 72, 168];
-  sigOpAsk(ST(`What does the creator owe? Right now: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, post within ${windowPhraseClient(cur.windowHours)}.${isStd ? " That is SIGNL's recommended standard for this kind of deal." : ""}${d.kind === "paid" ? " A paid booking also includes the standard license (repost and ad use for 90 days from the post date); that part is set by SIGNL and cannot be changed." : " Rights on this deal: native share only."} Tap a chip to change a piece, or keep it as shown.`, `¿Qué debe entregar el creador? Ahora: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, publicar en ${windowPhraseClient(cur.windowHours)}.${isStd ? " Es el estándar recomendado de SIGNL para este tipo de trato." : ""}${d.kind === "paid" ? " Una reserva pagada también incluye la licencia estándar (republicar y anuncios por noventa días desde la publicación); esa parte la fija SIGNL y no se puede cambiar." : " Derechos en este trato: solo compartir nativo."} Toca una opción para cambiar algo, o déjalo así.`), [
+  sigOpAsk(ST(`What does the creator owe? Right now: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, post within ${windowPhraseClient(cur.windowHours)}.${isStd ? " That is Magpie's recommended standard for this kind of deal." : ""}${d.kind === "paid" ? " A paid booking also includes the standard license (repost and ad use for 90 days from the post date); that part is set by Magpie and cannot be changed." : " Rights on this deal: native share only."} Tap a chip to change a piece, or keep it as shown.`, `¿Qué debe entregar el creador? Ahora: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, publicar en ${windowPhraseClient(cur.windowHours)}.${isStd ? " Es el estándar recomendado de Magpie para este tipo de trato." : ""}${d.kind === "paid" ? " Una reserva pagada también incluye la licencia estándar (republicar y anuncios por noventa días desde la publicación); esa parte la fija Magpie y no se puede cambiar." : " Derechos en este trato: solo compartir nativo."} Toca una opción para cambiar algo, o déjalo así.`), [
     { label: ST("Keep as shown", "Dejar así"), primary: true, run: () => sigOpPick(ST("Keep as shown", "Dejar así"), async () => { if (d.kind === "paid") sigB1AskPostingTerms(); else sigB1AskBriefGoal(); }) },
     { label: `${ST("Story", "Historia")}: ${cur.story ? ST("yes", "sí") : ST("no", "no")}`, run: () => sigOpPick(ST("Story", "Historia"), async () => { cur.story = !cur.story; sigB1AskDeliverables(); }) },
     { label: `${ST("Posts", "Publicaciones")}: ${cur.posts}`, run: () => sigOpPick(ST("Posts", "Publicaciones"), async () => { cur.posts = cur.posts >= 3 ? 1 : cur.posts + 1; sigB1AskDeliverables(); }) },
@@ -7892,7 +7892,7 @@ async function sigB2Run(crit) {
     ]);
     return;
   }
-  // Ranked by how local the audience is, SIGNL's basis: the
+  // Ranked by how local the audience is, Magpie's basis: the
   // local share first (the number each card leads with), the
   // bigger audience breaking a tie. The confirmation line
   // states the count and the basis, then the cards carry the
@@ -8830,9 +8830,9 @@ function sigC4Run() {
     ]);
     return;
   }
-  const url = `https://app.joinsignl.com/?ref=${encodeURIComponent(handle)}`;
+  const url = `https://app.magpielocal.com/?ref=${encodeURIComponent(handle)}`;
   const market = marketTalkNameClient(u.market);
-  const msg = ST(`I am a founding creator on SIGNL in ${market}. Local businesses book local creators here: comped visits (a meal, service, or experience on the business) or paid bookings at your own listed rate, and you keep 97% of paid work. Join through my link: ${url}`, `Soy creador fundador en SIGNL en ${market}. Los negocios locales reservan creadores locales aquí: visitas de cortesía (una comida, servicio o experiencia por cuenta del negocio) o reservas pagadas a tu propia tarifa, y te quedas con el 97% del trabajo pagado. Únete con mi enlace: ${url}`);
+  const msg = ST(`I am a founding creator on Magpie in ${market}. Local businesses book local creators here: comped visits (a meal, service, or experience on the business) or paid bookings at your own listed rate, and you keep 97% of paid work. Join through my link: ${url}`, `Soy creador fundador en Magpie en ${market}. Los negocios locales reservan creadores locales aquí: visitas de cortesía (una comida, servicio o experiencia por cuenta del negocio) o reservas pagadas a tu propia tarifa, y te quedas con el 97% del trabajo pagado. Únete con mi enlace: ${url}`);
   sigOpSay(`${ST("Your invite link:", "Tu enlace de invitación:")} ${url}\n${ST("You earn +3 Momentum when a creator joins through it, +10 when they are approved. Points are priority: they move you up the list businesses choose from, and they raise your level.", "Ganas +3 Momentum cuando un creador se une con él, +10 cuando es aprobado. Los puntos son prioridad: te suben en la lista de la que eligen los negocios, y suben tu nivel.")}\n${ST("Ready-to-send message (copy it into any app):", "Mensaje listo para enviar (cópialo en cualquier app):")}\n${msg}`, [
     { label: ST("Copy invite link", "Copiar enlace"), primary: true, run: async () => { try { await navigator.clipboard.writeText(url); sigOpSay(ST("Copied. Send it anywhere.", "Copiado. Envíalo donde quieras."), sigOpHomeActions()); } catch (e) { sigOpSay(ST("Copy did not work here; the link is in the message above, ready to select.", "La copia no funcionó aquí; el enlace está en el mensaje de arriba, listo para seleccionar."), sigOpHomeActions()); } } },
     { label: ST("See my Momentum", "Ver mi Momentum"), run: async () => go("dashboard", "Momentum") },
@@ -9109,7 +9109,7 @@ function igAssistCardHtml(uid, side, opts = {}) {
   const handleField = opts.handleFrom ? `<p class="small muted">${T("Uses the handle you typed above.", "Usa el usuario que escribiste arriba.")}</p>` : `<div class="field"><label>${T("Your Instagram handle", "Tu usuario de Instagram")}</label><input id="${uid}-ig-handle" placeholder="yourhandle"></div>`;
   return `<div class="fgroup tint" id="${uid}-ig-card">
     <p class="fg-kicker">${T("Fast setup", "Configuración rápida")}</p>
-    <p class="small muted"${uid === "qc" ? ` id="qc-ig-intro"` : ""}>${T("Sig is SIGNL's built-in helper. Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Sig es el asistente integrado de SIGNL. Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")}</p>
+    <p class="small muted"${uid === "qc" ? ` id="qc-ig-intro"` : ""}>${T("Sig is Magpie's built-in helper. Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Sig es el asistente integrado de Magpie. Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")}</p>
     ${handleField}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="btn" onclick="igAssistLookup('${uid}','${side}')">${T("Draft my setup", "Arma mi configuración")}</button>
@@ -9241,7 +9241,7 @@ function renderClaimWelcome() {
       <div class="c85-photo-inner">
         ${claimDots(1)}
         <h1 class="c85-h">${first ? `${T("You're invited,", "Te invitaron,")} <span class="c85-accent">${esc(first)}.</span>` : `${T("You're", "Estás")} <span class="c85-accent">${T("invited.", "invitado.")}</span>`}</h1>
-        ${resolved ? identity : `<p class="c85-sub">${T("SIGNL is where local businesses book local creators.", "SIGNL es donde los negocios locales reservan creadores locales.")}</p>`}
+        ${resolved ? identity : `<p class="c85-sub">${T("Magpie is where local businesses book local creators.", "Magpie es donde los negocios locales reservan creadores locales.")}</p>`}
       </div>
     </div>
     <div class="c85-card">
@@ -9297,7 +9297,7 @@ function renderClaimFacts() {
       <div id="c85-facts-warn"></div>
       <div class="c85-fact">
         <p class="fg-kicker">${T("Your city", "Tu ciudad")}</p>
-        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted" style="margin:6px 0 0">${T("Your invite picked this market. If your audience is really somewhere else, pick the market where most of your followers live. You can change it later, any time, in your profile.", "Tu invitación eligió este mercado. Si tu audiencia está en otro lugar, elige el mercado donde vive la mayoría de tus seguidores. Puedes cambiarlo después, cuando quieras, en tu perfil.")}</p><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every SIGNL post.</p></div>
+        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted" style="margin:6px 0 0">${T("Your invite picked this market. If your audience is really somewhere else, pick the market where most of your followers live. You can change it later, any time, in your profile.", "Tu invitación eligió este mercado. Si tu audiencia está en otro lugar, elige el mercado donde vive la mayoría de tus seguidores. Puedes cambiarlo después, cuando quieras, en tu perfil.")}</p><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and Magpie walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every Magpie post.</p></div>
         <div class="field" id="c85-city-wrap" style="margin-bottom:0"><label>${T("Your home city", "Tu ciudad")}</label><select id="c85-city" onchange="claimLocalLabelSync()">${cityOptions(pfMarket === unlistedLabel() ? "Virginia Beach" : pfMarket)}</select></div>
         <div class="field" id="c85-area-wrap" style="display:none;margin-bottom:0"><label>${T("Your area in London", "Tu zona en Londres")}</label><input id="c85-area-search" placeholder="${T("Search areas, for example: Brixton", "Busca zonas, por ejemplo: Brixton")}" oninput="filterAreaOptions('c85-area-search','c85-area')" style="margin-bottom:6px"><select id="c85-area" onchange="claimLocalLabelSync()">${areaOptions("London")}</select><p class="small muted">${T("London is one market. Your home city stays London, and your area is saved on your record.", "Londres es un solo mercado. Tu ciudad queda como Londres y tu zona se guarda en tu registro.")}</p></div>
         <div id="c85-custom-wrap" style="display:none">
@@ -9323,7 +9323,7 @@ function renderClaimFacts() {
         <p class="small muted" id="c85-counted-note" style="display:${d.countedNote ? "" : "none"};margin:0 0 4px">${esc(d.countedNote || "")}</p>
         ${stackRows}
         <p class="c85-counted" id="c85-counted">${T("Counted so far:", "Contados hasta ahora:")} ${claimFmtCount(total)}</p>
-        <p class="small" id="c85-min-line" style="display:${total > 0 && total < 500 ? "" : "none"};margin:6px 0 0"><strong>${T("SIGNL starts at 500 total followers across your platforms.", "SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas.")}</strong> ${T("Add every platform you post on. The counts add up.", "Agrega cada plataforma donde publicas. Los conteos se suman.")}</p>
+        <p class="small" id="c85-min-line" style="display:${total > 0 && total < 500 ? "" : "none"};margin:6px 0 0"><strong>${T("Magpie starts at 500 total followers across your platforms.", "Magpie empieza con 500 seguidores en total, sumando todas tus plataformas.")}</strong> ${T("Add every platform you post on. The counts add up.", "Agrega cada plataforma donde publicas. Los conteos se suman.")}</p>
       </div>
       <button class="btn" type="button" style="width:100%" onclick="return claimFactsGo()">${T("Continue", "Continuar")}</button>
       <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(1)">${T("Back", "Atrás")}</a></p>
@@ -9397,8 +9397,8 @@ function claimFactsGo() {
     d.customCity = document.getElementById("c85-city-text").value.trim();
     d.customCountry = document.getElementById("c85-country-text").value.trim();
     d.customState = document.getElementById("c85-state-text").value.trim();
-    if (!d.customCity) { warn(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
-    if (!d.customCountry) { warn(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+    if (!d.customCity) { warn(T("Tell us your city, so your sign-up counts toward opening Magpie there.", "Dinos tu ciudad, para que tu registro cuente para abrir Magpie ahí.")); return false; }
+    if (!d.customCountry) { warn(T("Tell us your country, so your sign-up counts toward opening Magpie there.", "Dinos tu país, para que tu registro cuente para abrir Magpie ahí.")); return false; }
     d.city = "";
   } else if (marketVal === "London") {
     // Build -88: home city stays London; the picked area rides
@@ -9471,7 +9471,7 @@ function renderClaimAccount() {
       <form novalidate onsubmit="return doQuickClaim(event)">
         <div class="field"><label>${T("Email (how we reach you)", "Correo electrónico (así te contactamos)")}</label><input type="email" id="c85-email" required autocomplete="email" value="${esc(gp ? gp.email : "")}"></div>
         <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input type="password" id="c85-password" required minlength="10" autocomplete="new-password"></div>
-        <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on SIGNL on SIGNL, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en SIGNL las reservas que empiezan en SIGNL, y acepto que SIGNL me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
+        <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on Magpie on Magpie, and I agree Magpie can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en Magpie las reservas que empiezan en Magpie, y acepto que Magpie me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
         <button class="btn" type="submit" style="width:100%">${T("Finish — join the founding roster", "Terminar: únete a la lista de fundadores")}</button>
       </form>
       <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(2)">${T("Back", "Atrás")}</a></p>
@@ -9569,9 +9569,9 @@ async function promptSignlInstall() {
 function signlInstallBannerHtml() {
   if (signlInstallDismissed()) return "";
   return `<div class="panel" id="signl-install-banner" style="margin-top:14px;text-align:left">
-    <strong>Add SIGNL to your home screen</strong>
-    <p class="small muted" style="margin:6px 0 10px">One tap to open SIGNL, right where your other apps live. Offers and post clocks move fast; this keeps them one tap away.</p>
-    <button class="btn" type="button" onclick="return promptSignlInstall()">Add SIGNL</button>
+    <strong>Add Magpie to your home screen</strong>
+    <p class="small muted" style="margin:6px 0 10px">One tap to open Magpie, right where your other apps live. Offers and post clocks move fast; this keeps them one tap away.</p>
+    <button class="btn" type="button" onclick="return promptSignlInstall()">Add Magpie</button>
     <a href="#" class="small" style="margin-left:10px" onclick="return dismissSignlInstall()">Not now</a>
   </div>`;
 }
@@ -9579,7 +9579,7 @@ function signlInstallBannerHtml() {
 function renderClaimDone() {
   const done = state.claimDone || { firstName: "", total: 0, complete: false, under: false };
   const line2 = done.under
-    ? `<strong>${T("SIGNL starts at 500 total followers across your platforms.", "SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas.")}</strong> ${T(`You have ${claimFmtCount(done.total)} counted so far. Add every platform you post on from your dashboard, and the counts add up.`, `Llevas ${claimFmtCount(done.total)} contados hasta ahora. Agrega cada plataforma donde publicas desde tu panel, y los conteos se suman.`)}`
+    ? `<strong>${T("Magpie starts at 500 total followers across your platforms.", "Magpie empieza con 500 seguidores en total, sumando todas tus plataformas.")}</strong> ${T(`You have ${claimFmtCount(done.total)} counted so far. Add every platform you post on from your dashboard, and the counts add up.`, `Llevas ${claimFmtCount(done.total)} contados hasta ahora. Agrega cada plataforma donde publicas desde tu panel, y los conteos se suman.`)}`
     : done.complete
       ? T("Your four facts are in. The moment you're approved, businesses can find your page.", "Tus cuatro datos ya están. En cuanto te aprueben, los negocios podrán ver tu página.")
       : T("Anything you skipped is waiting on your dashboard checklist. Two minutes finishes it.", "Lo que saltaste te espera en la lista de tu panel. Dos minutos lo terminan.");
@@ -9641,7 +9641,7 @@ function renderJoinCreator() {
   <section class="panel form-panel" style="max-width:680px;margin:10px auto">
     <div class="form-head">
     <h2>${T("Become a Founding Creator", "Conviértete en Creador Fundador")}</h2>
-    <p><strong>${T(CREATOR_FREE_LINE, "Unirte a SIGNL es gratis para los creadores. Siempre.")}</strong></p>
+    <p><strong>${T(CREATOR_FREE_LINE, "Unirte a Magpie es gratis para los creadores. Siempre.")}</strong></p>
     </div>
     <div class="form-mint">${T("Ranked by local reach, not followers — the share of your audience that lives here.", "Ordenado por alcance local, no por seguidores: la parte de tu audiencia que vive aquí.")}</div>
     <div class="form-body">
@@ -9666,7 +9666,7 @@ function renderJoinCreator() {
       <div class="fgroup">
         <p class="fg-kicker">${T("Where you are", "Dónde estás")}</p>
         <div class="form-2col">
-          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="jc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to join, and SIGNL walks founding creators through it.</p><p id="jc-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to join; the label is built into every SIGNL post.</p></div>
+          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="jc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to join, and Magpie walks founding creators through it.</p><p id="jc-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to join; the label is built into every Magpie post.</p></div>
           <div class="field" id="jc-city-wrap"><label>${T("Your home city", "Tu ciudad")}</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
           <div id="jc-custom-wrap" style="display:none">
             <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="jc-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}"></div>
@@ -9695,7 +9695,7 @@ function renderJoinCreator() {
       <div class="field"><label>${T("LinkedIn profile (optional)", "Perfil de LinkedIn (opcional)")}</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
       <div class="form-2col">
         <div class="field"><label id="jc-followers-label">${esc(primaryLabelClient(pf.platform || "instagram"))} ${T("followers (required)", "seguidores (obligatorio)")}</label><input type="number" id="jc-followers" min="0" required placeholder="${T("For example 8400", "Por ejemplo 8400")}" oninput="syncSuggestedTier()"></div>
-        <div class="field"><label>${T("Your tier band", "Tu nivel")}</label><p id="jc-tier-line" style="margin:6px 0">${T("Your band is set automatically from your total audience across platforms.", "Tu nivel se fija solo, según tu audiencia total en todas las plataformas.")}</p><p class="small muted">${T("SIGNL starts at 500 total followers across your platforms. Neighbors 500 to 2k · Locals 2k to 15k · Headliners 15k+. Set automatically.", "SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas. Neighbors de 500 a 2 mil · Locals de 2 mil a 15 mil · Headliners más de 15 mil. Se fija solo.")}</p></div>
+        <div class="field"><label>${T("Your tier band", "Tu nivel")}</label><p id="jc-tier-line" style="margin:6px 0">${T("Your band is set automatically from your total audience across platforms.", "Tu nivel se fija solo, según tu audiencia total en todas las plataformas.")}</p><p class="small muted">${T("Magpie starts at 500 total followers across your platforms. Neighbors 500 to 2k · Locals 2k to 15k · Headliners 15k+. Set automatically.", "Magpie empieza con 500 seguidores en total, sumando todas tus plataformas. Neighbors de 500 a 2 mil · Locals de 2 mil a 15 mil · Headliners más de 15 mil. Se fija solo.")}</p></div>
       </div>
       <div class="field"><label>${T("Your audience on other platforms (optional)", "Tu audiencia en otras plataformas (opcional)")}</label>
         <div class="form-2col">
@@ -9723,7 +9723,7 @@ function renderJoinCreator() {
         <div class="field"><label>${T("Comps you would accept (optional)", "Cortesías que aceptarías (opcional)")}</label><div class="checkrow">${comps}</div></div>
         <div class="field" id="jc-paid-wrap" style="display:none">
           <label class="tgl-row"><input type="checkbox" class="sw" id="jc-paid"><span><strong>${T("Paid cash campaigns", "Campañas pagadas en efectivo")}</strong> ${T("(Headliners tier): separate from comps, businesses can hire me for paid campaigns when a business runs one.", "(nivel Headliners): aparte de las cortesías, los negocios pueden contratarme para campañas pagadas cuando un negocio lance una.")}</span></label>
-          <p class="small muted">${T("Paid campaigns depend on the business and the campaign. Comps are always part of SIGNL; paid campaigns are separate bookings when a business offers one.", "Las campañas pagadas dependen del negocio y de la campaña. Las cortesías siempre son parte de SIGNL; las campañas pagadas son reservas aparte cuando un negocio ofrece una.")}</p>
+          <p class="small muted">${T("Paid campaigns depend on the business and the campaign. Comps are always part of Magpie; paid campaigns are separate bookings when a business offers one.", "Las campañas pagadas dependen del negocio y de la campaña. Las cortesías siempre son parte de Magpie; las campañas pagadas son reservas aparte cuando un negocio ofrece una.")}</p>
         </div>
         <div class="field"><label>${T("Short bio", "Biografía corta")}</label><textarea id="jc-bio" rows="2" placeholder="${T("What do you post, where do you go, what do you love locally?", "¿Qué publicas, a dónde vas, qué te encanta de tu ciudad?")}"></textarea></div>
         <div class="field"><label>${T("Profile photo (optional, add now or later)", "Foto de perfil (opcional, ahora o después)")}</label><input type="file" id="jc-photo" accept="image/png,image/jpeg,image/webp"><p class="small muted">${T("PNG, JPEG, or WebP, under 2.5 MB. Businesses see this on your profile when your market opens.", "PNG, JPEG o WebP, menos de 2.5 MB. Los negocios la ven en tu perfil cuando tu mercado abra.")}</p></div>
@@ -9736,7 +9736,7 @@ function renderJoinCreator() {
           <li>${T("If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.", "Si una publicación nunca llega, la visita no cuenta, y las faltas repetidas pueden pausar tu cuenta. Aquí importa que cumplas.")}</li>
         </ul>
       </div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on SIGNL on SIGNL, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en SIGNL las reservas que empiezan en SIGNL, y acepto que SIGNL me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on Magpie on Magpie, and I agree Magpie can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en Magpie las reservas que empiezan en Magpie, y acepto que Magpie me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
       <div id="jc-save-warn"></div>
       <button class="btn" type="submit" style="width:100%">${T("Create my profile", "Crear mi perfil")}</button>
       <p class="small muted mt">${T("Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.", "Cada solicitud la revisa una persona, y cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables. Los lugares de fundador se guardan en orden de registro.")}</p>
@@ -9891,8 +9891,8 @@ async function doRegisterCreator(e) {
   const customCity = isUnlisted ? document.getElementById("jc-city-text").value.trim() : "";
   const customCountry = isUnlisted ? document.getElementById("jc-country-text").value.trim() : "";
   const customState = isUnlisted ? document.getElementById("jc-state-text").value.trim() : "";
-  if (isUnlisted && !customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
-  if (isUnlisted && !customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+  if (isUnlisted && !customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening Magpie there.", "Dinos tu ciudad, para que tu registro cuente para abrir Magpie ahí.")); return false; }
+  if (isUnlisted && !customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening Magpie there.", "Dinos tu país, para que tu registro cuente para abrir Magpie ahí.")); return false; }
   // Zero-audience warning (audit F9 twin): an all-zero stack is a
   // valid sign-up but an unbookable profile. Say so inline before
   // it submits, and let the creator choose.
@@ -9994,7 +9994,7 @@ function renderForBusinesses() {
         <div class="field"><label>Category</label>${chipSelectHtml("jb-category", state.boot.businessCategories.map((c) => ({ value: c, label: c })), state.boot.businessCategories[0], null, false)}</div>
         <div class="field"><label>Market</label><input id="jb-market-search" placeholder="Search markets" oninput="filterBizMarketOptions()" style="margin-bottom:6px"><select id="jb-market" onchange="syncBizMarketChoice()">${marketOptions("", true)}</select><p class="small muted">City missing? Pick "My city is not listed yet".</p></div>
       <div id="jb-custom-wrap" style="display:none">
-        <div class="notice blue">Your sign-up counts toward opening SIGNL in your city. Founding pricing held — we email you at launch.</div>
+        <div class="notice blue">Your sign-up counts toward opening Magpie in your city. Founding pricing held — we email you at launch.</div>
         <div class="form-2col">
           <div class="field"><label>Your city</label><input id="jb-city-text" placeholder="For example: Tulsa"></div>
           <div class="field"><label>Your country</label><input id="jb-country-text" placeholder="For example: United States"></div>
@@ -10006,17 +10006,17 @@ function renderForBusinesses() {
         <div class="field"><label>Neighborhood / area (optional)</label><input id="jb-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
         <div class="field"><label>Business ZIP (optional)</label><input id="jb-zip" inputmode="numeric" maxlength="5" placeholder="For example: 23452"><p class="small muted">Used to group nearby creators by distance bands. Bands only, never an exact distance.</p></div>
       </div>
-        <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
+        <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything Magpie should know when reviewing your application"></textarea></div>
         <div class="field"><label>Which till do you run? (optional)</label>${chipSelectHtml("jb-pos", [{ value: "", label: "Skip for now" }, { value: "square", label: "Square" }, { value: "clover", label: "Clover" }, { value: "toast", label: "Toast" }, { value: "lightspeed", label: "Lightspeed" }, { value: "other", label: "Another system" }, { value: "none", label: "No register system" }], "", null, false)}<input id="jb-pos-other" placeholder="If another system, which one?" style="margin-top:6px"><p class="small muted">You can skip this; it only changes how visits get counted later. Visit codes count at every till today.</p></div>
       </div>
       ${igAssistCardHtml("jb", "business")}
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on SIGNL on SIGNL, and to account and marketing emails from SIGNL.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on Magpie on Magpie, and to account and marketing emails from Magpie.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
     </form>
     <p class="small muted" style="margin-top:16px">Rather talk it through? <a class="tlink" href="#" id="jb-convo-start" onclick="jbConvoStart(); return false">Apply by conversation</a>: Sig asks one question at a time and files the same founding application this form files.</p>
     <div id="jb-convo"></div>
-    <p class="small muted mt">Reviewed by a person. Decision within 2 business days. Once you join, your status page previews your first drafted offer and exactly how SIGNL works; booking itself opens at activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
+    <p class="small muted mt">Reviewed by a person. Decision within 2 business days. Once you join, your status page previews your first drafted offer and exactly how Magpie works; booking itself opens at activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
     </div>
   </section>`;
   bizCityOptions();
@@ -10116,7 +10116,7 @@ function jbConvoSteps(a) {
     { key: "market", q: "Which market are you in?", type: "chips", options: () => (state.boot.markets || []).map((m) => ({ value: m.name, label: m.label || m.name })).concat([{ value: unlistedLabel(), label: "My city is not listed yet" }]) },
   ];
   if (a.market === unlistedLabel()) {
-    steps.push({ key: "customCity", q: "What city are you in? Your sign-up counts toward opening SIGNL there.", type: "text", ph: "For example: Tulsa" });
+    steps.push({ key: "customCity", q: "What city are you in? Your sign-up counts toward opening Magpie there.", type: "text", ph: "For example: Tulsa" });
     steps.push({ key: "customCountry", q: "And the country?", type: "text", ph: "For example: United States" });
     steps.push({ key: "customState", q: "State or province? Optional, say skip by leaving it empty.", type: "text", optional: true, ph: "Optional" });
   } else if (a.market) {
@@ -10151,7 +10151,7 @@ function jbConvoRender() {
   if (step.type === "chips") {
     inputHtml = `<div class="chip-row">${step.options().map((o) => `<button type="button" class="chip" onclick="jbConvoAnswer('${esc(step.key)}', '${esc(o.value)}', '${esc(o.label)}')">${esc(o.label)}</button>`).join("")}</div>`;
   } else if (step.type === "terms") {
-    inputHtml = `<label class="ckrow" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" class="ckbox" id="jb-convo-terms"><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on SIGNL on SIGNL, and to account and marketing emails from SIGNL.</span></label>
+    inputHtml = `<label class="ckrow" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" class="ckbox" id="jb-convo-terms"><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on Magpie on Magpie, and to account and marketing emails from Magpie.</span></label>
       <div id="jb-convo-error"></div>
       <button class="btn mt" type="button" onclick="jbConvoFile()">File my founding application</button>`;
   } else {
@@ -10233,8 +10233,8 @@ async function registerBusiness(e) {
   const customCity = isUnlisted ? document.getElementById("jb-city-text").value.trim() : "";
   const customCountry = isUnlisted ? document.getElementById("jb-country-text").value.trim() : "";
   const customState = isUnlisted ? document.getElementById("jb-state-text").value.trim() : "";
-  if (isUnlisted && !customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
-  if (isUnlisted && !customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+  if (isUnlisted && !customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening Magpie there.", "Dinos tu ciudad, para que tu registro cuente para abrir Magpie ahí.")); return false; }
+  if (isUnlisted && !customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening Magpie there.", "Dinos tu país, para que tu registro cuente para abrir Magpie ahí.")); return false; }
   if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", "/auth/register", {
@@ -10318,15 +10318,15 @@ function renderBusinessFoundingStatus() {
       <div class="ui-row"><span class="k">Plan interest</span><span class="v">${esc(bz.planName || "")}</span></div>
       <div class="ui-row"><span class="k">Category spot</span><span class="v">Your ${esc(bz.category || "business")} spot is held in application order</span></div>
       <div class="ui-row"><span class="k">Founding pricing</span><span class="v">Locked while you stay subscribed</span></div>
-      <div class="ui-row"><span class="k">Payment</span><span class="v">Nothing is due now. Payment stays concierge: Jeff, SIGNL's founder, sends the payment step by hand at activation</span></div>
+      <div class="ui-row"><span class="k">Payment</span><span class="v">Nothing is due now. Payment stays concierge: Jeff, Magpie's founder, sends the payment step by hand at activation</span></div>
     </div>
     <h3 class="mt">What happens next</h3>
     <ol style="padding-left:20px">
-      <li>SIGNL reviews your application. You will get a decision or a clear status within 2 business days.</li>
+      <li>Magpie reviews your application. You will get a decision or a clear status within 2 business days.</li>
       <li>When your application is approved, this page opens into the full app: your plan, the creator roster in ${esc(bizPlace)}, and your first campaign, which you can save as a draft for opening day.</li>
-      <li>When your market opens, SIGNL activates founding businesses by hand, in application order.</li>
+      <li>When your market opens, Magpie activates founding businesses by hand, in application order.</li>
     </ol>
-    <p class="muted small">Sign back in any time to check your status. Questions: hello@joinsignl.com</p>
+    <p class="muted small">Sign back in any time to check your status. Questions: hello@magpielocal.com</p>
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
   </section>
   <div id="fbz-account">${accountHtml(u)}</div></div>`;
@@ -10472,7 +10472,7 @@ function foundingAnchorHtml(data) {
 // honest arithmetic of the same dollars at founding rates. The
 // panel prices what the money buys: visits, the guarantee, the
 // tracking. It never projects an outcome and never quotes a
-// SIGNL statistic, because there is nothing honest to project
+// Magpie statistic, because there is nothing honest to project
 // from yet.
 function foundingLastAdHtml() {
   return `<section class="wcard">
@@ -10514,7 +10514,7 @@ function gradeLastAd() {
     "Nothing I can point to": "Grade: unproven. Not because the ad was bad, because nothing about it could be counted.",
     "A busy spell, maybe": "Grade: a feeling. Busy is good, but a feeling is not a number you can renew on.",
     "Some new regulars": "Grade: promising, still uncounted. Regulars are the prize. The open questions are how many, and whether they came back.",
-    "Sales I can track": "Grade: counted. That puts you ahead of most local ads. SIGNL counts it per creator, per visit, automatically.",
+    "Sales I can track": "Grade: counted. That puts you ahead of most local ads. Magpie counts it per creator, per visit, automatically.",
   };
   const months = Math.floor(cost / plan.priceMonthly);
   const sameDollars = months >= 1
@@ -10524,7 +10524,7 @@ function gradeLastAd() {
     <p style="margin:0"><strong>Your last ad, restated:</strong> $${fmtMoney(cost)} on ${esc(type.toLowerCase())}. What you can point to from it: ${esc(point.toLowerCase())}.</p>
     <p style="margin:8px 0 0"><strong>${esc(verdicts[point] || verdicts["Nothing I can point to"])}</strong></p>
     <p style="margin:8px 0 0">${esc(sameDollars)}</p>
-    <p class="small muted" style="margin:8px 0 0">What the money buys on SIGNL: creator visits from your market's roster, the Visit Guarantee on every visit (a creator who does not post does not burn the visit), and a receipt for every visit: a check-in, a verified post, and code redemptions counted at your register. This is what the money buys, priced. It is not a projection of results, and SIGNL does not quote its own stats at you.</p>
+    <p class="small muted" style="margin:8px 0 0">What the money buys on Magpie: creator visits from your market's roster, the Visit Guarantee on every visit (a creator who does not post does not burn the visit), and a receipt for every visit: a check-in, a verified post, and code redemptions counted at your register. This is what the money buys, priced. It is not a projection of results, and Magpie does not quote its own stats at you.</p>
     <p style="margin:10px 0 0"><strong>Your founding plan is priced below, and your spot is held in application order.</strong></p>
   </div>`;
 }
@@ -10600,7 +10600,7 @@ function foundingLocalReachHtml() {
   return `<section class="wcard">
     <p class="ui-kicker">How ranking works</p>
     <h3>Ranked by local reach, not followers</h3>
-    <p class="wc-sub">Every creator on SIGNL is ranked by the share of their audience that actually lives in your market, ranked over follower count. What matters is how many of a creator's people are your neighbors, not how big the account is.</p>
+    <p class="wc-sub">Every creator on Magpie is ranked by the share of their audience that actually lives in your market, ranked over follower count. What matters is how many of a creator's people are your neighbors, not how big the account is.</p>
     <div class="panel" style="margin-top:12px">
       <p style="margin:0"><span class="badge info">Example</span></p>
       <p style="margin:8px 0 0">Example: a 2,000-follower creator whose audience is 90% local outranks a 50,000-follower account at 12% local, because the smaller creator's crowd is the one that can walk through your door.</p>
@@ -10658,7 +10658,7 @@ function foundingBenefitsHtml(u) {
   const bizName = (u.business && u.business.businessName) || "your business";
   const items = [
     ["Ranked by local reach", "Every creator is ranked by the share of their audience that actually lives here, ranked over follower count. A smaller creator whose crowd is your neighbors beats a big account whose crowd is somewhere else."],
-    ["Booked in two taps, both lanes", "Comp a creator a meal, a service, or an experience, or book them paid at their own listed rate. On paid bookings, SIGNL holds the payment until the post is live, and the creator keeps 97%."],
+    ["Booked in two taps, both lanes", "Comp a creator a meal, a service, or an experience, or book them paid at their own listed rate. On paid bookings, Magpie holds the payment until the post is live, and the creator keeps 97%."],
     ["Proof at your register", "Every visit carries a redemption code your staff scans or keys in at the register. Your point of sale is never touched. Each redemption is a sale your staff rang up, and your dashboard adds up exactly those counted dollars."],
     ["Results on day 7, 14, and 30", "Reach, engagement, and redemptions land on one page on a set rhythm after every visit, so you can see what a visit did instead of guessing."],
     ["The Visit Guarantee", "If a creator no-shows or never posts, the visit does not count against your plan and is replaced. No-shows are tracked with strikes."],
@@ -10667,7 +10667,7 @@ function foundingBenefitsHtml(u) {
   ];
   return `<section class="wcard">
     <p class="ui-kicker">Why businesses join</p>
-    <h3>What SIGNL does for ${esc(bizName)}</h3>
+    <h3>What Magpie does for ${esc(bizName)}</h3>
     ${items.map(([lead, text]) => `<p style="margin:10px 0 0"><strong>${esc(lead)}.</strong> ${esc(text)}</p>`).join("")}
   </section>`;
 }
@@ -10721,7 +10721,7 @@ function claimPayoffHtml(u) {
       <p class="small" id="claim-copy-ok" style="margin:6px 0 0"></p>
       <p class="small" style="margin:8px 0 0">${T("Put it in your bio. Anyone who taps it sees your page and your rate card.", "Ponlo en tu bio. Quien lo toque ve tu página y tus tarifas.")}</p>
       <p class="small muted" style="margin:6px 0 0">${isUnl
-        ? T(`When SIGNL opens in ${place}, founding creators get the first look at offers.`, `Cuando SIGNL abra en ${place}, los creadores fundadores ven las ofertas primero.`)
+        ? T(`When Magpie opens in ${place}, founding creators get the first look at offers.`, `Cuando Magpie abra en ${place}, los creadores fundadores ven las ofertas primero.`)
         : T(`When ${place} businesses start booking, founding creators get the first look at offers.`, `Cuando los negocios de ${place} empiecen a reservar, los creadores fundadores ven las ofertas primero.`)}</p>
       ${rateSet
         ? `<p class="small" style="margin:10px 0 0">${T(`Your paid rate is ${curSym}${fmtPrice(c.paidRate)}, and it is on your page. Change it any time on your profile.`, `Tu tarifa pagada es ${curSym}${fmtPrice(c.paidRate)}, y ya está en tu página. Cámbiala cuando quieras en tu perfil.`)}</p>`
@@ -10796,20 +10796,20 @@ function renderPending() {
       ? `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding spot in", "Tu lugar de fundador en")} <strong>${place}</strong> ${T("is claimed and your application is in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está reclamado y tu solicitud está en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>
     <p class="muted" style="text-align:left">${T("Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.", "Tu perfil aún no está terminado, y es así a propósito: cuando te aprobemos, te escribimos por correo, y terminas tu perfil desde la lista de tu panel (tu ciudad, tus conteos de audiencia, qué parte es local, tu foto). Un perfil terminado es lo que ven los negocios, así que ese paso es lo que te hace contratable.")}</p>`
       : `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding creator profile for", "Tu perfil de creador fundador para")} <strong>${place}</strong> ${T("is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está creado y en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>`}
-    ${isCreator && u.underMinimum ? `<div class="notice blue" style="text-align:left"><strong>${T("Your application is in line, and one thing is holding it:", "Tu solicitud está en la fila, y una cosa la está deteniendo:")}</strong> ${T("SIGNL starts at 500 total followers across your platforms, and your total right now is", "SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas, y tu total ahora mismo es")} ${esc(fmtNum(u.underMinimum.total || 0))}. ${T("Nothing else is wrong, and your spot in line is kept. When your audience reaches 500 total, email hello@joinsignl.com and we will move your application forward from the same spot.", "Nada más está mal, y tu lugar en la fila se mantiene. Cuando tu audiencia llegue a 500 en total, escribe a hello@joinsignl.com y moveremos tu solicitud desde el mismo lugar.")}</div>` : ""}
-    ${isCreator ? `<p><strong>${T(CREATOR_FREE_LINE, "Unirte a SIGNL es gratis para los creadores. Siempre.")}</strong></p>` : ""}
-    ${isCreator && !u.underMinimum ? `<p class="small">${T("One founding standard: SIGNL starts at 500 total followers across your platforms.", "Un estándar fundador: SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas.")}</p>` : ""}
+    ${isCreator && u.underMinimum ? `<div class="notice blue" style="text-align:left"><strong>${T("Your application is in line, and one thing is holding it:", "Tu solicitud está en la fila, y una cosa la está deteniendo:")}</strong> ${T("Magpie starts at 500 total followers across your platforms, and your total right now is", "Magpie empieza con 500 seguidores en total, sumando todas tus plataformas, y tu total ahora mismo es")} ${esc(fmtNum(u.underMinimum.total || 0))}. ${T("Nothing else is wrong, and your spot in line is kept. When your audience reaches 500 total, email hello@magpielocal.com and we will move your application forward from the same spot.", "Nada más está mal, y tu lugar en la fila se mantiene. Cuando tu audiencia llegue a 500 en total, escribe a hello@magpielocal.com y moveremos tu solicitud desde el mismo lugar.")}</div>` : ""}
+    ${isCreator ? `<p><strong>${T(CREATOR_FREE_LINE, "Unirte a Magpie es gratis para los creadores. Siempre.")}</strong></p>` : ""}
+    ${isCreator && !u.underMinimum ? `<p class="small">${T("One founding standard: Magpie starts at 500 total followers across your platforms.", "Un estándar fundador: Magpie empieza con 500 seguidores en total, sumando todas tus plataformas.")}</p>` : ""}
     ${isCreator ? marketResolvedNote(u) : ""}
     ${isCreator && isUnlisted && Array.isArray(u.marketCandidates) && u.marketCandidates.length ? `
     <div style="text-align:left;margin-top:16px">
-      <p class="small" style="margin:0"><strong>${T("One quick thing:", "Una cosa rápida:")}</strong> ${esc(typedCityDisplay(u))} ${T("is in more than one SIGNL market. Which one is yours?", "está en más de un mercado de SIGNL. ¿Cuál es el tuyo?")}</p>
+      <p class="small" style="margin:0"><strong>${T("One quick thing:", "Una cosa rápida:")}</strong> ${esc(typedCityDisplay(u))} ${T("is in more than one Magpie market. Which one is yours?", "está en más de un mercado de Magpie. ¿Cuál es el tuyo?")}</p>
       <div style="margin-top:8px">${u.marketCandidates.map((m) => `<button class="btn small-btn" style="margin:0 8px 8px 0" onclick="return pickCandidateMarket(event, '${esc(m)}')">${esc(marketDisplayName(m))}</button>`).join("")}</div>
       <p class="small muted" style="margin:0">${T("Your typed city stays as your home city either way.", "Tu ciudad escrita se queda como tu ciudad de todos modos.")}</p>
     </div>` : ""}
     ${claimedOnly ? claimPayoffHtml(u) : ""}
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} to sign up in ${esc(marketTalkNameClient(u.market))}`}</span></p><p class="small muted">Applications are reviewed in sign-up order. Founding status starts at approval, not at sign-up.</p>` : ""}
     <p class="muted">${isUnlisted
-      ? `${T("You're in early.", "Entraste temprano.")} ${T("SIGNL is building in", "SIGNL se está construyendo en")} ${esc(u.city)} ${T("right now — it isn't a launch market yet, and sign-ups like yours are how we pick what opens next. Every application is reviewed by a person. The moment you are approved, your founding status page opens here. Finish your profile when you're approved and you're in the founding circle: founding creators hear first, and first pick goes to completed founding profiles. We will email you at", "ahora mismo — aún no es un mercado de lanzamiento, y registros como el tuyo son cómo elegimos qué abre después. Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí. Termina tu perfil al aprobarte y entras al círculo fundador: los creadores fundadores se enteran primero, y la primera elección es para perfiles fundadores completos. Te escribimos a")} ${esc(u.email)} ${T("as", "cuando")} ${esc(u.city)} ${T("gets close. Sign back in any time to check your status.", "se acerque. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`
+      ? `${T("You're in early.", "Entraste temprano.")} ${T("Magpie is building in", "Magpie se está construyendo en")} ${esc(u.city)} ${T("right now — it isn't a launch market yet, and sign-ups like yours are how we pick what opens next. Every application is reviewed by a person. The moment you are approved, your founding status page opens here. Finish your profile when you're approved and you're in the founding circle: founding creators hear first, and first pick goes to completed founding profiles. We will email you at", "ahora mismo — aún no es un mercado de lanzamiento, y registros como el tuyo son cómo elegimos qué abre después. Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí. Termina tu perfil al aprobarte y entras al círculo fundador: los creadores fundadores se enteran primero, y la primera elección es para perfiles fundadores completos. Te escribimos a")} ${esc(u.email)} ${T("as", "cuando")} ${esc(u.city)} ${T("gets close. Sign back in any time to check your status.", "se acerque. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`
       : `${T("Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("when", "cuando")} ${esc(marketTalkNameClient(u.market))} ${T("opens to businesses. Sign back in any time to check your status.", "abra para los negocios. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`}</p>
     ${isCreator && !(u.creator && u.creator.hasPhoto) ? `
     <div style="text-align:left">
@@ -10916,8 +10916,8 @@ async function savePendingMarket(e) {
     body.customCity = document.getElementById("pm-city-text").value.trim();
     body.customCountry = document.getElementById("pm-country-text").value.trim();
     body.customState = document.getElementById("pm-state-text").value.trim();
-    if (!body.customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
-    if (!body.customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+    if (!body.customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening Magpie there.", "Dinos tu ciudad, para que tu registro cuente para abrir Magpie ahí.")); return false; }
+    if (!body.customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening Magpie there.", "Dinos tu país, para que tu registro cuente para abrir Magpie ahí.")); return false; }
   } else {
     body.city = document.getElementById("pm-city").value;
   }
@@ -10936,7 +10936,7 @@ function renderRejected() {
   <section class="panel center" style="max-width:560px;margin:40px auto">
     <h2>Not a fit right now</h2>
     <p>Your application was not approved for this round. Markets open in waves, and you are welcome to apply again when your market expands.</p>
-    <p class="muted">Questions: hello@joinsignl.com</p>
+    <p class="muted">Questions: hello@magpielocal.com</p>
     <button class="btn ghost" onclick="signOut()">Sign out</button>
   </section>`;
 }
@@ -10997,14 +10997,14 @@ function starsHtml(n) {
 // boolean) so every surface states the creator's booking terms the
 // same way: her listed rate with a "Paid bookings" marker when she
 // charges, and her comp-open state either way.
-// Creator standing badges (ladder v2 + SIGNL Elite, Jeff,
+// Creator standing badges (ladder v2 + Magpie Elite, Jeff,
 // 2026-10-21): the server computes them (user.badges on the public
 // payload, card.badges in discovery, creator.badges in the
 // applicant stack); this only renders them.
 function badgesHtml(badges) {
   if (!badges || !badges.length) return "";
   return badges.map((b) => b.kind === "elite"
-    ? ' <span class="badge elite">SIGNL Elite</span>'
+    ? ' <span class="badge elite">Magpie Elite</span>'
     : ` <span class="badge tier">${esc(b.name)}</span>`).join("");
 }
 
@@ -11025,7 +11025,7 @@ function ladderHtml(u) {
   } else if (l.next) {
     out += `<p class="small">${l.next.needed} more approved ${l.next.needed === 1 ? "referral" : "referrals"} to your next badge: ${esc(l.next.name)}.</p>`;
   }
-  if (l.elite && l.elite.qualified) out += `<p class="small"><span class="badge elite">SIGNL Elite</span> You hold SIGNL Elite: 10 or more on-time posts and a 4.5+ rating from 5 or more businesses.</p>`;
+  if (l.elite && l.elite.qualified) out += `<p class="small"><span class="badge elite">Magpie Elite</span> You hold Magpie Elite: 10 or more on-time posts and a 4.5+ rating from 5 or more businesses.</p>`;
   return out;
 }
 
@@ -11053,7 +11053,7 @@ function reviewLinksBlockHtml(links) {
 // 2026-10-25). The server sends {url, code, note} only when
 // the business has set a link or a code, so this renders
 // nothing at all for businesses without one. Any rewards are
-// the business's program under its own terms; SIGNL never
+// the business's program under its own terms; Magpie never
 // runs or guarantees them.
 // Musician openness, as creators see it (Jeff, 2026-10-28):
 // the business-side mirror of the creator's musician signals.
@@ -11082,7 +11082,7 @@ function referralProgramBlockHtml(prog) {
     ${prog.note ? `<p class="small" style="margin:0 0 4px"><strong>From the business:</strong> ${esc(prog.note)}</p>` : ""}
     ${prog.url ? `<p class="small" style="margin:0">Referral link: <a href="${esc(prog.url)}" target="_blank" rel="noopener">${esc(prog.url)}</a></p>` : ""}
     ${prog.code ? `<p class="small" style="margin:0">Referral code: <strong>${esc(prog.code)}</strong></p>` : ""}
-    <p class="small muted" style="margin:4px 0 0">Include the link in your caption or bio, or the code in your caption, so the business can track the bookings your post sends them. Any rewards come from the business's own program, under its terms, on top of your SIGNL comp or pay. SIGNL does not run or guarantee their program.</p></div>`;
+    <p class="small muted" style="margin:4px 0 0">Include the link in your caption or bio, or the code in your caption, so the business can track the bookings your post sends them. Any rewards come from the business's own program, under its terms, on top of your Magpie comp or pay. Magpie does not run or guarantee their program.</p></div>`;
 }
 
 // Book a paid visit at the creator's listed rate (real surface).
@@ -11112,8 +11112,8 @@ function bookPaidVisit(creatorId) {
     ${includedLicenceLineHtml()}
     ${paymentsLive()
       ? (cardOnFileView()
-        ? `<p class="small muted">Your ${esc(brandName(cardOnFileView().brand))} &middot;&middot;&middot;&middot;${esc(cardOnFileView().last4)} is charged $${fmtMoney(total)} when you book. SIGNL holds it and releases the creator's share after the post is live and the 48 hour hold passes.</p>`
-        : `<p class="small muted">Paid bookings charge a card on file, held by SIGNL until the post is live. Add yours once and every paid booking confirms in one tap.</p>`)
+        ? `<p class="small muted">Your ${esc(brandName(cardOnFileView().brand))} &middot;&middot;&middot;&middot;${esc(cardOnFileView().last4)} is charged $${fmtMoney(total)} when you book. Magpie holds it and releases the creator's share after the post is live and the 48 hour hold passes.</p>`
+        : `<p class="small muted">Paid bookings charge a card on file, held by Magpie until the post is live. Add yours once and every paid booking confirms in one tap.</p>`)
       : `<p class="small muted">No card is charged in the app yet. This records the booking and holds the amount in the app ledger. It is released after the post is live and the 48 hour hold passes.</p>`}
     ${growthNudgeHtml()}
     <div class="field"><label>Key points for the creator (optional)</label><textarea id="paid-brief" rows="3" maxlength="500" placeholder="What to feature, names, dates"></textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
@@ -11176,9 +11176,9 @@ async function previewPaidBooking(creatorId) {
       <div class="flex-between"><span class="small">Creator rate</span><strong>$${fmtMoney(bk.rate)}</strong></div>
       <div class="flex-between"><span class="small">You pay (rate + 3%)</span><strong>$${fmtMoney(bk.businessTotal)}</strong></div>
       <div class="flex-between"><span class="small">Creator keeps (97% of their rate)</span><strong>$${fmtMoney(bk.creatorNet)}</strong></div>
-      <div class="flex-between"><span class="small">SIGNL fee, split evenly</span><strong>$${fmtMoney(bk.platformFee)}</strong></div>
+      <div class="flex-between"><span class="small">Magpie fee, split evenly</span><strong>$${fmtMoney(bk.platformFee)}</strong></div>
     </div>
-    <p class="small" style="margin:10px 0 0">Held by SIGNL until the post is live.</p>
+    <p class="small" style="margin:10px 0 0">Held by Magpie until the post is live.</p>
     ${includedLicenceLineHtml()}
     ${state.preview && state.preview.planId === "self-service" ? `<p class="small muted">Growth is built for paid work and reuse: every license and renewal tracked in one library, and priority access to the creators you license.</p>` : ""}
     ${bk.paymentNote ? `<p class="small muted">${esc(bk.paymentNote)}</p>` : ""}
@@ -11363,7 +11363,7 @@ if (!window.__signlRailObs) {
 
 // Best work (Build -79, Jeff): on a profile, a best-work link
 // that is a video shows the video itself, click to play, inside
-// SIGNL: the platform embed renders the post's own visual with
+// Magpie: the platform embed renders the post's own visual with
 // its own play control. The embed descriptor rides the card
 // from the server (w.embed, lib/video-embed.js) with the client
 // mirror as fallback. A link that is not a parseable video
@@ -11392,17 +11392,17 @@ function bestWorkHtml(list, compact) {
   return `<div class="showcase-block"><h4>Best work</h4>${embeds.length ? `<div class="work-embed-row">${embeds.join("")}</div>` : ""}${pills.length ? `<div class="work-row">${pills.join("")}</div>` : ""}</div>`;
 }
 
-// The SIGNL track record: real visits, posts, and on-time record from
+// The Magpie track record: real visits, posts, and on-time record from
 // completed platform bookings only. Before any activity the honest
 // zero state shows instead of numbers.
 function trackRecordHtml(card) {
   const tr = card.trackRecord;
   if (!tr) return "";
   if (tr.isNew) {
-    return `<div class="showcase-block"><h4>SIGNL track record</h4><p class="muted">New to SIGNL — no visits yet.${card.foundingBand ? ` Founding creator, first ${card.foundingBand} in ${esc(card.market || "")}.` : ""}</p></div>`;
+    return `<div class="showcase-block"><h4>Magpie track record</h4><p class="muted">New to Magpie — no visits yet.${card.foundingBand ? ` Founding creator, first ${card.foundingBand} in ${esc(card.market || "")}.` : ""}</p></div>`;
   }
   const names = (tr.businessesWorkedWith || []).map(esc).join(", ");
-  return `<div class="showcase-block"><h4>SIGNL track record</h4>
+  return `<div class="showcase-block"><h4>Magpie track record</h4>
     <div class="stat-row">
       <div class="stat"><div class="num">${tr.visitsCompleted}</div><div class="lbl">Visits completed</div></div>
       <div class="stat"><div class="num">${tr.postsDelivered}</div><div class="lbl">Posts delivered</div></div>
@@ -11583,7 +11583,7 @@ function creatorCard(c, viewer, opts) {
   const tr = c.trackRecord;
   const trackLine = tr
     ? (tr.isNew
-      ? `<span class="badge info">New to SIGNL: no visits yet</span>`
+      ? `<span class="badge info">New to Magpie: no visits yet</span>`
       : `<span class="muted">${tr.visitsCompleted} visit${tr.visitsCompleted === 1 ? "" : "s"} completed &middot; ${tr.postsDelivered} post${tr.postsDelivered === 1 ? "" : "s"} delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "—" : tr.onTimePct + "% on time"}</span>`)
     : "";
   const ratingAvg = c.ratingAvg !== undefined && c.ratingAvg !== null ? c.ratingAvg : (c.reviewSummary ? c.reviewSummary.average : null);
@@ -11638,7 +11638,7 @@ function creatorCard(c, viewer, opts) {
     ${bestWorkHtml(c.bestWork, true)}
     ${trackLine || reviewLine ? `<div class="cc-track">${trackLine}${reviewLine}</div>` : ""}
     ${c.fit && c.fit.reasons && c.fit.reasons.length ? `<p class="small cc-fit"><strong>Why they fit:</strong> ${c.fit.reasons.slice(0, 2).map(esc).join(" &middot; ")}</p>` : ""}
-    <p class="small muted">Every SIGNL comped visit: 1 post or reel + 1 story that shares the post within 48 hours, tracked as proof. Paid bookings carry the deliverables set in the booking's terms. Content rights follow the visit: comp visits are native share only; paid visits add repost and ad rights for 90 days.</p>
+    <p class="small muted">Every Magpie comped visit: 1 post or reel + 1 story that shares the post within 48 hours, tracked as proof. Paid bookings carry the deliverables set in the booking's terms. Content rights follow the visit: comp visits are native share only; paid visits add repost and ad rights for 90 days.</p>
     <div class="cc-actions">
       ${opts.preview
         ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
@@ -12054,7 +12054,7 @@ function squareControlsHtml(r) {
     // (not connected), what connecting does, and the counted
     // data; it hosts no Connect Square button anymore.
     return `${head}
-    <p class="small" style="margin:0 0 6px"><strong>Register not connected.</strong> If your register is Square, connect it from your setup checklist on Home: tap Connect Square there and sign in once. After that, SIGNL counts code visits and come-backs from the register itself: nobody types anything. Not on Square? Skip it. The codes count your visits either way; your team just taps the amount at the till.</p>
+    <p class="small" style="margin:0 0 6px"><strong>Register not connected.</strong> If your register is Square, connect it from your setup checklist on Home: tap Connect Square there and sign in once. After that, Magpie counts code visits and come-backs from the register itself: nobody types anything. Not on Square? Skip it. The codes count your visits either way; your team just taps the amount at the till.</p>
     <p class="small muted" style="margin:0 0 8px">We read only the checks your codes touch: the orders they were rung on, whether a counted customer came back, and refunds, so a refunded check comes out of the count. Your other sales are yours.${sandboxTag}</p>
     <button class="btn small-btn" type="button" onclick="return go('dashboard','Home')">Open the setup checklist on Home</button>`;
   }
@@ -12166,7 +12166,7 @@ function v2CostCaptureHtml(v) {
 // and how it is counted. The popover mirrors the offer form's
 // info sheet.
 const ROAS_INFO = {
-  score: { title: "Your SIGNL ROAS Score", body: "For every $1 your month cost you, all in, this is how many dollars came back COUNTED at your register. The headline is counted dollars only. Halo's estimate of the visits the posts likely brought in that no code caught prints separately below, clearly labelled as an estimate, and never joins the headline." },
+  score: { title: "Your Magpie ROAS Score", body: "For every $1 your month cost you, all in, this is how many dollars came back COUNTED at your register. The headline is counted dollars only. Halo's estimate of the visits the posts likely brought in that no code caught prints separately below, clearly labelled as an estimate, and never joins the headline." },
   back: { title: "Counted back", body: "Check totals your team logged at the register with a creator's code: first visits and came-backs, every one time-stamped. Customers who came in without a code are not in this number, so the real figure is higher." },
   putin: { title: "All in", body: "Everything the month cost you: your plan at what you actually paid, comps at your cost, paid creators at their rate plus your fee share, and code discounts your customers used. Nothing else is in it, and no cost is ever estimated for you." },
   week: { title: "Counted by week", body: "Every check total your team logged, grouped by the week it was rung at your register. Your score groups the same dollars by the visits that earned them; this chart groups them by when they were rung." },
@@ -12233,7 +12233,7 @@ function roasWeekChart(weeks) {
   }).join("");
   return `<div class="roas-wks">${cols}</div>`;
 }
-// How SIGNL gets credit (Build -43): the counting chain in
+// How Magpie gets credit (Build -43): the counting chain in
 // three plain steps, plus the honest status of each way of
 // counting for this business. The register plug-in is
 // described in the approved concierge words until this
@@ -12256,7 +12256,7 @@ function creditPanelHtml(r) {
       ? `<p class="small" style="margin:0"><strong>Register paused.</strong> Your register stopped sharing checks on ${esc(fmtDate(reg.pausedAt))}. Your codes still count at the till. Reconnect from your proof controls below.</p>`
       : `<p class="small" style="margin:0"><strong>Register plug-in:</strong> we plug into your POS with you on the setup call, one tap on your end, we stay on the line until your panel says connected; if your system isn't one we connect to yet, your codes start counting on the register you already have.</p>`;
   return `<div style="margin-top:16px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:12px">
-    <h4 style="margin:0 0 4px">How SIGNL gets credit</h4>
+    <h4 style="margin:0 0 4px">How Magpie gets credit</h4>
     <p class="small muted" style="margin:0">Your score only counts what your register can prove. Here is the whole chain.</p>
     <div class="credit-step"><span class="credit-n">1</span><p class="small" style="margin:0"><strong>Every creator post carries that creator's own code.</strong> Each booking gives its creator a code of their own, and it rides in their post.</p></div>
     <div class="credit-step"><span class="credit-n">2</span><p class="small" style="margin:0"><strong>The customer shows the code at the register when they pay.</strong> No app for the customer, nothing new at the counter but the code.</p></div>
@@ -12310,8 +12310,8 @@ function scoreV2Html(r) {
     const vsMax = Math.max(s.countedBack, cost.total || 0);
     head = `<div class="roas-score-top">
       <div>
-        <div class="roas-big-label">SIGNL ROAS Score — counted only ${roasInfoBtn("score")}</div>
-        <div class="roas-big" aria-label="SIGNL ROAS Score, counted only: ${Number(bigScore).toFixed(1)}&times;">${Number(bigScore).toFixed(1)}&times;</div>
+        <div class="roas-big-label">Magpie ROAS Score — counted only ${roasInfoBtn("score")}</div>
+        <div class="roas-big" aria-label="Magpie ROAS Score, counted only: ${Number(bigScore).toFixed(1)}&times;">${Number(bigScore).toFixed(1)}&times;</div>
       </div>
       <div class="roas-score-side">
         ${s.state === "counting" ? `<span class="badge info">Still counting</span>` : `<span class="badge ok">Final</span>`}
@@ -12399,7 +12399,7 @@ function receiptHtml(r) {
   const sv = scoreV2Html(r);
   const hasScore = !!(sv && typeof sv === "object");
   const ledgerHtml = hasLedger ? `
-    <p style="margin:8px 0 0;font-size:1.08rem">In ${esc(r.monthLabel)}, SIGNL brought you <strong>at least $${fmtMoney(r.trackedSpend)}</strong> in tracked register spend from <strong>${r.customersCounted} counted customer${r.customersCounted === 1 ? "" : "s"}</strong>.</p>
+    <p style="margin:8px 0 0;font-size:1.08rem">In ${esc(r.monthLabel)}, Magpie brought you <strong>at least $${fmtMoney(r.trackedSpend)}</strong> in tracked register spend from <strong>${r.customersCounted} counted customer${r.customersCounted === 1 ? "" : "s"}</strong>.</p>
     <p class="small muted">Counted how: every dollar above is a register event ${r.register && r.register.state === "connected" ? "your team logged with its check total, or your connected register reported itself" : "your team logged with its check total"}, or your reported tally where you used it instead. It is a floor, not a projection: customers who never used a code are invisible to everyone, us included.</p>
     <div style="margin-top:10px">${r.ledger.map((l) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(l.title || "Visit")}</span> <span class="muted">with @${esc(l.creatorHandle)}</span><div class="small muted">${l.customers} counted customer${l.customers === 1 ? "" : "s"} · $${fmtMoney(l.spend)} tracked${l.source === "tally" ? " (your reported tally)" : ""}${l.returns ? ` · ${l.returns} came back ($${fmtMoney(l.returnSpend)})` : ""}${l.mentions ? ` · ${l.mentions} told staff a post sent them` : ""}${l.nightCount !== null && l.nightCount !== undefined ? ` · ${l.nightCount} tables or customers that night` : ""}</div></div></div>`).join("")}</div>
     <div style="margin-top:14px"><h4 style="margin:0 0 4px">Came-backs</h4>
@@ -12432,7 +12432,7 @@ function receiptHtml(r) {
     </div>` : `${creditPanelHtml(r)}${ledgerHtml}${googleHtml}`;
   return `<section class="wcard">
     <p class="ui-kicker">Your receipt</p>
-    <h3>What SIGNL brought you</h3>
+    <h3>What Magpie brought you</h3>
     ${sqNoticeHtml()}
     ${middle}
     <div id="biz-receipt-export"></div>
@@ -12515,9 +12515,9 @@ function receiptExportPrint() {
   const licRows = (exp.licences || []).length
     ? exp.licences.map((l) => row(`${l.creatorName} (@${l.creatorHandle}) · ${l.title}`, `Ends ${String(l.windowEndsAt).slice(0, 10)}`)).join("")
     : row("Licences held", "None");
-  w.document.write(`<!DOCTYPE html><html><head><title>SIGNL receipt · ${esc(exp.businessName)} · ${esc(exp.monthLabel)}</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>Magpie receipt · ${esc(exp.businessName)} · ${esc(exp.monthLabel)}</title>
   <style>body{font-family:Georgia,serif;color:#111;max-width:680px;margin:32px auto;padding:0 20px}h1{font-size:26px;margin:0}h2{font-size:15px;margin:22px 0 6px;border-bottom:2px solid #006AFC;padding-bottom:4px}table{width:100%;border-collapse:collapse}td{padding:5px 0;border-bottom:1px solid #ddd;font-size:14px}.muted{color:#555;font-size:13px}.brand{color:#006AFC;font-weight:bold;letter-spacing:2px;font-size:12px}</style></head><body>
-  <p class="brand">SIGNL</p>
+  <p class="brand">Magpie</p>
   <h1>${esc(exp.businessName)}</h1>
   <p style="margin:4px 0 0;font-size:16px">Monthly receipt · ${esc(exp.monthLabel)}</p>
   <p class="muted">${exp.plan ? `Plan: ${esc(exp.plan.name)}, $${fmtMoney(exp.plan.priceMonthly)} a month, ${exp.plan.visitsPerMonth} creator visits a month.` : "No plan on record."} Counted, recorded, and intent are three different kinds of numbers. They are never added together.</p>
@@ -12531,7 +12531,7 @@ function receiptExportPrint() {
   <table>${row("Visits used this month", num(v.used))}${row("Visits rolled over into this month", num(v.carriedIn))}${row("Visits available this month", num(v.allowance))}${row("Visits left at month end", num(v.remaining))}${row("Founding credit", (exp.credit || {}).line || "")}</table>
   <h2>Licences held (90 days each, never longer)</h2>
   <table>${licRows}</table>
-  <p class="muted" style="margin-top:22px">Made from this business's own SIGNL records on ${esc(fmtDay(exp.exportedAt))}. Questions: hello@joinsignl.com.</p>
+  <p class="muted" style="margin-top:22px">Made from this business's own Magpie records on ${esc(fmtDay(exp.exportedAt))}. Questions: hello@magpielocal.com.</p>
   </body></html>`);
   w.document.close();
   setTimeout(() => { try { w.print(); } catch (e) { /* the page is on screen either way */ } }, 450);
@@ -12583,23 +12583,23 @@ async function loadProofCard() {
   const handle = (u.creator && u.creator.handle) || "";
   if (pf.countsForming) {
     host.innerHTML = `<h3>Your Proof Card</h3>
-    <p style="margin:6px 0 0"><span class="badge ok">Verified on SIGNL</span></p>
+    <p style="margin:6px 0 0"><span class="badge ok">Verified on Magpie</span></p>
     <p style="margin:8px 0 0"><strong>${pf.visitsCompleted} visit${pf.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${pf.onTimePosts} on time.</p>
     <p class="wc-sub" style="margin:6px 0 0">Your counted lines are forming. They open at 5 counted customers, or the moment a second business counts you. Until then, everything counted sits with one business, and its register would read straight off this card. That is theirs to share, not ours, so the card waits until the numbers are yours alone.</p>
-    <p class="small muted">Book me on SIGNL and this is the receipt you'll get.</p>`;
+    <p class="small muted">Book me on Magpie and this is the receipt you'll get.</p>`;
     return;
   }
   if (!pf.visitsCompleted && !pf.customersCounted) {
-    host.innerHTML = `<h3>Your Proof Card</h3><p class="wc-sub" style="margin:4px 0 0">Your first verified results land with your first completed visit. When they do, this card carries what SIGNL counted at the register: visits, customers, came-backs, tracked spend. It is issued by the system, so no business has to take your word for any of it.</p>`;
+    host.innerHTML = `<h3>Your Proof Card</h3><p class="wc-sub" style="margin:4px 0 0">Your first verified results land with your first completed visit. When they do, this card carries what Magpie counted at the register: visits, customers, came-backs, tracked spend. It is issued by the system, so no business has to take your word for any of it.</p>`;
     return;
   }
   host.innerHTML = `<h3>Your Proof Card</h3>
-    <p style="margin:6px 0 0"><span class="badge ok">Verified on SIGNL</span></p>
+    <p style="margin:6px 0 0"><span class="badge ok">Verified on Magpie</span></p>
     <p style="margin:8px 0 0"><strong>${pf.visitsCompleted} visit${pf.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${pf.onTimePosts} on time · <strong>${pf.customersCounted} customers counted</strong> at the register · <strong>${pf.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(pf.trackedSpend)}</strong> tracked spend${pf.cameBackRate !== null && pf.cameBackRate !== undefined ? ` · <strong>${Math.round(pf.cameBackRate * 100)}%</strong> of first customers came back within a month (${pf.cameBackClosedFirsts} first months closed${pf.cameBackStillInWindow ? `, ${pf.cameBackStillInWindow} still running` : ""})` : ""}${pf.mentions ? ` · ${pf.mentions} more told staff a post sent them (a told-us line, never register money)` : ""}</p>
-    ${pf.viewsRollup && pf.viewsRollup.allTime > 0 ? `<p class="small" style="margin:8px 0 0">Your posts were seen <strong>${fmtNum(pf.viewsRollup.week)}</strong> times this week · <strong>${fmtNum(pf.viewsRollup.month)}</strong> this month · <strong>${fmtNum(pf.viewsRollup.year)}</strong> this year, across every campaign. Those are your reported numbers, shown as reach; the record above is what SIGNL counted.</p>` : ""}
+    ${pf.viewsRollup && pf.viewsRollup.allTime > 0 ? `<p class="small" style="margin:8px 0 0">Your posts were seen <strong>${fmtNum(pf.viewsRollup.week)}</strong> times this week · <strong>${fmtNum(pf.viewsRollup.month)}</strong> this month · <strong>${fmtNum(pf.viewsRollup.year)}</strong> this year, across every campaign. Those are your reported numbers, shown as reach; the record above is what Magpie counted.</p>` : ""}
     ${(pf.lines || []).length ? `<div style="margin-top:10px">${pf.lines.map((l) => `<div class="lrow"><div style="flex:1"><span class="lname">${esc(l.label)}</span><div class="small muted">${l.visits} visit${l.visits === 1 ? "" : "s"} counted there</div></div><span>${l.customers} customers${l.cameBacks ? ` · ${l.cameBacks} came back` : ""}</span></div>`).join("")}</div><p class="small muted" style="margin-top:8px">A business is named only when it chose to be. Otherwise your proof shows its category and city, and its register totals never travel.</p>` : ""}
     <p class="small" style="margin-top:10px">Share it: <a href="${esc(location.origin + (pf.sharePath || ""))}" target="_blank" rel="noopener">${esc(location.origin + (pf.sharePath || ""))}</a></p>
-    <p class="small muted">Book me on SIGNL and this is the receipt you'll get.</p>`;
+    <p class="small muted">Book me on Magpie and this is the receipt you'll get.</p>`;
 }
 
 // ---------- Build -35: Deal Card, disclosure, audience codes, swaps, rate range ----------
@@ -12618,10 +12618,10 @@ function dealCardHtml(b, role) {
   let money;
   if (lane) {
     const signlGets = Math.round((lane.rate - lane.creatorNet) * 100) / 100;
-    money = `<div>Creator gets $${fmtMoney(lane.creatorNet)}. SIGNL gets $${fmtMoney(signlGets)}. That is the whole fee.</div>`
+    money = `<div>Creator gets $${fmtMoney(lane.creatorNet)}. Magpie gets $${fmtMoney(signlGets)}. That is the whole fee.</div>`
       + (role === "creator"
         ? (lane.escrowState === "held" ? `<div style="margin-top:4px"><strong>Money's in.</strong> Post by ${b.postDeadline ? fmtDate(b.postDeadline) : "the deadline on this card"}, paid the day it goes live.</div>` : lane.escrowState === "released" ? `<div style="margin-top:4px">Paid out: the post went live and the money moved.</div>` : `<div style="margin-top:4px">This booking was refunded to the business.</div>`)
-        : `<div style="margin-top:4px">Money is held by SIGNL now and paid to the creator the day the post goes live.</div>`);
+        : `<div style="margin-top:4px">Money is held by Magpie now and paid to the creator the day the post goes live.</div>`);
   } else if (b.kind === "coupon") {
     money = `<div>The coupon: ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? `, expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}. That coupon is the payment for this post. No cash changes hands on a coupon deal.</div>`;
   } else {
@@ -12652,10 +12652,10 @@ async function dealConfirm(bookingId) {
 // Disclosure Done For You: the line itself, one tap to copy,
 // and a confirmation the business can see on the booking.
 function disclosureLine(b) {
-  if (b.kind === "coupon") return `#ad — paid with a coupon by ${b.businessName || "this business"} through SIGNL`;
+  if (b.kind === "coupon") return `#ad — paid with a coupon by ${b.businessName || "this business"} through Magpie`;
   return b.kind === "paid" || b.paidLane
-    ? `#ad — paid partnership with ${b.businessName || "this business"} through SIGNL`
-    : `#ad — comped by ${b.businessName || "this business"} through SIGNL`;
+    ? `#ad — paid partnership with ${b.businessName || "this business"} through Magpie`
+    : `#ad — comped by ${b.businessName || "this business"} through Magpie`;
 }
 function disclosureCopy(btn) {
   const wrap = btn && btn.closest(".field");
@@ -12906,11 +12906,11 @@ function audCopyLine(codeId) {
 function audDownloadCard(codeId) {
   const cd = (state._audCodes || []).find((c) => c.id === codeId);
   if (!cd) return false;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#A9E8C9"/><text x="540" y="330" font-family="Arial, sans-serif" font-size="64" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(cd.businessName || "A local business")}</text><text x="540" y="440" font-family="Arial, sans-serif" font-size="52" fill="#0B0D0C" text-anchor="middle">${esc(cd.perk || "")}</text><text x="540" y="640" font-family="Arial, sans-serif" font-size="44" fill="#0B0D0C" text-anchor="middle">Use my code</text><text x="540" y="760" font-family="Arial, sans-serif" font-size="96" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc(cd.code)}</text><text x="540" y="880" font-family="Arial, sans-serif" font-size="36" fill="#0B0D0C" text-anchor="middle">Show it when you order · SIGNL</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#A9E8C9"/><text x="540" y="330" font-family="Arial, sans-serif" font-size="64" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(cd.businessName || "A local business")}</text><text x="540" y="440" font-family="Arial, sans-serif" font-size="52" fill="#0B0D0C" text-anchor="middle">${esc(cd.perk || "")}</text><text x="540" y="640" font-family="Arial, sans-serif" font-size="44" fill="#0B0D0C" text-anchor="middle">Use my code</text><text x="540" y="760" font-family="Arial, sans-serif" font-size="96" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc(cd.code)}</text><text x="540" y="880" font-family="Arial, sans-serif" font-size="36" fill="#0B0D0C" text-anchor="middle">Show it when you order · Magpie</text></svg>`;
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `signl-code-${cd.code}.svg`;
+  a.download = `magpie-code-${cd.code}.svg`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
   return false;
@@ -12922,7 +12922,7 @@ function audDownloadCard(codeId) {
 // local %, tier/Charter/level badges, three streets, primary
 // platform) — never earnings, terms, scores, or contact
 // details, and never a count of creators anywhere. The Bench
-// slot is state-based because SIGNL never renders an empty or
+// slot is state-based because Magpie never renders an empty or
 // near-empty collection: pre-launch it is a founding frame with
 // Golden Tickets and Sig introductions; at launch (or on the
 // Admin override) it becomes the browsable roster. A +1 rides
@@ -13268,13 +13268,13 @@ function creatorCharterCardHtml(u, card, f, buzz, placeRaw) {
   if (!buzz.charter) return "";
   const p = card.profile || {};
   const pct = p.localAudiencePct === null || p.localAudiencePct === undefined ? null : p.localAudiencePct;
-  const bits = [`I am a Charter Creator on SIGNL in ${placeRaw}, Founding Class of 2026.`];
+  const bits = [`I am a Charter Creator on Magpie in ${placeRaw}, Founding Class of 2026.`];
   if (pct !== null) bits.push(`${pct}% of my audience is local.`);
-  bits.push("SIGNL ranks creators by local reach, not follower count. Local businesses book us for comped visits or paid bookings at our own rates.");
+  bits.push("Magpie ranks creators by local reach, not follower count. Local businesses book us for comped visits or paid bookings at our own rates.");
   const link = inviteUrlFor(u);
   if (link) bits.push(`Creators: join through my link: ${link}`);
   return `<section class="stat-card charter-card">
-    <div class="stat-top"><span class="stat-brand">SIGNL</span><span class="charter-seal">CHARTER<br>CREATOR</span></div>
+    <div class="stat-top"><span class="stat-brand">Magpie</span><span class="charter-seal">CHARTER<br>CREATOR</span></div>
     <div class="charter-handle">@${esc(p.handle || "")}</div>
     <div class="charter-class">Charter Creator &middot; ${esc(placeRaw)}</div>
     <div class="charter-class-sub">Founding Class of 2026</div>
@@ -13282,7 +13282,7 @@ function creatorCharterCardHtml(u, card, f, buzz, placeRaw) {
     <div class="stat-lbl">${pct === null ? "Add your local audience % in your profile and this card fills in." : "of my audience is local"}</div>
     <p class="charter-scarcity">Founding status closes when ${esc(placeRaw)} launches. This seal is yours for good: only creators who finished their profile and were approved before launch hold it.</p>
     <p class="charter-perk">You see new paid offers 24 hours before everyone else.</p>
-    ${p.publicPage === true ? "" : `<p class="charter-prompt">Your book-me page is off. Turn it on under Profile and businesses can book you right from your link, at your listed rate, with every booking protected on SIGNL.</p>`}
+    ${p.publicPage === true ? "" : `<p class="charter-prompt">Your book-me page is off. Turn it on under Profile and businesses can book you right from your link, at your listed rate, with every booking protected on Magpie.</p>`}
     ${(u.creator && u.creator.zip) ? "" : `<p class="charter-prompt">Add your ZIP under Profile so nearby businesses see you in near-you results. ZIP only, never your address.</p>`}
     <div class="stat-actions"><button type="button" class="btn small-btn" onclick="return shareStatCard(this)" data-stat-text="${esc(bits.join(" "))}">Share my Charter card</button>${p.publicPage === true ? "" : ` <button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Profile')">Turn on my book-me page</button>`}</div>
   </section>`;
@@ -13296,13 +13296,13 @@ function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
   const rankLine = rank
     ? `#${rank.rank} in ${placeRaw} by local reach`
     : (pct === null ? "Set your local % to get your rank" : (!complete ? "Finish your profile to take your rank" : "Your rank shows once the founding class here fills in"));
-  const bits = [`I am a founding creator on SIGNL in ${placeRaw}.`];
+  const bits = [`I am a founding creator on Magpie in ${placeRaw}.`];
   if (pct !== null) bits.push(`${pct}% of my audience is local${rank ? `, and I rank #${rank.rank} here by local reach` : ""}.`);
-  bits.push("SIGNL ranks creators by local reach, not follower count. Local businesses book us for comped visits or paid bookings at our own rates.");
+  bits.push("Magpie ranks creators by local reach, not follower count. Local businesses book us for comped visits or paid bookings at our own rates.");
   const link = inviteUrlFor(u);
   if (link) bits.push(`Creators: join through my link: ${link}`);
   return `<section class="stat-card">
-    <div class="stat-top"><span class="stat-brand">SIGNL</span><span class="badge ok">${buzz.charter ? "Charter Creator" : "Founding Creator"}</span></div>
+    <div class="stat-top"><span class="stat-brand">Magpie</span><span class="badge ok">${buzz.charter ? "Charter Creator" : "Founding Creator"}</span></div>
     <div class="stat-name">${esc(u.name)} <span class="stat-handle">@${esc(p.handle || "")}</span></div>
     <div class="stat-place">${esc(placeRaw)}${p.tierBand ? ` &middot; ${esc(p.tierBand)} tier` : ""} &middot; ${fmtNum(totalAudienceOf(card))} total audience</div>
     <div class="stat-big">${pct === null ? "Local % not set" : `${pct}%`}</div>
@@ -13316,7 +13316,7 @@ function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
 function shareStatCard(btn) {
   const text = btn.getAttribute("data-stat-text") || "";
   if (!text) return false;
-  if (navigator.share) { navigator.share({ title: "My SIGNL founding stats", text }).catch(() => {}); return false; }
+  if (navigator.share) { navigator.share({ title: "My Magpie founding stats", text }).catch(() => {}); return false; }
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(() => {
       const old = btn.textContent;
@@ -13425,14 +13425,14 @@ async function loadFoundingStatus() {
     ${isUnl ? `
     <div class="panel">
       <h3 style="margin-top:0">${esc(f.city)} is building — and you're early</h3>
-      <p>SIGNL isn't a launch market in ${place} yet. Your city is building right now: sign-ups and finished founding profiles are the counts that move a city toward opening, and yours is counted. When ${esc(f.city)} opens, founding creators hear first, and first pick of businesses goes to completed founding profiles. We email you at <strong>${esc(state.user.email)}</strong> as it gets close.</p>
+      <p>Magpie isn't a launch market in ${place} yet. Your city is building right now: sign-ups and finished founding profiles are the counts that move a city toward opening, and yours is counted. When ${esc(f.city)} opens, founding creators hear first, and first pick of businesses goes to completed founding profiles. We email you at <strong>${esc(state.user.email)}</strong> as it gets close.</p>
       ${f.priorityBand ? `<p><span class="badge tier badge-line" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} to sign up in ${esc(f.city)}</span></p>
       <p class="muted">You signed up early, and it counts: founding creators in a new market are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Keep your profile current in the meantime; when ${esc(f.city)} opens, your local audience percentage is what businesses look at first.</p>
     </div>` : `
     <div class="panel">
       <h3 style="margin-top:0">${esc(marketTalkNameClient(f.market))} is a founding market</h3>
-      <p>Your market is not taking business offers yet, and that is on purpose: SIGNL opens each market with its founding roster in place. The moment ${esc(marketTalkNameClient(f.market))} opens, we email you at <strong>${esc(state.user.email)}</strong>.</p>
+      <p>Your market is not taking business offers yet, and that is on purpose: Magpie opens each market with its founding roster in place. The moment ${esc(marketTalkNameClient(f.market))} opens, we email you at <strong>${esc(state.user.email)}</strong>.</p>
       ${f.priorityBand ? `<p><span class="badge tier badge-line" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} founding creators in ${esc(marketTalkNameClient(f.market))}</span></p>
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(marketTalkNameClient(f.market))} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
@@ -14012,7 +14012,7 @@ function proximityPanelHtml(c) {
   const nearOn = !(c && c.proximityOptOut === true);
   return `<div class="spanish-panel" id="proximity-panel">
     <h4 class="spanish-panel-h">Near your door</h4>
-    <p class="small spanish-panel-sub">Businesses see creators grouped by distance bands: same neighborhood, under 2 miles, under 5 miles. Distance comes from ZIP codes only. Your ZIP is never shown to anyone, and SIGNL never asks for or stores a street address for creators.</p>
+    <p class="small spanish-panel-sub">Businesses see creators grouped by distance bands: same neighborhood, under 2 miles, under 5 miles. Distance comes from ZIP codes only. Your ZIP is never shown to anyone, and Magpie never asks for or stores a street address for creators.</p>
     <div class="lane-rate">
       <label for="lane-zip">Your home-base ZIP</label>
       <div class="lane-rate-flex"><input type="text" id="lane-zip" inputmode="numeric" maxlength="5" placeholder="For example: 23452" value="${esc(zip)}"><button type="button" class="btn small-btn" onclick="return laneZipSave()">Save ZIP</button></div>
@@ -14040,9 +14040,9 @@ function bookMePanelHtml(c) {
   const feats = (c && c.featuredPosts) || [];
   return `<div class="spanish-panel" id="bookme-panel">
     <h4 class="spanish-panel-h">Your book-me page</h4>
-    <p class="small spanish-panel-sub">A public page at your SIGNL link where businesses book you inside SIGNL, at your listed rate. It shows your handle, your local reach, your categories, and your featured posts. It never shows your email, your phone, or your follower counts, and the public never gets a link out to your social profiles from it.</p>
+    <p class="small spanish-panel-sub">A public page at your Magpie link where businesses book you inside Magpie, at your listed rate. It shows your handle, your local reach, your categories, and your featured posts. It never shows your email, your phone, or your follower counts, and the public never gets a link out to your social profiles from it.</p>
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-bookme" ${on ? "checked" : ""} onchange="laneToggleBookMe(this)"><div><label class="lname" for="lane-bookme">Book-me page is on</label> <span class="lline">— ${on ? "live at your link below." : "off. Your public link shows nothing until you turn this on."}</span></div></div>
-    <p class="small muted">Businesses with a paid SIGNL account can see your social channels and message you here. Bookings that start on SIGNL stay on SIGNL, with the Visit Guarantee and payment protection on every booking.</p>
+    <p class="small muted">Businesses with a paid Magpie account can see your social channels and message you here. Bookings that start on Magpie stay on Magpie, with the Visit Guarantee and payment protection on every booking.</p>
     ${on ? `<div class="field"><label>Your page</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="text" readonly value="${esc(url)}" onclick="this.select()" style="flex:1;min-width:220px"><a class="btn small-btn ghost" href="${esc(url)}" target="_blank" rel="noopener">View</a></div></div>` : ""}
     <div class="lane-rate">
       <label>Cover theme</label>
@@ -14058,9 +14058,9 @@ function bookMePanelHtml(c) {
       <label>Portfolio sample post</label>
       <input id="lane-sample" type="url" placeholder="https://www.instagram.com/p/..." value="${esc((c && c.portfolioSample) || "")}">
       <button type="button" class="btn small-btn" onclick="return laneSampleSave()">Save sample post</button>
-      <p class="small muted">One post you already made about a place you love. It shows on your profile, your book-me page, and the Local List, always labeled a portfolio sample, never a SIGNL visit. Clear the box and save to remove it.</p>
+      <p class="small muted">One post you already made about a place you love. It shows on your profile, your book-me page, and the Local List, always labeled a portfolio sample, never a Magpie visit. Clear the box and save to remove it.</p>
     </div>
-    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-socials" ${socialsOn ? "checked" : ""} onchange="laneToggleSocials(this)"><div><label class="lname" for="lane-socials">Show my social channels to paying businesses</label> <span class="lline">— the channels on your record, shown only to businesses with a paid, active SIGNL account.</span></div></div>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-socials" ${socialsOn ? "checked" : ""} onchange="laneToggleSocials(this)"><div><label class="lname" for="lane-socials">Show my social channels to paying businesses</label> <span class="lline">— the channels on your record, shown only to businesses with a paid, active Magpie account.</span></div></div>
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-creators" ${c && c.showToCreators === false ? "" : "checked"} onchange="laneToggleCreators(this)"><div><label class="lname" for="lane-creators">Show me to other creators</label> <span class="lline">— finished creators in your market see your profile on the Bench and can bring you as a +1. Off removes you from both. Separate from your book-me page above.</span></div></div>
   </div>`;
 }
@@ -14119,7 +14119,7 @@ function laneControlsHtml(c) {
     <div class="lane-rate" id="lane-rate-row" style="display:${rate ? "block" : "none"}">
       <label for="lane-rate">Your paid rate (min ${ownCurrencySymbol()}${ownPaidFloor()})</label>
       <div class="lane-rate-flex"><input type="number" id="lane-rate" min="${ownPaidFloor()}" step="1" inputmode="numeric" placeholder="150" value="${rateShown}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
-      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of ${ownCurrencySymbol()}${fmtMoney(rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and SIGNL holds the payment until your post is live. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.` : "This is a starting point, filled in because your rate was blank. Change it to whatever you charge, then save. You keep 97%, and SIGNL holds the payment until your post is live. Paid bookings turn on when a rate is saved. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited."}</p>
+      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of ${ownCurrencySymbol()}${fmtMoney(rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and Magpie holds the payment until your post is live. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.` : "This is a starting point, filled in because your rate was blank. Change it to whatever you charge, then save. You keep 97%, and Magpie holds the payment until your post is live. Paid bookings turn on when a rate is saved. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited."}</p>
       <p class="small" id="lane-range-line"></p>
     </div>
     <div class="lrow lane-row"><div><span class="lname">Run my post as an ad</span> <span class="lline" id="lane-fee-line">— ${esc(laneFeeLine(c || {}))}</span></div></div>
@@ -14244,7 +14244,7 @@ function igVerificationLine(c) {
 function connectedAccountsHtml(u) {
   return `<div class="panel mt" id="connected-accounts">
     <h3>Connected accounts</h3>
-    <p class="small muted">Connect a platform and SIGNL reads your real numbers from it: the count verifies itself, stays up to date on its own, and businesses see a Synced mark next to it. Anything not connected stays typed by you and labeled Self-reported.</p>
+    <p class="small muted">Connect a platform and Magpie reads your real numbers from it: the count verifies itself, stays up to date on its own, and businesses see a Synced mark next to it. Anything not connected stays typed by you and labeled Self-reported.</p>
     <div id="ca-rows"><p class="small muted">Loading your accounts...</p></div>
   </div>`;
 }
@@ -14362,9 +14362,9 @@ function isUkUser() {
 }
 function payoutExplainerUkHtml(lastMargin) {
   return `<p style="margin:0 0 6px"><strong>What payout setup will ask for, and why</strong></p>
-    <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for a UK bank account, your sort code and account number, so money can go to your bank; payouts arrive by Faster Payments. Your bank details go to Stripe, never to SIGNL.</p>
+    <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for a UK bank account, your sort code and account number, so money can go to your bank; payouts arrive by Faster Payments. Your bank details go to Stripe, never to Magpie.</p>
     <p class="small" style="margin:0 0 6px">Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's.</p>
-    <p class="small" style="margin:0 0 6px">Taxes, in plain words: you are responsible for your own UK tax position, and SIGNL does not withhold tax from your earnings.</p>
+    <p class="small" style="margin:0 0 6px">Taxes, in plain words: you are responsible for your own UK tax position, and Magpie does not withhold tax from your earnings.</p>
     <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
     <p class="small" style="margin:0${lastMargin ? " 0 8px" : ""}">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup promises no payout date, and the app does not promise a payout date.</p>`;
 }
@@ -14376,7 +14376,7 @@ function payoutExplainerHtml() {
   if (isUkUser()) return `<div id="help-payout-explainer" style="text-align:left">${payoutExplainerUkHtml()}</div>`;
   return `<div id="help-payout-explainer" style="text-align:left">
     <p style="margin:0 0 6px"><strong>What payout setup will ask for, and why</strong></p>
-    <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to SIGNL. And it will ask for tax information, so paid earnings can be reported the right way.</p>
+    <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to Magpie. And it will ask for tax information, so paid earnings can be reported the right way.</p>
     <p class="small" style="margin:0 0 6px">Taxes, in plain words: if your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year. It is a tax record of money paid to you, not a bill. Keep it for your taxes.</p>
     <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
     <p class="small" style="margin:0">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup promises no payout date, and the app does not promise a payout date.</p>
@@ -14404,7 +14404,7 @@ function payoutsStepHtml(c) {
     </div>`
       : `<div id="payout-explainer" style="margin:10px 0;text-align:left">
       <p style="margin:0 0 6px"><strong>What payout setup will ask for, and why</strong></p>
-      <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to SIGNL. And it will ask for tax information, so paid earnings can be reported the right way.</p>
+      <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to Magpie. And it will ask for tax information, so paid earnings can be reported the right way.</p>
       <p class="small" style="margin:0 0 6px">Taxes, in plain words: if your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year. It is a tax record of money paid to you, not a bill. Keep it for your taxes.</p>
       <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
       <p class="small" style="margin:0 0 8px">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup promises no payout date, and the app does not promise a payout date.</p>
@@ -14421,7 +14421,7 @@ function payoutsStepHtml(c) {
     const missing = (p.missing || []).length ? ` Stripe still needs: ${esc(p.missing.join(", "))}.` : "";
     return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — almost there.${missing}</span></div></div><button type="button" class="btn small-btn" onclick="return startPayoutSetup()">Finish payout setup</button><p class="small muted">Your first payout can take longer while Stripe verifies you.</p></div>`;
   }
-  return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — not set up. You can be booked at your rate, but the money cannot reach your bank until this is done.</span></div></div>${explainer98}<button type="button" class="btn small-btn" onclick="return startPayoutSetup()">Set up payouts</button><p class="small muted">Two minutes on Stripe's secure pages: your bank details go to Stripe, never to SIGNL. Your first payout can take longer while Stripe verifies you.</p></div>`;
+  return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — not set up. You can be booked at your rate, but the money cannot reach your bank until this is done.</span></div></div>${explainer98}<button type="button" class="btn small-btn" onclick="return startPayoutSetup()">Set up payouts</button><p class="small muted">Two minutes on Stripe's secure pages: your bank details go to Stripe, never to Magpie. Your first payout can take longer while Stripe verifies you.</p></div>`;
 }
 async function startPayoutSetup() {
   try {
@@ -14445,9 +14445,9 @@ async function addBusinessCard() {
 function cardOnFileSectionHtml() {
   const card = cardOnFileView();
   if (card) {
-    return `<div class="mt"><p><span class="badge ok">Card on file</span> <strong>${esc(brandName(card.brand))} &middot;&middot;&middot;&middot;${esc(card.last4)}</strong></p><p class="small muted">Paid bookings charge this card when you book. SIGNL holds the money until the creator's post is live.</p><button class="btn ghost small-btn" onclick="return addBusinessCard()">Update card</button></div>`;
+    return `<div class="mt"><p><span class="badge ok">Card on file</span> <strong>${esc(brandName(card.brand))} &middot;&middot;&middot;&middot;${esc(card.last4)}</strong></p><p class="small muted">Paid bookings charge this card when you book. Magpie holds the money until the creator's post is live.</p><button class="btn ghost small-btn" onclick="return addBusinessCard()">Update card</button></div>`;
   }
-  return `<div class="mt"><p><strong>No card on file.</strong></p><p class="small muted">Paid bookings need a card: it is charged when you book, SIGNL holds the money until the creator's post is live, and the creator is paid from it.</p><button class="btn small-btn" onclick="return addBusinessCard()">Add a card</button></div>`;
+  return `<div class="mt"><p><strong>No card on file.</strong></p><p class="small muted">Paid bookings need a card: it is charged when you book, Magpie holds the money until the creator's post is live, and the creator is paid from it.</p><button class="btn small-btn" onclick="return addBusinessCard()">Add a card</button></div>`;
 }
 // Held / released money status on a booking card (Stripe
 // Connect, 2026-10-26). Renders nothing unless real funds ride
@@ -14458,7 +14458,7 @@ function fundsStatusHtml(lane, role) {
   if (role === "creator") {
     if (f.state === "released") return `<br><span class="muted">Released · on its way to your bank.</span>`;
     if (f.state === "refunded") return `<br><span class="muted">Refunded to the business in full.</span>`;
-    if (f.state === "needs_card" || f.state === "charge_failed") return `<br><span class="muted">SIGNL is sorting out the business's card with the business.</span>`;
+    if (f.state === "needs_card" || f.state === "charge_failed") return `<br><span class="muted">Magpie is sorting out the business's card with the business.</span>`;
     if (f.blockedReason === "payouts_not_ready") return `<br><span class="muted">Held · finish payout setup under Profile to release it.</span>`;
     return `<br><span class="muted">Held · releases when your post is live.</span>`;
   }
@@ -14865,7 +14865,7 @@ async function loadCreatorHome() {
       if (bioItem && !bioItem.done) pushIdea("cr_bio", `Your bio is still short. Two honest lines${bioItem.points ? ` earn +${bioItem.points} Momentum` : ""}.`, "Write bio", () => go("dashboard", "Profile"), "Bio still short");
       const hoodItem = pcItem("neighborhood");
       if (hoodItem && !hoodItem.done) pushIdea("cr_neighborhood", `Set your neighborhood. Businesses search by neighborhood.${ptsBit(hoodItem)}`, "Set neighborhood", () => go("dashboard", "Profile"), "Neighborhood not set");
-      if (!c.portfolioSample) pushIdea("cr_sample", "Link one post you already made about a place you love. It sits on your profile and book-me page labeled as your portfolio sample, so businesses can see your work before your first SIGNL visit.", "Add my sample post", () => go("dashboard", "Profile"), "Add a portfolio sample post");
+      if (!c.portfolioSample) pushIdea("cr_sample", "Link one post you already made about a place you love. It sits on your profile and book-me page labeled as your portfolio sample, so businesses can see your work before your first Magpie visit.", "Add my sample post", () => go("dashboard", "Profile"), "Add a portfolio sample post");
       if (!Array.isArray(c.streets) || !c.streets.length) pushIdea("cr_streets", "Name your three streets: the streets and neighborhoods where you actually hang out. Businesses nearby see them on your profile and your book-me page.", "Add my streets", () => go("dashboard", "Profile"), "Add your three streets");
       if (c.spanishContent === true && (c.spanishAudiencePct === null || c.spanishAudiencePct === undefined)) pushIdea("cr_spanish_pct", "You create content in Spanish. Add your Spanish-speaking share so businesses see the number, not a checkbox.", "Add percentage", () => go("dashboard", "Profile"), "Add your Spanish-speaking share");
       if (c.musician === undefined) pushIdea("cr_musician", "Make music? Turn on the musician switch and businesses looking to book music can find you.", "Open panel", () => go("dashboard", "Profile"), "Make music? Open the panel");
@@ -15138,7 +15138,7 @@ function creatorProfileHtml(u) {
       </div>
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
-    <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on SIGNL. Both scores run 0 to 100. Reliability starts at a neutral 50 before you have any visits; your real visits move it from there. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available: self-reported means it is your own number, typed by you, not yet checked against Instagram.</p>
+    <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on Magpie. Both scores run 0 to 100. Reliability starts at a neutral 50 before you have any visits; your real visits move it from there. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available: self-reported means it is your own number, typed by you, not yet checked against Instagram.</p>
     <div class="field" style="margin:12px 0">
       <label class="tgl-row"><input type="checkbox" class="sw" id="profile-peek-sw" onchange="return profilePeekToggle(this)"><span><strong>See how businesses view you</strong> — your card in Find creators and your full page, exactly as a business sees them, drawn from the values on this page. There is nothing separate to fill in.</span></label>
     </div>
@@ -15154,7 +15154,7 @@ function creatorProfileHtml(u) {
         <button type="button" class="btn small-btn" onclick="return saveProfileMarket()">${T("Save market", "Guardar mercado")}</button>
       </div>
       <p class="small" id="p-market-note" style="margin:6px 0 0"></p>
-      <p class="small muted" style="margin:6px 0 0">${T("If your city is not in a SIGNL market yet, email hello@joinsignl.com and we will set you up.", "Si tu ciudad aún no está en un mercado de SIGNL, escribe a hello@joinsignl.com y te ayudamos.")}</p>
+      <p class="small muted" style="margin:6px 0 0">${T("If your city is not in a Magpie market yet, email hello@magpielocal.com and we will set you up.", "Si tu ciudad aún no está en un mercado de Magpie, escribe a hello@magpielocal.com y te ayudamos.")}</p>
     </div>
     ${u.status === "approved" && c.handle ? `
     <div class="field"><label>Your public profile</label>
@@ -15165,7 +15165,7 @@ function creatorProfileHtml(u) {
         <a class="btn small-btn ghost" href="${esc(publicProfileUrl(u))}/proof" target="_blank" rel="noopener">Listing proof sheet</a>
         <span id="pp-copied" class="saved"></span>
       </div>
-      <p class="small muted">Share this link anywhere, including your Instagram bio. Your page is live only while you keep it on, in the book-me page settings below. Visitors see your name, handle, market and neighborhood, categories, and local audience share. Signed-in businesses see your listed rate and book you inside SIGNL. Your email and account details are never shown, and there is no public roster: this page exists only at your link. The listing proof sheet is the one-page version of your record (visits done, on-time posts, customers counted), made to send to a business.</p>
+      <p class="small muted">Share this link anywhere, including your Instagram bio. Your page is live only while you keep it on, in the book-me page settings below. Visitors see your name, handle, market and neighborhood, categories, and local audience share. Signed-in businesses see your listed rate and book you inside Magpie. Your email and account details are never shown, and there is no public roster: this page exists only at your link. The listing proof sheet is the one-page version of your record (visits done, on-time posts, customers counted), made to send to a business.</p>
     </div>` : ""}
     <div id="form-error"></div>
     ${ytNoticeHtml()}
@@ -15188,7 +15188,7 @@ function creatorProfileHtml(u) {
         </div>
         <div class="pf-addrow"><select id="p-add-platform">${addPlatformOptions(c)}</select><button type="button" class="btn small-btn ghost" onclick="return pfAddPlatform()">Add platform</button></div>
         <p class="small muted">Add every platform you are on — Pinterest, Twitch, your own website, any of them. Each one gets a handle, a link and a follower count, and every count stacks into your total audience.</p>
-        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points. <strong>SIGNL starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
+        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points. <strong>Magpie starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
       </div>
       <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP} Once you add a local % for a platform in Your audience below, this number is worked out from those automatically.</p></div>
@@ -15242,7 +15242,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("Typical post views", "Vistas típicas por publicación")}</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
       <div class="field"><label>${T("Top audience cities", "Ciudades principales de tu audiencia")}</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="${T("Up to 5, comma separated", "Hasta 5, separadas por comas")}"><p class="small muted">${T("Free text, shown on your profile in words. The market list right below is a different thing: it is the one that actually lists you in other markets.", "Texto libre, se muestra en tu perfil en palabras. La lista de mercados justo debajo es otra cosa: es la que realmente te incluye en otros mercados.")}</p></div>
       <div class="field"><label>${T("Your audience in other markets", "Tu audiencia en otros mercados")}</label>
-        <p class="small muted" id="p-am-help">${T("Optional. If a real share of your audience lives in another SIGNL market, name the market and the %. At 5% or more you are listed and ranked in that market too, and offers from its businesses reach you, not just home-market ones. Your home market is your local % in the four basics at the top, never a row here.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de SIGNL, escribe el mercado y el %. Con 5% o más también apareces y te posicionas en ese mercado, y las ofertas de sus negocios te llegan, no solo las de tu mercado. Tu mercado principal es tu % local en los cuatro datos básicos de arriba, nunca una fila aquí.")}</p>
+        <p class="small muted" id="p-am-help">${T("Optional. If a real share of your audience lives in another Magpie market, name the market and the %. At 5% or more you are listed and ranked in that market too, and offers from its businesses reach you, not just home-market ones. Your home market is your local % in the four basics at the top, never a row here.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de Magpie, escribe el mercado y el %. Con 5% o más también apareces y te posicionas en ese mercado, y las ofertas de sus negocios te llegan, no solo las de tu mercado. Tu mercado principal es tu % local en los cuatro datos básicos de arriba, nunca una fila aquí.")}</p>
         <div id="p-am-rows">${(() => { const rows = (c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)); return (rows.length ? rows : [{}]).slice(0, 5).map((e) => amRowHtml(e.market || "", e.pct === undefined || e.pct === null ? "" : String(e.pct))).join(""); })()}</div>
         <button type="button" class="btn small-btn ghost" id="p-am-add" onclick="return amAddRow()"${(c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)).length >= 5 ? ' style="display:none"' : ""}>${T("Add another market", "Agregar otro mercado")}</button>
       </div>
@@ -15297,7 +15297,7 @@ function myRatingHtml(card) {
 function fillMyShowcase(card) {
   const sc = document.getElementById("my-showcase");
   if (sc && card) {
-    sc.innerHTML = `${myRatingHtml(card)}<div class="showcase-block"><h4>How businesses see your profile</h4><p class="small muted">Your best work, SIGNL track record, and business reviews, exactly as they appear to businesses in search. On your public profile the rating shows once 3 or more businesses have rated you. The track record and reviews come only from real completed visits on SIGNL.</p>${creatorShowcaseHtml(card)}</div>`;
+    sc.innerHTML = `${myRatingHtml(card)}<div class="showcase-block"><h4>How businesses see your profile</h4><p class="small muted">Your best work, Magpie track record, and business reviews, exactly as they appear to businesses in search. On your public profile the rating shows once 3 or more businesses have rated you. The track record and reviews come only from real completed visits on Magpie.</p>${creatorShowcaseHtml(card)}</div>`;
   }
 }
 
@@ -15699,7 +15699,7 @@ function dealProposalCardHtml(deal, role) {
     ${t.includes ? `<div class="lrow"><span>Included</span><strong>${esc(t.includes)}</strong></div>` : ""}
     ${t.note ? `<div class="lrow"><span>Note</span><strong>${esc(t.note)}</strong></div>` : ""}
     <div class="lrow"><span>Rights</span><strong>${t.kind === "paid" || t.kind === "mix" ? "One standard licence included: 90 days of repost + ad use. Fixed — never longer." : "Native share only. Licensing this post is a separate request at the creator's fee, approved per use."}</strong></div>
-    <div class="lrow"><span>Money</span><strong>${t.kind === "paid" || t.kind === "mix" ? "SIGNL holds the payment when the deal is accepted and releases it when the post is live." : "No money moves on this deal."}</strong></div>`;
+    <div class="lrow"><span>Money</span><strong>${t.kind === "paid" || t.kind === "mix" ? "Magpie holds the payment when the deal is accepted and releases it when the post is live." : "No money moves on this deal."}</strong></div>`;
   let actions = "";
   if (deal.status === "accepted") {
     actions = `<p class="small" style="margin:10px 0 0"><span class="badge ok">Booked</span> The visit is booked at exactly these terms — the code and clock are in ${role === "creator" ? "My Visits" : "Visits"}.</p>
@@ -16829,7 +16829,7 @@ function visitCard(b, role) {
       ? `<span class="badge ok">Payment released</span>`
       : lane.escrowState === "refunded"
         ? `<span class="badge warn">Payment refunded</span>`
-        : `<span class="badge info">Payment held by SIGNL</span>`;
+        : `<span class="badge info">Payment held by Magpie</span>`;
     html += role === "creator"
       ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""} This booking includes the standard license: the business may repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.</span>${fundsStatusHtml(lane, "creator")}</p>`
       : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${fmtPrice(lane.rate)} &middot; you pay $${fmtMoney(lane.businessTotal)} (rate + 3%) &middot; the creator receives $${fmtMoney(lane.creatorNet)}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)} This booking includes the standard license: repost and ad use for 90 days from the post date, never longer.</span>${fundsStatusHtml(lane, "business")}</p>`;
@@ -16849,12 +16849,12 @@ function visitCard(b, role) {
         ? `
     <div class="showcase-block">
       <h4>Your audience code at ${esc(b.businessName)}: ${esc(b.creatorCode)}</h4>
-      <p class="small" style="margin:0">Share it in your post: your audience gets ${pct}% off when they use it at ${esc(b.businessName)}, and every use is tracked back to this visit. It is how the business sees the customers your post actually sent through the door, and it feeds your SIGNL track record.</p>
+      <p class="small" style="margin:0">Share it in your post: your audience gets ${pct}% off when they use it at ${esc(b.businessName)}, and every use is tracked back to this visit. It is how the business sees the customers your post actually sent through the door, and it feeds your Magpie track record.</p>
     </div>`
         : `
     <div class="showcase-block">
       <h4>Your audience code at ${esc(b.businessName)}: ${esc(b.creatorCode)}</h4>
-      <p class="small" style="margin:0">Share it in your post so the business can count the customers it sends through the door: every use is tracked back to this visit, and it feeds your SIGNL track record. This business has not turned on a code discount, so there is no percentage off to promise; the code is how your visit gets counted.</p>
+      <p class="small" style="margin:0">Share it in your post so the business can count the customers it sends through the door: every use is tracked back to this visit, and it feeds your Magpie track record. This business has not turned on a code discount, so there is no percentage off to promise; the code is how your visit gets counted.</p>
     </div>`;
     } else {
       html += pct > 0
@@ -16920,18 +16920,18 @@ function visitCard(b, role) {
     </div>`;
   }
   if (role === "creator" && b.status === "expired") {
-    html += `<p class="small">This offer's window passed without a redemption, so it expired. It counts as a no-show on your Momentum. If something went wrong, tell us at hello@joinsignl.com.</p>`;
+    html += `<p class="small">This offer's window passed without a redemption, so it expired. It counts as a no-show on your Momentum. If something went wrong, tell us at hello@magpielocal.com.</p>`;
   }
   if (b.honorReportedAt) {
     html += role === "creator"
-      ? `<p class="small">You reported that this business did not honor the comp (${esc(fmtDate(b.honorReportedAt))}). The visit is void: no post is owed, the clock is stopped, and it cannot hurt your standing. The SIGNL team has the report.</p>`
-      : `<p class="small">The creator reported that this comp was not honored. The visit is void and under SIGNL review.</p>`;
+      ? `<p class="small">You reported that this business did not honor the comp (${esc(fmtDate(b.honorReportedAt))}). The visit is void: no post is owed, the clock is stopped, and it cannot hurt your standing. The Magpie team has the report.</p>`
+      : `<p class="small">The creator reported that this comp was not honored. The visit is void and under Magpie review.</p>`;
   } else if (role === "creator" && !post && b.status !== "expired") {
     html += `
     <form onsubmit="return submitHonorReport(event, '${b.id}')">
       <div class="field"><label>Business didn't honor this comp?</label><input id="honor-${b.id}" maxlength="280" placeholder="What happened, in one line"></div>
       <button class="btn small-btn danger" type="submit">Report problem</button>
-      <p class="small muted">The business didn't honor this comp. Filing this voids the visit: no post is owed, the compliance clock stops, and it cannot hurt your standing. It flags the business for the SIGNL team. It is never shown publicly.</p>
+      <p class="small muted">The business didn't honor this comp. Filing this voids the visit: no post is owed, the compliance clock stops, and it cannot hurt your standing. It flags the business for the Magpie team. It is never shown publicly.</p>
     </form>`;
   }
   if (role === "business" && b.codeStatus === "issued") {
@@ -16955,7 +16955,7 @@ function visitCard(b, role) {
       ${b.adDisclosure ? `<div class="field"><label>Your post caption (UK ad rule: #ad up front, then your code line)</label><textarea id="post-caption-${b.id}" rows="2">${esc(disclosureLine(b))} ${esc(b.audienceCode && b.audienceCode.line ? b.audienceCode.line : "")}</textarea><p class="small muted">${esc(b.adDisclosure.clause)} This visit does not count as delivered until the ad label is verified. Keep the code line in: it is how customers this post brings in get counted for both of you.</p></div>` : `<div class="field"><label>Your post caption (started for you — keep the code line in so the visit counts)</label><textarea id="post-caption-${b.id}" rows="2">${esc(disclosureLine(b))} ${esc(b.audienceCode && b.audienceCode.line ? b.audienceCode.line : "")}</textarea></div>`}
       ${deliverablesOfClient(b).story ? `<label class="ckrow"><input type="checkbox" class="ckbox" id="post-story-attest-${b.id}"><span>I posted the story that shares this post too.</span></label>
       <div class="field"><label>Story link (optional — a link or screenshot reference is enough)</label><input id="post-story-url-${b.id}" placeholder="https://"></div>
-      <p class="small muted">The story counts as creator-confirmed: you are telling us it went up. SIGNL cannot see stories directly yet, so this runs on your word.</p>` : ""}
+      <p class="small muted">The story counts as creator-confirmed: you are telling us it went up. Magpie cannot see stories directly yet, so this runs on your word.</p>` : ""}
       <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
       <div class="field"><label>Your disclosure line, done for you</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" readonly value="${esc(disclosureLine(b))}" onclick="this.select()" style="flex:1;min-width:220px"><button type="button" class="btn small-btn ghost" onclick="return disclosureCopy(this)">Copy the line</button></div><p class="small muted">One tap copies it. Paste it at the top of your caption, then confirm on this card after the post is live.</p></div>
       <button class="btn small-btn" type="submit">Submit post</button>
@@ -17064,7 +17064,7 @@ function visitCard(b, role) {
   if (b.storyState && b.storyState.required) {
     const ss = b.storyState;
     if (ss.confirmed) {
-      html += `<p class="small"><span class="saved">Story confirmed</span> — the story that shares the post was confirmed by the creator${ss.confirmedAt ? ` on ${esc(fmtDate(ss.confirmedAt))}` : ""}${ss.url ? ` &middot; <a href="${esc(ss.url)}" target="_blank" rel="noopener">story link</a>` : ""}. Labelled creator-confirmed: SIGNL cannot see stories directly yet.</p>`;
+      html += `<p class="small"><span class="saved">Story confirmed</span> — the story that shares the post was confirmed by the creator${ss.confirmedAt ? ` on ${esc(fmtDate(ss.confirmedAt))}` : ""}${ss.url ? ` &middot; <a href="${esc(ss.url)}" target="_blank" rel="noopener">story link</a>` : ""}. Labelled creator-confirmed: Magpie cannot see stories directly yet.</p>`;
     } else if (role === "creator" && b.redeemedAt) {
       html += `<div class="showcase-block"><h4>The story that shares the post</h4>
       <p class="small" style="margin:0 0 8px">The visit standard is one post and one story. Confirm the story here — it counts as creator-confirmed, on your word, until story checks can be automatic.</p>
@@ -17079,7 +17079,7 @@ function visitCard(b, role) {
   }
   if (post && b.roas && (b.redemptions || post.reportedAt)) {
     const r = b.roas;
-    const scoreLine = `<strong>Modeled estimate: ${r.score === null ? "n/a yet" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(this visit: tallies plus modeled media value; your SIGNL ROAS Score is on your Receipt)</span> &middot; $${fmtMoney(r.registerValue)} tracked through the code + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null && r.allInScore !== undefined ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}`;
+    const scoreLine = `<strong>Modeled estimate: ${r.score === null ? "n/a yet" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(this visit: tallies plus modeled media value; your Magpie ROAS Score is on your Receipt)</span> &middot; $${fmtMoney(r.registerValue)} tracked through the code + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null && r.allInScore !== undefined ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}`;
     html += role === "business"
       ? `<p class="small">${scoreLine}.</p>`
       : `<p class="small">${b.redemptions ? `Your code brought <strong>${b.redemptions.count} customer${b.redemptions.count === 1 ? "" : "s"}, $${fmtMoney(b.redemptions.basketTotal)} rung up</strong> at ${esc(b.businessName)}. ` : ""}${scoreLine}.</p>`;
@@ -17092,7 +17092,7 @@ function visitCard(b, role) {
     html += `
     ${!b.redemptions && uses > 0 ? (ticket
       ? `<p class="small" style="margin-top:12px">So far: ${uses} code use${uses === 1 ? "" : "s"} logged. At your $${fmtMoney(ticket)} average ticket that is about $${fmtMoney(uses * ticket)} of register value, estimated until you save this tally.</p>`
-      : `<p class="small" style="margin-top:12px">So far: ${uses} code use${uses === 1 ? "" : "s"} logged. Set your average ticket under Plan and SIGNL estimates the register value until you save this tally.</p>`) : ""}
+      : `<p class="small" style="margin-top:12px">So far: ${uses} code use${uses === 1 ? "" : "s"} logged. Set your average ticket under Plan and Magpie estimates the register value until you save this tally.</p>`) : ""}
     <p style="margin-top:8px"><button class="btn small-btn ghost" type="button" onclick="logCodeUse('${b.id}')">Log a code use</button> <span class="small muted">${uses} logged so far at the counter</span></p>
     <div class="form-2col" style="margin-top:10px">
       <div class="field"><label>Check total for this customer ($)</label><input type="number" id="redeem-amt-${b.id}" min="0" step="0.01" placeholder="0.00"></div>
@@ -17142,7 +17142,7 @@ function visitCard(b, role) {
     // post is late, not failed, and still counts when it lands.
     html += `<button class="btn small-btn danger" onclick="requestReplacement('${b.id}')">Request replacement</button>`;
   }
-  if (b.replacementRequestedAt) html += `<p class="small">Replacement requested ${fmtDate(b.replacementRequestedAt)}. SIGNL will line up a substitute creator.</p>`;
+  if (b.replacementRequestedAt) html += `<p class="small">Replacement requested ${fmtDate(b.replacementRequestedAt)}. Magpie will line up a substitute creator.</p>`;
   if (role === "creator" && b.status === "completed") {
     if (b.creatorReview) {
       html += `<div class="review-item"><span class="small muted">${esc(b.businessName)} rated you</span><br>${starsHtml(b.creatorReview.stars)} <span class="small">${esc(b.creatorReview.comment || "")}</span></div>`;
@@ -17153,7 +17153,7 @@ function visitCard(b, role) {
       html += `
     <form onsubmit="return submitBusinessReview(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Review this business</h4>
-      <p class="small muted">Optional, and honest is the whole point: leaving a review earns +10 Momentum at any star rating. SIGNL never pays for positive reviews, and nobody can ask you for one.</p>
+      <p class="small muted">Optional, and honest is the whole point: leaving a review earns +10 Momentum at any star rating. Magpie never pays for positive reviews, and nobody can ask you for one.</p>
       <div class="form-2col">
         <div class="field"><label>Your rating</label>${chipSelectHtml("bizrev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
         <div class="field"><label>Your words (optional)</label><input id="bizrev-text-${b.id}" maxlength="500" placeholder="How was the visit, honestly?"></div>
@@ -17204,7 +17204,7 @@ async function requestReplacement(bookingId) {
 async function submitPost(e, bookingId) {
   e.preventDefault();
   const disc = document.getElementById("post-disc-" + bookingId);
-  if (!disc.checked) { alert("Confirm the disclosure first. Every SIGNL post must disclose the comp."); return false; }
+  if (!disc.checked) { alert("Confirm the disclosure first. Every Magpie post must disclose the comp."); return false; }
   try {
     const capEl = document.getElementById("post-caption-" + bookingId);
     const storyAttest = document.getElementById("post-story-attest-" + bookingId);
@@ -17767,7 +17767,7 @@ function renderFoundingMessagesTab() {
   ${wsHead("Messages", { sub: "Talk to a creator about a visit or an offer." })}
   <section class="wcard">
     <h3 style="margin-top:0">Messages open with your first campaign</h3>
-    <p>Once your market opens and a campaign is out, you talk to creators here, right on the visit or the offer it belongs to. There is nothing to message about yet, and that is on purpose: talk on SIGNL stays attached to real work.</p>
+    <p>Once your market opens and a campaign is out, you talk to creators here, right on the visit or the offer it belongs to. There is nothing to message about yet, and that is on purpose: talk on Magpie stays attached to real work.</p>
   </section>`;
 }
 
@@ -17817,7 +17817,7 @@ const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance"
 
 // Co-brand (Build -105): when Admin has set a partner brand,
 // the partner's name and logo lead their shell and "Powered by
-// SIGNL" sits underneath. SIGNL's own chrome never disappears,
+// Magpie" sits underneath. Magpie's own chrome never disappears,
 // and with no brand set this returns "" so the shell renders
 // exactly as before. The accent restyles only this shell's
 // primary buttons and links (the .pt-shell rules in theme-v2.css).
@@ -17827,7 +17827,7 @@ function coBrandHeadHtml(brand) {
     ${brand.logoUrl ? `<img class="pt-brand-logo" src="${esc(brand.logoUrl)}" alt="">` : ""}
     <div>
       ${brand.displayName ? `<div class="pt-brand-name">${esc(brand.displayName)}</div>` : ""}
-      <div class="pt-brand-powered">Powered by SIGNL</div>
+      <div class="pt-brand-powered">Powered by Magpie</div>
     </div>
   </div>`;
 }
@@ -18193,7 +18193,7 @@ function partnerPerformanceHtml(d) {
       ${mile("Views, day 14", f.milestones.d14)}
       ${mile("Views, day 30", f.milestones.d30)}
     </div>
-    <p class="small" style="margin:12px 0 0">Register value tracked: <strong>$${fmtPrice(f.registerValue)}</strong>${f.estimatedRegisterValue ? ` · Estimated from code uses: <strong>$${fmtPrice(f.estimatedRegisterValue)}</strong>` : ""} · Visits redeemed: ${f.visitsRedeemed}${f.redemptions && f.redemptions.count ? ` · Audience code uses: ${f.redemptions.count}` : ""}. Media value is modeled at SIGNL's published rates on creator-reported numbers.</p>
+    <p class="small" style="margin:12px 0 0">Register value tracked: <strong>$${fmtPrice(f.registerValue)}</strong>${f.estimatedRegisterValue ? ` · Estimated from code uses: <strong>$${fmtPrice(f.estimatedRegisterValue)}</strong>` : ""} · Visits redeemed: ${f.visitsRedeemed}${f.redemptions && f.redemptions.count ? ` · Audience code uses: ${f.redemptions.count}` : ""}. Media value is modeled at Magpie's published rates on creator-reported numbers.</p>
   </div>` : partnerFillsIn("When visits and posts land in your markets, their results collect here.")}`;
 }
 
@@ -18221,7 +18221,7 @@ function partnerEarningsHtml(d) {
   ${d.atFill ? `<p class="small muted">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled from the average partner market (about ${fmtNum(d.atFill.businessesPerMarket)} businesses at $2,958 a year), not a promise.</p>` : ""}
   ${(d.viewer && d.viewer.isTeamMember) ? "" : `<div class="panel mt">
     <h3 style="margin-top:0">Your month pack</h3>
-    <p class="small muted" style="margin:0 0 10px">One file with your month: the accrual, the greater-of math with both candidates, what you have been paid and what is owed, and the business-by-business activity. A closed month's pack is frozen: it matches the numbers SIGNL closed with, to the cent, and later changes arrive as adjustment rows instead of rewriting it. An open month downloads as a live snapshot and says so.</p>
+    <p class="small muted" style="margin:0 0 10px">One file with your month: the accrual, the greater-of math with both candidates, what you have been paid and what is owed, and the business-by-business activity. A closed month's pack is frozen: it matches the numbers Magpie closed with, to the cent, and later changes arrive as adjustment rows instead of rewriting it. An open month downloads as a live snapshot and says so.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <select id="pt-pack-month" onchange="ptPackSyncLink()"><option value="${new Date().toISOString().slice(0, 7)}">${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} (this month, live)</option></select>
       <a class="btn" id="pt-pack-link" href="/api/partner/pack?month=${new Date().toISOString().slice(0, 7)}">Download the month pack</a>
@@ -18230,7 +18230,7 @@ function partnerEarningsHtml(d) {
   </div>`}` : `
   ${e.basis === "deal" ? `
   <div class="panel mt"><h3 style="margin-top:0">Your deal${e.dealLabel ? `: ${esc(e.dealLabel)}` : ""}</h3>
-  <p class="small muted">Accrued to date: <strong>${sym}${fmtPrice(e.accruedTotal)}</strong> · Paid to date: <strong>${sym}${fmtPrice(e.paidTotal)}</strong> · Still outstanding: <strong>${sym}${fmtPrice(e.owedTotal)}</strong>. These are the same figures SIGNL's own books show, computed from your deal terms.${e.guaranteeState ? ` Right now: ${esc(e.guaranteeState.toLowerCase())} on your guarantee.` : ""}</p>
+  <p class="small muted">Accrued to date: <strong>${sym}${fmtPrice(e.accruedTotal)}</strong> · Paid to date: <strong>${sym}${fmtPrice(e.paidTotal)}</strong> · Still outstanding: <strong>${sym}${fmtPrice(e.owedTotal)}</strong>. These are the same figures Magpie's own books show, computed from your deal terms.${e.guaranteeState ? ` Right now: ${esc(e.guaranteeState.toLowerCase())} on your guarantee.` : ""}</p>
   ${(d.territory || []).map((t) => `<p class="small" style="margin:6px 0 0"><strong>${esc(t.market)}:</strong> ${t.attributionScope === "market_wide" ? `every business in ${esc(t.market)} counts toward this deal, and new sign-ups there are stamped to you automatically` : `only businesses you bring in count toward this deal`}${t.exclusivity === "market_conditional" ? " · your exclusivity in this market is conditional, on the terms in the deal" : ""}.</p>`).join("")}</div>` : ""}
   ${e.hasPaidRevenue ? `
   <div class="panel mt"><h3 style="margin-top:0">Accrued, not yet paid</h3>
@@ -18284,7 +18284,7 @@ function partnerLinksHtml(d) {
   <div class="panel">
     <h3 style="margin-top:0">How your share works</h3>
     <p class="small">You keep <strong>${d.partner.sharePct == null ? "your org's share" : `${d.partner.sharePct}%`}</strong> of the subscription revenue from businesses in your assigned markets that joined through your links or are credited to you. Creators cost you nothing and earn you nothing directly; they are the bench that makes businesses stay. Paid bookings and post licenses are the creator's and the business's money, not subscription revenue, so they are not shared. Accrued amounts appear in your Wallet the month a subscription is on file.</p>
-    <p class="small muted">The partner one-pager lives here as soon as it is published. Ask the SIGNL team for the current copy any time: hello@joinsignl.com.</p>
+    <p class="small muted">The partner one-pager lives here as soon as it is published. Ask the Magpie team for the current copy any time: hello@magpielocal.com.</p>
   </div>`;
 }
 
@@ -18304,7 +18304,7 @@ function partnerAccountHtml(d) {
     <h3 style="margin-top:0">${esc(p.name)}${partnerSampleChip(d)}</h3>
     <p class="small" style="margin:0">Type: ${p.type === "profile" ? "Local profile" : "Media group"} · Contact: ${esc(p.contactName || u.name || "")} · Status: ${p.status === "active" ? "Active" : "Paused"}</p>
     <p class="small muted">Markets: ${esc(p.markets.join(", "))} · Your share: ${p.sharePct == null ? "set in your org's deal" : `${p.sharePct}%`} · Agreement: ${p.agreementStatus === "signed" ? "Signed" : "Not signed yet"}</p>
-    ${p.agreementStatus !== "signed" ? `<p class="small muted">Your agreement is handled with the SIGNL team directly (hello@joinsignl.com); this page updates the moment it is signed. Nothing here waits on it except payouts.</p>` : ""}
+    ${p.agreementStatus !== "signed" ? `<p class="small muted">Your agreement is handled with the Magpie team directly (hello@magpielocal.com); this page updates the moment it is signed. Nothing here waits on it except payouts.</p>` : ""}
   </div>
   ${accountHtml(u)}`;
 }
@@ -18332,7 +18332,7 @@ function partnerSigActions(d) {
   const zb = d.markets.find((m) => (m.businesses.applied || 0) === 0);
   if (zb && t.creatorsAttributed + t.businessesAttributed > 0) acts.push({ h: `Send your business link in ${zb.market}`, p: "No businesses have joined through you there yet. One business on a paid plan starts your share accruing.", btn: "Get links", tab: "Links" });
   if (bs.applied > 0 && bs.active === 0) acts.push({ h: "Founding businesses are waiting", p: `${bs.applied} ${bs.applied === 1 ? "business has" : "businesses have"} joined through you and ${bs.applied === 1 ? "sits" : "sit"} on the founding list. They activate at launch; nothing for you to do but keep the bench growing.`, btn: "See businesses", tab: "Businesses" });
-  if (d.partner.agreementStatus !== "signed") acts.push({ h: "Agreement not signed yet", p: "Your agreement is handled with the SIGNL team directly. Payouts wait on it; recruiting does not.", btn: "See account", tab: "Account" });
+  if (d.partner.agreementStatus !== "signed") acts.push({ h: "Agreement not signed yet", p: "Your agreement is handled with the Magpie team directly. Payouts wait on it; recruiting does not.", btn: "See account", tab: "Account" });
   if (bs.active > 0 && t.offersLive === 0) acts.push({ h: "No offers live yet", p: "Businesses are active in your markets but no campaigns are live. When the first offer posts, it shows under Performance.", btn: "See performance", tab: "Performance" });
   if (!acts.length) acts.push({ h: "Nothing needs you", p: "Your funnel is moving and your links are working. Performance has the latest numbers.", btn: "See performance", tab: "Performance" });
   return acts.slice(0, 4);
@@ -18397,9 +18397,9 @@ function partnerSigHtml(d) {
 function pilotSigHtml() {
   const p = (pilotState.me && pilotState.me.pilot) || {};
   return scopedSigChatHtml({
-    intro: `I read only your pilot: the fund, the chosen businesses, and what the visits did. Counted and recorded customers stay separate in every answer, the way they do everywhere in SIGNL.`,
-    greeting: `Ask me how much of the fund is left, how many customers were counted, or which businesses joined SIGNL after their visit. Everything comes from ${p.name ? p.name + "'s" : "your pilot's"} own records.`,
-    starters: ["How much of the fund is left?", "How many customers were counted?", "Which businesses joined SIGNL afterwards?", "Where is my end-of-pilot pack?"],
+    intro: `I read only your pilot: the fund, the chosen businesses, and what the visits did. Counted and recorded customers stay separate in every answer, the way they do everywhere in Magpie.`,
+    greeting: `Ask me how much of the fund is left, how many customers were counted, or which businesses joined Magpie after their visit. Everything comes from ${p.name ? p.name + "'s" : "your pilot's"} own records.`,
+    starters: ["How much of the fund is left?", "How many customers were counted?", "Which businesses joined Magpie afterwards?", "Where is my end-of-pilot pack?"],
   });
 }
 
@@ -18407,7 +18407,7 @@ function partnerHelpHtml(d) {
   const p = (state.partnerData || {}).partner || {};
   const qa = (q, a) => `<details class="help-qa"><summary>${esc(q)}</summary><p class="small">${a}</p></details>`;
   return `
-  ${wsHead("Help", { sub: "How partnering with SIGNL works, in plain words.", subKey: "pt-help" })}
+  ${wsHead("Help", { sub: "How partnering with Magpie works, in plain words.", subKey: "pt-help" })}
   <div class="card mb pt-sig-card">
     ${sigAvatarHtml("")}
     <div class="pt-sig-copy">
@@ -18417,12 +18417,12 @@ function partnerHelpHtml(d) {
     </div>
   </div>
   <div class="wcard">
-    ${qa("What do I actually do?", "Share your links. Creators claim through your creator link and join the bench in your markets. Businesses sign up through your business link. SIGNL runs everything else: the platform, the campaigns, the payments, the guarantees.")}
+    ${qa("What do I actually do?", "Share your links. Creators claim through your creator link and join the bench in your markets. Businesses sign up through your business link. Magpie runs everything else: the platform, the campaigns, the payments, the guarantees.")}
     ${qa("How do I earn?", p.sharePct == null ? "You keep your org's share of subscription revenue from businesses credited to your org in your markets, for as long as they stay subscribed. The share itself sits in your org's deal, which your partner lead holds. It accrues monthly and shows in your Wallet, labeled accrued until a payment actually happens." : `You keep ${p.sharePct}% of subscription revenue from businesses credited to you in your markets, for as long as they stay subscribed. It accrues monthly and shows in your Wallet, labeled accrued until a payment actually happens.`)}
     ${qa("Why do creators matter to my earnings?", "Businesses subscribe because the bench is worth booking. Every complete creator your link brings in makes your markets easier to sell and likelier to renew.")}
-    ${qa("Can I see who joined through me?", "Yes: Creators and Businesses show everyone credited to your links, with their status. Contact details stay private; SIGNL runs the relationships inside the app.")}
-    ${qa("What does SIGNL cost my audience?", "Joining is free for creators, and comped visits are always free. Businesses pay the subscription; that is the revenue you share in.")}
-    <p class="small muted" style="margin-top:14px">Still stuck? Email <a href="mailto:hello@joinsignl.com">hello@joinsignl.com</a> and a person answers.</p>
+    ${qa("Can I see who joined through me?", "Yes: Creators and Businesses show everyone credited to your links, with their status. Contact details stay private; Magpie runs the relationships inside the app.")}
+    ${qa("What does Magpie cost my audience?", "Joining is free for creators, and comped visits are always free. Businesses pay the subscription; that is the revenue you share in.")}
+    <p class="small muted" style="margin-top:14px">Still stuck? Email <a href="mailto:hello@magpielocal.com">hello@magpielocal.com</a> and a person answers.</p>
   </div>`;
 }
 
@@ -18460,7 +18460,7 @@ function perfSourceLabel(source) {
   return source === "meta_sync" ? "Synced from Instagram" : "Creator-reported";
 }
 
-// The Home stat cell (Build -43, FIX A): the "SIGNL ROAS Score"
+// The Home stat cell (Build -43, FIX A): the "Magpie ROAS Score"
 // label belongs to Score v2 alone. When the payload carries v2
 // (the live Home does), the cell shows the v2 current cohort with
 // its state. Without v2 (the preview twin, older payloads) the
@@ -18472,7 +18472,7 @@ function roasCellHtml(h, navButton) {
   const v2 = h.roasV2 || null;
   if (v2) {
     if (v2.state === "forming" || v2.score === null || v2.score === undefined) {
-      return `<div class="stat-cell"><div class="stat-num grad-text" style="font-size:1.1rem">Forming</div><div class="stat-lbl">SIGNL ROAS Score · $${fmtMoney(v2.countedBack)} counted back through your register so far. Your score starts when there is enough counted to mean something.</div>${navButton ? `<button class="btn small-btn" style="margin-top:6px" onclick="return go('dashboard','Visits &amp; Posts')">Go to Visits &amp; Posts</button>` : ""}</div>`;
+      return `<div class="stat-cell"><div class="stat-num grad-text" style="font-size:1.1rem">Forming</div><div class="stat-lbl">Magpie ROAS Score · $${fmtMoney(v2.countedBack)} counted back through your register so far. Your score starts when there is enough counted to mean something.</div>${navButton ? `<button class="btn small-btn" style="margin-top:6px" onclick="return go('dashboard','Visits &amp; Posts')">Go to Visits &amp; Posts</button>` : ""}</div>`;
     }
     // Build -45 (Halo): Home prints the same headline the
     // Receipt prints (the blend, when Halo has anything to
@@ -18480,7 +18480,7 @@ function roasCellHtml(h, navButton) {
     // label, everywhere; the counted-only figure stays on
     // the Receipt's split, one tap away.
     const headNum = v2.headlineScore !== null && v2.headlineScore !== undefined && (v2.haloDollars || 0) > 0 ? v2.headlineScore : v2.score;
-    return `<div class="stat-cell"><div class="stat-num grad-text">${Number(headNum).toFixed(1)}&times;</div><div class="stat-lbl">SIGNL ROAS Score · ${esc(v2.stateLabel || "")}<br>$${fmtMoney(v2.countedBack)} counted back through your register${(v2.haloDollars || 0) > 0 ? ` · about $${fmtMoney(v2.haloDollars)} more Halo estimated` : ""}, on $${fmtMoney(v2.putIn)} all in. The full breakdown is on your Receipt.</div></div>`;
+    return `<div class="stat-cell"><div class="stat-num grad-text">${Number(headNum).toFixed(1)}&times;</div><div class="stat-lbl">Magpie ROAS Score · ${esc(v2.stateLabel || "")}<br>$${fmtMoney(v2.countedBack)} counted back through your register${(v2.haloDollars || 0) > 0 ? ` · about $${fmtMoney(v2.haloDollars)} more Halo estimated` : ""}, on $${fmtMoney(v2.putIn)} all in. The full breakdown is on your Receipt.</div></div>`;
   }
   const r = h.roas || null;
   const score = h.roasScore;
@@ -18561,7 +18561,7 @@ function bizDashNextRowsHtml(h, tickWhen) {
 }
 
 // Feed taxonomy for the business home (Grin Feed pattern mapped
-// to SIGNL's real notification kinds + content records). Events
+// to Magpie's real notification kinds + content records). Events
 // only exist when a real record does; a chip with no records
 // shows its own explained empty state.
 const BIZ_FEED_KINDS = [["all", "All"], ["applications", "Applications"], ["invites", "Invites"], ["messages", "Messages"], ["posts", "Posts"], ["visits", "Visits"], ["licenses", "Licenses"]];
@@ -18972,7 +18972,7 @@ async function loadBusinessHome() {
       // the Home snapshot under its own name and state. The
       // legacy estimate never appears here; it lives, labeled as
       // a modeled estimate, on the Performance card below.
-      ...(h.roasV2 && h.roasV2.score !== null && h.roasV2.score !== undefined ? [{ num: `${Number(h.roasV2.headlineScore !== null && h.roasV2.headlineScore !== undefined && (h.roasV2.haloDollars || 0) > 0 ? h.roasV2.headlineScore : h.roasV2.score).toFixed(1)}&times;`, label: `SIGNL ROAS Score · ${h.roasV2.stateLabel || ""}${(h.roasV2.haloDollars || 0) > 0 ? ` · $${fmtMoney(h.roasV2.countedBack)} counted, about $${fmtMoney(h.roasV2.haloDollars)} Halo est.` : ""}` }] : []),
+      ...(h.roasV2 && h.roasV2.score !== null && h.roasV2.score !== undefined ? [{ num: `${Number(h.roasV2.headlineScore !== null && h.roasV2.headlineScore !== undefined && (h.roasV2.haloDollars || 0) > 0 ? h.roasV2.headlineScore : h.roasV2.score).toFixed(1)}&times;`, label: `Magpie ROAS Score · ${h.roasV2.stateLabel || ""}${(h.roasV2.haloDollars || 0) > 0 ? ` · $${fmtMoney(h.roasV2.countedBack)} counted, about $${fmtMoney(h.roasV2.haloDollars)} Halo est.` : ""}` }] : []),
     ] : null;
     const caughtLinks = [
       { label: "Find creators", act: () => go("dashboard", "Discover") },
@@ -19095,7 +19095,7 @@ async function loadPerformanceCard(root) {
 }
 // ---------- Requests: the approvals queue (Grin Approvals) ----------
 // Tabs with counts (Waiting / Decided / Later), search + offer
-// filter + sort, aging with SIGNL's real decision window (2
+// filter + sort, aging with Magpie's real decision window (2
 // business days — no invented auto-close), checkbox bulk select,
 // expandable rows with a plain-words match reason, and a kebab
 // menu mirroring Grin's: View creator profile / Ask Sig / Select
@@ -19172,7 +19172,7 @@ function reqWhyHtml(r) {
   if (c.tierBand) bits.push(`${c.tierBand} tier`);
   if (rp.impactScore !== null && rp.impactScore !== undefined) bits.push(`local impact score ${rp.impactScore}`);
   if (tr.visitsCompleted) bits.push(`${tr.visitsCompleted} visit${tr.visitsCompleted === 1 ? "" : "s"} completed, ${tr.onTimePct === null || tr.onTimePct === undefined ? "no late posts" : tr.onTimePct + "% on time"}`);
-  else bits.push("new to SIGNL, no visits yet");
+  else bits.push("new to Magpie, no visits yet");
   if (rp.momentum) bits.push(`${rp.momentum} Momentum points`);
   return `<div class="req-why"><strong>Matched because:</strong> ${esc(bits.join(" · "))}.</div>`;
 }
@@ -19226,7 +19226,7 @@ function renderReqMain() {
       { label: "Decided", count: b.decided.length, on: reqState.tab === "decided", onclick: "return reqSetTab('decided')" },
       { label: "Later", count: b.later.length, on: reqState.tab === "later", onclick: "return reqSetTab('later')" },
     ])}
-    ${reqState.tab === "waiting" && b.waiting.length ? `<div class="req-alert"><strong>${b.waiting.length} unreviewed application${b.waiting.length === 1 ? "" : "s"}.</strong> SIGNL's promise is a decision within 2 business days${oldest >= 2 * 86400000 ? ` — the oldest has been waiting ${Math.floor(oldest / 86400000)} days` : ""}. Every applicant hears back, either way.</div>` : ""}
+    ${reqState.tab === "waiting" && b.waiting.length ? `<div class="req-alert"><strong>${b.waiting.length} unreviewed application${b.waiting.length === 1 ? "" : "s"}.</strong> Magpie's promise is a decision within 2 business days${oldest >= 2 * 86400000 ? ` — the oldest has been waiting ${Math.floor(oldest / 86400000)} days` : ""}. Every applicant hears back, either way.</div>` : ""}
     <div class="ws-tools">
       <span class="ws-search">${bnIcon("search")}<input id="req-q" type="search" placeholder="Search creators" value="${esc(reqState.q)}" oninput="reqSetQ(this.value)"></span>
       <select class="ws-select" onchange="reqSetOffer(this.value)" aria-label="Filter by offer"><option value="">All offers</option>${reqState.offers.map((o) => `<option value="${o.id}" ${reqState.offerId === o.id ? "selected" : ""}>${esc(o.title)}</option>`).join("")}</select>
@@ -19379,7 +19379,7 @@ async function regularBookAgain(creatorId, btn) {
 // and Ask to renew, which sends a fresh request through the
 // creator-approved licensing flow. Nothing renews on its own.
 async function askRenewLicense(postId, fee, endsOn) {
-  if (!fee) { alert("This creator has not listed a licensing fee, so this post cannot be renewed through SIGNL. It stays shareable inside Instagram with credit."); return false; }
+  if (!fee) { alert("This creator has not listed a licensing fee, so this post cannot be renewed through Magpie. It stays shareable inside Instagram with credit."); return false; }
   const total = Math.round(fee * 1.03 * 100) / 100;
   const net = Math.round(fee * 0.97 * 100) / 100;
   if (!confirm(`Ask to renew this licence? Your current licence ends ${endsOn}. The request goes to the creator at their $${fmtPrice(fee)} fee: you pay $${fmtMoney(total)} (fee + 3%) only if they approve, the creator keeps $${fmtMoney(net)} (97%), and a fresh 90 days starts the day they approve. Nothing renews unless they say yes.`)) return false;
@@ -19447,7 +19447,7 @@ async function renderContentTab() {
     ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse.", subKey: "biz-content" })}
     <div id="biz-lic-expiry"></div>
     <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare the post inside Instagram, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use. That license is what makes the post UGC you can use: repost it and run it as an ad for those 90 days. Every license below shows its end date, and no license ever runs longer than 90 days.</span></div>
-    ${lib.length ? `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} tracked in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits</button></div>`
+    ${lib.length ? `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} tracked in the last 30 days. Magpie tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits</button></div>`
       : `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking</div><div class="tc-s">Post tracking starts with your first visit.</div></div></div>`}
     ${wsTabs([
       { label: "Creator posts", count: lib.length, on: contentTab === "creator", onclick: "return contentSetTab('creator')" },
@@ -19546,7 +19546,7 @@ function bizStatsHtml(d) {
   </div>`;
   const countedPanel = `<div class="panel">
     <h3 style="margin:0 0 2px">Counted at your register <span class="cc-chip counted">Counted</span></h3>
-    <p class="small" style="margin:0">${ccMoneyFmt(cnt.total || 0)} counted at your register this period — ${ccMoneyFmt(cnt.firsts || 0)} on first visits and ${ccMoneyFmt(cnt.returns || 0)} on come-backs. Register dollars are your revenue, counted by SIGNL; they are never added to the money-out panels above. Your Receipt below proves them visit by visit, and the two always agree.</p>
+    <p class="small" style="margin:0">${ccMoneyFmt(cnt.total || 0)} counted at your register this period — ${ccMoneyFmt(cnt.firsts || 0)} on first visits and ${ccMoneyFmt(cnt.returns || 0)} on come-backs. Register dollars are your revenue, counted by Magpie; they are never added to the money-out panels above. Your Receipt below proves them visit by visit, and the two always agree.</p>
   </div>`;
   return `<div class="panel">${head}${tiles}</div>${recordedPanel}${chargedPanel}${countedPanel}`;
 }
@@ -19570,7 +19570,7 @@ function ptStatsHtml(d) {
   const head = roleStatsHead("Your markets", per.key || ptStatsP, "ptStatsPeriod");
   if (!s.hasData) {
     return `<div class="panel">${head}
-      <p class="small" style="margin:8px 0 0">Nothing has come through your links yet. When the first business signs in one of your markets, this fills in with your sign-ups, the gross they bring, and your share of it — the same figures SIGNL's own books show for you.</p></div>`;
+      <p class="small" style="margin:8px 0 0">Nothing has come through your links yet. When the first business signs in one of your markets, this fills in with your sign-ups, the gross they bring, and your share of it — the same figures Magpie's own books show for you.</p></div>`;
   }
   const pa = s.periodAgg || {};
   const deals = s.deals || {};
@@ -19586,7 +19586,7 @@ function ptStatsHtml(d) {
     const governing = (s.currentMonth && s.currentMonth.governedBy) || (pa.guaranteeMonths ? "guarantee" : "percentage");
     greaterOf = `<div class="panel" style="background:var(--ink);color:#fff">
       <h3 style="margin:0 0 6px;color:#fff">The greater of the two — ${governing === "guarantee" ? "the guarantee" : "the percentage"} governs</h3>
-      <p class="small" style="margin:0;color:#E8EDE9">Percentage side: <strong>${ccMoneyFmt(pa.pctCandidate || 0)}</strong> &middot; Guarantee side: <strong>${ccMoneyFmt(pa.floorCandidate || 0)}</strong>. Your share is whichever is larger, month by month — exactly the math on SIGNL's books.</p></div>`;
+      <p class="small" style="margin:0;color:#E8EDE9">Percentage side: <strong>${ccMoneyFmt(pa.pctCandidate || 0)}</strong> &middot; Guarantee side: <strong>${ccMoneyFmt(pa.floorCandidate || 0)}</strong>. Your share is whichever is larger, month by month — exactly the math on Magpie's books.</p></div>`;
   }
   const dealPanel = (s.dealCards || []).length ? `<div class="panel"><h3 style="margin:0 0 8px">Your deals</h3>
     ${(s.dealCards || []).map((dc) => `<div class="cc-att-row"><span><strong>${esc(dc.label || "Deal")}</strong> &middot; ${dc.termsState === "entered" ? `terms entered${typeof dc.partnerPct === "number" ? ` &middot; your share ${dc.partnerPct}%` : ""}` : "terms not entered yet — nothing accrues until they are"}${dc.guaranteeState ? ` &middot; ${esc(dc.guaranteeState)}` : ""}<br><span class="small muted">${(dc.markets || []).map((m) => `${esc(m.market)}: ${esc(m.status)}${m.liveAt ? `, live ${esc(fmtDay(m.liveAt))}` : ""}${typeof m.activationFee === "number" ? ` &middot; activation ${ccMoneyFmt(m.activationFee)} (${esc(m.activationStatus)})` : ", activation fee to be set"}`).join(" &middot; ")}</span></span></div>`).join("")}
@@ -19703,13 +19703,13 @@ async function renderAnalyticsTab() {
     <div id="biz-intent"></div>
     <div class="wcard"><div class="flex-between" style="flex-wrap:wrap;gap:10px"><h3 style="margin:0">Creator funnel</h3>${segSw([{ v: "7", label: "7 days" }, { v: "30", label: "30 days" }], String(anaDays), "anaSetDays")}</div>
       ${((f.invited || 0) + (f.claimed || 0) + (f.visited || 0) + (f.posted || 0)) > 0 ? `${funnel2Html(stages)}
-      <p class="ana-note">Stages count real SIGNL events only. There is no email-open stage: SIGNL does not track opens, so the funnel starts at the invite itself.</p>` : `<p class="wc-sub" style="margin:6px 0 2px">Your funnel fills in once your campaigns are live: invited, accepted, visited, posted.</p>`}
+      <p class="ana-note">Stages count real Magpie events only. There is no email-open stage: Magpie does not track opens, so the funnel starts at the invite itself.</p>` : `<p class="wc-sub" style="margin:6px 0 2px">Your funnel fills in once your campaigns are live: invited, accepted, visited, posted.</p>`}
     </div>
     <div class="wcard"><h3>Creators by local audience</h3>
       ${lb.length ? lb.map((row, i) => `<div class="lb-row"><span class="lb-rank">${i + 1}</span><div class="lb-main"><div class="lb-name">${esc(row.creatorName)} <span class="muted" style="font-weight:600">@${esc(row.creatorHandle)}</span></div><div class="lb-meta">${row.posts} post${row.posts === 1 ? "" : "s"}${row.onTimePct !== null && row.onTimePct !== undefined ? ` · ${row.onTimePct}% on time` : ""}</div></div><span class="lb-num">${fmtNum(row.localReach)}<span class="u">local reach</span></span></div>`).join("") : `<p class="wc-sub" style="margin:6px 0 2px">Once posts land, your creators rank here by the local reach they delivered.</p>`}
     </div>
     ${h.costPerVisit && h.pipeline && (h.pipeline.clockRunning || 0) > 0 ? `<div class="wcard"><h3>Cost per visit</h3>
-      <p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in the modeled estimate; your SIGNL ROAS Score on Home counts register events only.</p>
+      <p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in the modeled estimate; your Magpie ROAS Score on Home counts register events only.</p>
     </div>` : ""}
     <div id="biz-receipt"></div>`;
     loadSampleResultsInto(false);
@@ -19753,7 +19753,7 @@ function intentFunnelHtml(ro) {
   if (conv.revenuePerVisit != null) convBits.push(`$${fmtMoney(conv.revenuePerVisit)} counted per visit`);
   const rows = (ro.offers || []).filter((r) => (r.postsLive || 0) > 0);
   return `<div class="wcard"><h3>How reach funnels to return</h3>
-    <p class="wc-sub" style="margin:4px 0 10px">From the posts your creators delivered: attention first, then intent, then customers SIGNL counted. Recorded numbers are what creators reported; counted numbers are register events. Nothing here is modeled.</p>
+    <p class="wc-sub" style="margin:4px 0 10px">From the posts your creators delivered: attention first, then intent, then customers Magpie counted. Recorded numbers are what creators reported; counted numbers are register events. Nothing here is modeled.</p>
     ${steps.map((s) => `<div class="lb-row"><div class="lb-main"><div class="lb-name">${esc(s.label)}</div><div class="lb-meta">${s.cls === "counted" ? "Counted" : "Recorded"} · ${esc(stepSub(s))}</div></div>${stepVal(s)}</div>`).join("")}
     ${convBits.length ? `<p class="ana-note">${convBits.join(" · ")}.</p>` : ""}
     <p style="margin:10px 0 0">${o.returnScore ? `<strong>Return score: ${o.returnScore.score} of 100</strong> across your posts. Built from saves and shares first, likes second, views as the base, and counted customers when we have them.` : `Return score: not enough data yet. It lands once a post's views are reported.`}</p>
@@ -19972,7 +19972,7 @@ async function renderBizProfileTab() {
     const live = businessAccessState(u) === "active";
     state.bizProfileView = { home: h, reviews, planName: (d.plan && d.plan.name) || b.planName || "" };
     const head = `
-    ${wsHead("Your business page", { chip: live ? livePill("Live") : `<span class="beta-pill">Founding list</span>`, sub: live ? "Your business's home on SIGNL. The card below is how creators see you, and it updates as you edit." : "Your business's home on SIGNL. Your page is yours to get ready now: the card below is how creators will see you, and it updates as you edit.", action: `<button type="button" class="btn ws-outline" onclick="return openBizProfilePreview()">See it as creators see it</button>` })}
+    ${wsHead("Your business page", { chip: live ? livePill("Live") : `<span class="beta-pill">Founding list</span>`, sub: live ? "Your business's home on Magpie. The card below is how creators see you, and it updates as you edit." : "Your business's home on Magpie. Your page is yours to get ready now: the card below is how creators will see you, and it updates as you edit.", action: `<button type="button" class="btn ws-outline" onclick="return openBizProfilePreview()">See it as creators see it</button>` })}
     ${live ? "" : `<div class="bp-status-line"><strong>Founding list</strong><span>Your market has not opened yet, so nothing here is sent to a creator until it does.</span></div>`}
     <div class="bp-live-caption">Live preview</div>
     ${bizProfileCardHtml(b, u.market, { live, founding: !live, home: h, reviewsCount: reviews.length, planName: state.bizProfileView.planName, rootId: "biz-profile-live-card" })}
@@ -20282,8 +20282,8 @@ async function loadWishlistSection() {
 }
 function wishlistRowHtml(row) {
   const chip = row.state === "ready" ? `<span class="badge ok">Ready to invite</span>`
-    : row.state === "claimed" ? `<span class="badge">On SIGNL, finishing their profile</span>`
-    : `<span class="badge warn">Not on SIGNL yet</span>`;
+    : row.state === "claimed" ? `<span class="badge">On Magpie, finishing their profile</span>`
+    : `<span class="badge warn">Not on Magpie yet</span>`;
   const hint = row.state === "waiting" ? `<p class="small muted" style="margin:2px 0 0">We email you when they claim their profile, and again when it is finished.</p>`
     : row.state === "claimed" ? `<p class="small muted" style="margin:2px 0 0">We email you when their profile is finished and they are ready to invite.</p>` : "";
   return `<div style="display:flex;gap:8px 10px;flex-wrap:wrap;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line,#e6e6e6)">
@@ -20303,7 +20303,7 @@ function renderWishlistSection(rows) {
   if (!el) return;
   el.innerHTML = `<section class="wcard" style="margin:14px 0">
     <h3 style="margin-top:0">Your wishlist</h3>
-    <p class="small muted" style="margin-top:0">The creators you already want, from your own list. Paste their handles below, one per line, with your private note after a comma if you keep one. Your notes stay yours: creators never see them, and no other business can. We email you when someone on your list joins SIGNL, and again when their profile is finished.</p>
+    <p class="small muted" style="margin-top:0">The creators you already want, from your own list. Paste their handles below, one per line, with your private note after a comma if you keep one. Your notes stay yours: creators never see them, and no other business can. We email you when someone on your list joins Magpie, and again when their profile is finished.</p>
     ${rows.length ? rows.map(wishlistRowHtml).join("") : `<p class="small muted">No one on your wishlist yet.</p>`}
     <div class="field" style="margin-top:10px"><label>Add creators (one per line, note after a comma)</label><textarea id="wl-paste" rows="4" placeholder="@creatorone, loves our weekend brunch crowd&#10;@creatortwo"></textarea></div>
     <button class="btn small-btn" type="button" onclick="return wishlistImport()">Add to wishlist</button> <span class="small muted" id="wl-note"></span>
@@ -20381,7 +20381,7 @@ function setupChecklistHtml(cl) {
   };
   return `<section class="wcard" id="setup-checklist" style="margin-top:14px">
     <p class="ui-kicker" style="margin:0">Finish setting up</p>
-    <h3 style="margin:2px 0 0">Get the most from SIGNL</h3>
+    <h3 style="margin:2px 0 0">Get the most from Magpie</h3>
     <p class="wc-sub" style="margin-top:8px">${cl.doneCount} of ${cl.total} done. Each thing here is read from your real records, and this list goes away when all ${cl.total} are done.${cl.firstVisit ? ` Your first booking is confirmed${cl.firstVisit.creatorHandle ? ` with @${esc(cl.firstVisit.creatorHandle)}` : ""}: the register, usual day, PIN, card, and test steps are what make that visit count, and they only work if they are done before the visit.` : ""}</p>
     ${cl.items.map((s) => `<div style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;flex-wrap:wrap">
       <div>${s.done ? `<span class="badge ok">Done</span>` : `<span class="badge warn">To do</span>`}</div>
@@ -20455,15 +20455,15 @@ async function setupPrintCard() {
     const w = window.open("", "_blank", "width=640,height=760");
     if (!w) { alert("Allow pop-ups to print the counter card."); return false; }
     const origin = location.origin;
-    w.document.write(`<!DOCTYPE html><html><head><title>SIGNL counter card</title>
+    w.document.write(`<!DOCTYPE html><html><head><title>Magpie counter card</title>
     <style>body{font-family:Arial,sans-serif;text-align:center;padding:36px;color:#0B0D0C}img.logo{height:54px}.biz{font-size:22px;font-weight:700;margin:10px 0 2px}.big{font-size:32px;font-weight:800;letter-spacing:0.01em;margin:22px 0 6px}.line{font-size:17px}.rule{border-top:2px solid #0B0D0C;margin:26px 0}.code{font-family:monospace;font-size:19px;font-weight:700;letter-spacing:0.12em}.muted{color:#666;font-size:13px}</style></head>
     <body>
-      <img class="logo" src="${origin}/assets/logo.png" alt="SIGNL">
+      <img class="logo" src="${origin}/assets/logo.png" alt="Magpie">
       <div class="biz">${esc(d.businessName || "")}</div>
       <div class="big">"First time in? How'd you hear about us?"</div>
       <p class="line">Ask it at the natural moment, ringing up or seating. When a creator or a post comes up, that answer counts.</p>
       <div class="rule"></div>
-      <p class="line"><strong>Here with a SIGNL visit code?</strong><br>Show your code at the register.</p>
+      <p class="line"><strong>Here with a Magpie visit code?</strong><br>Show your code at the register.</p>
       <p class="muted">Staff: open <strong>${esc(d.staffLink || "")}</strong>, enter the staff PIN, then enter the creator's code. That tap is what counts the visit.<br>Business code: <span class="code">${esc(d.staffCode || "")}</span></p>
     </body></html>`);
     w.document.close();
@@ -20574,12 +20574,12 @@ function acceptanceHtml(c) {
 }
 function shelfProofLine(c) {
   const tr = c && c.trackRecord;
-  if (!tr || tr.isNew) return "New to SIGNL: no visits yet";
+  if (!tr || tr.isNew) return "New to Magpie: no visits yet";
   const bits = [];
   if (tr.visitsCompleted) bits.push(`${tr.visitsCompleted} visit${tr.visitsCompleted === 1 ? "" : "s"} done`);
   if (tr.postsDelivered) bits.push(`${tr.postsDelivered} post${tr.postsDelivered === 1 ? "" : "s"} delivered`);
   if (tr.postsDelivered && tr.onTimePct !== null && tr.onTimePct !== undefined) bits.push(`${tr.onTimePct}% on time`);
-  return bits.length ? bits.join(" · ") : "New to SIGNL: no visits yet";
+  return bits.length ? bits.join(" · ") : "New to Magpie: no visits yet";
 }
 // One Shelf tile (business Find creators). In preview mode the
 // actions are inert and the proof line renders only when a real
@@ -20720,7 +20720,7 @@ function whatYouGetHtml(c) {
     <ul class="pdp-get">
       <li><strong>1 post + 1 story</strong>, in their own words. Honest posts only: nobody can require a positive one.</li>
       <li><strong>Due by the terms on the booking.</strong> For a comped visit the standard goal is a post within 48 hours, unless the booking says otherwise.</li>
-      <li><strong>Counted, not guessed.</strong> SIGNL counts the customers who come in with the visit code, so you see what the visit did.</li>
+      <li><strong>Counted, not guessed.</strong> Magpie counts the customers who come in with the visit code, so you see what the visit did.</li>
       ${p.paidRate ? `<li><strong>A paid booking at ${sym}${fmtPrice(p.paidRate)}</strong> includes one standard licence: repost the post and run it as an ad for 90 days.</li>` : `<li><strong>Comped visits stay on their own page only.</strong> Running the post as an ad is a separate licence at the creator&rsquo;s fee, with their approval.</li>`}
     </ul>
     ${"" /* Item 8 (Jeff, 2026-11-06): the multi-sentence standards paragraph NEVER renders on the profile — terms live in the booking flow. Only the creator's OWN visit words show, and only when they wrote some (the payload defaults visitIncludes to the standard summary when they didn't). */}
@@ -20913,7 +20913,7 @@ function buyBoxHtml(c) {
   const first = (c.name || "this creator").trim().split(" ")[0] || "this creator";
   return `<div class="pdp-buy" id="pdp-buy">
     <div class="pdp-buy-h"><span>Book ${esc(first)}</span>${acceptanceHtml(c)}</div>
-    ${p.paidRate ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="paid" checked><span><strong>Paid booking — ${sym}${fmtPrice(p.paidRate)}</strong><small>You pay the rate + 3% (card and transfer fees). They keep 97%. SIGNL holds the money until the post is live.</small></span></label>` : ""}
+    ${p.paidRate ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="paid" checked><span><strong>Paid booking — ${sym}${fmtPrice(p.paidRate)}</strong><small>You pay the rate + 3% (card and transfer fees). They keep 97%. Magpie holds the money until the post is live.</small></span></label>` : ""}
     ${p.compOpen !== false ? `<label class="pdp-lane"><input type="radio" name="pdp-lane" value="comp"${p.paidRate ? "" : " checked"}><span><strong>Comped visit — ${sym}0</strong><small>The experience is the payment: 1 post + 1 story on their own page only.</small></span></label>` : ""}
     <div class="pdp-days"><span class="pdp-days-l">When should the visit happen?</span>${timingPickerHtml("pdp", "week")}</div>
     <details class="pdp-propose" id="pdp-propose">
@@ -20974,7 +20974,7 @@ function mirrorOfferCardHtml(o, opts) {
   // Canon imagery chain: the business's cover photo, then its
   // logo (both ride businessImageUrl in that order), then an
   // INITIAL tile — the business's own initial, never a "?".
-  const initial = esc((String(o.businessName || o.businessCity || o.title || "SIGNL")).trim().charAt(0).toUpperCase() || "S");
+  const initial = esc((String(o.businessName || o.businessCity || o.title || "Magpie")).trim().charAt(0).toUpperCase() || "S");
   const trackCells = tr ? [
     tr.visitsHosted > 0 ? `<span><strong>${tr.visitsHosted}</strong> creator visit${tr.visitsHosted === 1 ? "" : "s"} hosted here</span>` : "",
     tr.creatorsReturned > 0 ? `<span><strong>${tr.creatorsReturned}</strong> creator${tr.creatorsReturned === 1 ? "" : "s"} came back for a second visit</span>` : "",
@@ -21450,7 +21450,7 @@ async function runDiscover() {
   if (fmin) params.set("followersMin", fmin);
   if (fmax) params.set("followersMax", fmax);
   if (minlocal) params.set("minLocalPct", minlocal);
-  // Build -132: the default sort is local % first — SIGNL's
+  // Build -132: the default sort is local % first — Magpie's
   // ranking principle. It is applied to the returned set (the
   // deck already ranked this way); the named server sorts pass
   // through untouched.
@@ -21482,7 +21482,7 @@ async function runDiscover() {
     syncUniversityOptions(data.universities);
     if (!data.creators.length) {
       setDiscoverCount(0);
-      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>SIGNL is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
+      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>Magpie is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
       return;
     }
     const tg = document.getElementById("discover-toggle");
@@ -21868,7 +21868,7 @@ function openBookingFlow(creatorId) {
     </div>
     <div class="panel" style="margin-top:14px">
       <h3 style="margin-top:0">Step 1 — comped or paid?</h3>
-      ${p.paidRate ? `<label class="pdp-lane"><input type="radio" name="bk-lane" value="paid"${lane0 === "paid" ? " checked" : ""}><span><strong>Paid booking — ${sym}${fmtPrice(p.paidRate)}</strong><small>You pay the rate + 3% (card and transfer fees). They keep 97%. SIGNL holds the money until the post is live.</small></span></label>` : ""}
+      ${p.paidRate ? `<label class="pdp-lane"><input type="radio" name="bk-lane" value="paid"${lane0 === "paid" ? " checked" : ""}><span><strong>Paid booking — ${sym}${fmtPrice(p.paidRate)}</strong><small>You pay the rate + 3% (card and transfer fees). They keep 97%. Magpie holds the money until the post is live.</small></span></label>` : ""}
       ${p.compOpen !== false ? `<label class="pdp-lane"><input type="radio" name="bk-lane" value="comp"${lane0 === "comp" ? " checked" : ""}><span><strong>Comped visit — ${sym}0</strong><small>The experience is the payment: 1 post + 1 story on their own page only.</small></span></label>` : ""}
       <div class="pdp-days"><span class="pdp-days-l">When should the visit happen?</span>${timingPickerHtml("bk", preset && preset.timingWindow ? preset.timingWindow : "week", preset && preset.visitDate ? preset.visitDate : "")}</div>
       <p style="margin:12px 0 0"><button type="button" class="btn" onclick="return bookingContinue()">Continue</button></p>
@@ -21897,7 +21897,7 @@ function compSuggestions(tierBand) {
 }
 
 // Redemption windows (Jeff, 2026-10-19 r2): no appointments
-// anywhere on SIGNL. An accepted offer is redeemed inside a
+// anywhere on Magpie. An accepted offer is redeemed inside a
 // window: 7 days from accepting (default) or this week, ending
 // Sunday. The chips set the mode select; the free-text field is
 // just an optional note for the creator.
@@ -22217,7 +22217,7 @@ const OFFER_INFO = {
   lane: { title: "Open or direct", body: "An open offer posts your terms to your market and creators apply. A direct offer goes to one creator you pick in Discover, and only they see it." },
   templates: { title: "Templates", body: "Templates prefill a proven offer shape: title, spots, window, and a note. Edit anything after picking one, including the deliverables: every template starts from the recommended standard for its kind of deal." },
   title: { title: "Offer title", body: "Name the experience, not the deal. For example: Dinner for two on us. Creators scan titles first, so say what they get." },
-  kind: { title: "How the creator is paid", body: "Comp means your product is the payment: the meal, service, or experience is on you. Cash means you pay the creator a rate for a booking. Coupon means a coupon is the payment: money off, a percent off, or store credit, and the creator accepts it as their pay for the post. Every kind starts from SIGNL's recommended deliverables, and you can edit them below. Pick one; an offer is never two kinds at once." },
+  kind: { title: "How the creator is paid", body: "Comp means your product is the payment: the meal, service, or experience is on you. Cash means you pay the creator a rate for a booking. Coupon means a coupon is the payment: money off, a percent off, or store credit, and the creator accepts it as their pay for the post. Every kind starts from Magpie's recommended deliverables, and you can edit them below. Pick one; an offer is never two kinds at once." },
   comped: { title: "What is comped", body: "Say exactly what the creator gets, in one line. For example: Two entrees and two drinks. This line prints on the offer, the visit card, and the staff screen." },
   covers: { title: "Who the comp covers", body: "One person is just the creator. Two people adds a guest. Creators post more when they can bring a guest, and meal for two comps outperform solo comps." },
   cap: { title: "Comp value / dollar cap", body: "The most the comp can ring up, at menu value. For example: a $100 cap on a dinner for two. Higher caps inside the typical range for a tier fill first." },
@@ -22279,7 +22279,7 @@ function deliverablesEditorHtml(d, kind) {
   const cur = draftDeliverables(d, kind);
   const rec = (id, on) => `<span class="badge info" id="${id}"${on ? "" : ` style="display:none"`}>Recommended</span>`;
   return `<div class="field"><label>What the creator owes</label>
-    <p class="small muted" style="margin:0 0 8px">These start at SIGNL's recommended standard for this kind of deal, marked Recommended. Change anything and the creator sees exactly what you set before they accept.</p>
+    <p class="small muted" style="margin:0 0 8px">These start at Magpie's recommended standard for this kind of deal, marked Recommended. Change anything and the creator sees exactly what you set before they accept.</p>
     <div class="form-2col">
       <div class="field"><label>Posts ${rec("o2-drec-posts", cur.posts === std.posts)}</label><input type="number" id="o2-dposts" min="1" max="5" step="1" value="${cur.posts}" oninput="offerDeliverablesTouch()"></div>
       <div class="field"><label>Post within ${rec("o2-drec-window", cur.windowHours === std.windowHours)}</label>
@@ -22288,7 +22288,7 @@ function deliverablesEditorHtml(d, kind) {
         </select></div>
     </div>
     <label class="ckrow"><input type="checkbox" class="ckbox" id="o2-dstory" ${cur.story ? "checked" : ""} onchange="offerDeliverablesTouch()"><span>Include 1 story that shares the post ${rec("o2-drec-story", cur.story === std.story)}</span></label>
-    ${kind === "paid" ? `<p class="small muted" style="margin:8px 0 0">A paid booking also includes the standard license: repost and ad use for 90 days from the post date. That part is set by SIGNL and cannot be changed.</p>` : ""}
+    ${kind === "paid" ? `<p class="small muted" style="margin:8px 0 0">A paid booking also includes the standard license: repost and ad use for 90 days from the post date. That part is set by Magpie and cannot be changed.</p>` : ""}
     <p style="margin:8px 0 0"><button type="button" class="linklike" onclick="return offerDeliverablesReset()">Back to the recommended standard</button></p>
   </div>`;
 }
@@ -22433,7 +22433,7 @@ function offerCoachUpdate() {
     if (kind === "comp" && composerMode() === "open") {
       const blocked = tiers.filter((t) => g.compGuidance[t] && cap > 0 && cap < g.compGuidance[t].floor);
       if (blocked.length) {
-        html = `<div class="error-box">A $${fmtMoney(cap)} comp is below the dignity floor for ${blocked.map(esc).join(", ")} (floors: ${blocked.map((t) => `${esc(t)} $${fmtPrice(g.compGuidance[t].floor)}`).join(", ")}). Raise the value or untick ${blocked.length === 1 ? "that tier" : "those tiers"}: token comps burn the roster's trust, so SIGNL will not publish this as is.</div>`;
+        html = `<div class="error-box">A $${fmtMoney(cap)} comp is below the dignity floor for ${blocked.map(esc).join(", ")} (floors: ${blocked.map((t) => `${esc(t)} $${fmtPrice(g.compGuidance[t].floor)}`).join(", ")}). Raise the value or untick ${blocked.length === 1 ? "that tier" : "those tiers"}: token comps burn the roster's trust, so Magpie will not publish this as is.</div>`;
       } else if (cap > 0 && tiers.length) {
         const fits = tiers.filter((t) => g.compGuidance[t] && cap >= g.compGuidance[t].typicalLow && cap <= g.compGuidance[t].typicalHigh);
         html = `<p class="small muted">$${fmtMoney(cap)} sits in the typical range for ${fits.length ? fits.map(esc).join(", ") : "none of the ticked tiers, which usually means slower applications"}.</p>`;
@@ -22444,7 +22444,7 @@ function offerCoachUpdate() {
     if (kind === "paid") {
       const total = Math.round(rate * 1.03 * 100) / 100;
       const net = Math.round(rate * 0.97 * 100) / 100;
-      html = rate > 0 ? `<p class="small muted">At $${fmtPrice(rate)}: you pay $${fmtMoney(total)} (rate + 3%), the creator keeps $${fmtMoney(net)} (97%), and SIGNL holds the payment until the post is live. Below $${fmtPrice(g.paidFloor)} a cash offer cannot run.</p>` : "";
+      html = rate > 0 ? `<p class="small muted">At $${fmtPrice(rate)}: you pay $${fmtMoney(total)} (rate + 3%), the creator keeps $${fmtMoney(net)} (97%), and Magpie holds the payment until the post is live. Below $${fmtPrice(g.paidFloor)} a cash offer cannot run.</p>` : "";
     }
     warn.innerHTML = html;
   }
@@ -23448,7 +23448,7 @@ function applicantCardHtml(offer, a) {
     <div class="flex-between"><strong>${esc(c.name || a.snapshot.name)} <span class="muted">@${esc(c.handle || a.snapshot.handle)}</span></strong>${stateLine}</div>
     ${campusBadgeHtml(c) ? `<p class="small" style="margin-top:6px">${campusBadgeHtml(c)}</p>` : ""}
     <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts${ratingBit}${badgesHtml(c.badges)} &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
-    <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to SIGNL: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate ${currencySymbolForMarket(c.market)}${fmtPrice(c.paidRate)}` : ""}</p>
+    <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to Magpie: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate ${currencySymbolForMarket(c.market)}${fmtPrice(c.paidRate)}` : ""}</p>
     ${a.plusOne ? `<div class="showcase-block"><h4>Bringing a +1: ${esc(a.plusOne.name)} <span class="muted">@${esc(a.plusOne.handle)}</span></h4><p class="small" style="margin:0">${a.plusOne.localAudiencePct}% local. Selecting books both creators on this visit; each redeems their own code and posts their own post and story.${offer.kind === "paid" ? " On a paid offer the +1 is comped presence only, unless you book them at their own rate through the normal flow." : ""}</p>
     ${(a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start;margin-top:10px"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select the pair</button><button class="btn small-btn ghost" onclick="declinePairApplicant('${offer.id}','${a.id}')">Decline the +1 only</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div><p class="small muted" style="margin:6px 0 0">Declining the +1 leaves ${esc(c.name || a.snapshot.name)}'s application standing on its own.</p>` : ""}</div>` : ""}
     ${!a.plusOne && (a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select this creator</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div>` : ""}
@@ -23979,13 +23979,13 @@ function renderPlanTab() {
     <p class="small"><strong>${VISIT_GUARANTEE_LINE}</strong></p>
     ${paymentsLive()
       ? `<p class="small">The card below is for paid creator bookings: saved once, charged when you book, held until the post is live.${billingLive() ? " Your plan subscription starts through Stripe's secure checkout below." : " Your plan itself still starts by hand at activation."}</p>${cardOnFileSectionHtml()}`
-      : `<p class="small">Payment stays concierge: when billing starts, Jeff, SIGNL's founder, sends the payment step by hand. Nothing is charged before then, and SIGNL never takes a card in the app.</p>`}
+      : `<p class="small">Payment stays concierge: when billing starts, Jeff, Magpie's founder, sends the payment step by hand. Nothing is charged before then, and Magpie never takes a card in the app.</p>`}
     <div class="plan-cards">${plans}</div>
     <input type="hidden" id="me-plan" value="${esc(u.business.plan)}">
     <button class="btn mt" onclick="savePlan()">${billingLive() ? "Start subscription" : "Save plan selection"}</button> <span id="plan-save-note" class="saved"></span>
     ${billingLive()
       ? `<p class="small muted mt">Starts your subscription on Stripe's secure checkout page. Your founding rate stays locked while your plan stays active.</p>`
-      : `<p class="small muted mt">Billing is not live yet, so saving only records your selection: no card is charged, and your founding pricing stays locked while you stay subscribed. When billing opens, Jeff, SIGNL's founder, sends the payment step by hand.</p>`}
+      : `<p class="small muted mt">Billing is not live yet, so saving only records your selection: no card is charged, and your founding pricing stays locked while you stay subscribed. When billing opens, Jeff, Magpie's founder, sends the payment step by hand.</p>`}
   </div>`}`;
   if (wseg === "bookings") loadBizWalletBookings125();
   if (wseg === "receipts") loadReceiptExport();
@@ -24054,10 +24054,10 @@ async function printStaffCard() {
     const w = window.open("", "_blank", "width=640,height=760");
     if (!w) { alert("Allow pop-ups to print the register card, or screenshot the QR and link above."); return; }
     const origin = location.origin;
-    w.document.write(`<!DOCTYPE html><html><head><title>SIGNL register card</title>
+    w.document.write(`<!DOCTYPE html><html><head><title>Magpie register card</title>
     <style>body{font-family:Arial,sans-serif;text-align:center;padding:36px;color:#0B0D0C}img.logo{height:54px}img.qr{width:260px;height:260px}.biz{font-size:22px;font-weight:700;margin:10px 0 2px}.big{font-size:30px;font-weight:800;letter-spacing:0.02em;margin:18px 0 6px}.line{font-size:17px}.code{font-family:monospace;font-size:19px;font-weight:700;letter-spacing:0.12em}.muted{color:#666;font-size:13px}</style></head>
     <body>
-      <img class="logo" src="${origin}/assets/logo.png" alt="SIGNL">
+      <img class="logo" src="${origin}/assets/logo.png" alt="Magpie">
       <div class="biz">${esc(d.businessName)}</div>
       <div class="big">Redeem a creator visit</div>
       <img class="qr" src="${origin}/api/me/staff/register-card-qr" alt="QR code for the staff redemption link">
@@ -24245,7 +24245,7 @@ async function savePlan() {
 
 // ---------- messages ----------
 
-// The platform thread's peer id (Build -40): the SIGNL team
+// The platform thread's peer id (Build -40): the Magpie team
 // identity on the other side of a creator's platform thread.
 // Mirrors PLATFORM_PEER_ID in the router.
 const SIGNL_TEAM_PEER = "signl-team";
@@ -24280,7 +24280,7 @@ function threadContextFor(otherId) {
 }
 
 // Conversations (Grin pattern): search, a segmented switch, one
-// "New message" primary. SIGNL keeps no per-thread read state, so
+// "New message" primary. Magpie keeps no per-thread read state, so
 // the switch is honest about what it filters: "Waiting on you" =
 // threads where the last message came from the other side.
 let msgMode = "all";
@@ -24296,7 +24296,7 @@ function threadItemsHtml() {
   if (!threads.length) return `<div class="empty-card"><div class="ec-t">No conversations here</div><div class="ec-s">${msgMode === "waiting" ? "Nothing is waiting on you. When someone writes and you have not answered yet, it lands here." : "No conversations match that search."}</div></div>`;
   return `<div class="thread-list">${threads.map((t) => `
         <div class="thread-item${t.platform ? " thread-platform" : ""}" onclick="openThread('${t.otherId}')">
-          <strong>${esc(t.otherBusinessName || t.otherName)}</strong>${t.platform ? ` <span class="badge ok">SIGNL team</span>` : ""} ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}
+          <strong>${esc(t.otherBusinessName || t.otherName)}</strong>${t.platform ? ` <span class="badge ok">Magpie team</span>` : ""} ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}
           ${threadContextFor(t.otherId) ? `<div class="small thread-ctx">${esc(threadContextFor(t.otherId))}</div>` : ""}
           <div class="small muted">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
         </div>`).join("")}</div>`;
@@ -24340,11 +24340,11 @@ async function loadConversation(otherId) {
     const isPlatform = otherId === SIGNL_TEAM_PEER || !!t0.platform;
     const ctxLine = isPlatform ? "" : threadContextFor(otherId);
     el.innerHTML = `
-      <div class="thread-head"><strong>${esc(isPlatform ? "SIGNL" : (t0.otherBusinessName || t0.otherName || "Conversation"))}</strong>${isPlatform ? ` <span class="badge ok">SIGNL team</span>` : ""}${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">${isPlatform ? "Messages from the SIGNL team. Reply here any time." : "Contact about this visit or offer. Messages stay in SIGNL."}</div></div>
+      <div class="thread-head"><strong>${esc(isPlatform ? "Magpie" : (t0.otherBusinessName || t0.otherName || "Conversation"))}</strong>${isPlatform ? ` <span class="badge ok">Magpie team</span>` : ""}${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">${isPlatform ? "Messages from the Magpie team. Reply here any time." : "Contact about this visit or offer. Messages stay in Magpie."}</div></div>
       <div id="msg-list">${data.messages.map((m) => m.system ? `
         <div class="msg-system">${esc(m.body)}</div>` : `
         <div class="msg ${m.fromId === state.user.id ? "mine" : ""}${m.platform ? " platform-msg" : ""}">
-          <div class="meta">${m.fromId === state.user.id ? "You" : (m.fromId === SIGNL_TEAM_PEER ? "SIGNL" : "Them")} &middot; ${fmtDate(m.createdAt)}</div>
+          <div class="meta">${m.fromId === state.user.id ? "You" : (m.fromId === SIGNL_TEAM_PEER ? "Magpie" : "Them")} &middot; ${fmtDate(m.createdAt)}</div>
           ${esc(m.body)}
         </div>`).join("") || '<p class="muted">No messages yet. Say hello.</p>'}</div>
       <form onsubmit="return sendMessage(event, '${otherId}')" class="mt">
@@ -24370,7 +24370,7 @@ async function sendMessage(e, otherId) {
 }
 
 // ---------- admin: platform messages (Build -40) ----------
-// Jeff writes to creators as the SIGNL team, from inside the
+// Jeff writes to creators as the Magpie team, from inside the
 // Requests tab: a compose box (one creator, or a whole market's
 // finished creators as individual threads), the template picker,
 // and the thread list with unread reply counts. Nothing here
@@ -24421,7 +24421,7 @@ function adminMsgPanelHtml() {
   const threadRows = (adminMsg.threads || []).map((t) => `
     <div class="admin-msg-item" onclick="adminMsgOpenThread('${t.creatorId}')">
       <strong>${esc(t.creatorName)}</strong> ${t.creatorHandle ? `<span class="muted">@${esc(t.creatorHandle)}</span>` : ""} <span class="muted small">${esc(t.creatorMarket || "")}</span>${t.unreadReplies ? ` <span class="badge info">${t.unreadReplies} unread ${t.unreadReplies === 1 ? "reply" : "replies"}</span>` : ""}
-      ${t.lastMessage ? `<div class="small muted">${t.lastMessage.fromId === SIGNL_TEAM_PEER ? "SIGNL: " : ""}${esc((t.lastMessage.body || "").slice(0, 90))}</div>` : ""}
+      ${t.lastMessage ? `<div class="small muted">${t.lastMessage.fromId === SIGNL_TEAM_PEER ? "Magpie: " : ""}${esc((t.lastMessage.body || "").slice(0, 90))}</div>` : ""}
     </div>`).join("");
   let threadView = "";
   if (adminMsg.openCreatorId && adminMsg.threadCreator) {
@@ -24431,11 +24431,11 @@ function adminMsgPanelHtml() {
       <h4 style="margin:0 0 6px">Thread with ${esc(c.name)} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}</h4>
       <div id="admin-msg-list">${(adminMsg.threadMessages || []).map((m) => `
         <div class="msg ${m.fromId === SIGNL_TEAM_PEER ? "platform-msg" : ""}">
-          <div class="meta">${m.fromId === SIGNL_TEAM_PEER ? "SIGNL" : esc(c.name)} &middot; ${fmtDate(m.createdAt)}</div>
+          <div class="meta">${m.fromId === SIGNL_TEAM_PEER ? "Magpie" : esc(c.name)} &middot; ${fmtDate(m.createdAt)}</div>
           ${esc(m.body)}
         </div>`).join("") || '<p class="muted">No messages yet.</p>'}</div>
       <form onsubmit="return adminMsgSendReply(event)" class="mt">
-        <div class="field"><textarea id="admin-msg-reply" rows="2" placeholder="Reply as SIGNL..." required></textarea></div>
+        <div class="field"><textarea id="admin-msg-reply" rows="2" placeholder="Reply as Magpie..." required></textarea></div>
         <button class="btn small-btn" type="submit">Send reply</button>
       </form>
     </div>`;
@@ -24443,7 +24443,7 @@ function adminMsgPanelHtml() {
   return `
   <div class="panel">
     <h3 style="margin-top:0">Creator messages</h3>
-    <p class="muted small">Messages land in the creator's SIGNL inbox as the SIGNL team, and each one also emails them a short notification. A market send gives every finished creator in that market their own thread.</p>
+    <p class="muted small">Messages land in the creator's Magpie inbox as the Magpie team, and each one also emails them a short notification. A market send gives every finished creator in that market their own thread.</p>
     ${target ? `<p><span class="badge ok">To: ${esc(target.name)}${target.creator && target.creator.handle ? ` (@${esc(target.creator.handle)})` : ""}${target.market ? ` &middot; ${esc(target.market)}` : ""}</span> <button type="button" class="btn small-btn ghost" onclick="adminMsgClearTarget()">Clear</button></p>`
       : `<div class="field"><label>Market segment (finished creators)</label><select id="admin-msg-market" onchange="adminMsgMarketChanged(this.value)">${(adminMsg.markets || []).map((m) => `<option value="${esc(m)}" ${m === adminMsg.segmentMarket ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></div>`}
     <div class="field"><label>Template</label><select id="admin-msg-template" onchange="adminMsgTemplateChanged()">${(adminMsg.templates || []).map((t) => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join("")}</select></div>
@@ -24767,7 +24767,7 @@ function renderAdmin() {
   // Applications queue keeps its rich -121 work layout.
   if (tab === "Home") {
     app.innerHTML = `
-    <h2>SIGNL Admin</h2>
+    <h2>Magpie Admin</h2>
     <div id="admin-home137"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your home...", 2)}</div>`;
     loadAdminHome137();
     return;
@@ -24786,7 +24786,7 @@ function renderAdmin() {
   // a side column on desktop; on phones the side column
   // stacks compactly above the queue.
   app.innerHTML = `
-    <h2>SIGNL Admin</h2>
+    <h2>Magpie Admin</h2>
     ${landing ? `
     ${sigHomeTopHtml()}
     <div id="admin-totals126" class="totals126" aria-label="Platform totals"></div>
@@ -25086,7 +25086,7 @@ async function loadAdminAutomations138() {
       <button type="button" class="btn small-btn ghost" onclick="return a138AutoOpen('${e.id}')">Open</button></div>
     </div>`).join("")}`).join("");
     el.innerHTML = `<h3>Automations & connections</h3>
-    <p class="muted">Every email and text SIGNL sends on its own, what sets it off, and its switch. The ones that keep people in their accounts — password reset, sign-in link, approval, account deletion — can never be turned off. Last checked ${a138When(auto.generatedAt)}.</p>
+    <p class="muted">Every email and text Magpie sends on its own, what sets it off, and its switch. The ones that keep people in their accounts — password reset, sign-in link, approval, account deletion — can never be turned off. Last checked ${a138When(auto.generatedAt)}.</p>
     <div class="panel"><h4 style="margin-top:0">Connections</h4>${connHtml}</div>
     <div id="a138-auto-detail"></div>
     ${groupsHtml}`;
@@ -25144,7 +25144,7 @@ async function loadAdminTemplates138() {
     const d = await api("GET", "/admin/templates");
     const row = (t) => `<div class="a138-row"><div class="a138-row-main"><strong>${esc(t.name)}</strong><span class="small muted">${t.editLevel === "full" ? "Subject + body editable" : t.editLevel === "subject" ? "Subject line editable" : "View only"}${t.overridden ? ` · edited (v${t.currentVersion})` : ""}</span></div><div class="a138-row-side"><button type="button" class="btn small-btn ghost" onclick="return a138TplOpen('${t.refId}')">Open</button></div></div>`;
     el.innerHTML = `<h3>Templates</h3>
-    <p class="muted">The wording behind SIGNL's emails, texts, posts and platform messages. The moving parts — links, names, booking details — are locked pieces inside the text and can't be edited away; a save that drops one is refused, in plain words.</p>
+    <p class="muted">The wording behind Magpie's emails, texts, posts and platform messages. The moving parts — links, names, booking details — are locked pieces inside the text and can't be edited away; a save that drops one is refused, in plain words.</p>
     <div id="a138-tpl-detail"></div>
     ${(d.automation || []).map((g) => `<h3 class="a138-h">${esc(g.name)}</h3>${g.entries.map(row).join("")}`).join("")}
     <h3 class="a138-h">Your templates</h3>
@@ -25239,7 +25239,7 @@ async function loadAdminMarketing138() {
         ${c.status === "approved" && d.canApprove ? `<button type="button" class="btn small-btn" onclick="return a138MkAct('${c.id}','send')">Send now</button>${c.channel !== "sms" ? `<input type="datetime-local" id="a138-mk-when-${c.id}"><button type="button" class="btn small-btn ghost" onclick="return a138MkSchedule('${c.id}')">Schedule</button>` : ""}` : ""}
       </div></div>`;
     el.innerHTML = `<h3>Marketing</h3>
-    <p class="muted">Messages to SIGNL's own lists — email from ${esc(d.from)}, an in-app message in their SIGNL Messages, or a text. The audience can be any market, or any city where sign-ups are gathering before launch. Nothing here sends itself: a person writes it, a second person approves it, and the send button is a human press. Today: ${d.sentToday} emails sent across SIGNL's lists · ceiling ${d.dailyCeiling}. Deleted accounts are erased from SIGNL entirely, so they can never be on a list; ${d.suppressionCount} address${d.suppressionCount === 1 ? "" : "es"} on the suppression list are always left out.</p>
+    <p class="muted">Messages to Magpie's own lists — email from ${esc(d.from)}, an in-app message in their Magpie Messages, or a text. The audience can be any market, or any city where sign-ups are gathering before launch. Nothing here sends itself: a person writes it, a second person approves it, and the send button is a human press. Today: ${d.sentToday} emails sent across Magpie's lists · ceiling ${d.dailyCeiling}. Deleted accounts are erased from Magpie entirely, so they can never be on a list; ${d.suppressionCount} address${d.suppressionCount === 1 ? "" : "es"} on the suppression list are always left out.</p>
     <p class="small muted">Looking for the founding outreach campaign? That's its own room: <a href="#" onclick="return go('dashboard','Campaign')">open Campaign</a>.</p>
     <div id="a138-mk-detail"></div>
     ${d.canDraft ? `<div class="panel"><h4 style="margin-top:0">Write a campaign</h4>
@@ -25373,7 +25373,7 @@ async function loadAdminSocial138() {
       <span class="small">${p.metrics && (p.metrics.likes != null || p.metrics.comments != null) ? `${p.metrics.likes ?? "—"} likes · ${p.metrics.comments ?? "—"} comments · ${p.metrics.shares ?? "—"} shares` : "The platform didn't report this"}</span></div>
       <div class="a138-row-side">${p.url ? `<a class="btn small-btn ghost" href="${esc(p.url)}" target="_blank" rel="noopener">Open</a>` : `<span class="a138-tag">In the queue</span>`}</div></div>`;
     el.innerHTML = `<h3>Social</h3>
-    <p class="muted">What SIGNL has posted, channel by channel, and what it did. Drafts still need a second person's approval before they join the queue — and the queue still posts nothing without Jeff's say-so at post time.</p>
+    <p class="muted">What Magpie has posted, channel by channel, and what it did. Drafts still need a second person's approval before they join the queue — and the queue still posts nothing without Jeff's say-so at post time.</p>
     <div class="a138-cards">${cards}</div>
     ${(d.queued || []).length ? `<h3 class="a138-h">Approved, in the post queue</h3>${d.queued.map(postRow).join("")}` : ""}
     <h3 class="a138-h">Recent posts</h3>
@@ -25570,7 +25570,7 @@ function a138LearnEdit(id) {
   const photoCell = (p) => {
     const usedBy = (d.photoUsedBy || {})[p];
     const mine = dr && dr.heroImage === p;
-    return `<button type="button" class="a138-photo${mine ? " on" : ""}" ${usedBy && !mine ? "disabled" : ""} onclick="return a138LearnPhoto('${p}')" title="${esc(p)}${usedBy ? ` — used by ${esc(usedBy)}` : ""}"><img src="https://joinsignl.com/assets/photos/${esc(p)}" alt="${esc(p)}" loading="lazy"><span>${usedBy && !mine ? "In use" : esc(p)}</span></button>`;
+    return `<button type="button" class="a138-photo${mine ? " on" : ""}" ${usedBy && !mine ? "disabled" : ""} onclick="return a138LearnPhoto('${p}')" title="${esc(p)}${usedBy ? ` — used by ${esc(usedBy)}` : ""}"><img src="https://magpielocal.com/assets/photos/${esc(p)}" alt="${esc(p)}" loading="lazy"><span>${usedBy && !mine ? "In use" : esc(p)}</span></button>`;
   };
   box.innerHTML = `<div class="panel a138-detail"><div class="a138-detail-head"><h4 style="margin:0">${dr ? "Edit draft" : "New article draft"}</h4><button type="button" class="btn small-btn ghost" onclick="a138.learnDraft=null; document.getElementById('a138-ln-detail').innerHTML=''; return false;">Close</button></div>
   <div class="a138-form col">
@@ -25581,7 +25581,7 @@ function a138LearnEdit(id) {
     <div class="a138-actions"><button type="button" class="btn small-btn ghost" onclick="return a138LearnAddSection()">Add a section</button></div>
     <label class="small muted">Topic</label><input type="text" id="a138-ln-topic" value="${esc(dr ? dr.topic : "")}" placeholder="rates-and-pay, comped-visits, finding-work, working-with-creators, local-marketing, the-local-scene">
     <label class="small muted">For</label><select id="a138-ln-audience"><option value="creators" ${dr && dr.audience === "creators" ? "selected" : ""}>Creators</option><option value="businesses" ${dr && dr.audience === "businesses" ? "selected" : ""}>Businesses</option><option value="both" ${dr && dr.audience === "both" ? "selected" : ""}>Both</option></select>
-    <label class="small muted">Byline</label><select id="a138-ln-author"><option value="standing" ${!dr || dr.authorLine !== "named" ? "selected" : ""}>By Jeff, Founder, SIGNL</option><option value="named" ${dr && dr.authorLine === "named" ? "selected" : ""}>By Jeff Rimmer, Founder, SIGNL</option></select>
+    <label class="small muted">Byline</label><select id="a138-ln-author"><option value="standing" ${!dr || dr.authorLine !== "named" ? "selected" : ""}>By Jeff, Founder, Magpie</option><option value="named" ${dr && dr.authorLine === "named" ? "selected" : ""}>By Jeff Rimmer, Founder, Magpie</option></select>
     <label class="small muted">Hero photo — every article gets its OWN photo; one already carrying another article can't be picked</label>
     <input type="hidden" id="a138-ln-hero" value="${esc(dr ? dr.heroImage : "")}">
     <div class="a138-photos">${(d.photos || []).map(photoCell).join("")}</div>
@@ -25662,7 +25662,7 @@ async function loadWebsiteStats138() {
   if (!a138.web) { const now = new Date(); a138.web = { from: a138IsoDay(new Date(now.getTime() - 27 * 864e5)), to: a138IsoDay(now), group: "all", compare: false }; }
   const w = a138.web;
   el.innerHTML = `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Website</h3>
-  <p class="small muted" style="margin:0 0 10px">Traffic on joinsignl.com itself — the pages businesses and creators read before they sign up. Its own dates: the platform filters above don't move these numbers.</p>
+  <p class="small muted" style="margin:0 0 10px">Traffic on magpielocal.com itself — the pages businesses and creators read before they sign up. Its own dates: the platform filters above don't move these numbers.</p>
   <div class="a138-form">
     <label class="small muted">From <input type="date" id="a138-web-from" value="${w.from}"></label>
     <label class="small muted">To <input type="date" id="a138-web-to" value="${w.to}"></label>
@@ -25737,7 +25737,7 @@ function renderAdminSig() {
   <div id="admin-sig-brief"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>
   <div class="sig-chat">
     <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers from the locked rules and the live Admin counts. Nothing here approves, sends, or changes anything.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
-    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">I'm Sig, on your side of the console. Ask me what's waiting on you, what any number here means, or how a SIGNL rule works. The brief above is your live attention list; this chat is where you ask about it.</div></div>`}</div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">I'm Sig, on your side of the console. Ask me what's waiting on you, what any number here means, or how a Magpie rule works. The brief above is your live attention list; this chat is where you ask about it.</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
       <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
       <button class="btn" type="submit">Ask</button>
@@ -25778,7 +25778,7 @@ const SIG_ADMIN_BANK = [
   { id: "complianceadmin", q: "What does Compliance do?", ph: ["compliance", "sweep", "post checks"], g: [["compliance", "sweep"], ["what", "how", "work", "run"]], s: ["compliance", "sweep"],
     a: "Compliance watches delivered visits: the 48-hour reminder, the day-5 reminder, and the one-week hard deadline. The sweep runs on a schedule; Run sweep now forces a pass. A visit with no post after the week falls under the Visit Guarantee and is replaced for the business, in credits, not cash." },
   { id: "campaignadmin", q: "How do campaigns send?", ph: ["campaign", "outreach sends", "email lanes"], g: [["campaign", "campaigns", "sends"], ["how", "work", "lane", "send"]], s: ["campaign"],
-    a: "Campaign runs the founding creator outreach: both campaigns send through the same sweep, up to 8 emails per campaign every 30 minutes, split across the creators@signlteam.com and hello@joinsignl.com lanes. Sends, bounces, and skips are counted from the stored recipient records." },
+    a: "Campaign runs the founding creator outreach: both campaigns send through the same sweep, up to 8 emails per campaign every 30 minutes, split across the creators@signlteam.com and hello@magpielocal.com lanes. Sends, bounces, and skips are counted from the stored recipient records." },
   { id: "eventsadmin", q: "What is the Event Log?", ph: ["event log", "audit", "history"], g: [["event", "events", "log", "audit"], ["what", "show", "history"]], s: [],
     a: "Event Log is the audit trail: applications, approvals, market activations, campaign sends, and system jobs, newest first. If something happened in Admin, its record is there." },
   { id: "statsadmin", q: "What does Stats count?", ph: ["stats", "totals", "platform numbers"], g: [["stats", "numbers", "totals"], ["what", "count", "show", "mean"]], s: ["stats"],
@@ -25788,7 +25788,7 @@ const SIG_ADMIN_BANK = [
   { id: "rights", q: "What are the usage rights?", ph: ["rights", "license", "reuse", "ad use", "native share"], g: [["rights", "license", "licensing"], ["what", "how", "work", "mean"]], s: ["licensing"],
     a: "A comped visit is native share only on every plan: the business may reshare the post inside Instagram, with credit, and gets no ad use. A paid booking includes one standard license: 90 days to repost the post and run it as an ad, never perpetuity. Licensing a comped post runs at the creator's listed fee for 90 days; the creator approves each use and keeps 97%." },
   { id: "help", q: "How do I reach a person?", ph: ["human", "contact", "support", "real person"], g: [["human", "person", "contact", "support"], ["reach", "talk", "email"]], s: ["support"],
-    a: "For anything a person needs to handle, hello@joinsignl.com and a person answers. Inside the console, every action lives on its own tab; this chat and the brief above are read-only guidance on top of those same records." },
+    a: "For anything a person needs to handle, hello@magpielocal.com and a person answers. Inside the console, every action lives on its own tab; this chat and the brief above are read-only guidance on top of those same records." },
 ];
 function sigAdminRouteAsk(text) {
   const t = sigNorm(text);
@@ -25833,7 +25833,7 @@ async function loadAdminPartners() {
       </div>
       <div class="field"><label>Markets (comma separated, exact names)</label><input type="text" id="pt-markets-${p.id}" value="${esc((p.markets || []).join(", "))}"></div>
       <h4 style="margin:12px 0 4px">Co-brand</h4>
-      <p class="small muted" style="margin:0 0 6px">What leads in this partner's portal, reports and invite emails. SIGNL stays underneath ("Powered by SIGNL") — this never replaces the platform brand. Leave everything blank for SIGNL-only.</p>
+      <p class="small muted" style="margin:0 0 6px">What leads in this partner's portal, reports and invite emails. Magpie stays underneath ("Powered by Magpie") — this never replaces the platform brand. Leave everything blank for Magpie-only.</p>
       <div class="form-2col">
         <div class="field"><label>Display name</label><input type="text" id="pt-brand-name-${p.id}" value="${esc((p.brand && p.brand.displayName) || "")}" placeholder="Shown at the top of their portal"></div>
         <div class="field"><label>Logo link (https)</label><input type="text" id="pt-brand-logo-${p.id}" value="${esc((p.brand && p.brand.logoUrl) || "")}" placeholder="https://…"></div>
@@ -25871,7 +25871,7 @@ async function loadAdminPartners() {
       </div>
       <div class="panel mt">
         <h3 style="margin-top:0">Demo partner</h3>
-        <p class="small muted">One fictional partner (Demo Media Group, Virginia Beach) seeded with Sample-tagged creators, businesses, and a completed visit, so the partner dashboard can be shown end to end. Its login email is jeff+partnerdemo@joinsignl.com, which lands in Jeff's own inbox: set its password from the sign-in page with Forgot password. Samples are tester-flagged and never enter a real count.</p>
+        <p class="small muted">One fictional partner (Demo Media Group, Virginia Beach) seeded with Sample-tagged creators, businesses, and a completed visit, so the partner dashboard can be shown end to end. Its login email is jeff+partnerdemo@magpielocal.com, which lands in Jeff's own inbox: set its password from the sign-in page with Forgot password. Samples are tester-flagged and never enter a real count.</p>
         <button class="btn ghost" onclick="seedDemoPartner()">Seed demo partner</button> <span id="pt-demo-ok" class="saved"></span>
       </div>
       <div id="admin-pilots"></div>`;
@@ -25953,8 +25953,8 @@ function dealSplitSummary(deal) {
   const t = dealTermsOf(deal);
   if (!t) return "No terms entered yet";
   const parts = [];
-  if (typeof t.partnerPct === "number") parts.push(`Partner ${t.partnerPct}% · SIGNL ${100 - t.partnerPct}%`);
-  if (t.guarantee) parts.push(`greater-of guarantee (${t.guarantee.beneficiary === "partner" ? "partner" : "SIGNL"} side)`);
+  if (typeof t.partnerPct === "number") parts.push(`Partner ${t.partnerPct}% · Magpie ${100 - t.partnerPct}%`);
+  if (t.guarantee) parts.push(`greater-of guarantee (${t.guarantee.beneficiary === "partner" ? "partner" : "Magpie"} side)`);
   parts.push(`${(t.markets || []).length} ${(t.markets || []).length === 1 ? "market" : "markets"}`);
   parts.push(t.attributionScope === "sourced_only" ? "their sign-ups only" : "whole market");
   return parts.join(" · ");
@@ -25971,7 +25971,7 @@ async function loadAdminPartnerTeam(partnerId) {
     const seats = (d.team && d.team.seats) || [];
     if (!seats.length) { host.innerHTML = `<p class="small muted" style="margin:0">No seats on this org yet.</p>`; return; }
     host.innerHTML = seats.map((s) => `
-    <p class="small" style="margin:0 0 4px">${esc(s.name || s.email)} · ${esc(s.email)} · ${esc(s.kind)} · ${esc(s.scope || "")} · ${esc(s.status)} · ${s.mintedBy === "partner" ? "invited by the partner" : "invited by SIGNL"} ${s.status !== "revoked" ? `<button class="btn small-btn ghost" onclick="adminTeamRevoke('${s.seatId}')">Revoke</button>` : ""}</p>`).join("");
+    <p class="small" style="margin:0 0 4px">${esc(s.name || s.email)} · ${esc(s.email)} · ${esc(s.kind)} · ${esc(s.scope || "")} · ${esc(s.status)} · ${s.mintedBy === "partner" ? "invited by the partner" : "invited by Magpie"} ${s.status !== "revoked" ? `<button class="btn small-btn ghost" onclick="adminTeamRevoke('${s.seatId}')">Revoke</button>` : ""}</p>`).join("");
   } catch (e) {
     host.innerHTML = `<p class="small muted" style="margin:0">Seats could not load: ${esc(e.message)}</p>`;
   }
@@ -26068,14 +26068,14 @@ function dealFormHtml(partnerId, deal) {
       <div class="field"><label>Starts</label><input type="date" id="df-${partnerId}-${key}-start" value="${t.startAt ? esc(String(t.startAt).slice(0, 10)) : ""}"></div>
       <div class="field"><label>Renewal</label><input type="text" id="df-${partnerId}-${key}-renewal" value="${esc(t.renewal || "")}" placeholder="Auto-renews monthly after the pilot"></div>
       <div class="field"><label>Exclusivity</label><select id="df-${partnerId}-${key}-exscope"><option value="none" ${!t.exclusivity || t.exclusivity.scope !== "market_conditional" ? "selected" : ""}>None</option><option value="market_conditional" ${t.exclusivity && t.exclusivity.scope === "market_conditional" ? "selected" : ""}>Conditional, per market</option></select></div>
-      <div class="field"><label>Exclusivity conditions</label><input type="text" id="df-${partnerId}-${key}-excond" value="${esc((t.exclusivity && t.exclusivity.conditions) || "")}" placeholder="SIGNL signs no competing group while targets hold"></div>
+      <div class="field"><label>Exclusivity conditions</label><input type="text" id="df-${partnerId}-${key}-excond" value="${esc((t.exclusivity && t.exclusivity.conditions) || "")}" placeholder="Magpie signs no competing group while targets hold"></div>
       <div class="field"><label>Promo commitments</label><input type="text" id="df-${partnerId}-${key}-promo" value="${esc(t.promoCommitments || "")}"></div>
       <div class="field"><label>Sales targets</label><input type="text" id="df-${partnerId}-${key}-targets" value="${esc(t.salesTargets || "")}"></div>
     </div>
     <h4 style="margin:12px 0 4px">Guarantee (greater-of)</h4>
     <p class="small muted" style="margin:0 0 6px">Every amount on this deal (floors, activation fees) is read in the deal currency above. One deal never spans two currencies.</p>
     <div class="form-2col">
-      <div class="field"><label>Guarantee protects</label><select id="df-${partnerId}-${key}-gben"><option value="none" ${!g ? "selected" : ""}>No guarantee</option><option value="signl" ${g && g.beneficiary !== "partner" ? "selected" : ""}>SIGNL's monthly take</option><option value="partner" ${g && g.beneficiary === "partner" ? "selected" : ""}>The partner's monthly receipts</option></select></div>
+      <div class="field"><label>Guarantee protects</label><select id="df-${partnerId}-${key}-gben"><option value="none" ${!g ? "selected" : ""}>No guarantee</option><option value="signl" ${g && g.beneficiary !== "partner" ? "selected" : ""}>Magpie's monthly take</option><option value="partner" ${g && g.beneficiary === "partner" ? "selected" : ""}>The partner's monthly receipts</option></select></div>
       <div class="field"><label>Pilot floor $ (blank = none)</label><input type="number" id="df-${partnerId}-${key}-gpilot" min="0" step="any" value="${g && typeof g.pilotFloor === "number" ? g.pilotFloor : ""}"></div>
     </div>
     ${bandRow(0)}${bandRow(1)}${bandRow(2)}
@@ -26163,7 +26163,7 @@ async function dfSave(partnerId, key) {
 // per campaign. The founding campaign pitches a founding
 // creator spot; the hello@ lane (2026-10-25) is a second
 // founding-creators campaign sending the identical email from
-// the default hello@joinsignl.com mailbox, so volume is not
+// the default hello@magpielocal.com mailbox, so volume is not
 // capped by the creators@ signlteam warm-up; the crossover
 // campaign (added later the same day) pitches creators
 // already on national platforms the
@@ -26180,8 +26180,8 @@ async function dfSave(partnerId, key) {
 // protects the sending domain).
 const CAMPAIGN_SECTIONS = [
   { key: "founding", suffix: "", kind: "creator", campaignId: "founding-creators-2026-10", title: "Founding creators", blurb: "The founding creator email: a founding spot in their market, comped local experiences for honest posts within 48 hours, and a live founding profile from day one." },
-  { key: "founding-hello", suffix: "-hello", kind: "creator", campaignId: "founding-creators-hello-2026-10", title: "Founding creators (hello@ lane)", blurb: "The same founding creator email as the Founding creators campaign, sent from the default hello@joinsignl.com mailbox instead of creators@signlteam.com: a second lane, so founding outreach volume is not capped by the creators@ warm-up." },
-  { key: "crossover", suffix: "-crossover", kind: "creator", campaignId: "founding-crossover-2026-10", title: "Platform crossover creators", blurb: "For creators already working national platforms like Grin, Cohley, or Momfluence. The pitch is additive and non-exclusive: keep those deals, SIGNL is the local layer on top. Imports skip any address the founding campaign already holds, so nobody receives both emails." },
+  { key: "founding-hello", suffix: "-hello", kind: "creator", campaignId: "founding-creators-hello-2026-10", title: "Founding creators (hello@ lane)", blurb: "The same founding creator email as the Founding creators campaign, sent from the default hello@magpielocal.com mailbox instead of creators@signlteam.com: a second lane, so founding outreach volume is not capped by the creators@ warm-up." },
+  { key: "crossover", suffix: "-crossover", kind: "creator", campaignId: "founding-crossover-2026-10", title: "Platform crossover creators", blurb: "For creators already working national platforms like Grin, Cohley, or Momfluence. The pitch is additive and non-exclusive: keep those deals, Magpie is the local layer on top. Imports skip any address the founding campaign already holds, so nobody receives both emails." },
   { key: "business", suffix: "-business", kind: "business", campaignId: "founding-businesses-2026-10", title: "Founding businesses", blurb: "The founding business wave: local businesses get a founding spot with their registration prebuilt, claimed through their own signup link. It asks nothing today and commits them to nothing; claiming just puts them in early for launch updates." },
 ];
 
@@ -26197,11 +26197,11 @@ const CAMPAIGN_SECTIONS = [
 // resolves to the default mailbox server-side and the note
 // under the select says so (see campaignSenderNote).
 const CAMPAIGN_SENDER_OPTIONS = [
-  { value: "default", label: "Default: SIGNL <hello@joinsignl.com>" },
+  { value: "default", label: "Default: Magpie <hello@magpielocal.com>" },
   { value: "team", label: "team@signlteam.com" },
   { value: "hello_team", label: "hello@signlteam.com" },
 ];
-const CAMPAIGN_SENDER_ADDR = { default: "hello@joinsignl.com", creators: "creators@signlteam.com", team: "team@signlteam.com", hello_team: "hello@signlteam.com" };
+const CAMPAIGN_SENDER_ADDR = { default: "hello@magpielocal.com", creators: "creators@signlteam.com", team: "team@signlteam.com", hello_team: "hello@signlteam.com" };
 
 async function loadCampaign() {
   const el = document.getElementById("tab-body");
@@ -26279,9 +26279,9 @@ function campaignSenderNote(c, profiles) {
   // Retired sender (2026-11-06): the stored selection names a
   // mailbox that no longer sends; the campaign sends from the
   // default instead, and the card says exactly that.
-  if (c.storedFromMailbox && c.storedFromMailbox !== key) return `This campaign was set to ${esc(CAMPAIGN_SENDER_ADDR[c.storedFromMailbox] || c.storedFromMailbox)}, a mailbox that no longer sends (its login is dead). It now sends as SIGNL &lt;hello@joinsignl.com&gt;.`;
-  if (key === "default") return "Sending as SIGNL &lt;hello@joinsignl.com&gt; (the default mailbox).";
-  if (profiles[key]) return `Sending as SIGNL &lt;${addr}&gt;. Replies go to hello@joinsignl.com. Warm-up cap: ${c.teamMailDailyCap || 25} sends per day for this mailbox, on top of the shared daily ceiling.`;
+  if (c.storedFromMailbox && c.storedFromMailbox !== key) return `This campaign was set to ${esc(CAMPAIGN_SENDER_ADDR[c.storedFromMailbox] || c.storedFromMailbox)}, a mailbox that no longer sends (its login is dead). It now sends as Magpie &lt;hello@magpielocal.com&gt;.`;
+  if (key === "default") return "Sending as Magpie &lt;hello@magpielocal.com&gt; (the default mailbox).";
+  if (profiles[key]) return `Sending as Magpie &lt;${addr}&gt;. Replies go to hello@magpielocal.com. Warm-up cap: ${c.teamMailDailyCap || 25} sends per day for this mailbox, on top of the shared daily ceiling.`;
   return `Mailbox ${addr} is selected but NOT active: its SMTP credentials are not in the server environment yet, so the sweep will skip this campaign rather than send from the wrong address.`;
 }
 
@@ -27110,7 +27110,7 @@ async function loadAdminRequests() {
 }
 
 // Admin profile view (Jeff, 2026-10-26): "View profile" on an
-// Applications card opens the applicant's full SIGNL profile exactly
+// Applications card opens the applicant's full Magpie profile exactly
 // as a business would see it, including pending applicants the
 // public /c/ page cannot show yet. The payload comes from
 // GET /admin/creators/:id (the Discover card shape); the renderer
@@ -27208,7 +27208,7 @@ async function adminViewAccount(userId) {
       <div class="panel" style="margin-top:12px">
         <h4 style="margin:0 0 4px">Account email</h4>
         <p style="margin:0"><strong id="acct-current-email-${u.id}">${esc(u.email)}</strong></p>
-        <p class="small muted" style="margin:2px 0 0">Approval mail, SIGNL messages and sign-in all use this address.</p>
+        <p class="small muted" style="margin:2px 0 0">Approval mail, Magpie messages and sign-in all use this address.</p>
         ${correctEmailEditorHtml(u, "acct")}
         <div style="margin-top:12px"><button class="btn small-btn" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button> <span class="small muted">Sends a fresh sign-in link to the address above.</span></div>
         ${u.role === "creator" ? `<div style="margin-top:8px"><button class="btn small-btn ghost" onclick="adminViewCreator('${u.id}')">View profile</button> <span class="small muted">The profile exactly as a business sees it.</span></div>` : ""}
@@ -27952,7 +27952,7 @@ async function loadStats() {
         </div>
         <p class="small muted" style="margin:8px 0 0">${ccFilters.testers ? "Testers and demo records are INCLUDED in these counts." : "Tester accounts and the demo partner are excluded from every count."} Totals are stocks (true today); activity counts follow the period.</p>
         <div class="cc-legend">
-          <span class="cc-chip counted">Counted</span> register dollars SIGNL counted at a till
+          <span class="cc-chip counted">Counted</span> register dollars Magpie counted at a till
           <span class="cc-chip recorded">Recorded</span> written on a booking, license or plan record
           <span class="cc-chip charged">Charged</span> a real card charge
           <span class="cc-chip modeled">Modeled</span> an estimate, always labeled
@@ -27987,7 +27987,7 @@ async function loadStats() {
       if (stats53 && stats53.unlistedByCity && stats53.unlistedByCity.length) {
         html += `
       <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Sign-ups outside the listed markets</h3>
-      <p class="small muted" style="margin:0 0 8px">Creators who signed up from cities SIGNL has not listed yet — demand showing up on its own.</p>
+      <p class="small muted" style="margin:0 0 8px">Creators who signed up from cities Magpie has not listed yet — demand showing up on its own.</p>
       ${stats53.unlistedByCity.map((r) => `<div class="kv"><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"}</b></div>`).join("")}
       </div>`;
       }
@@ -28018,7 +28018,7 @@ async function loadStats() {
       }
       foot.innerHTML = html;
     }
-    // The Website section (joinsignl.com traffic, GA4) is its
+    // The Website section (magpielocal.com traffic, GA4) is its
     // own Stats view since the 2026-11-06 switcher (it sat at
     // the foot of the page in Build -138): its own dates and
     // group buttons, independent of the platform filters. The
@@ -28129,21 +28129,21 @@ function ccMoneyHtml(d) {
       <div class="cc-tile cc-hero"><div class="cc-tlabel">Through the platform <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt((rec.totals || {}).flowed || 0)}</div><div class="cc-tsub">Written on plan, booking and license records</div></div>
       <div class="cc-tile"><div class="cc-tlabel">On cards <span class="cc-chip charged">Charged</span></div><div class="cc-tnum">${ccMoneyFmt(chg.netTotal || 0)}</div><div class="cc-tsub">Real Stripe charges, refunds out</div></div>
       <div class="cc-tile"><div class="cc-tlabel">At registers <span class="cc-chip counted">Counted</span></div><div class="cc-tnum">${ccMoneyFmt(cnt.total || 0)}</div><div class="cc-tsub">Counted at business registers</div></div>
-      <div class="cc-tile"><div class="cc-tlabel">SIGNL kept <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt((rec.totals || {}).signlKept || 0)}</div><div class="cc-tsub">Before partner accruals, which land with the deal records</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Magpie kept <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt((rec.totals || {}).signlKept || 0)}</div><div class="cc-tsub">Before partner accruals, which land with the deal records</div></div>
     </div>`;
   const splitCheck = rec.splitsHold === false
-    ? `<p class="small" style="color:#B3261E"><strong>Split check failed:</strong> at least one paid record's splits do not add up (business total should equal creator kept + SIGNL kept). The records are named under Reconciliation &amp; alerts on the Close tab; the figures above are printed as written.</p>`
-    : `<p class="small muted">Split check: on every paid booking and license, what the business paid equals what the creator kept plus what SIGNL kept.</p>`;
+    ? `<p class="small" style="color:#B3261E"><strong>Split check failed:</strong> at least one paid record's splits do not add up (business total should equal creator kept + Magpie kept). The records are named under Reconciliation &amp; alerts on the Close tab; the figures above are printed as written.</p>`
+    : `<p class="small muted">Split check: on every paid booking and license, what the business paid equals what the creator kept plus what Magpie kept.</p>`;
   const recordedPanel = `
     <div class="panel">
       <h3 style="margin:0 0 2px">Recorded <span class="cc-chip recorded">Recorded</span></h3>
-      <p class="muted small" style="margin:0 0 8px">On SIGNL's books: what the records say moved, whether or not a card was charged.</p>
+      <p class="muted small" style="margin:0 0 8px">On Magpie's books: what the records say moved, whether or not a card was charged.</p>
       <div class="table-wrap"><table>
-        <tr><th>Source</th><th>Flowed</th><th>SIGNL kept</th><th>Creators earned</th><th>Partners earned</th></tr>
-        <tr><td>Subscriptions <span class="muted small">(${plural((rr.subscriptions || {}).count || 0, "plan", "plans")} selected)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.subscriptions || {}).flowed || 0)}</td><td data-label="SIGNL kept">${ccMoneyFmt((rr.subscriptions || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.subscriptions || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${partnerCell((rr.subscriptions || {}).partnersEarned)}</td></tr>
-        <tr><td>Paid bookings <span class="muted small">(${plural((rr.paidBookings || {}).count || 0, "booking", "bookings")} released)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.paidBookings || {}).flowed || 0)}</td><td data-label="SIGNL kept">${ccMoneyFmt((rr.paidBookings || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.paidBookings || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${ccMoneyFmt((rr.paidBookings || {}).partnersEarned || 0)}</td></tr>
-        <tr><td>Licenses <span class="muted small">(${plural((rr.licenses || {}).count || 0, "license", "licenses")} granted)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.licenses || {}).flowed || 0)}</td><td data-label="SIGNL kept">${ccMoneyFmt((rr.licenses || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.licenses || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${ccMoneyFmt((rr.licenses || {}).partnersEarned || 0)}</td></tr>
-        <tr class="cc-total-row"><td><strong>Recorded total</strong></td><td data-label="Flowed"><strong>${ccMoneyFmt((rec.totals || {}).flowed || 0)}</strong></td><td data-label="SIGNL kept"><strong>${ccMoneyFmt((rec.totals || {}).signlKept || 0)}</strong></td><td data-label="Creators earned"><strong>${ccMoneyFmt((rec.totals || {}).creatorsEarned || 0)}</strong></td><td data-label="Partners earned">${partnerCell((rec.totals || {}).partnersEarned)}</td></tr>
+        <tr><th>Source</th><th>Flowed</th><th>Magpie kept</th><th>Creators earned</th><th>Partners earned</th></tr>
+        <tr><td>Subscriptions <span class="muted small">(${plural((rr.subscriptions || {}).count || 0, "plan", "plans")} selected)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.subscriptions || {}).flowed || 0)}</td><td data-label="Magpie kept">${ccMoneyFmt((rr.subscriptions || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.subscriptions || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${partnerCell((rr.subscriptions || {}).partnersEarned)}</td></tr>
+        <tr><td>Paid bookings <span class="muted small">(${plural((rr.paidBookings || {}).count || 0, "booking", "bookings")} released)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.paidBookings || {}).flowed || 0)}</td><td data-label="Magpie kept">${ccMoneyFmt((rr.paidBookings || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.paidBookings || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${ccMoneyFmt((rr.paidBookings || {}).partnersEarned || 0)}</td></tr>
+        <tr><td>Licenses <span class="muted small">(${plural((rr.licenses || {}).count || 0, "license", "licenses")} granted)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.licenses || {}).flowed || 0)}</td><td data-label="Magpie kept">${ccMoneyFmt((rr.licenses || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.licenses || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${ccMoneyFmt((rr.licenses || {}).partnersEarned || 0)}</td></tr>
+        <tr class="cc-total-row"><td><strong>Recorded total</strong></td><td data-label="Flowed"><strong>${ccMoneyFmt((rec.totals || {}).flowed || 0)}</strong></td><td data-label="Magpie kept"><strong>${ccMoneyFmt((rec.totals || {}).signlKept || 0)}</strong></td><td data-label="Creators earned"><strong>${ccMoneyFmt((rec.totals || {}).creatorsEarned || 0)}</strong></td><td data-label="Partners earned">${partnerCell((rec.totals || {}).partnersEarned)}</td></tr>
       </table></div>
       ${splitCheck}
       <p class="small" style="margin:6px 0 0">In escrow right now: ${ccMoneyFmt(((rec.escrow || {}).paidHeld || {}).businessTotal || 0)} across ${plural(((rec.escrow || {}).paidHeld || {}).count || 0, "paid booking", "paid bookings")} &middot; ${ccMoneyFmt(((rec.escrow || {}).licensesPending || {}).businessTotal || 0)} across ${plural(((rec.escrow || {}).licensesPending || {}).count || 0, "license", "licenses")} waiting on creators. Recorded, not yet flowed, and never in the totals above.</p>
@@ -28166,7 +28166,7 @@ function ccMoneyHtml(d) {
   const countedPanel = `
     <div class="panel">
       <h3 style="margin:0 0 2px">Counted <span class="cc-chip counted">Counted</span></h3>
-      <p class="small" style="margin:0">${ccMoneyFmt(cnt.total || 0)} counted at registers: ${ccMoneyFmt(cnt.firsts || 0)} on first visits (${plural(cnt.visitsCounted || 0, "visit", "visits")} counted) and ${ccMoneyFmt(cnt.returns || 0)} on come-backs, across ${plural(cnt.businesses || 0, "business", "businesses")}. Register dollars are the businesses' revenue, counted by SIGNL — never SIGNL's money, and never added to the classes above.</p>
+      <p class="small" style="margin:0">${ccMoneyFmt(cnt.total || 0)} counted at registers: ${ccMoneyFmt(cnt.firsts || 0)} on first visits (${plural(cnt.visitsCounted || 0, "visit", "visits")} counted) and ${ccMoneyFmt(cnt.returns || 0)} on come-backs, across ${plural(cnt.businesses || 0, "business", "businesses")}. Register dollars are the businesses' revenue, counted by Magpie — never Magpie's money, and never added to the classes above.</p>
     </div>`;
   const reconRows = [];
   for (const c of (recon.chargedUnmatched || [])) reconRows.push(`<div class="cc-att-row"><span>A ${esc(c.kind)} charge of ${ccMoneyFmt(c.amount)}${c.at ? ` on ${esc(fmtDay(c.at))}` : ""} is on the books but matches no business yet.</span></div>`);
@@ -28239,7 +28239,7 @@ function ccBusinessesHtml(d) {
       ? `<strong>${roll.available || 0} visits available</strong><br><span class="small muted">${roll.base || 0} this month${roll.carriedIn ? ` + ${roll.carriedIn} rolled in` : ""}${roll.carriedExpiresAt && roll.carriedIn ? ` &middot; rolled visits lapse ${esc(fmtDay(roll.carriedExpiresAt))}` : ""}</span>`
       : `<span class="muted">—</span>`;
     const lt = r.lifetime || {};
-    const lifeCell = `${plural(lt.compsCompleted || 0, "comp", "comps")} &middot; ${plural(lt.paidReleased || 0, "paid booking", "paid bookings")}<br><span class="small muted">${ccMoneyFmt(lt.counted || 0)} counted &middot; ${ccMoneyFmt(lt.signlRevenue || 0)} to SIGNL</span>`;
+    const lifeCell = `${plural(lt.compsCompleted || 0, "comp", "comps")} &middot; ${plural(lt.paidReleased || 0, "paid booking", "paid bookings")}<br><span class="small muted">${ccMoneyFmt(lt.counted || 0)} counted &middot; ${ccMoneyFmt(lt.signlRevenue || 0)} to Magpie</span>`;
     return `<tr>
       <td><strong>${esc(r.name || "Business")}</strong><br><span class="small muted">${esc(r.market || "")} &middot; ${r.partner ? `with ${esc(r.partner.name)}` : "Direct"}</span></td>
       <td data-label="Plan">${planCell}</td>
@@ -28286,7 +28286,7 @@ function ccPartnersHtml(d) {
         const deal0 = (r.deals || [])[0];
         const territoryLine = (r.territory || []).length ? `<br><span class="small">Territory: ${(r.territory || []).map((t) => `${esc(t.market)} (${t.attributionScope === "market_wide" ? "whole market counts" : "sourced only"}${t.exclusivity === "market_conditional" ? ", conditional exclusivity" : ""})`).join("; ")}</span>` : "";
         const dealCell = (r.termsState === "entered" && deal0
-          ? `<strong>${esc(deal0.label || "Partner deal")}</strong><br><span class="small">${typeof deal0.partnerPct === "number" ? `Partner ${deal0.partnerPct}% · SIGNL ${100 - deal0.partnerPct}%` : "Split in the deal terms"}${deal0.hasGuarantee ? " · greater-of guarantee" : ""}</span><br><span class="small muted">Version ${deal0.currentVersion} · ${esc(deal0.status)}</span>`
+          ? `<strong>${esc(deal0.label || "Partner deal")}</strong><br><span class="small">${typeof deal0.partnerPct === "number" ? `Partner ${deal0.partnerPct}% · Magpie ${100 - deal0.partnerPct}%` : "Split in the deal terms"}${deal0.hasGuarantee ? " · greater-of guarantee" : ""}</span><br><span class="small muted">Version ${deal0.currentVersion} · ${esc(deal0.status)}</span>`
           : `<strong>Deal terms not entered yet</strong><br><span class="small muted">Earnings run on the standing share (${r.sharePct == null ? "—" : r.sharePct + "%"}) until the deal is entered on the Partners tab. No schedule is assumed.</span>`) + territoryLine;
         const status = r.guaranteeState
           ? `<span class="badge ${r.guaranteeState.indexOf("Guarantee") === 0 ? "warn" : "ok"}">${esc(r.guaranteeState)}</span>`
@@ -28296,7 +28296,7 @@ function ccPartnersHtml(d) {
           <td data-label="The deal">${dealCell}</td>
           <td data-label="Markets">${esc((r.markets || []).join(", ") || "—")}</td>
           <td data-label="Status">${status}</td>
-          <td data-label="Period split">Partner ${ccMoneyFmt(r.period.partnerShare)} · SIGNL ${ccMoneyFmt(r.period.signlShare)}<br><span class="small muted">of ${ccMoneyFmt(r.period.gross)} in</span>${Object.entries(r.byCurrency || {}).filter(([c]) => c !== "USD").map(([c, g]) => `<br><span class="small">In ${c === "GBP" ? "pounds" : c}: partner ${ccMoneyFmtC(g.partnerShare, c)} · SIGNL ${ccMoneyFmtC(g.signlShare, c)} of ${ccMoneyFmtC(g.gross, c)} in</span>`).join("")}</td>
+          <td data-label="Period split">Partner ${ccMoneyFmt(r.period.partnerShare)} · Magpie ${ccMoneyFmt(r.period.signlShare)}<br><span class="small muted">of ${ccMoneyFmt(r.period.gross)} in</span>${Object.entries(r.byCurrency || {}).filter(([c]) => c !== "USD").map(([c, g]) => `<br><span class="small">In ${c === "GBP" ? "pounds" : c}: partner ${ccMoneyFmtC(g.partnerShare, c)} · Magpie ${ccMoneyFmtC(g.signlShare, c)} of ${ccMoneyFmtC(g.gross, c)} in</span>`).join("")}</td>
           <td data-label="Earned to date"><strong>${ccMoneyFmt(r.accrued)}</strong><br><span class="small muted">${ccMoneyFmt(r.paid)} paid · ${ccMoneyFmt(r.owed)} owed</span>${Object.entries(r.byCurrency || {}).filter(([c]) => c !== "USD").map(([c, g]) => `<br><span class="small"><strong>${ccMoneyFmtC(g.accrued, c)}</strong> accrued in ${c === "GBP" ? "pounds" : c}</span>`).join("")}</td>
           <td><button type="button" class="btn small-btn" onclick="return ccOpenPartner('${r.id}')">Open</button></td>
         </tr>`;
@@ -28340,18 +28340,18 @@ function ccSplitBarHtml(partnerShare, signlShare, partnerName, currency) {
   const pPct = total > 0 ? Math.round((Math.max(0, partnerShare) / total) * 100) : 0;
   return `<div class="cc-splitbar" style="display:flex;height:34px;border-radius:8px;overflow:hidden;margin:8px 0 4px">
       <div style="background:#A9E8C9;color:#0B0D0C;width:${pPct}%;display:flex;align-items:center;padding:0 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden">${esc(partnerName)} · ${ccMoneyFmtC(partnerShare, currency)} · ${pPct}%</div>
-      <div style="background:#0B0D0C;color:#fff;flex:1;display:flex;align-items:center;justify-content:flex-end;padding:0 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden">SIGNL · ${ccMoneyFmtC(signlShare, currency)} · ${100 - pPct}%</div>
+      <div style="background:#0B0D0C;color:#fff;flex:1;display:flex;align-items:center;justify-content:flex-end;padding:0 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden">Magpie · ${ccMoneyFmtC(signlShare, currency)} · ${100 - pPct}%</div>
     </div>`;
 }
 
 function ccDealMonthsTable(deal, partnerName) {
   const ccMoneyFmtC_CUR = (n) => ccMoneyFmtC(n, deal.currency);
-  const benName = deal.terms && deal.terms.guarantee ? (deal.terms.guarantee.beneficiary === "partner" ? partnerName : "SIGNL") : null;
+  const benName = deal.terms && deal.terms.guarantee ? (deal.terms.guarantee.beneficiary === "partner" ? partnerName : "Magpie") : null;
   const sections = (deal.markets || []).map((mr) => {
     if (!mr.months.length) return `<h4 style="margin:14px 0 4px">${esc(mr.market)}</h4><p class="small muted">No months yet${mr.liveAt ? "" : " — the market has no live date on the deal, so guarantee months cannot be counted"}.</p>`;
     return `<h4 style="margin:14px 0 4px">${esc(mr.market)}</h4>
     <div class="table-wrap"><table>
-      <tr><th>Month</th><th>Businesses</th><th>Money in</th><th>% amount${benName ? ` (to ${esc(benName)})` : ""}</th><th>Guarantee</th><th>${esc(partnerName)} receives</th><th>SIGNL keeps</th><th>Governs</th></tr>
+      <tr><th>Month</th><th>Businesses</th><th>Money in</th><th>% amount${benName ? ` (to ${esc(benName)})` : ""}</th><th>Guarantee</th><th>${esc(partnerName)} receives</th><th>Magpie keeps</th><th>Governs</th></tr>
       ${mr.months.map((row) => `<tr>
         <td><strong>${esc(row.label)}</strong>${row.monthIndex ? `<br><span class="small muted">Month ${row.monthIndex} of the deal</span>` : ""}</td>
         <td data-label="Businesses">${row.businesses}</td>
@@ -28359,7 +28359,7 @@ function ccDealMonthsTable(deal, partnerName) {
         <td data-label="% amount">${row.band ? ccMoneyFmtC_CUR(row.band.pctAmount) : "—"}</td>
         <td data-label="Guarantee">${row.band ? ccMoneyFmtC_CUR(row.band.floorMonthly) : "—"}</td>
         <td data-label="${esc(partnerName)} receives"><strong>${ccMoneyFmtC_CUR(row.partnerShare)}</strong></td>
-        <td data-label="SIGNL keeps">${ccMoneyFmtC_CUR(row.signlShare)}</td>
+        <td data-label="Magpie keeps">${ccMoneyFmtC_CUR(row.signlShare)}</td>
         <td data-label="Governs">${row.band ? `<span class="badge ${row.governedBy === "guarantee" ? "warn" : "ok"}">${row.governedBy === "guarantee" ? "Guarantee" : "Percentage"}</span>` : `<span class="small muted">Percentage</span>`}</td>
       </tr>`).join("")}
     </table></div>`;
@@ -28380,7 +28380,7 @@ function ccPartnerDealHtml(d, deal) {
   }
   if (t.guarantee) {
     for (const bd of (t.guarantee.bands || [])) {
-      tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Months ${bd.fromMonth}–${bd.toMonth == null ? "…" : bd.toMonth}</div><div class="cc-tnum">${ccMoneyFmtC_CUR(bd.floorMonthly)}</div><div class="cc-tsub">The greater of ${ccMoneyFmtC_CUR(bd.floorMonthly)} or ${bd.pctToBeneficiary}% — to ${t.guarantee.beneficiary === "partner" ? esc(p.name) : "SIGNL"}</div></div>`);
+      tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Months ${bd.fromMonth}–${bd.toMonth == null ? "…" : bd.toMonth}</div><div class="cc-tnum">${ccMoneyFmtC_CUR(bd.floorMonthly)}</div><div class="cc-tsub">The greater of ${ccMoneyFmtC_CUR(bd.floorMonthly)} or ${bd.pctToBeneficiary}% — to ${t.guarantee.beneficiary === "partner" ? esc(p.name) : "Magpie"}</div></div>`);
     }
     if (typeof t.guarantee.pilotFloor === "number") tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Pilot floor</div><div class="cc-tnum">${ccMoneyFmtC_CUR(t.guarantee.pilotFloor)}</div><div class="cc-tsub">Across the whole pilot, activation included</div></div>`);
   }
@@ -28388,10 +28388,10 @@ function ccPartnerDealHtml(d, deal) {
   let callout = "";
   if (cm && cm.band && t.guarantee) {
     const benIsSignl = t.guarantee.beneficiary !== "partner";
-    const benName = benIsSignl ? "SIGNL" : p.name;
+    const benName = benIsSignl ? "Magpie" : p.name;
     const benShare = benIsSignl ? cm.signlShare : cm.partnerShare;
     const otherShare = benIsSignl ? cm.partnerShare : cm.signlShare;
-    const otherName = benIsSignl ? p.name : "SIGNL";
+    const otherName = benIsSignl ? p.name : "Magpie";
     callout = `<div class="panel" style="background:#0B0D0C;color:#F4F7F4;margin-top:14px">
       <h3 style="margin:0 0 6px;color:#fff">${cm.governedBy === "guarantee" ? "This month, the guarantee governs." : "This month, the percentage governs."}</h3>
       <p class="small" style="margin:0;color:#DDE7DD">${esc(benName)}'s ${cm.band.pctToBeneficiary}% of ${ccMoneyFmtC_CUR(cm.gross)} comes to ${ccMoneyFmtC_CUR(cm.band.pctAmount)}. ${cm.governedBy === "guarantee" ? `The guarantee pays ${ccMoneyFmtC_CUR(cm.band.floorMonthly)} instead, so ${esc(benName)} receives ${ccMoneyFmtC_CUR(benShare)} and ${esc(otherName)} receives the remaining ${ccMoneyFmtC_CUR(otherShare)}.` : `That is above the ${ccMoneyFmtC_CUR(cm.band.floorMonthly)} guarantee, so the split runs on percentages: ${esc(benName)} receives ${ccMoneyFmtC_CUR(benShare)}, ${esc(otherName)} the remaining ${ccMoneyFmtC_CUR(otherShare)}.`}</p>
@@ -28400,7 +28400,7 @@ function ccPartnerDealHtml(d, deal) {
   }
   const splitBar = cm ? `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 2px">This month's split</h3><p class="small muted" style="margin:0">${esc(cm.label)} · ${esc(cm.market)} · ${ccMoneyFmtC_CUR(cm.gross)} of subscription money in</p>${ccSplitBarHtml(cm.partnerShare, cm.signlShare, p.name, deal.currency)}</div>` : "";
   const pilot = deal.pilotFloor ? `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 4px">Pilot floor</h3>
-    <p class="small" style="margin:0">The deal promises ${deal.pilotFloor.beneficiary === "partner" ? esc(p.name) : "SIGNL"} at least ${ccMoneyFmtC_CUR(deal.pilotFloor.floor)} across the pilot. Counted so far: <strong>${ccMoneyFmtC_CUR(deal.pilotFloor.counted)}</strong> (${ccMoneyFmtC_CUR(deal.pilotFloor.activationCounted)} activation + ${ccMoneyFmtC_CUR(deal.pilotFloor.receiptsCounted)} of monthly takes). ${deal.pilotFloor.met ? `<strong>The floor is met.</strong>` : `${ccMoneyFmtC_CUR(deal.pilotFloor.shortfall)} to go.`}</p></div>` : "";
+    <p class="small" style="margin:0">The deal promises ${deal.pilotFloor.beneficiary === "partner" ? esc(p.name) : "Magpie"} at least ${ccMoneyFmtC_CUR(deal.pilotFloor.floor)} across the pilot. Counted so far: <strong>${ccMoneyFmtC_CUR(deal.pilotFloor.counted)}</strong> (${ccMoneyFmtC_CUR(deal.pilotFloor.activationCounted)} activation + ${ccMoneyFmtC_CUR(deal.pilotFloor.receiptsCounted)} of monthly takes). ${deal.pilotFloor.met ? `<strong>The floor is met.</strong>` : `${ccMoneyFmtC_CUR(deal.pilotFloor.shortfall)} to go.`}</p></div>` : "";
   const runRate = deal.runRate ? `<div class="panel" style="margin-top:14px"><div class="flex-between"><h3 style="margin:0">Run-rate at fill</h3><span class="cc-chip modeled">Modeled</span></div>
     <p class="small muted" style="margin:4px 0 8px">The standard model at this deal's split: about ${deal.runRate.businessesPerMarket} businesses a market at $${Number(deal.runRate.arpuYearly).toLocaleString()} a year, ramped 40% / 75% / 100% across the first three years. An estimate for planning, never an accrual.</p>
     <div class="table-wrap"><table><tr><th>Year</th><th>Gross</th><th>${esc(p.name)} at ${typeof t.partnerPct === "number" ? t.partnerPct : 0}%</th></tr>
@@ -28408,12 +28408,12 @@ function ccPartnerDealHtml(d, deal) {
     <tr><td>Year 2 · 75%</td><td data-label="Gross">${ccMoneyFmt(deal.runRate.ramp.fill75.gross)}</td><td data-label="Partner">${ccMoneyFmt(deal.runRate.ramp.fill75.partner)}</td></tr>
     <tr><td>Year 3 · 100%</td><td data-label="Gross">${ccMoneyFmt(deal.runRate.ramp.fill100.gross)}</td><td data-label="Partner">${ccMoneyFmt(deal.runRate.ramp.fill100.partner)}</td></tr></table></div></div>` : "";
   const termsRows = [
-    ["The split", typeof t.partnerPct === "number" ? `${esc(p.name)} keeps ${t.partnerPct}% of subscription revenue · SIGNL keeps ${100 - t.partnerPct}%` : "Not entered"],
+    ["The split", typeof t.partnerPct === "number" ? `${esc(p.name)} keeps ${t.partnerPct}% of subscription revenue · Magpie keeps ${100 - t.partnerPct}%` : "Not entered"],
     ["Attribution", t.attributionScope === "sourced_only" ? "Only businesses this partner brought in" : "The whole market — every business with subscription revenue in it"],
     ["Term", t.termMonths ? `${t.termMonths} months${t.startAt ? ` from ${esc(fmtDay(t.startAt))}` : ""}` : "Open"],
     ["Renewal", esc(t.renewal || "—")],
     ["Exclusivity", t.exclusivity && t.exclusivity.scope === "market_conditional" ? `Per market, conditional — ${esc(t.exclusivity.conditions || "")}` : "None"],
-    ["Guarantee", t.guarantee ? `Greater-of bands protect ${t.guarantee.beneficiary === "partner" ? esc(p.name) : "SIGNL"}'s side` : "None"],
+    ["Guarantee", t.guarantee ? `Greater-of bands protect ${t.guarantee.beneficiary === "partner" ? esc(p.name) : "Magpie"}'s side` : "None"],
     ["Governing document", deal.governingDocument ? `<a href="${esc(deal.governingDocument)}" target="_blank" rel="noopener">Open the signed terms</a>` : "Not linked yet"],
     ["Version", `${deal.currentVersion} — terms are versioned; past months keep the math of the version in force for them`],
   ];
@@ -28576,7 +28576,7 @@ function ccOwedHtml(d) {
   const liabPanel = `
     <div class="panel">
       <h3 style="margin:0 0 2px">Promises, not cash</h3>
-      <p class="muted small" style="margin:0 0 8px">Service SIGNL owes, in the open. None of this is money out the door; it is visits, credits and menu value already promised.</p>
+      <p class="muted small" style="margin:0 0 8px">Service Magpie owes, in the open. None of this is money out the door; it is visits, credits and menu value already promised.</p>
       <div class="cc-att-row"><span><strong>Visit credits:</strong> ${plural(roll.visits || 0, "unused visit", "unused visits")} sitting on business plans, about ${ccMoneyFmt(roll.planValue || 0)} at plan value.${roll.carriedVisits ? ` ${plural(roll.carriedVisits, "visit", "visits")} rolled in from last month${roll.carriedExpiresAt ? ` and lapse ${esc(fmtDay(roll.carriedExpiresAt))}` : ""} if unused.` : ""}</span></div>
       <div class="cc-att-row"><span><strong>Founding credits:</strong> ${ccMoneyFmt(credits.total || 0)} still owed to ${plural(credits.count || 0, "business", "businesses")} — $100 off a first month each, until each one is used.</span></div>
       <div class="cc-att-row"><span><strong>Comp visits booked, not yet redeemed:</strong> ${plural(promised.count || 0, "visit", "visits")} carrying ${ccMoneyFmt(promised.menuValue || 0)} of menu value promised. Menu value promised — never a cost, never owed in cash.</span></div>
@@ -28698,7 +28698,7 @@ function ccCloseHtml(recon, d) {
       <div class="cc-tiles">
         <div class="cc-tile"><div class="cc-tlabel">People at month end</div><div class="cc-tnum">${h.usersTotal || 0}</div><div class="cc-tsub">${plural(h.creators || 0, "creator", "creators")} &middot; ${plural(h.businesses || 0, "business", "businesses")} &middot; ${plural(h.partners || 0, "partner", "partners")}</div></div>
         <div class="cc-tile"><div class="cc-tlabel">Finished deals</div><div class="cc-tnum">${fd.total || 0}</div><div class="cc-tsub">${plural(fd.compVisits || 0, "comp visit", "comp visits")} &middot; ${plural(fd.paidBookings || 0, "paid booking", "paid bookings")} &middot; ${plural(fd.licenses || 0, "license", "licenses")}</div></div>
-        <div class="cc-tile"><div class="cc-tlabel">Recorded <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt(h.recordedFlowed || 0)}</div><div class="cc-tsub">SIGNL kept ${ccMoneyFmt(h.recordedSignlKept || 0)} &middot; partners accrued ${ccMoneyFmt(h.partnersAccrued || 0)}</div></div>
+        <div class="cc-tile"><div class="cc-tlabel">Recorded <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt(h.recordedFlowed || 0)}</div><div class="cc-tsub">Magpie kept ${ccMoneyFmt(h.recordedSignlKept || 0)} &middot; partners accrued ${ccMoneyFmt(h.partnersAccrued || 0)}</div></div>
         <div class="cc-tile"><div class="cc-tlabel">Charged <span class="cc-chip charged">Charged</span></div><div class="cc-tnum">${ccMoneyFmt(h.chargedNet || 0)}</div><div class="cc-tsub">Net on cards &middot; ${ccMoneyFmt(h.countedRegister || 0)} counted at registers, apart</div></div>
         <div class="cc-tile"><div class="cc-tlabel">Owed at the close</div><div class="cc-tnum">${ccMoneyFmt(h.owedToCreators || 0)}</div><div class="cc-tsub">To creators &middot; ${ccMoneyFmt(h.owedToPartners || 0)} to partners</div></div>
       </div>
@@ -28994,7 +28994,7 @@ function renderPreviewResults() {
     // The live Discover empty state, verbatim (V4.2): the
     // preview shows what a business actually sees on no match,
     // not a panel describing it.
-    el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>SIGNL is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
+    el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>Magpie is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
     return;
   }
   el.innerHTML = `<div id="pv-discover-toggle">${pvDiscoverModeToggleHtml()}</div><div id="pv-discover-body"></div>`;
@@ -29256,7 +29256,7 @@ function pvBookingCard(b) {
   }
   if (b.state === "overdue") {
     html += `<div class="notice"><strong>This visit needs attention.</strong> ${(b.alerts || []).map((a) => `<br>${esc(a)}`).join("")}<br>Hard stop <span class="countdown pv-tick" data-kind="until" data-target="${esc(b.pauseAt)}"></span> (${esc(fmtDate(b.pauseAt))}).</div>
-    <button class="btn small-btn" disabled>Request replacement</button> <span class="small muted">In the live app this asks SIGNL for a replacement creator for the burned visit. Disabled in preview.</span>`;
+    <button class="btn small-btn" disabled>Request replacement</button> <span class="small muted">In the live app this asks Magpie for a replacement creator for the burned visit. Disabled in preview.</span>`;
   }
   if (b.post) {
     const p = b.post;
@@ -29272,7 +29272,7 @@ function pvBookingCard(b) {
     }
     if (b.roas) {
       const r = b.roas;
-      html += `<p class="small"><strong>Modeled estimate: ${r.score === null ? "n/a" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(this visit: tallies plus modeled media value; the business's SIGNL ROAS Score is on their Receipt)</span> &middot; $${fmtMoney(r.registerValue)} tracked at the register + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}.</p>`;
+      html += `<p class="small"><strong>Modeled estimate: ${r.score === null ? "n/a" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(this visit: tallies plus modeled media value; the business's Magpie ROAS Score is on their Receipt)</span> &middot; $${fmtMoney(r.registerValue)} tracked at the register + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}.</p>`;
     }
     html += `
     <form onsubmit="return pvReportRedemptions(event, '${b.id}')">
@@ -29531,7 +29531,7 @@ function pvManagedHtml(mv) {
   const rows = (b.paidBookings || []).map((pb) => `
     <div class="review-item">
       <strong>@${esc(pb.creatorHandle)}</strong> (${esc(pb.creatorName)}) &middot; paid visit at their listed rate of $${fmtPrice(pb.rate)}<br>
-      <span class="small">Business paid $${fmtMoney(pb.businessTotal)} (rate + 3%) &middot; creator receives $${fmtMoney(pb.creatorNet)} &middot; SIGNL fee $${fmtMoney(pb.platformFee)}, split evenly &middot; ${pb.escrowState === "released" ? `<span class="badge ok">Escrow released</span>` : `<span class="badge info">Escrow held</span>`} <span class="muted">${esc(pb.escrowNote)}</span></span>
+      <span class="small">Business paid $${fmtMoney(pb.businessTotal)} (rate + 3%) &middot; creator receives $${fmtMoney(pb.creatorNet)} &middot; Magpie fee $${fmtMoney(pb.platformFee)}, split evenly &middot; ${pb.escrowState === "released" ? `<span class="badge ok">Escrow released</span>` : `<span class="badge info">Escrow held</span>`} <span class="muted">${esc(pb.escrowNote)}</span></span>
     </div>`).join("");
   return `
   <section class="panel">
@@ -29554,7 +29554,7 @@ function pvManagedHtml(mv) {
 
 // Preview code redemptions (Jeff, 2026-10-19): the business
 // reports a register tally against a simulated delivered visit
-// and sees the SIGNL ROAS Score move. The server recomputes in
+// and sees the Magpie ROAS Score move. The server recomputes in
 // memory and saves nothing; the result line says so.
 async function pvReportRedemptions(e, bookingId) {
   e.preventDefault();
@@ -29766,7 +29766,7 @@ function previewDashboardHtml(d) {
     }
     // A platform-message email link (/?open=messages, Build -40)
     // lands a signed-in creator or business straight on their
-    // Messages view, where the SIGNL team thread waits. Same
+    // Messages view, where the Magpie team thread waits. Same
     // consume-and-strip discipline as the YouTube return above.
     if (params.get("open") === "messages" && state.user && (state.user.role === "creator" || state.user.role === "business")) {
       state.tab = "Messages";
@@ -29828,7 +29828,7 @@ function previewDashboardHtml(d) {
     // "linked" need nothing: /auth/me above already carries the
     // session the callback set.
     const googleParam = (params.get("google") || "").trim().slice(0, 16);
-    if (googleParam === "conflict") state.googleNotice = "That Google account uses a different email than your SIGNL account, so it was not linked. Sign in with your email and password, then link Google in Settings if you want it linked.";
+    if (googleParam === "conflict") state.googleNotice = "That Google account uses a different email than your Magpie account, so it was not linked. Sign in with your email and password, then link Google in Settings if you want it linked.";
     else if (googleParam === "unavailable") state.googleNotice = "Sign-in with Google is not switched on yet. Use your email and password below.";
     else if (googleParam === "error") state.googleNotice = "Something went wrong with Google just now. Sign in with your email and password below, or try Google again.";
     if (googleParam && googleParam !== "signedin" && googleParam !== "linked") state.view = "signin";
@@ -29948,7 +29948,7 @@ function previewDashboardHtml(d) {
       setTimeout(() => renderCounter(code.toUpperCase()), 60);
     }
   } catch (e) {
-    app.innerHTML = `<div style="max-width:560px;margin:40px auto"><div class="error-box">SIGNL could not load. ${esc(e.message)}</div><p class="mt"><button class="btn" onclick="location.reload()">Reload</button></p></div>`;
+    app.innerHTML = `<div style="max-width:560px;margin:40px auto"><div class="error-box">Magpie could not load. ${esc(e.message)}</div><p class="mt"><button class="btn" onclick="location.reload()">Reload</button></p></div>`;
   }
 })();
 
@@ -30023,7 +30023,7 @@ function recruiterQueueHtml(data) {
   const rows = (data.prospects || []).filter((p) => rcState.filter === "all" || p.effectiveStatus === rcState.filter);
   return `
   <h2>${esc(data.market)} queue</h2>
-  <p class="muted small" style="margin:4px 0 10px">Your list of creators to invite to SIGNL in ${esc(data.market)}. Work one at a time: tap Work this one, copy the ready message in Outreach, send it from your own app, then mark it sent here. Nothing sends from this console itself.</p>
+  <p class="muted small" style="margin:4px 0 10px">Your list of creators to invite to Magpie in ${esc(data.market)}. Work one at a time: tap Work this one, copy the ready message in Outreach, send it from your own app, then mark it sent here. Nothing sends from this console itself.</p>
   ${rcCountsChips(c)}
   <p>${filters.map(([k, label]) => `<button class="btn small-btn ${rcState.filter === k ? "" : "ghost"}" style="margin:0 6px 6px 0" onclick="rcSetFilter('${k}')">${esc(label)}</button>`).join("")}</p>
   <div id="rc-queue-list">
@@ -30058,7 +30058,7 @@ function rcProspectCardHtml(p) {
   return `<div class="panel" id="rc-card-${p.id}">
     <p style="margin:0 0 4px"><strong>${esc(p.name || p.handle || "Creator")}</strong> ${p.handle ? `<span class="muted">@${esc(p.handle)}</span>` : ""}
     <span class="badge ${RC_STATUS_BADGE[st] || "info"}">${esc(RC_STATUS_LABEL[st] || st)}</span>
-    ${p.alreadyOnSignl ? `<span class="badge ok">On SIGNL</span>` : ""}
+    ${p.alreadyOnSignl ? `<span class="badge ok">On Magpie</span>` : ""}
     ${p.belowMinimum ? `<span class="badge warn">Under 500: check before outreach</span>` : ""}
     ${p.followupReady ? `<span class="badge warn">Follow-up ready</span>` : ""}</p>
     <p class="small muted" style="margin:0 0 6px">${[p.category, p.city, p.followers ? `${Number(p.followers).toLocaleString("en-US")} followers` : "", p.source].filter(Boolean).map(esc).join(" &middot; ")}</p>
@@ -30098,7 +30098,7 @@ async function rcImportProspects() {
   try {
     const data = await api("POST", "/recruiter/prospects/import", { text, market: rcState.entity && rcState.entity.kind === "owner" ? rcState.market : undefined });
     const r = data.result || {};
-    if (msg) msg.textContent = `Added ${r.added || 0}. Skipped ${r.skippedDuplicate || 0} duplicates${r.blockedDoNotContact ? `, ${r.blockedDoNotContact} do-not-contact` : ""}${r.alreadyOnSignl ? `, ${r.alreadyOnSignl} already on SIGNL` : ""}.`;
+    if (msg) msg.textContent = `Added ${r.added || 0}. Skipped ${r.skippedDuplicate || 0} duplicates${r.blockedDoNotContact ? `, ${r.blockedDoNotContact} do-not-contact` : ""}${r.alreadyOnSignl ? `, ${r.alreadyOnSignl} already on Magpie` : ""}.`;
     loadRecruiterQueue();
   } catch (err) { if (msg) msg.textContent = err.message; }
   return false;
@@ -30175,7 +30175,7 @@ function rcOutreachHtml(p, list) {
       <span id="rc-send-msg" class="small muted"></span>
     </p>
     ${p.followupReady ? `<div class="notice blue"><strong>Follow-up ready.</strong> Four quiet days have passed, so the one gentle follow-up is unlocked. Send it the same way, then mark it.<br><textarea id="rc-followup-text" rows="5" style="width:100%;margin-top:8px">${esc(d.followup || "")}</textarea><br><button class="btn small-btn" style="margin-top:6px" onclick="rcCopyFollowup()">Copy follow-up</button> <button class="btn small-btn ghost" onclick="rcAction('${p.id}','followup-sent','${ch}')">Mark follow-up sent</button></div>` : (st === "sent" && p.followupUnlocksAt ? `<p class="small muted">Follow-up unlocks ${new Date(p.followupUnlocksAt).toLocaleDateString("en-US", { month: "long", day: "numeric" })} if there is no reply. One follow-up per person, ever.</p>` : "")}
-    <p class="small muted">You send from your own ${ch === "email" ? "mail app" : ch === "tiktok" ? "TikTok" : "Instagram"} - SIGNL never sends for you. Mark it sent here right after, so your list stays true.</p>
+    <p class="small muted">You send from your own ${ch === "email" ? "mail app" : ch === "tiktok" ? "TikTok" : "Instagram"} - Magpie never sends for you. Mark it sent here right after, so your list stays true.</p>
   </div>`;
 }
 
@@ -30269,8 +30269,8 @@ function recruiterHelpHtml() {
       <li>Creators get booked two ways: comped experiences (a meal, a treatment, a class, a stay), or paid bookings at the rate they set, and they keep 97% of paid bookings.</li>
       <li>Creators are ranked by how local their audience is to ${esc(market)}, not by follower count.</li>
       <li>${esc(market)} opens after the founding roster is set. Claiming a page now holds their spot and their local ranking.</li>
-      <li>Joining is free for creators, and always is. SIGNL starts at 500 total followers across their platforms.</li>
-      ${isDubai ? `<li>Dubai note: creators here need the UAE Advertiser Permit before their first paid or gifted post. They do not need it to sign up, and SIGNL walks founding creators through it.</li>` : ""}
+      <li>Joining is free for creators, and always is. Magpie starts at 500 total followers across their platforms.</li>
+      ${isDubai ? `<li>Dubai note: creators here need the UAE Advertiser Permit before their first paid or gifted post. They do not need it to sign up, and Magpie walks founding creators through it.</li>` : ""}
     </ul>
     <h3>The one rule</h3>
     <p>Only message people from your console list, and always mark what happened: sent, replied, not interested. If someone asks not to be contacted, tap <strong>Do not contact</strong> and they are never messaged again.</p>
@@ -30382,7 +30382,7 @@ async function loadPilotOverview(el) {
       ${stat("Businesses chosen", c.businesses)}
       ${stat("Visits done", c.visitsDone)}
       ${stat("Posts live", c.postsLive)}
-      ${stat("Joined SIGNL after", c.continued)}
+      ${stat("Joined Magpie after", c.continued)}
     </div>
     ${c.visitsDone === 0 && c.businesses > 0 ? `<p class="small muted" style="margin:10px 2px 0">0 visits yet. Visits start once the chosen businesses confirm their first creators — each one appears here as it happens.</p>` : ""}
     <div class="panel">
@@ -30423,9 +30423,9 @@ async function loadPilotBusinesses(el) {
     ])}
     ${rows.length ? rows.map((r) => `
     <div class="panel">
-      <p style="margin:0 0 4px"><strong>${esc(r.name)}</strong> <span class="badge ${PILOT_STEP_BADGE[r.step] || "info"}">${esc(r.stepLabel)}</span>${r.linked ? "" : ` <span class="badge info">Not on SIGNL yet</span>`}</p>
+      <p style="margin:0 0 4px"><strong>${esc(r.name)}</strong> <span class="badge ${PILOT_STEP_BADGE[r.step] || "info"}">${esc(r.stepLabel)}</span>${r.linked ? "" : ` <span class="badge info">Not on Magpie yet</span>`}</p>
       <p class="small muted" style="margin:0">${esc(r.market)} &middot; Spent: ${pilotMoney(r.spendCents)} &middot; Visits done: ${r.visitsDone} &middot; Posts live: ${r.postsLive}</p>
-      ${r.linked ? "" : `<p class="small muted" style="margin:6px 0 0">This business has not joined SIGNL yet, so its visit is arranged with them directly. Its numbers appear here once it is on SIGNL and the visit is booked.</p>`}
+      ${r.linked ? "" : `<p class="small muted" style="margin:6px 0 0">This business has not joined Magpie yet, so its visit is arranged with them directly. Its numbers appear here once it is on Magpie and the visit is booked.</p>`}
     </div>`).join("") : `<div class="panel"><p class="muted" style="margin:0">${bizSeg === "visits" && allRows.length ? "No visits yet. Visits appear here as the chosen businesses host their first creators." : "No businesses have been chosen yet. They will appear here as the pilot is set up."}</p></div>`}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -30466,20 +30466,20 @@ async function loadPilotReport(el) {
     el.innerHTML = `
     <style>@media print { #rail, #tabbar, #topbar2, .pilot-no-print { display: none !important; } body { background: #fff; } }</style>
     <div class="panel pilot-report">
-      ${p.brand && (p.brand.displayName || p.brand.logoUrl) ? `${coBrandHeadHtml(p.brand)}<p class="small muted" style="margin:0 0 10px">Impact Portal</p>` : `<p class="small muted" style="margin:0">SIGNL &middot; Impact Portal</p>`}
+      ${p.brand && (p.brand.displayName || p.brand.logoUrl) ? `${coBrandHeadHtml(p.brand)}<p class="small muted" style="margin:0 0 10px">Impact Portal</p>` : `<p class="small muted" style="margin:0">Magpie &middot; Impact Portal</p>`}
       <h2 style="margin:4px 0 2px">${esc(p.name)}</h2>
       <p style="margin:0 0 4px"><strong>${esc(p.partnerName)}</strong> &middot; ${esc(p.marketName)}</p>
       <p class="small muted" style="margin:0 0 14px">${fmtDay(data.period.from)} to ${fmtDay(data.period.to)} &middot; Report made ${fmtDay(data.generatedAt)}</p>
       <h3>The fund</h3>
       <p>Put in: <strong>${pilotMoney(f.committedCents)}</strong> &middot; Spent: <strong>${pilotMoney(f.spentCents)}</strong> &middot; Left: <strong>${pilotMoney(f.remainingCents)}</strong></p>
       <h3>What it returned</h3>
-      <p>${c.businesses} businesses chosen &middot; ${c.visitsDone} visits done &middot; ${c.postsLive} posts live &middot; ${c.countedCustomers} customers counted at the register &middot; ${c.recordedCustomers} customers recorded by the businesses &middot; ${c.continued} businesses joined SIGNL afterwards.</p>
+      <p>${c.businesses} businesses chosen &middot; ${c.visitsDone} visits done &middot; ${c.postsLive} posts live &middot; ${c.countedCustomers} customers counted at the register &middot; ${c.recordedCustomers} customers recorded by the businesses &middot; ${c.continued} businesses joined Magpie afterwards.</p>
       <h3>Business by business</h3>
       ${rows.length ? `<div style="overflow-x:auto"><table class="table" style="width:100%"><thead><tr><th>Business</th><th>Where it stands</th><th>Spent</th><th>Visits</th><th>Posts</th><th>Counted</th><th>Recorded</th></tr></thead><tbody>
       ${rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.stepLabel)}</td><td>${pilotMoney(r.spendCents)}</td><td>${r.visitsDone}</td><td>${r.postsLive}</td><td>${r.countedCustomers}</td><td>${r.recordedCustomers}</td></tr>`).join("")}
       </tbody></table></div>` : `<p class="muted">No businesses have been chosen yet.</p>`}
-      <p class="small muted">How to read the customer counts: "counted" customers used the creator's code at the till, so they are on the business's own register records. "Recorded" customers are the business's own reported count. The two are shown separately and never added together. Every figure here comes from SIGNL's records of this pilot.</p>
-      <p class="small muted">Questions: Jeff Rimmer, Founder, SIGNL &middot; jeff@joinsignl.com</p>
+      <p class="small muted">How to read the customer counts: "counted" customers used the creator's code at the till, so they are on the business's own register records. "Recorded" customers are the business's own reported count. The two are shown separately and never added together. Every figure here comes from Magpie's records of this pilot.</p>
+      <p class="small muted">Questions: Jeff Rimmer, Founder, Magpie &middot; jeff@magpielocal.com</p>
     </div>
     ${p.status === "closed" ? `<div class="panel"><p style="margin:0"><strong>Your end-of-pilot pack is ready.</strong> One file with the fund, every business's outcome, and the customer counts (counted and recorded kept separate). It is the final record of this pilot.</p></div>` : ""}
     <p class="pilot-no-print"><button class="btn" onclick="window.print()">Print this report</button> <a class="btn ghost" href="${pilotApiUrl("/api/pilot/pack")}">Download the ${p.status === "closed" ? "end-of-pilot" : "pilot"} pack</a></p>`;
@@ -30498,7 +30498,7 @@ function pilotHelpHtml() {
   </div>
   <div class="panel">
     <h3 style="margin-top:0">How the businesses were chosen</h3>
-    <p>You and SIGNL picked them together from your members and the businesses you wanted to help. SIGNL works the list: each business is invited, its visit is booked with a creator whose audience is mostly local, and its step moves as the visit happens, from chosen, to invited, to booked, to visited, to posted. A business that then joins SIGNL on its own plan shows as "Joined SIGNL".</p>
+    <p>You and Magpie picked them together from your members and the businesses you wanted to help. Magpie works the list: each business is invited, its visit is booked with a creator whose audience is mostly local, and its step moves as the visit happens, from chosen, to invited, to booked, to visited, to posted. A business that then joins Magpie on its own plan shows as "Joined Magpie".</p>
   </div>
   <div class="panel">
     <h3 style="margin-top:0">The words we use</h3>
@@ -30509,7 +30509,7 @@ function pilotHelpHtml() {
   <div class="panel">
     <h3 style="margin-top:0">What you can do here</h3>
     <p>This portal is read-only: it is the record, not a control panel. The Report page is made to print or save, so you can take it to your board or your members. If anything looks wrong, or you want to add businesses or extend the fund, talk to Jeff directly.</p>
-    <p style="margin-bottom:0">Jeff Rimmer, Founder, SIGNL &middot; <a href="mailto:jeff@joinsignl.com">jeff@joinsignl.com</a></p>
+    <p style="margin-bottom:0">Jeff Rimmer, Founder, Magpie &middot; <a href="mailto:jeff@magpielocal.com">jeff@magpielocal.com</a></p>
   </div>`;
 }
 
@@ -30595,7 +30595,7 @@ async function apLoadDetail(id) {
     const spends = data.spends || [];
     const candidates = data.candidates || [];
     const bizName = (s) => { const b = biz.find((x) => x.id === s.pilotBizId); return b ? b.name : (s.note || "General"); };
-    const stepOptions = (cur) => [["selected", "Chosen"], ["invited", "Invited"], ["continued", "Joined SIGNL"], ["declined", "Said no"], ["completed", "Finished"]].map(([v, l]) => `<option value="${v}" ${cur === v ? "selected" : ""}>${l}</option>`).join("");
+    const stepOptions = (cur) => [["selected", "Chosen"], ["invited", "Invited"], ["continued", "Joined Magpie"], ["declined", "Said no"], ["completed", "Finished"]].map(([v, l]) => `<option value="${v}" ${cur === v ? "selected" : ""}>${l}</option>`).join("");
     el.innerHTML = `
     <p class="small" style="margin:0 0 8px">Partner login: <strong>${esc(p.partnerEmail || "none")}</strong>${p.partnerLoginName ? ` (${esc(p.partnerLoginName)})` : ""} <button class="btn small-btn ghost" onclick="apResendInvite('${p.id}')">Resend invite</button> <span id="ap-invite-ok-${p.id}" class="saved"></span></p>
     <p class="small" style="margin:0 0 8px">Team seats: this funder ${p.partnerTeamAdmin ? "IS" : "is not"} the pilot's team admin. ${p.partnerUserId ? `<button class="btn small-btn ghost" onclick="apToggleTeamAdmin('${p.id}', ${p.partnerTeamAdmin ? "false" : "true"})">${p.partnerTeamAdmin ? "Remove team admin" : "Make team admin"}</button> <span id="ap-team-ok-${p.id}" class="saved"></span>` : ""}</p>
@@ -30605,15 +30605,15 @@ async function apLoadDetail(id) {
     </div>
     <button class="btn small-btn" onclick="apSavePilot('${p.id}')">Save pilot</button> <span id="ap-save-ok-${p.id}" class="saved"></span>
     <h4 style="margin:16px 0 6px">Businesses (${biz.length})</h4>
-    <p class="small muted" style="margin:0 0 6px">The badge is where each business actually stands, worked out from its bookings, posts, and plan. The menu under it sets the step by hand for the ones SIGNL cannot see yet (not invited, declined, done).</p>
+    <p class="small muted" style="margin:0 0 6px">The badge is where each business actually stands, worked out from its bookings, posts, and plan. The menu under it sets the step by hand for the ones Magpie cannot see yet (not invited, declined, done).</p>
     ${biz.length ? biz.map((r) => `
     <div style="border-top:1px solid #e5e5e5;padding:8px 0">
-      <p class="small" style="margin:0"><strong>${esc(r.name)}</strong> ${r.linked ? `<span class="badge ok">On SIGNL</span>` : `<span class="badge info">Name only</span>`} <span class="badge ${PILOT_STEP_BADGE[r.step] || "info"}">${esc(r.step)}</span> <span class="muted">Spent ${pilotMoney(r.spendCents)} &middot; visits ${r.visitsDone} &middot; posts ${r.postsLive}</span></p>
+      <p class="small" style="margin:0"><strong>${esc(r.name)}</strong> ${r.linked ? `<span class="badge ok">On Magpie</span>` : `<span class="badge info">Name only</span>`} <span class="badge ${PILOT_STEP_BADGE[r.step] || "info"}">${esc(r.step)}</span> <span class="muted">Spent ${pilotMoney(r.spendCents)} &middot; visits ${r.visitsDone} &middot; posts ${r.postsLive}</span></p>
       <p style="margin:6px 0 0"><select id="ap-step-${r.id}">${stepOptions(r.storedStep)}</select> <button class="btn small-btn ghost" onclick="apSetStep('${p.id}','${r.id}')">Set step</button> <button class="btn small-btn ghost" onclick="apRemoveBiz('${p.id}','${r.id}')">Remove</button></p>
     </div>`).join("") : `<p class="small muted">None yet. Add the businesses this partner chose below.</p>`}
     <div class="form-2col" style="margin-top:10px">
-      <div class="field"><label>Add a business on SIGNL (this market)</label><select id="ap-add-candidate-${p.id}"><option value="">Pick a business...</option>${candidates.map((cand) => `<option value="${cand.id}">${esc(cand.name)}</option>`).join("")}</select></div>
-      <div class="field"><label>Or a business not on SIGNL yet (name)</label><input type="text" id="ap-add-name-${p.id}" placeholder="Business name"></div>
+      <div class="field"><label>Add a business on Magpie (this market)</label><select id="ap-add-candidate-${p.id}"><option value="">Pick a business...</option>${candidates.map((cand) => `<option value="${cand.id}">${esc(cand.name)}</option>`).join("")}</select></div>
+      <div class="field"><label>Or a business not on Magpie yet (name)</label><input type="text" id="ap-add-name-${p.id}" placeholder="Business name"></div>
     </div>
     <button class="btn small-btn" onclick="apAddBiz('${p.id}')">Add business</button> <span id="ap-add-ok-${p.id}" class="saved"></span>
     <h4 style="margin:16px 0 6px">Fund ledger (${pilotMoney(data.fund.spentCents)} of ${pilotMoney(data.fund.committedCents)} spent)</h4>

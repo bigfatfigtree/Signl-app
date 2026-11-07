@@ -25,7 +25,7 @@ function escHtml(s) {
 // head and the in-app head never tell two different stories.
 function profilePageMeta(profile) {
   const place = profile.place || "";
-  const title = `${profile.name} (@${profile.handle}) on SIGNL${place ? ` | ${place}` : ""}`;
+  const title = `${profile.name} (@${profile.handle}) on Magpie${place ? ` | ${place}` : ""}`;
   const pct = typeof profile.localAudiencePct === "number" ? profile.localAudiencePct : null;
   // Multi-market (2026-11-01): the other markets the creator is
   // ranked in ride the description when they are real (the
@@ -38,7 +38,7 @@ function profilePageMeta(profile) {
   const also = others.length
     ? ` Also ranked in ${others.map((e) => `${e.market} (${e.pct}% of their audience)`).join(" and ")}.`
     : "";
-  const description = `${profile.name} is a founding creator on SIGNL in ${place || "their market"}${profile.tierBand ? ` (${profile.tierBand} tier)` : ""}.${pct !== null ? ` ${pct}% of their audience is local.` : ""}${also} Local businesses comp creators for honest posts.`;
+  const description = `${profile.name} is a founding creator on Magpie in ${place || "their market"}${profile.tierBand ? ` (${profile.tierBand} tier)` : ""}.${pct !== null ? ` ${pct}% of their audience is local.` : ""}${also} Local businesses comp creators for honest posts.`;
   return { title, description };
 }
 
@@ -101,7 +101,7 @@ function profileJsonLd(profile, meta, canonical, image) {
 
 // ---------- server-rendered profile body (Build -64) ----------
 // The finished profile used to arrive as an empty shell: the
-// served body was literally "Loading SIGNL..." and every fact
+// served body was literally "Loading Magpie..." and every fact
 // waited on the ~1.4 MB app bundle plus an API call (UX audit
 // B1, the flagship fix of this build). The router now hands this
 // module the same tier-0 payload the client renders from, and
@@ -169,7 +169,7 @@ function profileWorkHtml(p) {
   return `
       <h3 class="bookme-h">Work</h3>
       <div class="work-grid">${cells}</div>
-      <p class="small muted">Posts ${escHtml(p.name)} picked to show their work. They are the creator's own posts, not SIGNL visits.</p>`;
+      <p class="small muted">Posts ${escHtml(p.name)} picked to show their work. They are the creator's own posts, not Magpie visits.</p>`;
 }
 
 // ---------- profile header facts (Build -66) ----------
@@ -282,7 +282,7 @@ function profileBodyHtml(p, place) {
         <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${[...bd.segments].sort((a, b) => (a.market === profileViewOf(p).market ? -1 : b.market === profileViewOf(p).market ? 1 : b.pct - a.pct)).map((s) => { const cnt = followersForPct(s.pct, p.totalAudience); return `${escHtml(s.market)} ${Number(s.pct) || 0}%${cnt ? ` &middot; ${cnt} followers` : ""}`; }).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. ${(() => { const vSegs = bd.segments.filter((s) => s.verified).map((s) => escHtml(s.market)); return vSegs.length === 0 ? "Self-reported by the creator." : vSegs.length === bd.segments.length ? "Verified from Instagram." : `${vSegs.join(" and ")} verified from Instagram; the rest is self-reported by the creator.`; })()}</p>
       </div>` : "";
   const proof = p.proof && p.proof.visitsCompleted > 0 ? `
-      <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real SIGNL visits, counted by SIGNL, not claimed by the creator.</p></div>` : "";
+      <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on Magpie</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real Magpie visits, counted by Magpie, not claimed by the creator.</p></div>` : "";
   // Client-parity blocks (Build -92): lines the in-app render
   // has always shown under the categories — realtor farm areas,
   // the creator's streets, comp openness — plus, after the rate
@@ -312,7 +312,7 @@ function profileBodyHtml(p, place) {
   const engN = (v) => Number(v || 0).toLocaleString("en-US");
   const eng = p.engagement && p.engagement.postsWithMetrics >= 3 ? p.engagement : null;
   const engagement = eng ? `
-      <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Post engagement</span></p><p style="margin:8px 0 0"><strong>${engN(eng.totals.views)} views &middot; ${engN(eng.totals.likes)} likes &middot; ${engN(eng.totals.shares)} shares &middot; ${engN(eng.totals.saves)} saves</strong></p><p class="small muted" style="margin:4px 0 0">Per post on average: ${engN(eng.averages.views)} views, ${engN(eng.averages.likes)} likes, ${engN(eng.averages.shares)} shares, ${engN(eng.averages.saves)} saves. From ${eng.postsWithMetrics} SIGNL posts with reported numbers. Recorded: the creator's own reported figures.</p></div>` : "";
+      <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Post engagement</span></p><p style="margin:8px 0 0"><strong>${engN(eng.totals.views)} views &middot; ${engN(eng.totals.likes)} likes &middot; ${engN(eng.totals.shares)} shares &middot; ${engN(eng.totals.saves)} saves</strong></p><p class="small muted" style="margin:4px 0 0">Per post on average: ${engN(eng.averages.views)} views, ${engN(eng.averages.likes)} likes, ${engN(eng.averages.shares)} shares, ${engN(eng.averages.saves)} saves. From ${eng.postsWithMetrics} Magpie posts with reported numbers. Recorded: the creator's own reported figures.</p></div>` : "";
   return `
   <div class="public-profile bookme theme-${escHtml(p.pageTheme || "ink")}" data-server-rendered="1" data-profile-handle="${escHtml(p.handle || "")}" style="max-width:720px;margin:20px auto">
     <div class="bookme-cover${p.photoUrl ? " has-photo" : " no-photo"}">
@@ -359,24 +359,24 @@ function profileBodyHtml(p, place) {
       ${profileWorkHtml(p)}
       <h3 class="bookme-h">Rate card</h3>
       <div class="tint-block" style="margin-top:0">
-        ${rateRows || `<p class="small muted" style="margin:0">This creator takes bookings through SIGNL; rates are set on their dashboard.</p>`}
-        <p class="small" style="margin:10px 0 0"><strong>Businesses:</strong> <a class="tlink" href="/">sign in</a> to book on SIGNL.</p>
-        <p class="small muted">Bookings through SIGNL carry the Visit Guarantee and payment protection: payment is held until the post is live. Deals arranged outside SIGNL carry neither.</p>
-        <p class="small muted">Bookings that start on SIGNL stay on SIGNL.</p>
+        ${rateRows || `<p class="small muted" style="margin:0">This creator takes bookings through Magpie; rates are set on their dashboard.</p>`}
+        <p class="small" style="margin:10px 0 0"><strong>Businesses:</strong> <a class="tlink" href="/">sign in</a> to book on Magpie.</p>
+        <p class="small muted">Bookings through Magpie carry the Visit Guarantee and payment protection: payment is held until the post is live. Deals arranged outside Magpie carry neither.</p>
+        <p class="small muted">Bookings that start on Magpie stay on Magpie.</p>
       </div>
       <div class="bookme-locked">
-        <p style="margin:0">Paying businesses can message this creator right here on SIGNL.</p>
+        <p style="margin:0">Paying businesses can message this creator right here on Magpie.</p>
       </div>
       ${visitIncludes}
       ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${escHtml(p.brokerage)}</p>` : ""}
     </section>
-    <div class="bookme-sticky"><span class="bs-name">Book ${escHtml(p.firstName || p.name)} on SIGNL</span><a class="btn bs-btn" href="/">Book on SIGNL</a></div>
+    <div class="bookme-sticky"><span class="bs-name">Book ${escHtml(p.firstName || p.name)} on Magpie</span><a class="btn bs-btn" href="/">Book on Magpie</a></div>
   </div>`;
 }
 
 function buildProfilePageHtml(shellHtml, profile) {
   const { title, description } = profilePageMeta(profile);
-  const origin = profile.origin || "https://app.joinsignl.com";
+  const origin = profile.origin || "https://app.magpielocal.com";
   const image = profile.photoUrl
     ? (String(profile.photoUrl).startsWith("http") ? profile.photoUrl : `${origin}${profile.photoUrl}`)
     : null;
@@ -415,7 +415,7 @@ function buildProfilePageHtml(shellHtml, profile) {
 // Claim-tier page meta (Build -61, 2026-10-31): a creator who
 // just claimed holds a live booking page from that moment, and a
 // link they paste into their bio should unfurl as them, not as a
-// generic SIGNL card. Same tag set as the finished page, two
+// generic Magpie card. Same tag set as the finished page, two
 // differences: the copy says the page is a founding page whose
 // booking opens at launch, and robots stays noindex (the shell's
 // own value): indexing starts when the finished, approved
@@ -424,14 +424,14 @@ function buildProfilePageHtml(shellHtml, profile) {
 function claimPageMeta(profile) {
   const place = profile.place || "";
   const named = profile.name && profile.name !== profile.handle ? `${profile.name} (@${profile.handle})` : `@${profile.handle}`;
-  const title = `${named} on SIGNL${place ? ` | ${place}` : ""}`;
-  const description = `${named} is a founding creator on SIGNL in ${place || "their market"}. Their booking page is live: local businesses book local creators for honest posts, and founding creators get the first look when businesses start booking.`;
+  const title = `${named} on Magpie${place ? ` | ${place}` : ""}`;
+  const description = `${named} is a founding creator on Magpie in ${place || "their market"}. Their booking page is live: local businesses book local creators for honest posts, and founding creators get the first look when businesses start booking.`;
   return { title, description };
 }
 
 function buildClaimPageHtml(shellHtml, profile) {
   const { title, description } = claimPageMeta(profile);
-  const origin = profile.origin || "https://app.joinsignl.com";
+  const origin = profile.origin || "https://app.magpielocal.com";
   let html = String(shellHtml == null ? "" : shellHtml);
   html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${escHtml(title)}</title>`);
   html = html.replace(/(<meta name="description" content=")[^"]*(")/, `$1${escHtml(description)}$2`);
@@ -477,14 +477,14 @@ function rosterCardHtml(card, origin) {
 
 function buildRosterPageHtml({ marketName, marketSlug, category, categorySlug, cards, origin }) {
   const place = marketName || "";
-  const title = category ? `${category} creators in ${place} on SIGNL` : `${place} creators on SIGNL`;
+  const title = category ? `${category} creators in ${place} on Magpie` : `${place} creators on Magpie`;
   const h1 = category ? `${category} creators in ${place}` : `${place} creators`;
   const canonical = `${origin}/roster/${marketSlug}${category ? `/${categorySlug}` : ""}`;
   const description = category
-    ? `Meet the ${category} creators on SIGNL in ${place}: local businesses book them for comped visits and paid posts, ranked by how much of their audience actually lives in ${place}.`
-    : `Meet the founding creator roster on SIGNL in ${place}: local businesses book them for comped visits and paid posts, ranked by how much of their audience actually lives in ${place}.`;
+    ? `Meet the ${category} creators on Magpie in ${place}: local businesses book them for comped visits and paid posts, ranked by how much of their audience actually lives in ${place}.`
+    : `Meet the founding creator roster on Magpie in ${place}: local businesses book them for comped visits and paid posts, ranked by how much of their audience actually lives in ${place}.`;
   const crumbs = [
-    { "@type": "ListItem", position: 1, name: "SIGNL", item: "https://joinsignl.com" },
+    { "@type": "ListItem", position: 1, name: "Magpie", item: "https://magpielocal.com" },
     { "@type": "ListItem", position: 2, name: `${place} creators`, item: category ? `${origin}/roster/${marketSlug}` : canonical },
   ];
   if (category) crumbs.push({ "@type": "ListItem", position: 3, name: `${category} creators in ${place}`, item: canonical });
@@ -545,7 +545,7 @@ footer{margin-top:36px;color:var(--sage);font-size:13px}
 </head>
 <body>
 <div class="wrap">
-<header><a class="logo" href="https://joinsignl.com">SIGNL<span>.</span></a><a class="nav" href="https://joinsignl.com/businesses.html">For businesses</a></header>
+<header><a class="logo" href="https://magpielocal.com">Magpie<span>.</span></a><a class="nav" href="https://magpielocal.com/businesses.html">For businesses</a></header>
 <p class="kicker">Founding roster</p>
 <h1>${escHtml(h1)}</h1>
 <p class="sub">Local businesses book these creators for comped meals, services and experiences, or paid posts at the creator's own listed rate. The number that ranks them here is how much of their audience actually lives in ${escHtml(place)}.</p>
@@ -556,9 +556,9 @@ ${(cards || []).map((c) => rosterCardHtml(c, origin)).join("\n")}
 <h2>A creator in ${escHtml(place)}?</h2>
 <p>Claim your founding page, finish your profile, and businesses here can find you by the audience that actually lives here.</p>
 <a href="${escHtml(origin)}/">Claim your page</a>
-<a class="ghost" href="https://joinsignl.com/businesses.html">I run a business</a>
+<a class="ghost" href="https://magpielocal.com/businesses.html">I run a business</a>
 </div>
-<footer>SIGNL — local businesses book local creators. Audience figures are the creators' own, shown on their profiles.</footer>
+<footer>Magpie — local businesses book local creators. Audience figures are the creators' own, shown on their profiles.</footer>
 </div>
 </body>
 </html>`;
@@ -570,7 +570,7 @@ function buildRosterNotFoundHtml() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Roster not public yet — SIGNL</title>
+<title>Roster not public yet — Magpie</title>
 <meta name="robots" content="noindex">
 <style>
 body{margin:0;font-family:Manrope,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#FAFCFA;color:#0B0D0C}
@@ -584,10 +584,10 @@ a.btn{display:inline-block;background:#0B0D0C;color:#A9E8C9;font-weight:800;bord
 </head>
 <body>
 <div class="wrap">
-<div class="logo">SIGNL<span>.</span></div>
+<div class="logo">Magpie<span>.</span></div>
 <h1>This roster is not public yet.</h1>
-<p>A market's public roster opens once enough of its founding creators have finished profiles to make the page worth reading. Until then, the roster is forming, and finished creators are already findable by businesses inside SIGNL.</p>
-<a class="btn" href="https://joinsignl.com">Back to SIGNL</a>
+<p>A market's public roster opens once enough of its founding creators have finished profiles to make the page worth reading. Until then, the roster is forming, and finished creators are already findable by businesses inside Magpie.</p>
+<a class="btn" href="https://magpielocal.com">Back to Magpie</a>
 </div>
 </body>
 </html>`;
