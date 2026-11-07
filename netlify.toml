@@ -2,6 +2,17 @@
   publish = "public"
   functions = "netlify/functions"
 
+# Magpie flip (2026-11-07): the old app host must never serve
+# content — every old address lands on the same path at the new
+# domain, path + query preserved. Forced and FIRST, before the
+# API rewrites and the SPA fallback below; matches only the old
+# host, so new-host traffic is unaffected.
+[[redirects]]
+  from = "https://app.joinsignl.com/*"
+  to = "https://app.magpielocal.com/:splat"
+  status = 301
+  force = true
+
 # API: all /api/* traffic rewrites to the single api function.
 [[redirects]]
   from = "/api/*"
