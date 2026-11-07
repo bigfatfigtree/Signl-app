@@ -1413,3 +1413,16 @@ svg.rail-sig-img.maggie-mark { width: 24px; height: 27px; }
 .maggie-hero .maggie-mark { width: 100%; height: 100%; }
 .sig-celeb-media.maggie-celeb { background: none; box-shadow: none; overflow: visible; }
 .maggie-celeb .maggie-mark { width: 100%; height: 100%; }
+
+/* Character Maggie (SIG_MARK_MODE = "character", Jeff,
+   2026-11-07): her sheet tiles fill their round slots
+   edge-to-edge — the base .sig-hero-media / .sig-celeb-media
+   stacks already size, clip and stack the img + video fills,
+   so the character rules only make the small slots and the
+   chat heads clip their stills and loops the same way. */
+img.maggie-char-img { object-fit: cover; }
+#agent-fab img.maggie-char-img { width: 32px; height: 32px; border-radius: 50%; }
+.sig-ava-char { border-radius: 50%; overflow: hidden; background: none; box-shadow: 0 0 0 2px var(--mint, #A9E8C9); }
+.sig-ava-char img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sigbox-orb.maggie-char-head { overflow: hidden; }
+.maggie-char-head img, .maggie-char-head video { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
