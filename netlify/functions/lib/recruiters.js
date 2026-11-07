@@ -60,6 +60,7 @@ const DUBAI_PERMIT_LINE = "Dubai note: the UAE requires an Advertiser Permit bef
 let deps = {
   issuePasswordResetToken: null,
   passwordResetEmail: null,
+  recruiterWelcomeEmail: null,
   deliverEmail: null,
   allUsers: null,
   testMode: false,
@@ -798,11 +799,17 @@ async function inviteStaffRecruiter({ name, email, market, actorId, sponsorPartn
   }
   let emailSent = false;
   let token = null;
-  if (deps.issuePasswordResetToken && deps.passwordResetEmail && deps.deliverEmail) {
+  // The recruiter's FIRST email is the dedicated welcome
+  // (2026-11-06): it names the role and carries the same
+  // one-time set-password link. The bare password template is
+  // only the fallback for a host that never wired the welcome
+  // builder; production always has it.
+  if (deps.issuePasswordResetToken && deps.deliverEmail && (deps.recruiterWelcomeEmail || deps.passwordResetEmail)) {
     token = await deps.issuePasswordResetToken(user);
     const base = process.env.APP_URL || "https://app.joinsignl.com";
-    const mail = deps.passwordResetEmail(user, `${base}/?reset=${token}`);
-    const sent = await deps.deliverEmail("password_reset", user, mail.subject, mail.text, null);
+    const link = `${base}/?reset=${token}`;
+    const mail = deps.recruiterWelcomeEmail ? deps.recruiterWelcomeEmail(user, link) : deps.passwordResetEmail(user, link);
+    const sent = await deps.deliverEmail(deps.recruiterWelcomeEmail ? "recruiter_welcome" : "password_reset", user, mail.subject, mail.text, null);
     emailSent = !!(sent && sent.sent);
   }
   await logEvent({ type: "staff_recruiter_invited", actorId: actorId || null, actorRole: actorRole || "admin", subjectId: user.id, market: mkt.name, data: { code, email: cleanEmail, marketId: mkt.id, emailSent, ...(sponsorPartnerId ? { sponsorPartnerId } : {}) } });
@@ -1021,11 +1028,12 @@ async function handleAdminRecruiters({ method, seg, event, user }) {
     if (!target) return err(404, "Recruiter account not found");
     let emailSent = false;
     let token = null;
-    if (deps.issuePasswordResetToken && deps.passwordResetEmail && deps.deliverEmail) {
+    if (deps.issuePasswordResetToken && deps.deliverEmail && (deps.recruiterWelcomeEmail || deps.passwordResetEmail)) {
       token = await deps.issuePasswordResetToken(target);
       const base = process.env.APP_URL || "https://app.joinsignl.com";
-      const mail = deps.passwordResetEmail(target, `${base}/?reset=${token}`);
-      const sent = await deps.deliverEmail("password_reset", target, mail.subject, mail.text, null);
+      const link = `${base}/?reset=${token}`;
+      const mail = deps.recruiterWelcomeEmail ? deps.recruiterWelcomeEmail(target, link) : deps.passwordResetEmail(target, link);
+      const sent = await deps.deliverEmail(deps.recruiterWelcomeEmail ? "recruiter_welcome" : "password_reset", target, mail.subject, mail.text, null);
       emailSent = !!(sent && sent.sent);
     }
     await logEvent({ type: "staff_recruiter_invite_resent", actorId: user.id, actorRole: "admin", subjectId: target.id, market: entity.marketName, data: { code: entity.code, emailSent } });

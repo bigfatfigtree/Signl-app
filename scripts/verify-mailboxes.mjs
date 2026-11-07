@@ -24,10 +24,18 @@
 //     armed and queued, sets a plain lastError, and logs
 //     campaign_sender_unavailable;
 //   - the warm-up cap: with SIGNL_TEAMMAIL_DAILY_CAP pinned to 3
-//     and the creators profile configured, a sweep sends exactly
-//     3, a second same-day sweep sends 0 and reports teamCapHit,
-//     sends are stamped fromMailbox "creators", and the next ET
-//     day the cap resets;
+//     and the hello_team profile configured, a sweep sends
+//     exactly 3, a second same-day sweep sends 0 and reports
+//     teamCapHit, sends are stamped fromMailbox "hello_team",
+//     and the next ET day the cap resets;
+//   - the retired creators lane (2026-11-06): creators@'s SMTP
+//     login is dead in production (535), so a campaign STORED
+//     with fromMailbox "creators" resolves to the default
+//     hello@ identity: the sweep sends its queue stamped
+//     "default", logs campaign_sender_retired, the view reports
+//     storedFromMailbox "creators" beside fromMailbox
+//     "default", and no campaign send ever attempts the
+//     creators profile again;
 //   - the default campaign still sends end to end under the stub
 //     with recentSends stamped "default".
 //
@@ -68,11 +76,13 @@ const PROFILE_ENV_KEYS = [
 ];
 
 function startServer() {
-  const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: dbFile, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", SIGNL_CAMPAIGN_PACE_MS: "0", CAMPAIGN_DAILY_CAP: "", SIGNL_TEAMMAIL_DAILY_CAP: "3", APP_URL: BASE, ADMIN_EMAIL, ADMIN_PASSWORD, SIGNL_SMTP_USER_CREATORS: "creators@signlteam.com", SIGNL_SMTP_PASS_CREATORS: "stub-app-password" };
-  // The team / hello_team profiles must be ABSENT in the server
-  // env (unavailable on purpose), and no default SMTP pair either:
-  // the stub carries default sends exactly like the other suites.
-  for (const k of ["SIGNL_SMTP_USER", "SIGNL_SMTP_PASS", "SIGNL_SMTP_USER_TEAM", "SIGNL_SMTP_PASS_TEAM", "SIGNL_SMTP_USER_HELLO_TEAM", "SIGNL_SMTP_PASS_HELLO_TEAM", "SIGNL_SMTP_HOST", "SIGNL_SMTP_PORT"]) delete env[k];
+  const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: dbFile, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", SIGNL_CAMPAIGN_PACE_MS: "0", CAMPAIGN_DAILY_CAP: "", SIGNL_TEAMMAIL_DAILY_CAP: "3", APP_URL: BASE, ADMIN_EMAIL, ADMIN_PASSWORD, SIGNL_SMTP_USER_CREATORS: "creators@signlteam.com", SIGNL_SMTP_PASS_CREATORS: "stub-app-password", SIGNL_SMTP_USER_HELLO_TEAM: "hello@signlteam.com", SIGNL_SMTP_PASS_HELLO_TEAM: "stub-app-password" };
+  // The team profile must be ABSENT in the server env
+  // (unavailable on purpose, Part C), and no default SMTP pair
+  // either: the stub carries default sends exactly like the
+  // other suites. hello_team IS configured: since the creators
+  // lane retired (2026-11-06) it carries Part D's cap scenario.
+  for (const k of ["SIGNL_SMTP_USER", "SIGNL_SMTP_PASS", "SIGNL_SMTP_USER_TEAM", "SIGNL_SMTP_PASS_TEAM", "SIGNL_SMTP_HOST", "SIGNL_SMTP_PORT"]) delete env[k];
   server = spawn("node", ["scripts/dev-server.mjs", String(PORT)], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
   server.stderr.on("data", (d) => process.stderr.write("[server] " + d));
 }
@@ -179,7 +189,8 @@ try {
   part("U2: router helpers");
   const router = require("../netlify/functions/lib/router.js");
   check("campaignFromMailbox defaults a bare config to default", router.campaignFromMailbox({}) === "default" && router.campaignFromMailbox(null) === "default");
-  check("campaignFromMailbox keeps a valid stored value", router.campaignFromMailbox({ fromMailbox: "creators" }) === "creators" && router.campaignFromMailbox({ fromMailbox: "hello_team" }) === "hello_team");
+  check("campaignFromMailbox keeps a valid stored value", router.campaignFromMailbox({ fromMailbox: "team" }) === "team" && router.campaignFromMailbox({ fromMailbox: "hello_team" }) === "hello_team");
+  check("retired creators resolves to default; the stored value still reads creators", router.campaignFromMailbox({ fromMailbox: "creators" }) === "default" && router.campaignStoredMailbox({ fromMailbox: "creators" }) === "creators" && router.CAMPAIGN_RETIRED_MAILBOXES.creators === "default");
   check("campaignFromMailbox normalizes junk to default", router.campaignFromMailbox({ fromMailbox: "gmail" }) === "default");
   check("teamMailDailyCap ships at 25 with no env", router.teamMailDailyCap() === 25, String(router.teamMailDailyCap()));
   process.env.SIGNL_TEAMMAIL_DAILY_CAP = "3";
@@ -198,7 +209,7 @@ try {
   part("A: payload");
   const status0 = await admin("GET", "/api/admin/campaign");
   check("untouched campaign reports fromMailbox default", status0.data.campaign.fromMailbox === "default", JSON.stringify(status0.data.campaign).slice(0, 250));
-  check("payload reports per-profile availability from env", status0.data.senderProfiles && status0.data.senderProfiles.creators === true && status0.data.senderProfiles.team === false && status0.data.senderProfiles.hello_team === false && status0.data.senderProfiles.default === false, JSON.stringify(status0.data.senderProfiles));
+  check("payload reports per-profile availability from env", status0.data.senderProfiles && status0.data.senderProfiles.creators === true && status0.data.senderProfiles.team === false && status0.data.senderProfiles.hello_team === true && status0.data.senderProfiles.default === false, JSON.stringify(status0.data.senderProfiles));
   check("payload reports the warm-up cap (pinned 3 for this suite)", status0.data.campaign.teamMailDailyCap === 3, JSON.stringify(status0.data.campaign).slice(0, 250));
 
   // ---------- Part B: the sender endpoint ----------
@@ -216,7 +227,7 @@ try {
   check("an unknown mailbox value is refused (400)", (await admin("POST", "/api/admin/campaign/sender", { fromMailbox: "gmail" })).status === 400);
   check("a junk campaign id is refused (400)", (await admin("POST", "/api/admin/campaign/sender", { campaignId: "Bad Id!", fromMailbox: "creators" })).status === 400);
   const setCreators = await admin("POST", "/api/admin/campaign/sender", { fromMailbox: "creators" });
-  check("admin sets the default campaign's mailbox to creators", setCreators.status === 200 && setCreators.data.campaign.fromMailbox === "creators" && setCreators.data.campaign.senderAvailable === true, JSON.stringify(setCreators.data).slice(0, 250));
+  check("a stored creators selection resolves to the retired default, stored value on the record", setCreators.status === 200 && setCreators.data.campaign.fromMailbox === "default" && setCreators.data.campaign.storedFromMailbox === "creators", JSON.stringify(setCreators.data).slice(0, 250));
   check("sender change event logged", (await countEvents(admin, "campaign_sender_changed")) >= 1);
   const setBack = await admin("POST", "/api/admin/campaign/sender", { fromMailbox: "default" });
   check("mailbox can be set back to default", setBack.status === 200 && setBack.data.campaign.fromMailbox === "default", JSON.stringify(setBack.data).slice(0, 200));
@@ -243,28 +254,33 @@ try {
   await admin("POST", "/api/admin/campaign/disarm", { campaignId: "team-unavailable" });
 
   // ---------- Part D: warm-up cap enforcement ----------
+  // Carried by the hello_team lane since 2026-11-06: the
+  // creators lane is retired (Part G), so it can no longer
+  // demonstrate the cap. The cap machinery is profile-generic;
+  // every assertion below is the one the creators lane used to
+  // carry, unchanged.
   part("D: warm-up cap");
   const impD = await admin("POST", "/api/admin/campaign/import", {
-    campaignId: "creators-cap",
+    campaignId: "hello-team-cap",
     recipients: Array.from({ length: 10 }, (_, i) => ({ email: `capc${i + 1}@fixtures.dev`, name: `Cap C${i + 1}`, handle: `capc${i + 1}`, market: "Richmond", opener: "your posts" })),
   });
   check("cap fixture imports 10", impD.status === 200 && impD.data.imported === 10, JSON.stringify(impD.data));
-  await admin("POST", "/api/admin/campaign/sender", { campaignId: "creators-cap", fromMailbox: "creators" });
-  await admin("POST", "/api/admin/campaign/arm", { campaignId: "creators-cap" });
+  await admin("POST", "/api/admin/campaign/sender", { campaignId: "hello-team-cap", fromMailbox: "hello_team" });
+  await admin("POST", "/api/admin/campaign/arm", { campaignId: "hello-team-cap" });
   const sweepD1 = await admin("POST", "/api/admin/campaign/sweep", { now: IN_WINDOW });
   check("first sweep stops at the profile cap of 3, inside a batch of 8", sweepD1.data.sweep.sent === 3 && sweepD1.data.sweep.teamCap === 3, JSON.stringify(sweepD1.data.sweep));
-  const statusD1 = await admin("GET", "/api/admin/campaign?campaignId=creators-cap");
+  const statusD1 = await admin("GET", "/api/admin/campaign?campaignId=hello-team-cap");
   check("after the capped sweep: 3 sent / 7 queued", statusD1.data.counts.sent === 3 && statusD1.data.counts.queued === 7, JSON.stringify(statusD1.data.counts));
-  check("recent sends are stamped from the creators mailbox", (statusD1.data.recentSends || []).length === 3 && statusD1.data.recentSends.every((s) => s.fromMailbox === "creators"), JSON.stringify(statusD1.data.recentSends));
+  check("recent sends are stamped from the hello_team mailbox", (statusD1.data.recentSends || []).length === 3 && statusD1.data.recentSends.every((s) => s.fromMailbox === "hello_team"), JSON.stringify(statusD1.data.recentSends));
   const sweepD2 = await admin("POST", "/api/admin/campaign/sweep", { now: IN_WINDOW });
   check("second same-day sweep sends 0 and reports the cap hit", sweepD2.data.sweep.sent === 0 && sweepD2.data.sweep.teamCapHit >= 1, JSON.stringify(sweepD2.data.sweep));
-  const statusD2 = await admin("GET", "/api/admin/campaign?campaignId=creators-cap");
+  const statusD2 = await admin("GET", "/api/admin/campaign?campaignId=hello-team-cap");
   check("hitting the cap is not an error: still armed, no lastError", statusD2.data.campaign.armed === true && !statusD2.data.campaign.lastError, JSON.stringify(statusD2.data.campaign).slice(0, 250));
   const sweepD3 = await admin("POST", "/api/admin/campaign/sweep", { now: DAY2 });
   check("the next ET day the cap resets and 3 more send", sweepD3.data.sweep.sent === 3, JSON.stringify(sweepD3.data.sweep));
-  const statusD3 = await admin("GET", "/api/admin/campaign?campaignId=creators-cap");
+  const statusD3 = await admin("GET", "/api/admin/campaign?campaignId=hello-team-cap");
   check("after day 2: 6 sent / 4 queued", statusD3.data.counts.sent === 6 && statusD3.data.counts.queued === 4, JSON.stringify(statusD3.data.counts));
-  await admin("POST", "/api/admin/campaign/disarm", { campaignId: "creators-cap" });
+  await admin("POST", "/api/admin/campaign/disarm", { campaignId: "hello-team-cap" });
 
   // ---------- Part E: the default path is unchanged ----------
   part("E: default path");
@@ -278,6 +294,34 @@ try {
   const statusE = await admin("GET", "/api/admin/campaign");
   check("default sends are stamped fromMailbox default", (statusE.data.recentSends || []).length >= 2 && statusE.data.recentSends.slice(0, 2).every((s) => s.fromMailbox === "default"), JSON.stringify(statusE.data.recentSends));
   check("drained default queue auto-disarms as before", statusE.data.campaign.armed === false && statusE.data.campaign.disarmReason === "queue_empty", JSON.stringify(statusE.data.campaign).slice(0, 250));
+
+  // ---------- Part G: the retired creators lane ----------
+  // The production failure this pins (Oct 2026): the founding
+  // campaign was STORED with fromMailbox "creators"; the
+  // profile's env vars exist but its app password is dead, so
+  // every send died at SMTP AUTH (535) and the queue sat paused.
+  // The fix: a stored "creators" resolves to the default hello@
+  // identity — loudly (event + both values on the view) — and
+  // campaign sending never attempts the creators transport.
+  part("G: retired creators lane");
+  const impG = await admin("POST", "/api/admin/campaign/import", {
+    campaignId: "retired-creators",
+    recipients: [1, 2].map((i) => ({ email: `retc${i}@fixtures.dev`, name: `Ret C${i}`, handle: `retc${i}`, market: "Richmond", opener: "your posts" })),
+  });
+  check("retired-lane fixture imports 2", impG.status === 200 && impG.data.imported === 2, JSON.stringify(impG.data));
+  await admin("POST", "/api/admin/campaign/sender", { campaignId: "retired-creators", fromMailbox: "creators" });
+  const statusG0 = await admin("GET", "/api/admin/campaign?campaignId=retired-creators");
+  check("view reports the effective default beside the stored creators", statusG0.data.campaign.fromMailbox === "default" && statusG0.data.campaign.storedFromMailbox === "creators", JSON.stringify(statusG0.data.campaign).slice(0, 250));
+  await admin("POST", "/api/admin/campaign/arm", { campaignId: "retired-creators" });
+  const retiredBefore = await countEvents(admin, "campaign_sender_retired");
+  const sweepG = await admin("POST", "/api/admin/campaign/sweep", { now: DAY3 });
+  check("the retired campaign's queue sends (from the default identity)", sweepG.data.sweep.sent >= 2, JSON.stringify(sweepG.data.sweep));
+  const statusG = await admin("GET", "/api/admin/campaign?campaignId=retired-creators");
+  check("both sends are stamped fromMailbox default, never creators", (statusG.data.recentSends || []).length >= 2 && statusG.data.recentSends.slice(0, 2).every((s) => s.fromMailbox === "default"), JSON.stringify(statusG.data.recentSends));
+  check("the resolution is logged, loudly (campaign_sender_retired)", (await countEvents(admin, "campaign_sender_retired")) > retiredBefore);
+  const sentEventsG = await admin("GET", "/api/admin/events?type=campaign_email_sent&limit=2000");
+  check("no campaign_email_sent event anywhere carries the creators lane", (sentEventsG.data.events || []).every((e) => !e.data || e.data.fromMailbox !== "creators"), JSON.stringify((sentEventsG.data.events || []).map((e) => e.data && e.data.fromMailbox)));
+  await admin("POST", "/api/admin/campaign/disarm", { campaignId: "retired-creators" });
 
   // ---------- Part F: client guards ----------
   part("F: client");

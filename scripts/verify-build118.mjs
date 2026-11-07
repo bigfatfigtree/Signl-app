@@ -68,7 +68,7 @@ part("S: source pins");
 const marketsJs = fs.readFileSync(path.join(root, "netlify/functions/lib/markets.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
-check("stamp is 2026.11.06-138 on both sides", indexHtml.includes("2026.11.06-138") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-138"));
+check("stamp is 2026.11.06-139 on both sides", indexHtml.includes("2026.11.06-139") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-139"));
 check("markets.js carries the Manchester GBP override", /id: "manchester",[\s\S]{0,600}?currency: "GBP"/.test(marketsJs));
 check("markets.js carries the Toronto + Montreal CAD overrides", /id: "toronto",[\s\S]{0,600}?currency: "CAD"/.test(marketsJs) && /id: "montreal",[\s\S]{0,600}?currency: "CAD"/.test(marketsJs));
 check("markets.js carries the NZ trio NZD overrides", ["auckland", "wellington", "christchurch"].every((id) => new RegExp(`id: "${id}",[\\s\\S]{0,900}?currency: "NZD"`).test(marketsJs)));

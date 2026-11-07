@@ -45,6 +45,7 @@ const gaLib = require("./analytics-ga");
 recruiters.init({
   issuePasswordResetToken: (u) => issuePasswordResetToken(u),
   passwordResetEmail: (u, url) => passwordResetEmail(u, url),
+  recruiterWelcomeEmail: (u, url) => recruiterWelcomeEmail(u, url),
   deliverEmail: (kind, user, subject, text, band, opts) => deliverEmail(kind, user, subject, text, band, opts),
   allUsers: () => allUsers(),
   testMode: () => TEST_MODE,
@@ -57,6 +58,7 @@ recruiters.init({
 pilots.init({
   issuePasswordResetToken: (u) => issuePasswordResetToken(u),
   passwordResetEmail: (u, url) => passwordResetEmail(u, url),
+  partnerWelcomeEmail: (u, url) => partnerWelcomeEmail(u, url),
   deliverEmail: (kind, user, subject, text, band, opts) => deliverEmail(kind, user, subject, text, band, opts),
   partnerBrandedMail: (brand, mail) => partnerBrandedMail(brand, mail),
   allUsers: () => allUsers(),
@@ -3362,6 +3364,35 @@ function publicUser(u) {
 async function allUsers() {
   const rows = await store.list("user:");
   return rows.map((r) => r.value);
+}
+
+// Aggregate payload memo (2026-11-06, admin-home speed): the
+// Admin home fires five aggregate reads at once, and the heavy
+// ones (markets, platform totals) re-scan every user/offer/
+// booking record on every load. Within a warm function
+// container this memo serves the COMPUTED payload instead —
+// keyed on the store's write version, so any write anywhere in
+// the store invalidates it instantly, with a 30-second TTL as
+// the backstop for writes other containers made. Only payloads
+// built fresh for the wire are cached (never record objects),
+// and only for read-only admin aggregates whose worst case is
+// a number up to 30s old on a dashboard.
+const aggMemo = new Map();
+function aggMemoGet(key, ttlMs) {
+  const v = store.version ? store.version() : 0;
+  const hit = aggMemo.get(key);
+  if (hit && hit.v === v && Date.now() - hit.at < ttlMs) return hit.val;
+  return undefined;
+}
+function aggMemoSet(key, val) {
+  aggMemo.set(key, { v: store.version ? store.version() : 0, at: Date.now(), val });
+}
+async function memoAgg(key, ttlMs, compute) {
+  const hit = aggMemoGet(key, ttlMs);
+  if (hit !== undefined) return hit;
+  const val = await compute();
+  aggMemoSet(key, val);
+  return val;
 }
 
 // ---------- market activation flags ----------
@@ -8980,8 +9011,31 @@ function campaignDailyCeiling() {
 // NEVER silently sent from the default identity: the sweep skips
 // it and says why (see runCampaignSweep).
 const CAMPAIGN_MAILBOXES = ["default", "creators", "team", "hello_team"];
-function campaignFromMailbox(cfg) {
+function campaignStoredMailbox(cfg) {
   return cfg && CAMPAIGN_MAILBOXES.includes(cfg.fromMailbox) ? cfg.fromMailbox : "default";
+}
+// Retired campaign senders (batch fix, Jeff, 2026-11-06):
+// creators@signlteam.com's SMTP login is dead — Google rejects
+// its app password with 535 BadCredentials, and the mailbox is
+// not coming back as a sender. Its env vars still EXIST, so the
+// presence-only availability gate in runCampaignSweep waved
+// campaigns set to it through to an AUTH wall: every send in a
+// batch failed, the run stopped after 3 failures, and the queue
+// sat paused (founding-creators-2026-10, 3 queued, Oct 2026).
+// A campaign whose stored config still names the retired
+// mailbox now resolves to the default hello@joinsignl.com
+// identity — the transport approval mail already uses — so the
+// next sweep sends its queue from hello@. The resolution is
+// LOUD, never silent (the 2026-10-24 wrong-identity rule
+// stands): the sweep logs campaign_sender_retired whenever it
+// applies, campaignView reports the stored mailbox beside the
+// effective one, and the stored value itself is left untouched.
+// Historical sentFrom stamps keep reading "creators" — they are
+// history, not configuration.
+const CAMPAIGN_RETIRED_MAILBOXES = { creators: "default" };
+function campaignFromMailbox(cfg) {
+  const stored = campaignStoredMailbox(cfg);
+  return CAMPAIGN_RETIRED_MAILBOXES[stored] || stored;
 }
 // Warm-up guardrail for the signlteam.com profiles: a flat daily
 // cap per profile, counted across campaigns per ET day from the
@@ -9306,6 +9360,14 @@ async function runCampaignSweep(opts = {}) {
     // visible at any hour, and lastError clears the moment the
     // profile becomes usable.
     const fromMailbox = campaignFromMailbox(cfg);
+    // Retired-sender resolution (2026-11-06): a stored
+    // "creators" reads as "default" (CAMPAIGN_RETIRED_MAILBOXES).
+    // Log it on every sweep it applies to, so the substitution
+    // is always on the record, never a silent identity swap.
+    const storedMailbox = campaignStoredMailbox(cfg);
+    if (storedMailbox !== fromMailbox) {
+      await logEvent({ type: "campaign_sender_retired", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, storedFromMailbox: storedMailbox, effectiveFromMailbox: fromMailbox } });
+    }
     if (fromMailbox !== "default" && !senderProfile(fromMailbox).available) {
       cfg.lastRunAt = now.toISOString();
       cfg.lastError = `Sender mailbox "${fromMailbox}" is not active: its SMTP credentials are not set in the server environment, so this campaign was skipped rather than sent from the wrong address. Add the profile's SIGNL_SMTP_USER / SIGNL_SMTP_PASS vars in Netlify to activate it.`;
@@ -9467,6 +9529,10 @@ function campaignView(cfg, counts, sentToday, sentTodayByLane) {
   return {
     id: cfg.id,
     fromMailbox,
+    // The stored selection, when it differs from the effective
+    // one (a retired mailbox): the Admin card names both, so the
+    // resolution is visible, never a silent swap (2026-11-06).
+    storedFromMailbox: campaignStoredMailbox(cfg),
     senderAvailable: senderProfile(fromMailbox).available,
     teamMailDailyCap: teamMailDailyCap(),
     armed: !!cfg.armed,
@@ -11432,7 +11498,7 @@ async function businessHome(user) {
     },
     rebookPrompts,
     favoritesCount: favIds.size,
-    openOffers: offers.filter((o) => laneOf(o) === "open" && (o.status === "open" || o.status === "filled")).length,
+    openOffers: offers.filter((o) => laneOf(o) === "open" && (o.status === "open" || o.status === "filled") && (!o.testOnly || isTester(user))).length,
     draftOffers: offers.filter((o) => o.status === "draft").length,
     // Staff redemption (Jeff, 2026-10-20 late): the home prompts
     // an activated owner with no staff PIN to set one, so the
@@ -11813,8 +11879,10 @@ async function buildSigFacts(user, full) {
     const [offers, bookings, posts, marketLive] = await Promise.all([allOffers(), allBookings(), allPosts(), isMarketLive(user.market)]);
     const mine = bookings.filter((bk) => bk.creatorId === user.id);
     const myPosts = posts.filter((p) => p.creatorId === user.id);
-    const openOffers = offers.filter((o) => o.status === "open" && laneOf(o) !== "direct" && isListedInMarket(user, o.market)).length;
-    const directInvites = offers.filter((o) => o.status === "open" && laneOf(o) === "direct" && o.creatorId === user.id).length;
+    // Test offers (2026-11-06): Sig's counts fence testOnly
+    // offers to tester-flagged creators, exactly like the feeds.
+    const openOffers = offers.filter((o) => o.status === "open" && laneOf(o) !== "direct" && isListedInMarket(user, o.market) && (!o.testOnly || isTester(user))).length;
+    const directInvites = offers.filter((o) => o.status === "open" && laneOf(o) === "direct" && o.creatorId === user.id && (!o.testOnly || isTester(user))).length;
     const points = full && full.momentum ? full.momentum.points || 0 : 0;
     const pc = (full && full.profileCompletion) || {};
     const itemLabels = {};
@@ -12701,6 +12769,80 @@ function passwordResetEmail(user, resetUrl) {
   ];
   return { subject, text: lines.join("\n") };
 }
+
+// Role welcome emails (2026-11-06, Jeff): a brand-new account's
+// FIRST email is a welcome that names the role and why they're
+// getting it — never the bare password template, which reads
+// like a security alert to someone who never asked for one.
+// All three ride the same one-time set-password link machinery
+// (issuePasswordResetToken), and none of them uses the word
+// "reset" anywhere. The plain template above stays exactly as
+// it is for actual forgot-password requests.
+function recruiterWelcomeEmail(user, link) {
+  const first = greetingName(user);
+  const subject = "You're a SIGNL recruiter";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    "Welcome to SIGNL — you've been set up as a recruiter.",
+    "",
+    "The short version: you get your own tracked link, and every creator and business who joins SIGNL through it is credited to you.",
+    "",
+    "Set your password and open your recruiter home here:",
+    link,
+    "",
+    "The link works once and expires in one hour.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+function partnerWelcomeEmail(user, link) {
+  const first = greetingName(user);
+  const subject = "You're a SIGNL partner";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    "Welcome to SIGNL — you've been set up as a partner.",
+    "",
+    "The short version: you fund first visits for local businesses, SIGNL lines up the creators and runs the visits, and you see exactly what came back.",
+    "",
+    "Set your password and open your partner home here:",
+    link,
+    "",
+    "The link works once and expires in one hour.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+function teamWelcomeEmail(user, link, rolePhrase) {
+  const first = greetingName(user);
+  const subject = "You've been invited to SIGNL";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Welcome to SIGNL — you've been set up ${rolePhrase || "as a team member"}.`,
+    "",
+    "Set your password and open your account here:",
+    link,
+    "",
+    "The link works once and expires in one hour.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
 
 // One reset-token issuance, shared by the public Forgot flow and
 // the admin "Send sign-in link" action (Build -67): the newest
@@ -15381,16 +15523,20 @@ async function revokeTeamSeat(seat, actor) {
   await logEvent({ type: "team_seat_revoked", actorId: actor.id, actorRole: actor.role, subjectId: seat.userId || seat.seatId, market: null, data: { seatId: seat.seatId, kind: seat.kind, email: seat.email || "" } });
 }
 
-// The invite email every seat kind shares: a password-set link
-// (the app's own reset machinery), co-branded when the org has
-// a brand (Build -105 helper).
-async function sendSeatInviteEmail(orgUser, seatUser, actorId) {
+// The invite email every seat kind shares: the team WELCOME
+// (2026-11-06 — it names the seat's role and carries the
+// one-time set-password link from the app's own token
+// machinery), co-branded when the org has a brand (Build -105
+// helper). It never borrows the bare password template.
+async function sendSeatInviteEmail(orgUser, seatUser, actorId, seatKind) {
   const token = await issuePasswordResetToken(seatUser);
   const base = process.env.APP_URL || "https://app.joinsignl.com";
-  const rawMail = passwordResetEmail(seatUser, `${base}/?reset=${token}`);
+  const link = `${base}/?reset=${token}`;
+  const rolePhrase = seatKind === "recruiter" ? "as a SIGNL recruiter" : orgUser && orgUser.role === "partner" ? "as a member of this partner's team" : "as a member of the SIGNL team";
+  const rawMail = teamWelcomeEmail(seatUser, link, rolePhrase);
   const brand = orgUser.role === "partner" ? brandViewOf(orgUser.partner && orgUser.partner.brand) : null;
   const mail = brand ? partnerBrandedMail(brand, rawMail) : { ...rawMail, fromName: null };
-  const sent = await deliverEmail("password_reset", seatUser, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
+  const sent = await deliverEmail("team_welcome", seatUser, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
   return { emailSent: !!(sent && sent.sent), token };
 }
 
@@ -15419,7 +15565,7 @@ async function createPartnerTeamMember({ org, name, email, actorId }) {
   };
   await store.set(`user:${user.id}`, user);
   await store.set(`email:${cleanEmail}`, { userId: user.id });
-  const sentInfo = await sendSeatInviteEmail(org, user, actorId);
+  const sentInfo = await sendSeatInviteEmail(org, user, actorId, "team");
   await logEvent({ type: "team_seat_invited", actorId: actorId || null, actorRole: "partner", subjectId: user.id, market: user.market || null, data: { kind: "team", orgId: org.id, email: cleanEmail, emailSent: sentInfo.emailSent } });
   return { user, emailSent: sentInfo.emailSent, token: sentInfo.token };
 }
@@ -18359,6 +18505,98 @@ function sampleResultsFor(viewer) {
   };
 }
 
+// Test offers (2026-11-06, Jeff): with 0 markets live, no real
+// offer can be open — every offer a founding business saves is
+// a draft by law — so Jeff could not walk the creator side at
+// all. This seeder is the built door: three OPEN-lane offers
+// from the Salt Line Test Kitchen TEST business, stamped
+// testOnly, plus direct clones addressed to Jeff's own creator
+// testers. Every read surface (the Find offers board, the
+// creator /offers feed, Sig's counts, apply) fences testOnly
+// offers to tester-flagged creators; the seeder writes records
+// directly and fires NO notifications to anyone.
+const TEST_OFFER_BIZ_NAME = "Salt Line Test Kitchen";
+async function testOffersStatus() {
+  const offers = (await allOffers()).filter((o) => o.testOnly);
+  const users = await allUsers();
+  const biz = users.find((u) => u.role === "business" && u.business && u.business.businessName === TEST_OFFER_BIZ_NAME);
+  return { loaded: offers.length, openLane: offers.filter((o) => laneOf(o) === "open").length, direct: offers.filter((o) => laneOf(o) === "direct").length, businessFound: !!biz, market: biz ? biz.market : null };
+}
+async function seedTestOffers(actorId) {
+  const users = await allUsers();
+  const biz = users.find((u) => u.role === "business" && isTester(u) && u.business && u.business.businessName === TEST_OFFER_BIZ_NAME)
+    || users.find((u) => u.role === "business" && u.business && u.business.businessName === TEST_OFFER_BIZ_NAME);
+  if (!biz) return { error: `The ${TEST_OFFER_BIZ_NAME} test business is not in the store, so there is nothing to seed offers from.` };
+  const ts = nowIso();
+  const coupon = { type: "store_credit", amount: 100, percent: null, cap: null, appliesTo: "anything on the menu", expiresAt: new Date(Date.now() + 30 * DAY_MS).toISOString() };
+  const specs = [
+    { key: "comp", kind: "comp", title: "Dinner for two on us: try the new fall menu", whatComped: "A meal for two from the new fall menu", includes: "Two entrées and two drinks from the new fall menu", dollarCap: 120, covers: 2, cashRate: null },
+    { key: "paid", kind: "paid", title: "Paid visit: Saturday lunch feature", whatComped: "", includes: "Lunch covered up to $60", dollarCap: 100, covers: null, cashRate: 100 },
+    { key: "coupon", kind: "coupon", title: "$100 store credit: come hungry, order anything", whatComped: couponSummary(coupon, biz.business.businessName), includes: couponSummary(coupon, biz.business.businessName), dollarCap: 100, covers: null, cashRate: null, coupon },
+  ];
+  const build = (spec, lane, creator) => {
+    const offer = {
+      id: lane === "open" ? `test-offer-${spec.key}` : `test-offer-${spec.key}-direct-${creator.id}`,
+      businessId: biz.id,
+      businessName: biz.business.businessName,
+      market: biz.market,
+      category: biz.business.category || "Restaurant",
+      creatorId: creator ? creator.id : null,
+      creatorHandle: creator && creator.creator ? creator.creator.handle : null,
+      lane,
+      kind: spec.kind,
+      covers: spec.covers,
+      paidBrief: null,
+      requiresSpanish: false,
+      cashRate: spec.cashRate,
+      targetTiers: null,
+      title: spec.title,
+      whatComped: spec.whatComped,
+      includes: spec.includes,
+      experience: "",
+      templateId: null,
+      play: null,
+      moment: null,
+      countedResult: null,
+      dollarCap: spec.dollarCap,
+      visitWindow: "",
+      windowMode: "7days",
+      timingWindow: null,
+      visitDate: null,
+      spots: lane === "open" ? 2 : 1,
+      status: "open",
+      testOnly: true,
+      createdAt: ts,
+      updatedAt: ts,
+      publishedAt: ts,
+      nudgeSentAt: null,
+      deliverables: validateDeliverables(undefined, spec.kind),
+      ...(spec.coupon ? { coupon: spec.coupon } : {}),
+    };
+    if (spec.kind === "paid") {
+      const termsCheck = normalizePostingTerms(undefined);
+      if (!termsCheck.error && termsCheck.terms) { offer.postingTerms = termsCheck.terms; offer.postingTermsLine = postingTermsLine(termsCheck.terms); }
+    }
+    offer.assetPacketAttached = false;
+    offer.brief = normalizeBriefInput(undefined, spec.kind, briefSeedFromFields(offer));
+    return offer;
+  };
+  let created = 0;
+  let existing = 0;
+  const put = async (offer) => {
+    if (await store.get(`offer:${offer.id}`)) { existing++; return; }
+    await store.set(`offer:${offer.id}`, offer);
+    created++;
+  };
+  for (const spec of specs) await put(build(spec, "open", null));
+  const addressees = users.filter((u) => u.role === "creator" && ["hello@xmedium.co", "wjrimmer@gmail.com"].includes(String(u.email || "").toLowerCase()));
+  for (const creator of addressees) {
+    for (const spec of specs) await put(build(spec, "direct", creator));
+  }
+  if (created) await logEvent({ type: "test_offers_seeded", actorId, actorRole: "admin", subjectId: biz.id, market: biz.market, data: { created, businessName: biz.business.businessName, directFor: addressees.map((u) => u.email) } });
+  return { created, existing, businessName: biz.business.businessName, market: biz.market, directFor: addressees.map((u) => u.email) };
+}
+
 async function demoShowcaseStatus() {
   const users = await allUsers();
   const demos = users.filter(isDemoShowcaseCreator);
@@ -18474,6 +18712,9 @@ function automationDefaultPreview138(entry) {
       case "profile_completion_reminder": return { ...mailShape138(profileCompletionReminderEmail(C)), sms: null, note: null };
       case "recruiter_kit": return { ...mailShape138(recruiterKitEmail(C)), sms: null, note: null };
       case "password_reset": return { ...mailShape138(passwordResetEmail(C, "https://app.joinsignl.com/?reset=sampletoken")), sms: null, note: null };
+      case "recruiter_welcome": return { ...mailShape138(recruiterWelcomeEmail(C, "https://app.joinsignl.com/?reset=sampletoken")), sms: null, note: null };
+      case "partner_welcome": return { ...mailShape138(partnerWelcomeEmail(C, "https://app.joinsignl.com/?reset=sampletoken")), sms: null, note: null };
+      case "team_welcome": return { ...mailShape138(teamWelcomeEmail(C, "https://app.joinsignl.com/?reset=sampletoken", "as a member of the SIGNL team")), sms: null, note: null };
       case "signin_link": return { ...mailShape138(signinLinkEmail(C, "https://app.joinsignl.com/?signinlink=sampletoken")), sms: null, note: null };
       case "account_deletion": return { ...mailShape138(accountDeletionEmail(C)), sms: null, note: null };
       case "silent_removal": return { ...mailShape138(silentRemovalEmail(C)), sms: null, note: null };
@@ -22180,12 +22421,18 @@ async function route(event) {
     // the Markets grid counts a multi-market creator once per
     // market they are listed in.
     if (seg[1] === "platform-totals" && seg.length === 2 && method === "GET") {
-      const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
-      // Build -138: a market-scoped teammate's totals are computed
-      // from their markets' records only — the platform-wide
-      // numbers never enter their payload.
-      const scoped = perms138.isSuper(user) ? users : users.filter((u) => perms138.inMarketScope(user, u.market));
-      return json(200, platformTotals126(scoped));
+      // Aggregate memo (2026-11-06): the totals re-scan every
+      // user record per load; the memo serves the computed
+      // payload until any store write lands (see memoAgg).
+      const payload = await memoAgg(`platform-totals:${user.id}`, 30000, async () => {
+        const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
+        // Build -138: a market-scoped teammate's totals are computed
+        // from their markets' records only — the platform-wide
+        // numbers never enter their payload.
+        const scoped = perms138.isSuper(user) ? users : users.filter((u) => perms138.inMarketScope(user, u.market));
+        return platformTotals126(scoped);
+      });
+      return json(200, payload);
     }
 
     // Preview targets (Build -126): Admin home's Creator and
@@ -22345,6 +22592,17 @@ async function route(event) {
       const before = await demoShowcaseStatus();
       const result = await removeDemoShowcase(user.id);
       return json(200, { ok: true, result, before: before.loaded, showcase: await demoShowcaseStatus() });
+    }
+    // Test offers (2026-11-06): one tap seeds the three testOnly
+    // offers (idempotent) so Jeff can walk Find offers as a
+    // tester creator before any market is live.
+    if (seg[1] === "test-offers" && seg.length === 2 && method === "GET") {
+      return json(200, { testOffers: await testOffersStatus() });
+    }
+    if (seg[1] === "test-offers" && seg.length === 3 && seg[2] === "load" && method === "POST") {
+      const result = await seedTestOffers(user.id);
+      if (result.error) return err(400, result.error);
+      return json(200, { ok: true, result, testOffers: await testOffersStatus() });
     }
     // Square Connect (Build -44): register connections at a
     // glance, environment labeled (a sandbox connection says
@@ -22848,6 +23106,14 @@ async function route(event) {
       });
     }
     if (method === "GET" && seg[1] === "applications") {
+      // Aggregate memo (2026-11-06): the queue build re-scans
+      // users + bookings + posts + reviews and rebuilds Momentum
+      // on every read; the Admin home and the Requests tab both
+      // read it. The memo serves the built payload until any
+      // store write lands (an approval writes, so post-action
+      // reads are always fresh).
+      const memoHit = aggMemoGet(`admin-applications:${user.id}`, 30000);
+      if (memoHit !== undefined) return json(200, memoHit);
       const all = await allUsers();
       await ensureBusinessAnchors(all);
       // Build -138: a market-scoped reviewer's queue contains
@@ -22952,7 +23218,9 @@ async function route(event) {
         all: rosterCounts(creatorsAll),
         auto,
       };
-      return json(200, { pending: pending.map(attach), decided: decided.map(attach), summary });
+      const payload = { pending: pending.map(attach), decided: decided.map(attach), summary };
+      aggMemoSet(`admin-applications:${user.id}`, payload);
+      return json(200, payload);
     }
     // Find a user (Build -116, Jeff, 2026-11-03): servicing an
     // account needs ANY record, not just pending applications.
@@ -23073,12 +23341,19 @@ async function route(event) {
       return json(200, { leaderboard: rows });
     }
     if (method === "GET" && seg[1] === "markets") {
-      const out = await adminMarketRows();
-      // Build -138: the demand census rides the same payload.
-      // Unlisted places belong to no one's market scope, so the
-      // section goes only to an unscoped reader (Jeff).
-      const demand = perms138.scopeMarkets(user) === null ? await cityDemand138() : [];
-      return json(200, { markets: out, testMode: TEST_MODE, demand });
+      // Aggregate memo (2026-11-06): the markets read is the
+      // heaviest admin read (every market row aggregates the
+      // whole store). The Admin home AND the Markets tab both
+      // read it; the memo serves repeats until a write lands.
+      const payload = await memoAgg(`admin-markets:${user.id}`, 30000, async () => {
+        const out = await adminMarketRows();
+        // Build -138: the demand census rides the same payload.
+        // Unlisted places belong to no one's market scope, so the
+        // section goes only to an unscoped reader (Jeff).
+        const demand = perms138.scopeMarkets(user) === null ? await cityDemand138() : [];
+        return { markets: out, testMode: TEST_MODE, demand };
+      });
+      return json(200, payload);
     }
     if (method === "POST" && seg[1] === "markets" && seg[2] === "toggle") {
       const b = parseBody(event);
@@ -24696,7 +24971,7 @@ async function route(event) {
     if (seat.status === "revoked") return err(400, "That seat was revoked. Invite them again to give them a fresh seat.");
     const target = seat.userId ? await store.get(`user:${seat.userId}`) : null;
     if (!target) return err(404, "Seat holder not found");
-    const sentInfo = await sendSeatInviteEmail(ctx.org, target, user.id);
+    const sentInfo = await sendSeatInviteEmail(ctx.org, target, user.id, seat.kind);
     await logEvent({ type: "team_seat_invite_resent", actorId: user.id, actorRole: user.role, subjectId: target.id, market: null, data: { kind: seat.kind, orgId: ctx.org.id, emailSent: sentInfo.emailSent } });
     return json(200, { ok: true, emailSent: sentInfo.emailSent });
   }
@@ -25422,7 +25697,12 @@ async function route(event) {
         out = out.map((o) => ({ ...o, businessAssetPacket: ownPacket }));
       }
       else if (user.role === "creator") {
-        out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
+        // Test offers (2026-11-06): testOnly offers reach only
+        // tester-flagged creators. An offer ADDRESSED to this
+        // creator (a direct invite) is personal mail: it shows
+        // on address alone, without the home-market condition
+        // the unaddressed open lane keeps.
+        out = out.filter((o) => o.status === "open" && (!o.testOnly || isTester(user)) && (o.creatorId === user.id || (!o.creatorId && o.market === user.market)));
         // Charter early access (Build -31): a fresh open offer is
         // simply not in a non-Charter creator's feed yet. No
         // marker, no "you missed out" copy: it appears at +24h.
@@ -25431,6 +25711,7 @@ async function route(event) {
         const feedMarketLive = await isMarketLive(user.market);
         const feedNow = Date.now();
         out = out.filter((o) => {
+          if (o.testOnly) return true; // testers see seeded test offers at once (non-testers never reach this filter with one)
           if (offerVisibleToCreator(o, user, feedNow, feedMarketLive)) return true;
           const visAt = offerVisibleAtMs(o, user);
           if (visAt && (feedEarlyAccessOpensAtMs === null || visAt < feedEarlyAccessOpensAtMs)) feedEarlyAccessOpensAtMs = visAt;
@@ -25748,6 +26029,10 @@ async function route(event) {
       const b = parseBody(event);
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || laneOf(offer) !== "open") return err(404, "Offer not available");
+      // Test offers (2026-11-06): a testOnly offer does not
+      // exist for a non-tester, including here — no applying
+      // around the board's fence.
+      if (offer.testOnly && !isTester(user)) return err(404, "Offer not available");
       // Charter early access (Build -31): inside the window the
       // offer is not available to a non-Charter creator at all,
       // exactly as if it were not posted yet.
@@ -26290,6 +26575,11 @@ async function route(event) {
     const out = [];
     let earlyAccessOpensAtMs = null;
     for (const o of offers) {
+      // Test offers (2026-11-06): testOnly offers are visible
+      // ONLY to tester-flagged creators — for everyone else they
+      // do not exist on this board: not listed, not counted in
+      // the early-access marker, never notified.
+      if (o.testOnly && !isTester(user)) continue;
       // Multi-market board (2026-11-01): the board shows offers
       // from every market the creator is LISTED in, not only
       // their home market.
@@ -26304,7 +26594,7 @@ async function route(event) {
       // Build -47 (audit C3): the window is no longer invisible —
       // the earliest withheld offer's open time rides the payload
       // so the board can say an offer exists and when it opens.
-      if (!offerVisibleToCreator(o, user, now, await isMarketLive(o.market))) {
+      if (!o.testOnly && !offerVisibleToCreator(o, user, now, await isMarketLive(o.market))) {
         const visAt = offerVisibleAtMs(o, user);
         if (visAt && (earlyAccessOpensAtMs === null || visAt < earlyAccessOpensAtMs)) earlyAccessOpensAtMs = visAt;
         continue;
@@ -26355,6 +26645,12 @@ async function route(event) {
         // packet logo, else nothing (the card falls back to the
         // initial tile, never a broken box).
         businessImageUrl: biz && biz.business ? (biz.business.hasPhoto ? `/api/users/${biz.id}/photo` : (biz.business.assetPacket && biz.business.assetPacket.logoUrl) || null) : null,
+        // Batch fix (Jeff, 2026-11-06): the card needs to know
+        // whether that image is a cover PHOTO (object-fit cover)
+        // or the business's LOGO (contained, centered — a logo
+        // cover-cropped is a blown-up fragment). True only when
+        // the URL fell through to the asset packet's logo.
+        businessImageIsLogo: biz && biz.business ? (!biz.business.hasPhoto && !!(biz.business.assetPacket && biz.business.assetPacket.logoUrl)) : false,
         distanceBand: biz ? proximityBandFor(biz, user) : null,
         businessTrackRecord: biz ? (bizTrackCache[biz.id] !== undefined ? bizTrackCache[biz.id] : (bizTrackCache[biz.id] = businessTrackRecordFor(biz.id, bookings, posts))) : null,
         paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
@@ -28718,4 +29014,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };

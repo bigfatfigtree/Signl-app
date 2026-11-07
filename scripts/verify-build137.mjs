@@ -39,8 +39,8 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
 // ---------- stamp ----------
-check("stamp is 2026.11.06-138 and identical in build.js + index.html",
-  buildJs.includes('BUILD_ID = "2026.11.06-138"') && (indexHtml.match(/2026\.11\.06-138/g) || []).length >= 5);
+check("stamp is 2026.11.06-139 and identical in build.js + index.html",
+  buildJs.includes('BUILD_ID = "2026.11.06-139"') && (indexHtml.match(/2026\.11\.06-138/g) || []).length >= 5);
 
 // ---------- homes: hero -> highlights -> next steps -> stop ----------
 for (const [fn, label] of [["async function loadCreatorHome", "creator live home"], ["async function loadFoundingDashboard", "founding creator home"], ["async function loadBusinessHome", "business live home"], ["function partnerHomeHtml", "partner home"]]) {

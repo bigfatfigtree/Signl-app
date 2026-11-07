@@ -69,6 +69,13 @@ function saveFile() {
   fs.renameSync(tmp, DB_PATH);
 }
 
+// Monotonic write counter (2026-11-06): every set/del in either
+// backend bumps it. Read-side aggregate caches key on it, so any
+// write anywhere invalidates them instantly — a cache can only
+// ever serve data from a store state that had no writes since.
+let storeVersion = 0;
+function bumpVersion() { storeVersion += 1; }
+
 const fileStore = {
   async get(key) {
     const db = loadFile();
@@ -78,11 +85,13 @@ const fileStore = {
     const db = loadFile();
     db[key] = value;
     saveFile();
+    bumpVersion();
   },
   async del(key) {
     const db = loadFile();
     delete db[key];
     saveFile();
+    bumpVersion();
   },
   async list(prefix) {
     const db = loadFile();
@@ -153,9 +162,11 @@ const blobsAdapter = {
   },
   async set(key, value) {
     await getBlobs().setJSON(key, value);
+    bumpVersion();
   },
   async del(key) {
     await getBlobs().delete(key);
+    bumpVersion();
   },
   async listKeys(prefix) {
     const store = getBlobs();
@@ -182,3 +193,4 @@ const blobsAdapter = {
 
 module.exports = LOCAL ? fileStore : blobsAdapter;
 module.exports.isLocal = LOCAL;
+module.exports.version = () => storeVersion;

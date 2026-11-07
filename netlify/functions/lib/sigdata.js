@@ -1386,7 +1386,7 @@ function answerCreator(f, q, t) {
   // Posts owed / visits
   if (hasPhrase(t, "do i owe", "posts owed", "owe a post", "still owe", "what do i owe") || (hasWord(t, "visit", "visits") && hasPhrase(t, "my", "booked", "coming", "do i have", "upcoming"))) {
     const owedBits = f.postsOwed.slice(0, 3).map((o) => `"${o.title}" at ${o.businessName}${o.overdue ? " (overdue now)" : ""}`).join("; ");
-    const owedText = `You have ${fmt(f.visitsUpcoming)} ${plural(f.visitsUpcoming, "visit")} booked and coming up, and ${fmt(f.postsOwed.length)} ${plural(f.postsOwed.length, "post")} owed from visits already redeemed${f.postsOwed.length ? `: ${owedBits}` : ""}. A post inside 48 hours is on time; one week is the hard deadline.`;
+    const owedText = `You have ${fmt(f.visitsUpcoming)} ${plural(f.visitsUpcoming, "visit")} booked and coming up, and ${fmt(f.postsOwed.length)} ${plural(f.postsOwed.length, "post")} owed from visits already redeemed${f.postsOwed.length ? `: ${owedBits}` : ""}. On a comped visit a post inside 48 hours is on time and one week is the hard deadline; a paid booking follows the posting terms written on it.`;
     return (f.visitsUpcoming || f.postsOwed.length) ? linked(owedText, "Open My Visits", "cr-visits") : owedText;
   }
   // Licence requests waiting on me (Build -95): first asks and

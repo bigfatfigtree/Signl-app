@@ -146,8 +146,10 @@ check("team invite is created", invTeam.status === 201 && !!invTeam.data.seatId 
 const alexId = invTeam.data.seatId;
 const alexRec = dbNow()[`user:${alexId}`];
 check("the member record points at the org (teamOf), invite pending", !!alexRec && alexRec.partner.teamOf === "partner-a" && alexRec.invitePending === true, JSON.stringify(alexRec && alexRec.partner));
-const mailEvents = Object.values(dbNow()).filter((v) => v && v.type === "password_reset_email_sent" && v.subjectId === alexId);
-check("the invite email went out through the mail seam", mailEvents.length >= 1, `${mailEvents.length} events`);
+// Build -139 (Jeff, 2026-11-06, Item 13): a seat's first email is the
+// team WELCOME (kind team_welcome), never the bare password_reset mail.
+const mailEvents = Object.values(dbNow()).filter((v) => v && v.type === "team_welcome_email_sent" && v.subjectId === alexId);
+check("the invite email went out through the mail seam (as the team welcome since -139)", mailEvents.length >= 1, `${mailEvents.length} events`);
 const alex = await acceptInvite(invTeam.data.devResetToken, "alex@b107.dev", "alex-new-pass-107");
 const alexRec2 = dbNow()[`user:${alexId}`];
 check("setting the first password stamps acceptance", !!alexRec2.inviteAcceptedAt && !alexRec2.invitePending, JSON.stringify({ a: alexRec2.inviteAcceptedAt, p: alexRec2.invitePending }));
@@ -271,7 +273,7 @@ check("funder Sig lists their pilot seats", franAsk.source === "data" && /Sam Se
 
 // ---------- canon locks ----------
 console.log("Canon locks");
-check("build stamp is -107 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.06-138") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-138"));
+check("build stamp is -107 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.06-139") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-139"));
 const routerSrc = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 check("founding Stripe prices stay unarmed (no market live for money)", /STRIPE_PRICE_FOUNDING_SELF_SERVICE \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_GROWTH \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_MANAGED \|\| ""/.test(routerSrc));
 const appSrc = fs.readFileSync(path.join(root, "public/app.js"), "utf8");

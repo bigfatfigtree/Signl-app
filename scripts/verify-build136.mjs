@@ -39,8 +39,8 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
 // ---------- stamp ----------
-check("stamp is 2026.11.06-138 and identical in build.js + index.html",
-  buildJs.includes('BUILD_ID = "2026.11.06-138"') && indexHtml.includes("2026.11.06-138"));
+check("stamp is 2026.11.06-139 and identical in build.js + index.html",
+  buildJs.includes('BUILD_ID = "2026.11.06-139"') && indexHtml.includes("2026.11.06-139"));
 
 // ---------- the switch component ----------
 const toggle = slice(appJs, "function acceptanceHtml", 2400);
@@ -152,9 +152,9 @@ const discView = slice(appJs, "async function loadDiscover", 12000); // Build -1
 // layout. This pin follows the current canon.
 check("discover: the -138 rail groups (Category / Must-haves / How you want to book / Their rate / Their audience lives here)",
   discView.includes(">Category<") && discView.includes("Must-haves") && discView.includes("How you want to book") && discView.includes("Their rate") && discView.includes("Their audience lives here"));
-check("discover: booking type is a segmented control, a different component from the category chips",
+check("discover: booking type is a segmented control; category lives in the rail as checkbox rows — the phone category chip row is GONE (Jeff, 2026-11-06: categories sit inside the Filters sheet, never as buttons under the search)",
   discView.includes('class="bookseg"') && discView.includes('data-bookmode="comp"') && discView.includes('data-bookmode="paid"')
-  && discView.includes('class="dcat-chip') && appJs.includes("function discoverBookModeSet"));
+  && discView.includes("data-dcat-box") && !appJs.includes("shop-chiprow") && appJs.includes("function discoverBookModeSet"));
 check("discover: must-haves are real switches, not pill toggles",
   discView.includes('id="dchip-spanish"') && discView.includes('id="dchip-musician"') && discView.includes('class="sw" id="dchip-spanish"'));
 

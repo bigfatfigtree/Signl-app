@@ -882,8 +882,11 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
    the rail carries labelled groups of checkbox/radio rows —
    pill walls are dead everywhere. On a phone: one pinned
    search input + one Filters button (with the active count),
-   a single scrolling category chip row, and the rail as a
-   bottom sheet with Clear all + "Show N results" pinned. */
+   and the rail as a bottom sheet with Clear all + "Show N
+   results" pinned. (The phone category chip row the first
+   -138 cut shipped was removed the same evening on Jeff's
+   word: category is a labelled group inside the sheet, never
+   a button row under the search.) */
 .rail-head, .rail-foot, .shop-mbar { display: none; }
 .rail-chips { flex-wrap: wrap; overflow: visible; }
 .takeover-bar { display: none; }
@@ -905,7 +908,46 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .rail-note { font-size: .8rem; color: var(--ink2); margin: 6px 10px 0; }
 @media (min-width: 900px) {
   .shop-layout { display: grid; grid-template-columns: 272px 1fr; gap: 26px; align-items: start; }
-  .shop-rail { position: sticky; top: 12px; }
+  /* Batch fix (Jeff, 2026-11-06): the rail scrolls on its own.
+     Sticky alone left a rail taller than the viewport pinned at
+     top:12px with its bottom groups unreachable except by
+     dragging the whole page. Bounded to the viewport with its
+     own overflow, the rail scrolls independently while the
+     results column scrolls with the page. */
+  .shop-rail { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-right: 2px; }
+}
+
+/* Start a campaign wears the Find creators skeleton (Jeff,
+   2026-11-06): a width-constrained wrap, the same 272px rail
+   of labelled groups, the form in the main column. Inside the
+   form there are no loose pill clusters left: choices are
+   full-width selectable rows or segmented controls, exactly
+   like the filter rail's language. */
+.camp-wrap { max-width: 1180px; }
+.camp-layout { display: grid; grid-template-columns: 1fr; gap: 18px; margin-top: 18px; align-items: start; }
+.camp-rail { background: var(--paper2); border-radius: 14px; padding: 14px; }
+.camp-rail .notice { margin-top: 0 !important; }
+.camp-pick { width: 100%; text-align: left; background: none; border: 0; font: inherit; color: inherit; cursor: pointer; }
+.camp-pick.on { background: var(--accent-soft); font-weight: 700; }
+.camp-pick .rr-tag { color: var(--azure); font-weight: 700; font-size: .78rem; }
+@media (min-width: 900px) {
+  .camp-layout { grid-template-columns: 272px minmax(0, 1fr); grid-template-areas: "rail main"; }
+  .camp-main { grid-area: main; min-width: 0; }
+  .camp-rail { grid-area: rail; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+}
+#offer-composer .bookseg { display: flex; background: var(--paper2); border-radius: 999px; padding: 3px; gap: 2px; }
+#offer-composer .bookseg button { flex: 1; border: 0; background: transparent; border-radius: 999px; padding: 8px 10px; font-weight: 600; color: var(--ink2); cursor: pointer; }
+#offer-composer .bookseg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(11,13,12,.12); }
+#offer-composer .radio-stack { display: flex; flex-direction: column; gap: 6px; }
+#offer-composer .radio-chip { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: pointer; }
+#offer-composer .radio-chip:has(input:checked) { border-color: var(--azure); background: var(--accent-soft); font-weight: 600; }
+#offer-composer .radio-chip input { width: auto; margin: 0; flex: none; }
+#offer-composer .chip-row { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+#offer-composer .chip-row .chip { text-align: left; border-radius: 10px; }
+#offer-composer .chiprow[data-wmrow] { display: flex; background: var(--paper2); border-radius: 999px; padding: 3px; gap: 2px; }
+#offer-composer .chiprow[data-wmrow] .rchip { flex: 1; border: 0; background: transparent; border-radius: 999px; padding: 8px 10px; font-weight: 600; color: var(--ink2); cursor: pointer; }
+#offer-composer .chiprow[data-wmrow] .rchip.on { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(11,13,12,.12); }
+@media (min-width: 900px) {
   .shop-rail .dcat-row { flex-wrap: wrap; overflow: visible; }
   .shop-rail .musthave-row { grid-template-columns: 1fr; }
 }
@@ -972,8 +1014,32 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .pdp-spec span { color: var(--ink2); }
 .pdp-similar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .pdp-sim { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px; cursor: pointer; font: inherit; }
+.cc-loc { color: var(--ink2); font-size: .94rem; font-weight: 600; margin-top: 3px; }
+.pdp-topacts { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
+.pdp-bar-spacer, .pdp-actionbar { display: none; }
+@media (max-width: 899px) {
+  /* The phone action bar (Jeff, 2026-11-06): Book + Save are
+     ALWAYS reachable on a creator profile — the buy box sits
+     far down the page, and a business on a phone could not
+     find either button at all. It floats above the app tab
+     bar; the spacer keeps page content clear of it. */
+  .pdp-actionbar { display: flex; gap: 8px; position: fixed; left: 0; right: 0; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 60; padding: 10px 14px; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -6px 18px rgba(11,13,12,.08); }
+  .pdp-actionbar .btn { flex: 1 1 0; }
+  .pdp-bar-spacer { display: block; height: 66px; }
+}
 .pdp-sim-img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: var(--paper2); display: block; }
-.pdp-sim .cc-mono { display: flex; align-items: center; justify-content: center; font-size: 1.6rem; font-weight: 700; color: var(--ink3); }
+/* Batch fix (Jeff, 2026-11-06): card media. The initial tile
+   avatarHtml emits carries .avatar-initial, which nothing in
+   this card styled — the letter sat tiny in the top-left of a
+   tall empty box (the old .cc-mono rule targeted a class this
+   markup never emits). Centered and sized like the Shelf's
+   tile now. And an image whose own shape is artwork, not a
+   photo (very wide or very tall — a logo), gets .media-contain
+   from the mediaFit sweep in app.js: contained and centered in
+   the same fixed box instead of blown up and cropped. */
+.pdp-sim .avatar-initial { display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 800; color: var(--ink3); }
+img.media-contain { object-fit: contain !important; }
+.shelf-photo img.media-contain, .pdp-sim img.media-contain { background: var(--paper2); }
 .pdp-sim-name { font-weight: 700; margin-top: 6px; }
 .pdp-sim-meta { font-size: .82rem; color: var(--ink2); }
 .pdp-buy { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 18px; margin: 20px 0 6px; }
@@ -998,6 +1064,10 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
    offer is a full-width photo-led card — photo left, the ask
    stated like a price right — and the grid below it is even. */
 .mirror-cover-fallback { display: flex; align-items: center; justify-content: center; background: var(--grad); color: #fff; font-size: 3rem; font-weight: 800; }
+/* Batch fix (Jeff, 2026-11-06): when the business's image is
+   its LOGO (no cover photo), the logo is contained and centered
+   in the same 160px media box — never cover-cropped. */
+.mirror-cover-logo { object-fit: contain; background: var(--paper2); padding: 12px; box-sizing: border-box; }
 @media (min-width: 900px) {
   .mirror-card.mirror-lead { grid-column: 1 / -1; display: grid; grid-template-columns: 5fr 7fr; gap: 18px; align-items: stretch; }
   .mirror-card.mirror-lead .mirror-cover { height: 100%; min-height: 230px; margin: 0; border-radius: 12px; }
@@ -1076,14 +1146,22 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 /* --- Quick highlights + Next steps cards --- */
 .hl137, .ns137 { background: #fff; padding: 18px 22px 10px; margin: 0 0 14px; }
 .hl137-k { font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
-.hl137-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; width: 100%; padding: 11px 0; border-bottom: 1px solid var(--line2); background: none; border-top: 0; border-left: 0; border-right: 0; font: inherit; text-align: left; }
+.hl137-row { display: flex; align-items: baseline; gap: 14px; width: 100%; padding: 11px 0; border-bottom: 1px solid var(--line2); background: none; border-top: 0; border-left: 0; border-right: 0; font: inherit; text-align: left; }
 .hl137-row:last-child { border-bottom: 0; }
-.hl137-lab { font-size: .92rem; font-weight: 700; color: var(--ink2); }
+/* Batch fix (Jeff, 2026-11-06): ONE value column on every row.
+   The old space-between flex parked a door row's value in the
+   middle (three children) while a static row's value sat flush
+   right (two). Now the label flexes, the value is a fixed
+   right-hand column, and every row — door or not — reserves the
+   same fixed-width chevron slot after the value (the template
+   always renders the slot, empty for static rows), so all
+   values share one right edge. */
+.hl137-lab { flex: 1 1 auto; min-width: 0; font-size: .92rem; font-weight: 700; color: var(--ink2); }
 .hl137-lab span { display: block; font-size: .8rem; font-weight: 600; color: var(--ink3); margin-top: 1px; }
-.hl137-num { font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; color: var(--ink); }
+.hl137-num { flex: none; font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; color: var(--ink); }
 .hl137-door { cursor: pointer; }
 .hl137-door:hover .hl137-num { color: var(--accent); }
-.hl137-go { flex: none; font-size: 1.15rem; font-weight: 800; color: var(--ink3); margin-left: -8px; }
+.hl137-go { flex: none; width: 18px; text-align: center; font-size: 1.15rem; font-weight: 800; color: var(--ink3); }
 .ns137 .nx-row:first-of-type { border-top: 0; }
 .ns137-caught { color: var(--ink2); font-size: .92rem; margin: 8px 0 10px; }
 

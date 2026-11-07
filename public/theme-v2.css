@@ -979,6 +979,15 @@ main { padding-top: 26px; }
 .creator-card.full .cc-photo.no-photo .cc-mono span {
   font-size: 2.6rem; width: 76px; height: 76px;
 }
+/* Build -139 (Item 8 QA): on phone widths the centered monogram ring
+   collided with the top-right paid pill inside the short no-photo
+   banner. The pill drops to the banner's bottom-right corner and the
+   banner gains height, so tier (top-left), ring (center) and paid
+   pill (bottom-right) never touch. */
+@media (max-width: 640px) {
+  .creator-card.full .cc-photo.no-photo { min-height: 148px; }
+  .creator-card.full .cc-photo.no-photo .cc-paid { top: auto; bottom: 10px; }
+}
 
 /* ---------- 7. Info button tap target ---------- */
 /* Visual stays a small circle; ::after extends the hit area to 44px. */

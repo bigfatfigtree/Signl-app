@@ -160,7 +160,10 @@ console.log("== pilot funder brand ==");
   const resent = await admin.req("POST", `/api/admin/pilots/${pid}/resend-invite`, {});
   check("the pilot invite resend sends", resent.status === 200 && resent.data.emailSent === true, `${resent.status} ${JSON.stringify(resent.data).slice(0, 160)}`);
   const pilotUserId = JSON.parse(fs.readFileSync(DB, "utf8"))[`pilot:${pid}`].partnerUserId;
-  const evs = storedEvents("password_reset_email_sent", pilotUserId);
+  // Build -139 (Jeff, 2026-11-06, Item 13): a pilot funder's invite is
+  // the partner WELCOME (kind partner_welcome), never the bare reset
+  // mail; the pilot-record branding prefix applies to it identically.
+  const evs = storedEvents("partner_welcome_email_sent", pilotUserId);
   const subj = evs.length ? evs[evs.length - 1].data.subject || "" : "";
   check("the pilot invite email is branded from the PILOT record", subj.startsWith("Fixture Fund + SIGNL: "), subj);
   // The funder's own portal payload carries their brand.
@@ -192,7 +195,7 @@ console.log("== Admin Sig ==");
 
 console.log("== canon locks ==");
 {
-  check("build stamp is -105 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.06-138") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-138"));
+  check("build stamp is -105 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.06-139") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-139"));
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   check("founding Stripe prices stay unarmed (no market live for money)", routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'), "");
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");

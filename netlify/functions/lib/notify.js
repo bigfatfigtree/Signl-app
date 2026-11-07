@@ -130,7 +130,7 @@ function render(eventType, payload = {}) {
     case "creator_early_access":
       return { subject: `Early access is open: ${title}`, sms: `SIGNL: Your early-access window is open for "${title}" at ${biz}. Apply before it opens to everyone.`, email: `Your early-access window just opened on SIGNL.\n\n"${title}" at ${biz} is open to you before it opens to everyone else.\n\nOpen SIGNL to apply: https://app.joinsignl.com` };
     case "creator_booked":
-      return { subject: `You were picked: ${title}`, sms: `SIGNL: You were picked for "${title}" at ${biz}. Your visit code is in My Visits in SIGNL.`, email: `You were picked on SIGNL.\n\n"${title}" at ${biz} is booked for you. Your visit code is in My Visits; redeem it at the visit and post within 48 hours.\n\nOpen SIGNL: https://app.joinsignl.com` };
+      return { subject: `You were picked: ${title}`, sms: `SIGNL: You were picked for "${title}" at ${biz}. Your visit code is in My Visits in SIGNL.`, email: `You were picked on SIGNL.\n\n"${title}" at ${biz} is booked for you. Your visit code is in My Visits; redeem it at the visit and post by the terms on the booking — on a comped visit the standard goal is within 48 hours.\n\nOpen SIGNL: https://app.joinsignl.com` };
     case "post_clock_started":
       return { subject: `Your 48-hour post clock is running: ${biz}`, sms: `SIGNL: Your visit to ${biz} is redeemed and your post clock is running.${deadline} Paste your post link in SIGNL when it is up.`, email: `Your visit to ${biz} was redeemed, so your post clock is running.${deadline}\n\nPost honestly, disclose the comp, then paste the post link in SIGNL under My Visits.\n\nOpen SIGNL: https://app.joinsignl.com` };
     case "post_clock_12h":

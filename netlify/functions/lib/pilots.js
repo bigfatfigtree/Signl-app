@@ -111,6 +111,7 @@ const STEP_LABELS = {
 let deps = {
   issuePasswordResetToken: null,
   passwordResetEmail: null,
+  partnerWelcomeEmail: null,
   deliverEmail: null,
   allUsers: null,
   testMode: false,
@@ -436,14 +437,19 @@ async function invitePilotPartner({ pilot, contactName, email, actorId }) {
   await store.set(`email:${cleanEmail}`, { userId: user.id });
   let emailSent = false;
   let token = null;
-  if (deps.issuePasswordResetToken && deps.passwordResetEmail && deps.deliverEmail) {
+  // The partner's FIRST email is the dedicated welcome
+  // (2026-11-06), co-branded like the invite always was; the
+  // bare password template is only a fallback for a host that
+  // never wired the welcome builder.
+  if (deps.issuePasswordResetToken && deps.deliverEmail && (deps.partnerWelcomeEmail || deps.passwordResetEmail)) {
     token = await deps.issuePasswordResetToken(user);
     const base = process.env.APP_URL || "https://app.joinsignl.com";
-    const rawMail = deps.passwordResetEmail(user, `${base}/?reset=${token}`);
+    const link = `${base}/?reset=${token}`;
+    const rawMail = deps.partnerWelcomeEmail ? deps.partnerWelcomeEmail(user, link) : deps.passwordResetEmail(user, link);
     // Co-brand (Build -105): the funder's invite carries
     // their brand through the one helper in the email seam.
     const mail = deps.partnerBrandedMail ? deps.partnerBrandedMail(pilot.brand, rawMail) : { ...rawMail, fromName: null };
-    const sent = await deps.deliverEmail("password_reset", user, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
+    const sent = await deps.deliverEmail(deps.partnerWelcomeEmail ? "partner_welcome" : "password_reset", user, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
     emailSent = !!(sent && sent.sent);
   }
   await logEvent({ type: "pilot_partner_invited", actorId: actorId || null, actorRole: "admin", subjectId: user.id, market: pilot.marketName, data: { pilotId: pilot.id, partnerName: pilot.partnerName, email: cleanEmail, emailSent } });
@@ -453,12 +459,13 @@ async function invitePilotPartner({ pilot, contactName, email, actorId }) {
 async function sendPartnerInviteEmail(user, actorId, pilot) {
   let emailSent = false;
   let token = null;
-  if (deps.issuePasswordResetToken && deps.passwordResetEmail && deps.deliverEmail) {
+  if (deps.issuePasswordResetToken && deps.deliverEmail && (deps.partnerWelcomeEmail || deps.passwordResetEmail)) {
     token = await deps.issuePasswordResetToken(user);
     const base = process.env.APP_URL || "https://app.joinsignl.com";
-    const rawMail = deps.passwordResetEmail(user, `${base}/?reset=${token}`);
+    const link = `${base}/?reset=${token}`;
+    const rawMail = deps.partnerWelcomeEmail ? deps.partnerWelcomeEmail(user, link) : deps.passwordResetEmail(user, link);
     const mail = deps.partnerBrandedMail ? deps.partnerBrandedMail(pilot.brand, rawMail) : { ...rawMail, fromName: null };
-    const sent = await deps.deliverEmail("password_reset", user, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
+    const sent = await deps.deliverEmail(deps.partnerWelcomeEmail ? "partner_welcome" : "password_reset", user, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
     emailSent = !!(sent && sent.sent);
   }
   await logEvent({ type: "pilot_partner_invite_resent", actorId: actorId || null, actorRole: "admin", subjectId: user.id, market: pilot.marketName, data: { pilotId: pilot.id, emailSent } });

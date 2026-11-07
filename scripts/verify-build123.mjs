@@ -166,7 +166,7 @@ async function googleTrip(mode, { cookie, profile } = {}) {
 console.log("== Stamp (landed on -125 in the 2026-11-04 batch; pin re-aimed at the combined tree's top stamp) ==");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("build stamp is 2026.11.06-138 in build.js + index.html (was -123 standalone; -123 landed on top-build -125)", buildJs.includes('"2026.11.06-138"') && indexHtml.includes("2026.11.06-138"));
+check("build stamp is 2026.11.06-139 in build.js + index.html (was -123 standalone; -123 landed on top-build -125)", buildJs.includes('"2026.11.06-139"') && indexHtml.includes("2026.11.06-139"));
 
 console.log("== Bootstrap: the lane reports itself ==");
 {

@@ -38,7 +38,7 @@ const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
-check("stamp is 2026.11.06-138 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-138"') && indexHtml.includes("2026.11.06-138"));
+check("stamp is 2026.11.06-139 and identical in build.js + index.html", buildJs.includes('BUILD_ID = "2026.11.06-139"') && indexHtml.includes("2026.11.06-139"));
 
 // Nav: the Find Offers tab is first-class for creators.
 check("nav: Find Offers is a creator primary tab (phone bar)", appJs.includes('creator: ["Dashboard", "Find Offers", "Sig", "Earnings", "Offers"]'));
@@ -60,8 +60,8 @@ check("shelf: Book rides the existing direct-offer flow, Save rides favorites", 
 // Creator page.
 check("pdp: the hero block carries Jeff's neighbors line", appJs.includes("function pdpLocalHeroHtml(c)") && appJs.includes("neighbors</strong> who could actually walk through your door"));
 check("pdp: hero sits in the detail render where the old local block stood", appJs.includes("${pdpLocalHeroHtml(c)}"));
-check("pdp: What you get states the standard (1 post + 1 story, 48 hours, counted)", appJs.includes("function whatYouGetHtml(c)") && appJs.includes("Posted within 48 hours") && appJs.includes("Counted, not guessed."));
-check("pdp: Momentum is explained in place, in plain words", appJs.includes("function momentumExplainerHtml(c)") && appJs.includes("is a reliability score"));
+check("pdp: What you get states the standard (1 post + 1 story, counted) with the due date on the booking's terms — 48 hours is the comped standard goal, never a flat promise (Jeff's 48-hour copy rule, 2026-11-06)", appJs.includes("function whatYouGetHtml(c)") && appJs.includes("Due by the terms on the booking") && appJs.includes("unless the booking says otherwise") && appJs.includes("Counted, not guessed."));
+check("pdp: NO Momentum explainer paragraph on the profile (Jeff's creator profile rule, 2026-11-06 — the number rides as a badge only; no text walls)", !appJs.includes("function momentumExplainerHtml") && !appJs.includes("is a reliability score"));
 check("pdp: audience specs + similar rail render only with data", appJs.includes("function audienceSpecsHtml(c)") && appJs.includes("if (!rows.length) return \"\";") && appJs.includes("function similarCreatorsHtml(c)") && appJs.includes("if (!ranked.length) return \"\";"));
 check("pdp: buy box offers Paid at rate / Comped $0 + a day picker into the Offer Card flow", appJs.includes("function buyBoxHtml(c)") && appJs.includes("Comped visit — ${sym}0") && appJs.includes("function pdpSendOffer(userId)") && appJs.includes("function pdpPickDay(btn)"));
 check("pdp: the picked day rides the deal note, and the proposal card shows notes", appJs.includes('id="ds-notefield"') && appJs.includes("body.note = dsNote.value.trim()") && appJs.includes("${t.note ? `<div class=\"lrow\"><span>Note</span>"));
@@ -71,7 +71,7 @@ check("public profile: client render carries the neighbors line", appJs.includes
 check("public profile: SSR mirror carries the same neighbors line", profileMetaJs.includes("cc-neighbors") && profileMetaJs.includes("neighbors who could actually walk through your door."));
 
 // The Mirror.
-check("mirror: card states the offer like a price and the ask in one line", appJs.includes("function mirrorOfferCardHtml(o, opts)") && appJs.includes("function mirrorPriceLine(o)") && appJs.includes("function mirrorAskLine(o)") && appJs.includes("within 48 hours of the visit"));
+check("mirror: card states the offer like a price and the ask in one line, due by the offer's terms with 48 hours as the comped standard goal (48-hour copy rule, 2026-11-06)", appJs.includes("function mirrorOfferCardHtml(o, opts)") && appJs.includes("function mirrorPriceLine(o)") && appJs.includes("function mirrorAskLine(o)") && appJs.includes("the standard goal for a comped visit is within 48 hours"));
 check("mirror: track-record strip renders only when a record exists", appJs.includes("${trackCells ? `<div class=\"mirror-track\">")); // Build -138: the strip renders from earned cells (trackCells) — same rule, no empty strip
 check("mirror: filters cover kind, category, distance, sort", appJs.includes("state.foKind") && appJs.includes("state.foCategory") && appJs.includes("state.foDistance") && appJs.includes("state.foSort"));
 check("mirror: Grab rides applyToOffer; piles ride the shared offers deck", appJs.includes("function findOffersGrab(id)") && appJs.includes("await applyToOffer(id)") && appJs.includes("pileLater(\"offers\", id)") && appJs.includes("pileHide(\"offers\", id)"));

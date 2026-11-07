@@ -43,8 +43,10 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
 // ---------- stamp ----------
-check("stamp is 2026.11.06-138 and identical in build.js + index.html",
-  buildJs.includes('BUILD_ID = "2026.11.06-138"') && (indexHtml.match(/2026\.11\.06-138/g) || []).length >= 5);
+// Stamp moved to -139 with the post-138 fix batch (2026-11-06); the
+// invariant this check protects is build.js + index.html AGREEING.
+check("stamp is current (2026.11.06-139 since the post-138 batch) and identical in build.js + index.html",
+  buildJs.includes('BUILD_ID = "2026.11.06-139"') && (indexHtml.match(/2026\.11\.06-139/g) || []).length >= 5);
 
 // ---------- catalogue (unit, from the real lib) ----------
 const require2 = createRequire(path.join(root, "netlify/functions/lib/router.js"));
@@ -56,8 +58,11 @@ check("catalogue carries every automated email (55+ entries, unique ids)",
 check("every deliverEmail kind in the router resolves to a catalogue entry",
   ["approval", "rejection", "password_reset", "signin_link", "team_invite", "silent_removal", "consumed_comp_inactive", "late_streak_pause", "strike_pause", "account_deletion", "signup_confirmation", "profile_completion_reminder", "recruiter_kit", "platform_message", "offer_nudge", "post_performance", "roster_digest", "staff_notice", "post_verified", "clock_started"]
     .every((k) => catalog.entryForKind(k)), "");
-check("critical kinds are exactly approval / password_reset / signin_link / account_deletion",
-  [...catalog.CRITICAL_KINDS].sort().join(",") === "account_deletion,approval,password_reset,signin_link");
+// Build -139 (Jeff, 2026-11-06, Item 13): the three role welcome kinds
+// joined the critical set — they carry the one-time set-password link
+// (same mechanism as signin_link), so they must never be toggleable off.
+check("critical kinds are exactly approval / password_reset / signin_link / account_deletion / the three role welcomes (-139)",
+  [...catalog.CRITICAL_KINDS].sort().join(",") === "account_deletion,approval,partner_welcome,password_reset,recruiter_welcome,signin_link,team_welcome");
 check("campaign_creator template locks the free-forever line and requires {claimLink}",
   (() => { const e = catalog.byId("campaign_creator"); return !!e && (e.requiredTokens || []).includes("claimLink") && String(e.lockedLine || "").includes("SIGNL is free for creators. Always."); })());
 check("role templates: money scope appears in NO v1 template; market lead is market-scoped by construction",
