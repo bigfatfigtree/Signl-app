@@ -3,11 +3,11 @@
 // so the function bundle needs no extra packages.
 //
 // Transport activates only when these env vars are set in Netlify:
-//   SIGNL_SMTP_USER  e.g. hello@magpienow.com
+//   SIGNL_SMTP_USER  e.g. hello@magpielocal.com
 //   SIGNL_SMTP_PASS  a Gmail App Password for that mailbox
 // Optional: SIGNL_SMTP_HOST (default smtp.gmail.com),
 //           SIGNL_SMTP_PORT (default 465),
-//           SIGNL_MAIL_FROM (default "Magpie <hello@magpienow.com>")
+//           SIGNL_MAIL_FROM (default "Magpie <hello@magpielocal.com>")
 //
 // When the transport is not configured, sendEmail reports
 // { sent: false, queued: true } and the caller logs a *_queued event:
@@ -28,7 +28,7 @@
 // the default identity: sendEmail refuses with reason
 // "sender_profile_unavailable", and the campaign sweep checks
 // availability up front so it can skip and log instead. Mail sent
-// from a signlteam profile carries Reply-To: hello@magpienow.com
+// from a signlteam profile carries Reply-To: hello@magpielocal.com
 // (the watched inbox) unless the caller passes its own replyTo.
 // The display name stays "Magpie"; the From address is the
 // profile's own mailbox (its SMTP user).
@@ -39,9 +39,9 @@ function emailEnabled() {
 }
 
 // The Reply-To every signlteam.com send defaults to: replies land
-// in the hello@magpienow.com inbox the reply watch already reads,
+// in the hello@magpielocal.com inbox the reply watch already reads,
 // never in a warm-up mailbox nobody monitors.
-const TEAM_REPLY_TO = "hello@magpienow.com";
+const TEAM_REPLY_TO = "hello@magpielocal.com";
 
 const SENDER_PROFILES = {
   default: { userEnv: "SIGNL_SMTP_USER", passEnv: "SIGNL_SMTP_PASS", replyTo: null },
@@ -66,7 +66,7 @@ function senderProfile(name) {
   const available = !!(user && pass);
   let from = null;
   if (key === "default") {
-    from = process.env.SIGNL_MAIL_FROM || "Magpie <hello@magpienow.com>";
+    from = process.env.SIGNL_MAIL_FROM || "Magpie <hello@magpielocal.com>";
   } else if (user) {
     from = `Magpie <${user}>`;
   }
@@ -82,7 +82,7 @@ function senderProfileAvailable(name) {
 // mail whose copy promises "unsubscribe at any time") carry a real
 // List-Unsubscribe header, so the promise in the copy is one the
 // reader can actually act on from their mail app.
-const UNSUBSCRIBE_ADDR = "hello@magpienow.com";
+const UNSUBSCRIBE_ADDR = "hello@magpielocal.com";
 function listUnsubscribeHeader() {
   return `List-Unsubscribe: <mailto:${UNSUBSCRIBE_ADDR}?subject=unsubscribe>`;
 }
@@ -96,7 +96,7 @@ function listUnsubscribeHeader() {
 // not change. Sends that call sendEmail directly without an html
 // part (the campaign sweep's founder outreach, the internal
 // business-application notice) keep their plain shape.
-const EMAIL_LOGO_URL = "https://app.magpienow.com/assets/logo.png";
+const EMAIL_LOGO_URL = "https://app.magpielocal.com/assets/logo.png";
 const EMAIL_GRADIENT = "linear-gradient(90deg,#006AFC 0%,#019BFC 35%,#03C9AB 70%,#2FE07E 100%)";
 
 function escapeHtml(s) {
@@ -147,7 +147,7 @@ function smtpSend({ to, subject, text, html, listUnsubscribe, profile, replyTo, 
     const prof = profile || senderProfile("default");
     const user = prof.user;
     const pass = prof.pass;
-    const baseFrom = prof.from || "Magpie <hello@magpienow.com>";
+    const baseFrom = prof.from || "Magpie <hello@magpielocal.com>";
     const fromAddr = (baseFrom.match(/<([^>]+)>/) || [null, baseFrom])[1];
     // Partner co-brand (Build -105): a display-name override
     // swaps ONLY the name a mail client shows; the address,
@@ -194,7 +194,7 @@ function smtpSend({ to, subject, text, html, listUnsubscribe, profile, replyTo, 
     (async () => {
       try {
         expect(220, await reply());
-        await cmd(`EHLO app.magpienow.com`, 250);
+        await cmd(`EHLO app.magpielocal.com`, 250);
         await cmd("AUTH LOGIN", 334);
         await cmd(Buffer.from(user).toString("base64"), 334);
         await cmd(Buffer.from(pass).toString("base64"), 235);
