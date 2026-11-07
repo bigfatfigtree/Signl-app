@@ -3406,26 +3406,30 @@ function maggieMarkHtml(cls, state) {
   const bird = `<path d="M 72.3 29.5 Q 76.7 28.4 81.6 29.1 Q 86.5 29.8 92.1 34.2 Q 97.7 38.6 103.3 39.3 Q 108.8 40.0 108.8 44.9 Q 108.8 49.8 104.7 50.0 Q 100.5 50.2 99.1 50.9 Q 97.7 51.6 95.6 54.4 Q 93.5 57.2 92.6 68.9 Q 91.6 80.5 89.1 86.5 Q 86.5 92.6 83.0 95.6 Q 79.5 98.6 75.6 100.3 Q 71.6 101.9 56.7 102.1 Q 41.9 102.4 36.0 103.3 Q 30.2 104.2 25.1 106.5 Q 20.0 108.9 15.6 112.6 Q 11.2 116.3 11.2 98.6 Q 11.2 81.0 14.0 84.2 Q 16.7 87.5 18.8 84.4 Q 20.9 81.4 29.3 73.7 Q 37.7 66.1 45.8 54.4 Q 54.0 42.8 57.4 39.1 Q 60.9 35.4 64.4 33.0 Q 67.9 30.7 72.3 29.5 Z"/>`;
   return `<svg class="maggie-mark ${cls || ""}" data-maggie data-state="${state || "idle"}" viewBox="0 0 120 134" role="img" aria-label="Maggie"><defs><linearGradient id="mg${u}" gradientUnits="userSpaceOnUse" x1="8" y1="126" x2="112" y2="8"><stop offset="0" stop-color="#006AFC"/><stop offset=".38" stop-color="#019BFC"/><stop offset=".72" stop-color="#03C9AB"/><stop offset="1" stop-color="#2FE07E"/></linearGradient><clipPath id="mgh${u}"><polygon points="50,14 120,14 120,62 64,59 50,38"/></clipPath><clipPath id="mgw${u}"><polygon points="34,50 92,50 92,104 34,104"/></clipPath><clipPath id="mgt${u}"><polygon points="0,68 62,77 60,120 0,120"/></clipPath></defs><g class="mg-bob"><path fill="${G}" d="M 47.9 3.0 Q 57.2 0.0 67.7 0.0 Q 78.1 0.0 84.0 1.6 Q 89.8 3.3 94.4 5.6 Q 99.1 7.9 102.6 10.5 Q 106.0 13.0 110.0 17.7 Q 114.0 22.3 116.3 27.0 Q 118.6 31.6 119.3 35.8 Q 120.0 40.0 110.2 39.8 Q 100.5 39.5 98.4 38.6 Q 96.3 37.7 93.3 34.7 Q 90.2 31.6 86.7 30.2 Q 83.3 28.8 80.0 28.6 Q 76.7 28.4 72.3 29.5 Q 67.9 30.7 62.1 35.4 Q 56.3 40.0 47.0 53.0 Q 37.7 66.1 31.9 71.2 Q 26.0 76.3 21.2 81.9 Q 16.3 87.5 13.5 84.0 Q 10.7 80.5 7.7 72.6 Q 4.7 64.7 4.4 58.6 Q 4.2 52.6 6.3 44.9 Q 8.4 37.2 13.0 29.8 Q 17.7 22.3 22.6 17.7 Q 27.4 13.0 33.0 9.5 Q 38.6 6.0 47.9 3.0 Z"/><path fill="${G}" d="M 100.2 50.7 Q 102.8 49.8 111.4 49.8 Q 120.0 49.8 120.0 70.3 Q 120.0 90.7 116.7 99.6 Q 113.5 108.4 107.4 115.6 Q 101.4 122.8 95.1 126.6 Q 88.8 130.3 82.1 132.1 Q 75.3 134.0 66.3 134.0 Q 57.2 134.0 42.1 131.2 Q 27.0 128.4 21.4 128.4 Q 15.8 128.4 8.6 130.0 Q 1.4 131.7 6.3 124.0 Q 11.2 116.3 18.1 111.2 Q 25.1 106.1 33.5 104.2 Q 41.9 102.4 55.6 102.4 Q 69.3 102.4 75.8 99.6 Q 82.3 96.8 85.3 93.3 Q 88.4 89.8 89.8 86.3 Q 91.2 82.8 92.3 70.0 Q 93.5 57.2 95.6 54.4 Q 97.7 51.6 100.2 50.7 Z"/><g fill="#0B0D0C">${bird}</g><path fill="${G}" d="M 57.7 63.0 Q 67.0 61.0 73.0 61.2 Q 79.1 61.4 81.2 63.0 Q 83.3 64.7 82.8 69.3 Q 82.3 74.0 78.4 78.6 Q 74.4 83.3 68.4 85.8 Q 62.3 88.4 51.6 89.1 Q 40.9 89.8 34.9 91.0 Q 28.8 92.1 22.3 95.1 Q 15.8 98.2 18.4 91.9 Q 20.9 85.6 26.5 79.8 Q 32.1 74.0 40.2 69.6 Q 48.4 65.1 57.7 63.0 Z"/><g clip-path="url(#mgt${u})"><g class="mg-tail-rot"><g fill="#0B0D0C">${bird}</g></g></g><g clip-path="url(#mgw${u})"><g class="mg-wing-rot"><path fill="${G}" d="M 57.7 63.0 Q 67.0 61.0 73.0 61.2 Q 79.1 61.4 81.2 63.0 Q 83.3 64.7 82.8 69.3 Q 82.3 74.0 78.4 78.6 Q 74.4 83.3 68.4 85.8 Q 62.3 88.4 51.6 89.1 Q 40.9 89.8 34.9 91.0 Q 28.8 92.1 22.3 95.1 Q 15.8 98.2 18.4 91.9 Q 20.9 85.6 26.5 79.8 Q 32.1 74.0 40.2 69.6 Q 48.4 65.1 57.7 63.0 Z"/></g></g><g clip-path="url(#mgh${u})"><g class="mg-head-rot"><g fill="#0B0D0C">${bird}</g><path fill="${G}" d="M 79.8 38.6 Q 80.9 37.7 82.1 37.7 Q 83.3 37.7 84.4 38.9 Q 85.6 40.0 84.9 42.3 Q 84.2 44.7 82.6 44.9 Q 80.9 45.1 79.8 44.2 Q 78.6 43.3 78.6 41.4 Q 78.6 39.5 79.8 38.6 Z"/></g></g></g></svg>`;
 }
-// Character Maggie (Jeff, 2026-11-07): her face is Jeff's own
-// character sheet — the stills are crops of that sheet (the
-// law for her face) and the loops were animated from those
-// tiles (greet v3, chirp v2 — the frame-audited finals; the
-// superseded renders never shipped). Small slots (tab disc,
-// rail, More rows, FAB, thread avatars) are STILLS only.
-// Big slots (the heroes, the sheet + chat-box heads, the
-// claim celebration) play the loop for the moment over its
-// still poster. Hero state map: idle AND think ride the
-// idle-alive loop (she stays alive while she works — no swap
-// jank), talk = chirp (the queue is talking; she is vocal),
-// greet = the laughing greet loop, celebrate = hearts,
-// listen = headphones (while the user composes). "cool"
-// (shades down) has a still in the avatar mood map; no
-// surface in the app raises a good-numbers Maggie moment
-// today, so its loop is deliberately not shipped — the
-// brand folder keeps it if a hook ever lands.
+// Character Maggie (Jeff, 2026-11-07): her artwork is Jeff's
+// own character sheet and NOTHING else — the six tiles in
+// public/assets/maggie-char are crops of that sheet, and they
+// are the law for her face. (AI-generated video loops of her
+// were built, audited, and RETIRED the same day on Jeff's
+// verdict: every generation re-drew a different bird, so no
+// clip was ever the same Maggie. None ship, any version.)
+// Her MOTION is code, not redraws: CSS transforms on the real
+// tile artwork (a gentle bob, a hop, a sway, a head-cock
+// tilt — see theme-v3.css) plus mood swaps between the tiles
+// for states. Small slots (tab disc, rail, More rows, FAB,
+// thread avatars) are stills; big slots (the heroes, the
+// sheet + chat-box heads, the claim celebration) swap tiles
+// per state and move them. State map: idle + think wear the
+// curious tile (bob / slow sway), talk wears chirp (she is
+// vocal — the queue is talking), greet wears the laughing
+// tile (a hop on entry), celebrate wears hearts (a wiggle
+// on the win), listen wears the headphones tile (head
+// cocked while the user composes). "cool" (shades down)
+// has a still in the avatar mood map; no surface in the app
+// raises a good-numbers Maggie moment today, so it waits
+// for a real hook like every other mood got.
 const MAGGIE_CHAR = "/assets/maggie-char";
 const MAGGIE_CHAR_STILL = { idle: "curious.jpg", think: "curious.jpg", listen: "listen.jpg", talk: "chirp.jpg", greet: "greet.jpg", celebrate: "hearts.jpg" };
-const MAGGIE_CHAR_CLIP = { idle: "idle.mp4", think: "idle.mp4", listen: "listen.mp4", talk: "chirp.mp4", greet: "greet.mp4", celebrate: "hearts.mp4" };
 const MAGGIE_CHAR_AVA = { greet: "greet.jpg", celebrate: "hearts.jpg", think: "chirp.jpg", talk: "chirp.jpg", chirp: "chirp.jpg", cool: "cool.jpg", listen: "listen.jpg" };
 // One resolver for the small static slots (tab, rail, More rows,
 // FAB): character still in character mode, the bird when
@@ -3461,7 +3465,7 @@ let sigQueueBeat = "";
 // state's clips, so nothing downloads before the hero renders.
 function sigHeroMediaHtml() {
   if (SIG_MARK_CHAR) {
-    return `<span class="sig-hero-media maggie-char-hero" data-sig-hero-media data-mode="idle"><img class="maggie-char-poster" src="${MAGGIE_CHAR}/curious.jpg" alt="" decoding="async"><video class="maggie-char-video" data-sig-hero-video muted loop playsinline autoplay preload="none" poster="${MAGGIE_CHAR}/curious.jpg" aria-hidden="true"></video></span>`;
+    return `<span class="sig-hero-media maggie-char-hero" data-sig-hero-media data-mode="idle"><img class="maggie-char-poster" src="${MAGGIE_CHAR}/curious.jpg" alt="" decoding="async"></span>`;
   }
   if (SIG_MARK_BIRD) {
     return `<span class="sig-hero-media maggie-hero" data-sig-hero-media data-mode="idle">${maggieMarkHtml("maggie-hero-svg", "idle")}</span>`;
@@ -3506,35 +3510,20 @@ function sigHeroSet(mode) {
     return;
   }
   if (SIG_MARK_CHAR && host.classList.contains("maggie-char-hero")) {
-    // Character hero: one video element, its clip + poster
-    // swapped per state (attached lazily here, never in
-    // markup — nothing downloads before the hero renders).
-    // Reduced motion rests her on the state's still.
-    const video = host.querySelector("[data-sig-hero-video]");
-    const poster = host.querySelector(".maggie-char-poster");
+    // Character hero: tiles only. Her face swaps to the
+    // state's tile and data-mode keys the CSS transform
+    // motion for that state (theme-v3.css) — the artwork
+    // moves, the bird is never redrawn. Reduced motion
+    // freezes the transforms (media query); the mood faces
+    // still swap. Greet and celebrate are one-shot moods:
+    // after a while she settles back to idle.
+    const face = host.querySelector(".maggie-char-poster");
     host.setAttribute("data-mode", mode);
     sigHeroMode = mode;
     clearTimeout(host.__charT);
     const still = MAGGIE_CHAR_STILL[mode] || MAGGIE_CHAR_STILL.idle;
-    if (poster && poster.getAttribute("src") !== `${MAGGIE_CHAR}/${still}`) poster.src = `${MAGGIE_CHAR}/${still}`;
-    if (!video) return;
-    if (sigReducedMotion()) {
-      try { video.pause(); } catch (e) {}
-      video.hidden = true;
-      return;
-    }
-    video.hidden = false;
-    const clip = MAGGIE_CHAR_CLIP[mode] || MAGGIE_CHAR_CLIP.idle;
-    if (video.getAttribute("data-clip") !== clip) {
-      video.setAttribute("data-clip", clip);
-      video.poster = `${MAGGIE_CHAR}/${still}`;
-      video.innerHTML = `<source src="${MAGGIE_CHAR}/${clip}" type="video/mp4">`;
-      try { video.load(); } catch (e) {}
-    }
-    const p = video.play && video.play();
-    if (p && p.catch) p.catch(() => { /* the poster still carries the surface */ });
+    if (face && face.getAttribute("src") !== `${MAGGIE_CHAR}/${still}`) face.src = `${MAGGIE_CHAR}/${still}`;
     if (mode === "greet" || mode === "celebrate") {
-      // One-shot moods: after a while she settles back to idle.
       host.__charT = setTimeout(() => {
         if (host.getAttribute("data-mode") === mode) sigHeroSet("idle");
       }, 6500);
@@ -3578,7 +3567,7 @@ function sigHeroSet(mode) {
 // clip leaves the still standing.
 function sigCelebMediaHtml() {
   if (SIG_MARK_CHAR) {
-    return `<span class="sig-celeb-media maggie-char-celeb" data-sig-celeb-media><img src="${MAGGIE_CHAR}/hearts.jpg" alt="" decoding="async" data-sig-celeb-still><video data-sig-celeb-video muted loop playsinline preload="none" poster="${MAGGIE_CHAR}/hearts.jpg" aria-hidden="true" hidden></video></span>`;
+    return `<span class="sig-celeb-media maggie-char-celeb" data-sig-celeb-media><img src="${MAGGIE_CHAR}/hearts.jpg" alt="" decoding="async" data-sig-celeb-still></span>`;
   }
   if (SIG_MARK_BIRD) {
     return `<span class="sig-celeb-media maggie-celeb" data-sig-celeb-media>${maggieMarkHtml("", "idle")}</span>`;
@@ -3591,19 +3580,13 @@ function sigCelebMediaHtml() {
 function sigCelebKick() {
   if (SIG_MARK_CHAR) {
     // A booking/confirmation win is her hearts moment: the
-    // still stands until the kick attaches the loop.
+    // kick wiggles the real hearts tile (CSS transform on
+    // the artwork — nothing is redrawn or generated).
     const host = document.querySelector("[data-sig-celeb-media]");
     if (!host || sigReducedMotion()) return;
-    const video = host.querySelector("[data-sig-celeb-video]");
-    if (!video) return;
-    if (!video.getAttribute("data-clip")) {
-      video.setAttribute("data-clip", "hearts");
-      video.innerHTML = `<source src="${MAGGIE_CHAR}/hearts.mp4" type="video/mp4">`;
-    }
-    video.hidden = false;
-    try { video.load(); } catch (e) {}
-    const p = video.play && video.play();
-    if (p && p.catch) p.catch(() => { video.hidden = true; });
+    host.classList.remove("is-celebrating");
+    void host.offsetWidth; // restart the wiggle if re-kicked
+    host.classList.add("is-celebrating");
     return;
   }
   if (SIG_MARK_BIRD) {
@@ -4257,13 +4240,11 @@ function snapshotHtml(cells, fillLine, tab) {
 function sigOrbMedia130(still) {
   if (SIG_MARK_CHAR) {
     // Her head in the sheet, the home heroes and every chat
-    // box: the greet loop (sheet opens and home are her greet
-    // moments), or the greet still where a placement asks for
-    // a still — and always the still under reduced motion.
-    if (still || sigReducedMotion()) {
-      return `<span class="sigbox-orb maggie-char-head"><img src="${MAGGIE_CHAR}/greet.jpg" alt="" decoding="async"></span>`;
-    }
-    return `<span class="sigbox-orb maggie-char-head"><video muted loop playsinline autoplay preload="metadata" poster="${MAGGIE_CHAR}/greet.jpg" aria-hidden="true"><source src="${MAGGIE_CHAR}/greet.mp4" type="video/mp4"></video></span>`;
+    // box: Jeff's greet tile (sheet opens and home are her
+    // greet moments), bobbing gently in code. Placements that
+    // ask for a still get the tile at rest; reduced motion
+    // freezes the bob (theme-v3.css media query).
+    return `<span class="sigbox-orb maggie-char-head${still ? " is-still" : ""}"><img src="${MAGGIE_CHAR}/greet.jpg" alt="" decoding="async"></span>`;
   }
   if (SIG_MARK_BIRD) {
     const rest = still || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -4291,10 +4272,11 @@ const sigBoxTurns130 = {};
 // head cocks toward the words. Focus or typing sets the listen
 // state on the marks in the same surface; blur settles her.
 // Character Maggie, listening: while the user composes in a
-// chat box, the head in the same surface rests on the
-// headphones still, and the Sig-tab hero (a sibling of the
-// chat block, like the bird's) tunes in with the listen
-// loop. Blur restores whatever each surface was showing.
+// chat box, the head in the same surface swaps to the
+// headphones tile, and the Sig-tab hero (a sibling of the
+// chat block, like the bird's) swaps to it too, head cocked
+// by the listen tilt. Blur restores whatever each surface
+// was showing.
 function maggieCharListenSet(input, on) {
   const scope = input.closest("[data-sigbox], .sighero137, .sigsheet137, .sig-hero, .sig-chat") || input.closest("section") || document;
   scope.querySelectorAll(".maggie-char-head").forEach((h) => {
@@ -4306,8 +4288,6 @@ function maggieCharListenSet(input, on) {
     } else if (h.dataset.charRestore !== undefined) {
       h.innerHTML = h.dataset.charRestore;
       delete h.dataset.charRestore;
-      const v = h.querySelector("video");
-      if (v) { const p = v.play && v.play(); if (p && p.catch) p.catch(() => {}); }
     }
   });
   const hero = document.querySelector("[data-sig-hero-media].maggie-char-hero");

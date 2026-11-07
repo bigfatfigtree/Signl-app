@@ -1415,14 +1415,38 @@ svg.rail-sig-img.maggie-mark { width: 24px; height: 27px; }
 .maggie-celeb .maggie-mark { width: 100%; height: 100%; }
 
 /* Character Maggie (SIG_MARK_MODE = "character", Jeff,
-   2026-11-07): her sheet tiles fill their round slots
-   edge-to-edge — the base .sig-hero-media / .sig-celeb-media
-   stacks already size, clip and stack the img + video fills,
-   so the character rules only make the small slots and the
-   chat heads clip their stills and loops the same way. */
+   2026-11-07): her artwork is Jeff's character sheet tiles
+   and nothing else — no generated likeness ships. The tiles
+   fill their round slots edge-to-edge (the base
+   .sig-hero-media / .sig-celeb-media stacks already size and
+   clip the fills), and her MOTION is these transforms on the
+   real artwork: the image moves, the bird is never redrawn.
+   Every keyframe carries a slight scale so a tilt or a hop
+   never bares the slot's edge inside the circular clip. */
 img.maggie-char-img { object-fit: cover; }
 #agent-fab img.maggie-char-img { width: 32px; height: 32px; border-radius: 50%; }
 .sig-ava-char { border-radius: 50%; overflow: hidden; background: none; box-shadow: 0 0 0 2px var(--mint, #A9E8C9); }
 .sig-ava-char img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .sigbox-orb.maggie-char-head { overflow: hidden; }
-.maggie-char-head img, .maggie-char-head video { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
+.maggie-char-head img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; animation: charBob 4.4s ease-in-out infinite; }
+.maggie-char-head.is-still img { animation: none; }
+/* The hero's motion vocabulary, keyed by sigHeroSet's
+   data-mode: idle bobs gently, think sways, greet hops in,
+   celebrate wiggles, talk chirps in quick little bounces,
+   listen holds a head-cock tilt while the user composes. */
+.maggie-char-hero .maggie-char-poster { transform-origin: 50% 62%; animation: charBob 3.8s ease-in-out infinite; }
+.maggie-char-hero[data-mode="think"] .maggie-char-poster { animation: charSway 3.2s ease-in-out infinite; }
+.maggie-char-hero[data-mode="greet"] .maggie-char-poster { animation: charHop .95s ease-out 1, charBob 3.8s ease-in-out .95s infinite; }
+.maggie-char-hero[data-mode="celebrate"] .maggie-char-poster { animation: charWiggle .6s ease-in-out 3, charBob 3.8s ease-in-out 1.8s infinite; }
+.maggie-char-hero[data-mode="talk"] .maggie-char-poster { animation: charChirp .5s ease-in-out 3, charBob 3.8s ease-in-out 1.5s infinite; }
+.maggie-char-hero[data-mode="listen"] .maggie-char-poster { animation: charListen 4.5s ease-in-out infinite; }
+.sig-celeb-media.maggie-char-celeb.is-celebrating img { animation: charWiggle .6s ease-in-out 3; }
+@keyframes charBob { 0%, 100% { transform: scale(1.07) translateY(0) rotate(0deg); } 50% { transform: scale(1.07) translateY(-2.4%) rotate(.6deg); } }
+@keyframes charSway { 0%, 100% { transform: scale(1.07) rotate(-1.8deg); } 50% { transform: scale(1.07) rotate(1.8deg); } }
+@keyframes charHop { 0% { transform: scale(1.07) translateY(0); } 35% { transform: scale(1.07) translateY(-8%); } 68% { transform: scale(1.07) translateY(0); } 84% { transform: scale(1.07) translateY(-3%); } 100% { transform: scale(1.07) translateY(0); } }
+@keyframes charWiggle { 0%, 100% { transform: scale(1.07) rotate(0deg) translateY(0); } 25% { transform: scale(1.07) rotate(-3.2deg) translateY(-3%); } 55% { transform: scale(1.07) rotate(2.6deg) translateY(0); } 78% { transform: scale(1.07) rotate(-1.8deg) translateY(-2%); } }
+@keyframes charChirp { 0%, 100% { transform: scale(1.07) translateY(0) rotate(0deg); } 30% { transform: scale(1.07) translateY(-4.5%) rotate(-1.2deg); } 62% { transform: scale(1.07) translateY(0) rotate(0deg); } }
+@keyframes charListen { 0%, 100% { transform: scale(1.09) rotate(-3deg) translateY(0); } 50% { transform: scale(1.09) rotate(-2.2deg) translateY(-1.6%); } }
+@media (prefers-reduced-motion: reduce) {
+  .maggie-char-head img, .maggie-char-hero .maggie-char-poster, .sig-celeb-media.maggie-char-celeb img { animation: none !important; }
+}
