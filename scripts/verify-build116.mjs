@@ -67,7 +67,7 @@ const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.j
 const sigdataJs = fs.readFileSync(path.join(root, "netlify/functions/lib/sigdata.js"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v2.css"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.06-139", indexHtml.includes("2026.11.06-139") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-139"));
+check("stamp is 2026.11.06-140", indexHtml.includes("2026.11.06-140") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.06-140"));
 check("client: deck renders the first pending application as the card", appJs.includes("function adminDeckHtml(pend)") && appJs.includes("const u = pend[0];"));
 check("client: Deck/List toggle with the deck as the default while a queue exists", appJs.includes('onclick="adminAppSetView(\'deck\')"') && appJs.includes('adminAppView = pend.length ? "deck" : "list"'));
 check("client: deck decisions post to the existing review endpoint", appJs.includes('await api("POST", "/admin/review", { userId, decision, ...(reason ? { reason } : {}) })'));

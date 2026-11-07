@@ -39,8 +39,8 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const themeCss = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 
 // ---------- stamp ----------
-check("stamp is 2026.11.06-139 and identical in build.js + index.html",
-  buildJs.includes('BUILD_ID = "2026.11.06-139"') && indexHtml.includes("2026.11.06-139"));
+check("stamp is 2026.11.06-140 and identical in build.js + index.html",
+  buildJs.includes('BUILD_ID = "2026.11.06-140"') && indexHtml.includes("2026.11.06-140"));
 
 // ---------- the switch component ----------
 const toggle = slice(appJs, "function acceptanceHtml", 2400);

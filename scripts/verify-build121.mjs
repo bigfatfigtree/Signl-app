@@ -70,7 +70,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || "";
-check("stamp is 2026.11.06-139 and identical in build.js + index.html", stamp === "2026.11.06-139" && indexHtml.includes(stamp), String(stamp));
+check("stamp is 2026.11.06-140 and identical in build.js + index.html", stamp === "2026.11.06-140" && indexHtml.includes(stamp), String(stamp));
 check("index.html cache-busts theme-v3 with the rolled stamp (the file changed)",
   indexHtml.includes(`/theme-v3.css?v=${stamp}`) && indexHtml.includes(`/app.js?v=${stamp}`));
 
