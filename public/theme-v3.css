@@ -1371,29 +1371,53 @@ table { max-width: 100%; }
 .formerly-line{font-size:11px;font-weight:700;letter-spacing:.16em;color:var(--ink2);white-space:nowrap}
 .topbar .formerly-line{color:rgba(255,255,255,.85)}
 
-/* Logged-in phone top bars: the brand lockup + bridge line ride the
-   middle at the top of the bar (Jeff, 2026-11-07) — the lockup takes
-   its own centered line inside the bar; the controls row below it
-   (profile chip left, the bar's own controls right) is byte-for-byte
-   the row that was already there. A single-row fit was measured and
-   rejected: the 109px lockup only fits beside the controls by
-   truncating the user's name to ~33px (creator) and landing up to
-   75px off-center (business/partner). The bar grows by the lockup's
-   own 29px line, the growth Jeff allowed for exactly this case.
-   The .mbrand spans render inside renderTopBar2 (creator / business /
-   partner / recruiter shells) and renderTopRow (admin); they are
-   display:none above the phone breakpoint, so desktop shells render
-   exactly as before. Removal rides the bridge removal (item 5.6):
-   delete the two .mbrand spans in app.js and this block. */
+/* Logged-in phone top bars — BRIDGE-ERA LAYOUT (Jeff, 2026-11-07,
+   revised 12:12 ET; temporary — it comes down with the bridge
+   removal, item 5.6). While the bridge lives, the phone bar reads:
+   the Magpie lockup with "formerly SIGNL" under it at the FAR LEFT,
+   and one icon row aligned RIGHT — profile circle, help (?), then
+   the bar's own right icons (messages + hamburger on the .tb2
+   shells; stats + hamburger on the admin .tr row, whose help
+   already rides on the right). The person's NAME is out of the bar
+   entirely: .tb2-name / .tr-name are display:none ONLY inside this
+   block's phone query. The lockup is the existing .brand-lockup +
+   .formerly-line span, rendered as .mbrand inside renderTopBar2
+   (creator / business / partner / recruiter) and renderTopRow
+   (admin) — same artwork and bridge styling, only placed. Desktop
+   is untouched: .mbrand stays display:none above the phone
+   breakpoint and every layout rule below lives in the phone query.
+
+   RESTORATION (item 5.6 — do exactly this, nothing else): delete
+   this block AND the two .mbrand spans in public/app.js
+   (renderTopBar2 + renderTopRow). The bars then return EXACTLY to
+   their pre-bridge phone chrome: the name reappears beside the
+   profile circle on the left (its suppression lives only here),
+   profile + help sit on the left again, and the admin row's
+   Build -130 ordering resumes — the order / margin-left overrides
+   below live only here and lapse with the block. */
 .mbrand{display:none}
 @media (max-width:767.98px){
   .mbrand{display:flex;flex:none;align-items:center}
-  .mbrand .brand-lockup{align-items:center;gap:2px}
+  .mbrand .brand-lockup{gap:2px}
   .mbrand .brand-lockup img{height:16px;width:auto;display:block}
-  .tb2-in{flex-wrap:wrap}
-  .tb2-brand{order:-1;flex:0 0 100%;justify-content:center}
-  .tr-in{flex-wrap:wrap}
-  .tr-brand{order:0;flex:0 0 100%;justify-content:center}
+  /* .tb2 shells: lockup left; profile, help, actions right as one
+     tight row. .tb2-actions gives up its base margin-left:auto so
+     the free space lands before the profile, not inside the row. */
+  .tb2-brand{order:1}
+  .tb2-id{order:2;margin-left:auto;padding:4px}
+  .tb2-name{display:none}
+  .tb2-help130{order:3}
+  .tb2-actions{order:4;margin-left:0}
+  /* Admin .tr row: same pattern. .tr-right unwraps at this width
+     (Build -130 Part 8), so its icons take orders here too; the
+     Part 8 margins that pushed stats + hamburger apart are zeroed
+     so the right cluster sits tight. */
+  .tr-brand{order:1}
+  .tr-id{order:2;margin-left:auto;padding:4px}
+  .tr-name{display:none}
+  .tr-help126{order:3}
+  .tr-right > button:not(.tr-ev125){order:4;margin-left:0}
+  .tr-ev125{order:5;margin-left:0}
 }
 
 
