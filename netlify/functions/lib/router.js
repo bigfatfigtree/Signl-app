@@ -4800,8 +4800,8 @@ function rejectionEmail(user, reason) {
 // the first request after deploy fires it and no request ever fires
 // it again, even if a send fails midway.
 const RECRUITER_KIT_FLAG_KEY = "config:recruiterKitEmailV1Sent";
-const BADGE_SQUARE_URL = "https://magpielocal.com/assets/badges/signl-founding-creator-badge-square.png";
-const BADGE_PORTRAIT_URL = "https://magpielocal.com/assets/badges/signl-founding-creator-badge-portrait.png";
+const BADGE_SQUARE_URL = "https://magpielocal.com/assets/badges/magpie-founding-creator-badge-square.png";
+const BADGE_PORTRAIT_URL = "https://magpielocal.com/assets/badges/magpie-founding-creator-badge-portrait.png";
 const CREATOR_FILM_URL = "https://magpielocal.com/creators.html";
 
 function recruiterKitEmail(user) {
