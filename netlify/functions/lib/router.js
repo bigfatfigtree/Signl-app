@@ -22110,7 +22110,7 @@ async function route(event) {
         for (const c of rows) {
           const author = c.authorId ? await store.get(`user:${c.authorId}`) : null;
           const approver = c.approvedBy ? await store.get(`user:${c.approvedBy}`) : null;
-          campaigns.push({ id: c.id, subject: c.subject, channel: c.channel || "email", status: c.status, segment: c.segment, templateRefId: c.templateRefId || null, authorName: author ? author.name : null, authorId: c.authorId, approverName: approver ? approver.name : null, recipientCount: Array.isArray(c.recipientIds) ? c.recipientIds.length : null, runAt: c.runAt || null, sentAt: c.sentAt || null, results: c.results || null, createdAt: c.createdAt, changesNote: c.changesNote || null });
+          campaigns.push({ id: c.id, subject: c.subject, channel: c.channel || "email", status: c.status, segment: c.segment, templateRefId: c.templateRefId || null, authorName: author ? author.name : null, authorId: c.authorId, approverName: approver ? approver.name : null, recipientCount: Array.isArray(c.recipientIds) ? c.recipientIds.length : null, runAt: c.runAt || null, sentAt: c.sentAt || null, results: c.results || null, sendProgress: c.sendProgress || null, createdAt: c.createdAt, changesNote: c.changesNote || null });
         }
         const sentTodayTotal = (await campaignSentToday(new Date())) + (await marketingSentToday138(new Date()));
         return json(200, {
