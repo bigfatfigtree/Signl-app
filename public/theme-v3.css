@@ -1367,9 +1367,9 @@ table { max-width: 100%; }
 
 /* Magpie flip — "formerly SIGNL" bridge line (flip package item 4.7; removal is item 5.6:
    delete every .formerly-line span (marked data-bridge="formerly-signl"), unwrap .brand-lockup, drop this block) */
-.brand-lockup{display:inline-flex;flex-direction:column;align-items:flex-start;gap:1px;line-height:1}
-.formerly-line{font-size:9.5px;font-weight:600;letter-spacing:.13em;color:var(--ink3);white-space:nowrap}
-.topbar .formerly-line{color:rgba(255,255,255,.55)}
+.brand-lockup{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px;line-height:1}
+.formerly-line{font-size:11px;font-weight:700;letter-spacing:.16em;color:var(--ink2);white-space:nowrap}
+.topbar .formerly-line{color:rgba(255,255,255,.85)}
 
 
 /* ================= Maggie (2026-11-07): Sig becomes Maggie.
