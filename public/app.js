@@ -4418,6 +4418,122 @@ async function loadSigTopNudges() {
   }).join("");
 }
 
+// ---------- Prompting systems (Build -148, spec §6 + §7) ----------
+// One proactive card under the hero: a campaign idea with named,
+// matched creators for an active business, or the creator's one
+// next step. The server decides everything (triggers, caps,
+// snoozes, evidence gates); this layer only renders the card it
+// is handed and reports the tap back. Nothing true, no card.
+function promptSlotHtml() { return `<div id="prompt-slot"></div>`; }
+async function loadPromptSlot() {
+  const host = document.getElementById("prompt-slot");
+  if (!host || !state.user || state.user.role === "admin") return;
+  let d = null;
+  try { d = await api("GET", "/sig/prompts"); } catch (e) { d = null; }
+  const host2 = document.getElementById("prompt-slot");
+  if (!host2 || !d) return;
+  if (d.campaignPrompt) { host2.innerHTML = campaignPromptHtml(d.campaignPrompt); wireCampaignPrompt(host2, d.campaignPrompt); }
+  else if (d.coaching) { host2.innerHTML = coachingCardHtml(d.coaching); wireCoachingCard(host2, d.coaching); }
+}
+function promptCreatorRowHtml(c) {
+  const initial = esc(String(c.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const pic = c.photoUrl ? `<img class="prompt-pic" src="${esc(c.photoUrl)}" alt="">` : `<span class="prompt-pic prompt-mono" aria-hidden="true">${initial}</span>`;
+  return `<div class="prompt-crow">${pic}<div class="prompt-cmain"><div class="prompt-cname">${esc(c.name || "")}${c.handle ? ` <span class="muted">@${esc(c.handle)}</span>` : ""} <span class="badge info">${c.score} match</span></div><div class="prompt-cwhy">${esc(c.why || "")}</div></div></div>`;
+}
+function campaignPromptHtml(p) {
+  return `<section class="wcard prompt-card" aria-label="Maggie's campaign idea">
+    <div class="prompt-head"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div><div class="prompt-kicker">Maggie has an idea</div><div class="prompt-headline">${esc(p.headline || "")}</div></div></div>
+    <div class="prompt-creators">${(p.creators || []).map(promptCreatorRowHtml).join("")}</div>
+    <p class="small muted" style="margin:10px 0 0">${esc(p.budgetLine || "")}</p>
+    <div class="prompt-actions">
+      <button type="button" class="btn" data-prompt-use>Build this campaign</button>
+      <button type="button" class="btn ghost" data-prompt-others>Show me others</button>
+      <button type="button" class="btn ghost" data-prompt-dismiss>Not this idea</button>
+      <button type="button" class="btn ghost" data-prompt-snooze>Later</button>
+    </div>
+    <p class="small muted" style="margin:8px 0 0">Building it opens the campaign composer with the idea filled in. Nothing is sent or charged until you publish it yourself.</p>
+  </section>`;
+}
+function wireCampaignPrompt(host, p) {
+  const slot = host;
+  const clear = () => { slot.innerHTML = ""; };
+  const q = (sel) => slot.querySelector(sel);
+  const use = q("[data-prompt-use]"); if (use) use.onclick = async () => {
+    use.disabled = true;
+    try {
+      const out = await api("POST", "/sig/prompts/act", { promptId: p.id, action: "use" });
+      const d = (out && out.draft) || {};
+      const sb = (out && out.sourceBrief) || null;
+      state.offerDraft = {
+        title: d.title || "", kind: d.kind || "comp", spots: d.spots != null ? String(d.spots) : "",
+        comped: d.ask || "", briefGoal: d.ask || "",
+        rate: sb && sb.budget ? String(sb.budget) : "", cap: "",
+      };
+      state.promptSourceBrief = sb;
+      state.composerLane = "open";
+      state.offerTarget = null;
+      state.offersSeg = "live";
+      loadCampaignSetup();
+      setTimeout(() => { const c = document.getElementById("offer-composer"); if (c) c.scrollIntoView({ behavior: "smooth" }); }, 60);
+    } catch (e) { use.disabled = false; showToast("That idea is no longer available."); clear(); }
+    return false;
+  };
+  const others = q("[data-prompt-others]"); if (others) others.onclick = async () => {
+    others.disabled = true;
+    try {
+      const out = await api("POST", "/sig/prompts/act", { promptId: p.id, action: "others" });
+      if (out && out.prompt) { slot.innerHTML = campaignPromptHtml(out.prompt); wireCampaignPrompt(slot, out.prompt); }
+      else others.disabled = false;
+    } catch (e) { others.disabled = false; }
+    return false;
+  };
+  const dismiss = q("[data-prompt-dismiss]"); if (dismiss) dismiss.onclick = async () => {
+    dismiss.disabled = true;
+    try { await api("POST", "/sig/prompts/act", { promptId: p.id, action: "dismiss" }); } catch (e) { /* the card clears either way */ }
+    clear();
+    return false;
+  };
+  const snooze = q("[data-prompt-snooze]"); if (snooze) snooze.onclick = async () => {
+    snooze.disabled = true;
+    try { await api("POST", "/sig/prompts/act", { promptId: p.id, action: "snooze" }); } catch (e) { /* the card clears either way */ }
+    clear();
+    return false;
+  };
+}
+const COACH_GO_LABELS = { city: "Set my market", audience: "Add my audience", local: "Add my local %", rate: "Set my rate", categories: "Pick my categories", bestwork: "Link a post", momentum: "See my Momentum" };
+function coachingCardHtml(s) {
+  return `<section class="wcard prompt-card" aria-label="Your next step">
+    <div class="prompt-head"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div><div class="prompt-kicker">Your next step</div><div class="prompt-headline">${esc(s.headline || "")}</div></div></div>
+    <p style="margin:10px 0 0">${esc(s.why || "")}</p>
+    <div class="prompt-actions">
+      <button type="button" class="btn" data-coach-go>${esc(COACH_GO_LABELS[s.target] || "Do it now")}</button>
+      <button type="button" class="btn ghost" data-coach-snooze>Later</button>
+    </div>
+  </section>`;
+}
+function coachGo(target) {
+  if (target === "momentum") { go("dashboard", "Momentum"); return false; }
+  go("dashboard", "Profile");
+  if (target === "city") earnFocusWhenReady(["p-city", "p-city-text"], null, false);
+  else if (target === "audience") earnFocusWhenReady(EARN_STACK_IDS, null, true);
+  else if (target === "local") earnFocusWhenReady(["p-localpct"], null, false);
+  else if (target === "rate") earnScrollWhenReady("lane-controls");
+  else if (target === "categories") earnFocusWhenReady(null, "input[name='p-cat']", false);
+  else if (target === "bestwork") earnFocusWhenReady(EARN_WORK_IDS, null, true);
+  return false;
+}
+function wireCoachingCard(host, s) {
+  const goBtn = host.querySelector("[data-coach-go]");
+  if (goBtn) goBtn.onclick = () => coachGo(s.target);
+  const snooze = host.querySelector("[data-coach-snooze]");
+  if (snooze) snooze.onclick = async () => {
+    snooze.disabled = true;
+    try { await api("POST", "/sig/coaching/act", { action: "snooze" }); } catch (e) { /* the card clears either way */ }
+    host.innerHTML = "";
+    return false;
+  };
+}
+
 // The Ask Sig row (spec §4.1; Build -130: the working box,
 // not a door to the sheet).
 function askSigRowHtml() {
@@ -5851,6 +5967,7 @@ function renderSigTab() {
     <div class="sig-home-chips" id="sig-home-chips"><span class="sig-chip is-quiet">${ST("Loading your numbers…", "Cargando tus números…")}</span></div>
   </div>` : ""}
   <div id="sig-queue-host">${queueHtml}</div>
+  ${state.user && state.user.role !== "admin" ? promptSlotHtml() : ""}
   ${state.user && state.user.role === "business" ? sigBizStartersHtml(state.user) : ""}
   ${state.user && state.user.role === "creator" ? sigCreatorStartersHtml() : ""}
   <div class="sig-chat">
@@ -5874,7 +5991,7 @@ function renderSigTab() {
   ${sigQaFor().map(qa).join("")}`;
   wireSigQueue(el, items, links);
   wireSigThread(el);
-  if (state.user && state.user.role !== "admin") loadSigHome();
+  if (state.user && state.user.role !== "admin") { loadSigHome(); loadPromptSlot(); }
   if (!anyPending && !anyTalk && sigQueueBeat) { const beat = sigQueueBeat; sigQueueBeat = ""; sigHeroSet(beat); }
   else sigHeroSet(anyPending ? "think" : anyTalk ? "talk" : "idle");
   el.querySelectorAll("[data-flow]").forEach((btn) => {
@@ -12207,6 +12324,7 @@ async function loadFoundingDashboard() {
     ${wsHead("Home", { sub: "Start here.", subKey: "cr-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} is building right now, and you're early. We email you as it gets close.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
     ${sigHero137Html(queueItems.length ? queueItems[0].text : "You are on the founding roster.")}
+    ${promptSlotHtml()}
     ${highlights137Html([
       { label: "Momentum", sub: standingLevelName(momPts), value: `${fmtNum(momPts)} pts` },
       { label: "Your local reach", sub: pctSet ? `${p.localAudiencePct}% of your audience is local` : "Add your local % on your profile", value: localReach === null ? "Not set" : fmtNum(localReach) },
@@ -12217,6 +12335,7 @@ async function loadFoundingDashboard() {
     <p class="small" style="margin:10px 2px 0">${listedMarketsLineHtml(card)}</p>`;
     wireSigQueue(el, queueItems.slice(0, 3), []);
     loadSigTopNudges();
+    loadPromptSlot();
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -15341,6 +15460,7 @@ async function loadCreatorHome() {
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}.</div></div>
     ${strikeStatusHtml(u)}
     ${sigHero137Html(brief137)}
+    ${promptSlotHtml()}
     ${highlights137Html([
       { label: "Momentum", sub: momNext ? `${standingLevelName(momPts)} \u00b7 ${fmtNum(momNext - momPts)} pts to ${standingLevelName(momNext)}` : `${standingLevelName(momPts)} \u00b7 top level`, value: `${fmtNum(momPts)} pts` },
       { label: "Visits completed", sub: "Visits you showed up for", value: String(crVisitsDone) },
@@ -15350,6 +15470,7 @@ async function loadCreatorHome() {
     ${nextSteps137Html(q3, caughtLinks)}`;
     wireSigQueue(el, q3, caughtLinks);
     loadSigTopNudges();
+    loadPromptSlot();
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -19400,6 +19521,7 @@ async function loadBusinessHome() {
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line serif-line">${esc(greetLine)}</div></div>
     ${sqNoticeHtml()}
     ${sigHero137Html(briefBiz)}
+    ${promptSlotHtml()}
     ${bizGuideStartersHtml()}
     ${highlights137Html([
       { label: "Creators waiting", sub: "Waiting on your answer", value: String(waiting.length) },
@@ -19412,6 +19534,7 @@ async function loadBusinessHome() {
     </div>`;
     wireSigQueue(el, nq3, caughtLinks);
     loadSigTopNudges();
+    loadPromptSlot();
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -23822,6 +23945,10 @@ async function createOfferV2(e, draft) {
     creatorId: mode === "direct" ? (target || null) : null,
   };
   payload.requiresSpanish = !!d.spanish;
+  // Build -148: an offer composed from a Maggie campaign prompt
+  // carries the prompt's sourceBrief (with promptId) so the
+  // outcome chain prompt -> offer -> bookings joins end-to-end.
+  if (state.promptSourceBrief) payload.sourceBrief = state.promptSourceBrief;
   // Brief Builder + asset packet (Jeff, 2026-10-28): every offer
   // carries the structured brief; the server normalizes it and
   // forces the locked deliverable line. The packet rides when
@@ -23869,6 +23996,7 @@ async function createOfferV2(e, draft) {
     await api("POST", "/offers", payload);
     state.offerDraft = {};
     state.offerTarget = null;
+    state.promptSourceBrief = null;
     refreshBadges();
     // Build -68: a founding save lands on the Drafts segment,
     // where the business sees the draft wearing its opening-day
@@ -28764,7 +28892,7 @@ async function astOpenSuggestionIdx(i) {
 // The Data view: the audit's datasets, rendered from
 // /admin/stats/data. Event-sourced numbers always carry the
 // day their capture began; nothing here backfills.
-const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "suggestions", "match_impressions", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "outreach", "outside_prospects", "events"];
+const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "suggestions", "match_impressions", "campaign_prompts", "creator_steps", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "outreach", "outside_prospects", "events"];
 async function astLoadData() {
   const host = document.getElementById("ast-data");
   if (!host) return;
@@ -28857,6 +28985,26 @@ async function astLoadData() {
   ${ob.total ? `<p class="small" style="margin:4px 0 0"><strong>Bounces:</strong> ${bounceLine} (from delivery notices — the authoritative source, not Sent copies).</p>` : ""}
   ${ofm.imported ? `<p class="small" style="margin:4px 0 0"><strong>Site forms:</strong> ${astFull(ofm.cityRequests || 0)} city request${ofm.cityRequests === 1 ? "" : "s"} and ${astFull(ofm.businessApplications || 0)} business application${ofm.businessApplications === 1 ? "" : "s"} now land in the backlog and application records above${ofm.since ? `, captured from ${esc(ofm.since)}` : ""}.</p>` : ""}
   ${(op.byMarket || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>Prospect universe by market</strong> (verified from rosters · contacted by outreach · signed up):</p>${op.byMarket.map((r) => `<div class="kv"><span>${esc(r.market)}</span><b>${astFull(r.verified || 0)} verified · ${astFull(r.contacted || 0)} contacted · ${astFull(r.joined || 0)} signed up</b></div>`).join("")}` : `<p class="small muted" style="margin:8px 0 0">No prospects imported yet.</p>`}
+  </div>`;
+  }
+  // Prompting systems (Build -148): Maggie's campaign prompts to
+  // businesses and the creator coaching ladder — shown / used /
+  // dismissed from the event log, plus the LIVE ladder-step
+  // distribution over approved creators.
+  const pr = d.prompting || null;
+  if (pr) {
+    const pc = pr.campaign || {};
+    const pco = pr.coaching || {};
+    const trigLine = Object.entries(pc.byTrigger || {}).map(([k, v]) => `${esc(k.replace(/_/g, " "))} ${astFull(v)}`).join(" · ");
+    const famLine = Object.entries(pc.byFamily || {}).map(([k, v]) => `${esc(k)} ${astFull(v)}`).join(" · ");
+    const distRows = Object.entries(pco.distribution || {}).map(([k, v]) => `<div class="kv"><span>Stuck at: ${esc(k)}</span><b>${astFull(v)} creator${v === 1 ? "" : "s"}</b></div>`).join("");
+    html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Maggie's prompts — campaigns &amp; coaching</h3>
+  <p class="small muted" style="margin:0 0 8px">Proactive prompts from the last ${d.rangeDays} days. Campaign prompts go to active businesses only (one active card, at most two a week, family snoozed 30 days on a dismissal). Coaching walks each creator one step at a time; the distribution below is computed live.</p>
+  <div class="stat-band" style="margin:0 0 6px">${cell(astFull(pc.shown || 0), "Campaign prompts shown")}${cell(astFull(pc.used || 0), "Prompt actions: used")}${cell(astFull(pc.offersCreated || 0), "Offers created from prompts")}${cell(astFull(pc.dismissed || 0), "Dismissed")}${cell(astFull(pc.snoozed || 0), "Snoozed (later)")}${cell(astFull(pc.expired || 0), "Expired unanswered")}</div>
+  ${trigLine ? `<p class="small" style="margin:8px 0 0"><strong>By trigger:</strong> ${trigLine}</p>` : ""}
+  ${famLine ? `<p class="small" style="margin:4px 0 0"><strong>By family:</strong> ${famLine}</p>` : ""}
+  <div class="stat-band" style="margin:12px 0 6px">${cell(astFull(pco.offered || 0), "Coaching steps offered")}${cell(astFull(pco.done || 0), "Steps completed")}${cell(astFull(pco.snoozed || 0), "Steps snoozed")}${cell(pco.completionRate == null ? "—" : pco.completionRate + "%", "Step completion rate")}${cell(astFull(pco.ladderComplete || 0), "Creators ladder-complete")}${cell(astFull(pco.creatorsTracked || 0), "Approved creators tracked")}</div>
+  ${distRows ? `<p class="small" style="margin:8px 0 4px"><strong>Where creators are stuck right now:</strong></p>${distRows}` : `<p class="small muted" style="margin:8px 0 0">No creator is mid-ladder right now.</p>`}
   </div>`;
   }
   // Snapshot trend.

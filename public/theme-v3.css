@@ -1629,3 +1629,18 @@ img.maggie-char-img { object-fit: cover; }
 .dcard-match-why { font-size: .8rem; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .offer-matches { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
 .offer-matches-head { margin-bottom: 10px; }
+
+/* Build -148: Maggie's proactive cards (campaign prompt + creator next step) */
+.prompt-card { text-align: left; }
+.prompt-head { display: flex; gap: 12px; align-items: flex-start; }
+.prompt-head .sig-turn-ava { flex: 0 0 auto; margin-top: 2px; }
+.prompt-kicker { font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); }
+.prompt-headline { font-size: 1.02rem; font-weight: 700; line-height: 1.35; margin-top: 2px; }
+.prompt-creators { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.prompt-crow { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
+.prompt-pic { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; background: var(--line); }
+.prompt-mono { display: inline-flex; align-items: center; justify-content: center; font-weight: 800; color: var(--ink2); }
+.prompt-cmain { min-width: 0; }
+.prompt-cname { font-weight: 700; font-size: .95rem; }
+.prompt-cwhy { font-size: .86rem; color: var(--ink2); line-height: 1.35; }
+.prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }

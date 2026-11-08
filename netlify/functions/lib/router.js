@@ -1100,6 +1100,8 @@ function formFieldsFromNetlify(formType, data) {
 // because the log is keyed by day; record datasets are whole.
 const EXPORT_EVENT_TYPES = {
   match_impressions: ["match_impression"],
+  campaign_prompts: ["campaign_prompt_shown", "campaign_prompt_used", "campaign_prompt_dismissed", "campaign_prompt_snoozed", "campaign_prompt_expired"],
+  creator_steps: ["creator_step_offered", "creator_step_done", "creator_step_snoozed"],
   discover_searches: ["discover_search"],
   sig_asks: ["sig_ask"],
   deck_actions: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"],
@@ -1145,6 +1147,608 @@ function exportRowsToCsv(rows) {
   for (const r of rows) for (const k of Object.keys(r)) if (!cols.includes(k)) cols.push(k);
   const cell = (v) => csvCell(v != null && typeof v === "object" ? JSON.stringify(v) : v);
   return [cols.join(","), ...rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n");
+}
+
+// ---------- Build -148: prompting systems (data program step 4) ----------
+// Spec: data-unification-decision-layer-spec §6 (Maggie's proactive
+// business campaign prompts) + §7 (creator success coaching ladder).
+// Both systems are MECHANICAL: triggers, briefs, creators, scores
+// and why-lines all come from real records and the match engine;
+// the LLM may only rephrase returned fields (maggiePhrase, the
+// -146 token-validated discipline). Nothing here invents a result,
+// a statistic, or a moment. Payments stay OFF: a prompt's "use"
+// path opens the existing offer composer and nothing else.
+//
+// --- Business campaign prompts ---
+// Records: campaignprompt:{id} (one card) + promptstate:{bizId}
+// (caps, snoozes, silence, weekly log). Events: campaign_prompt_
+// shown / _used / _dismissed / _snoozed / _expired; a published
+// offer created from a prompt carries sourceBrief.promptId so the
+// chain prompt -> offer -> applications -> bookings joins.
+const PROMPT_MIN_CREATORS = 2;        // spec: fewer than 2 qualifying creators = no prompt, never pad
+const PROMPT_QUALIFYING_SCORE = 55;   // match score floor for a named creator
+const PROMPT_WEEK_CAP = 2;            // spec: at most 2 prompts per business per week
+const PROMPT_FAMILY_SNOOZE_DAYS = 30; // spec: dismissal snoozes that family 30 days
+const PROMPT_SILENCE_DAYS = 14;       // spec: two consecutive dismissals silence prompting 14 days
+const PROMPT_LATER_HIDE_DAYS = 7;     // "Later" hides this one prompt for 7 days
+const PROMPT_TTL_DAYS = 7;            // an unanswered prompt expires after 7 days
+const PROMPT_NEW_BIZ_DAYS = 3;        // spec trigger 1: approved >= 3 days with zero offers
+
+// Template families (spec §6): each family owns its structure —
+// brief skeleton (kind, spots, offer title, what the visit asks)
+// and belongs to one or more business categories. The brief
+// categories come from CATEGORY_FIT at generation time, so the
+// match engine does the creator picking.
+const PROMPT_FAMILIES = {
+  "new-menu": { label: "New menu moment", title: "New menu tasting", kind: "comp", spots: 3, ask: "Come in, try what's new on the menu, and post about it.", cats: ["Restaurant", "Coffee & Bakery"] },
+  "weekend-rush": { label: "Weekend rush", title: "Weekend visit", kind: "comp", spots: 3, ask: "Visit this weekend and post about the experience.", cats: ["Restaurant", "Retail", "Attraction"] },
+  "ugc-pack": { label: "Content pack", title: "Photos and clips for our page", kind: "paid", spots: 2, ask: "Visit, shoot photos and short clips, and hand them over for our own channels too.", cats: ["Restaurant", "Bar", "Coffee & Bakery", "Salon & Barbershop", "Fitness Studio", "Retail", "Attraction", "Local Services", "Other"] },
+  "event-night": { label: "Event night", title: "Event night visit", kind: "comp", spots: 3, ask: "Come to our event night and post about it.", cats: ["Bar", "Attraction"] },
+  "date-night": { label: "Date night", title: "Date night for two", kind: "comp", spots: 2, ask: "Bring a plus-one for a date night and post about it.", cats: ["Restaurant", "Bar", "Attraction"] },
+  "before-after": { label: "Before and after", title: "Before-and-after series", kind: "comp", spots: 2, ask: "Show the before and after: a post series of the transformation.", cats: ["Salon & Barbershop", "Local Services"] },
+  "new-service": { label: "New service", title: "New service try-out", kind: "comp", spots: 2, ask: "Try our newest service and post about how it went.", cats: ["Salon & Barbershop", "Local Services", "Fitness Studio"] },
+  "class-launch": { label: "Class launch", title: "New class try-out", kind: "comp", spots: 3, ask: "Take the new class and post about it.", cats: ["Fitness Studio"] },
+  "challenge-week": { label: "Challenge week", title: "Challenge week pass", kind: "comp", spots: 3, ask: "Join the challenge week and post along the way.", cats: ["Fitness Studio"] },
+  "morning-crowd": { label: "Morning crowd", title: "Morning visit", kind: "comp", spots: 3, ask: "Come by in the morning rush and post about it.", cats: ["Coffee & Bakery"] },
+  "new-arrivals": { label: "New arrivals", title: "New arrivals first look", kind: "comp", spots: 2, ask: "Come see what's new in store and post your first look.", cats: ["Retail"] },
+  "first-visit": { label: "First visit", title: "A visit worth posting about", kind: "comp", spots: 3, ask: "Come in for a visit and post about the experience.", cats: ["Other"] },
+};
+function promptFamiliesFor(bizCategory) {
+  return Object.entries(PROMPT_FAMILIES).filter(([, f]) => (f.cats || []).includes(bizCategory)).map(([id, f]) => ({ id, ...f }));
+}
+// Seasonal / local moments (spec §6 trigger 4): a SMALL, FIXED
+// calendar table in code — generic seasons only, never a named
+// school, holiday date, or event the model invented. Jeff
+// approves per-market moments before this table grows; until
+// then these are the only moments a prompt may cite.
+const PROMPT_SEASONS = [
+  { id: "valentines", from: [1, 15], to: [2, 14], label: "Valentine's season", prefer: ["date-night", "new-menu", "before-after"] },
+  { id: "mothers-day", from: [4, 20], to: [5, 10], label: "Mother's Day season", prefer: ["new-menu", "before-after", "new-arrivals"] },
+  { id: "summer-start", from: [5, 20], to: [6, 30], label: "Summer crowds season", prefer: ["weekend-rush", "event-night", "morning-crowd"] },
+  { id: "back-to-school", from: [7, 20], to: [8, 31], label: "Back-to-school season", prefer: ["challenge-week", "new-arrivals", "class-launch"] },
+  { id: "halloween", from: [10, 1], to: [10, 31], label: "Halloween season", prefer: ["event-night", "weekend-rush"] },
+  { id: "holidays", from: [11, 20], to: [12, 24], label: "Holiday season", prefer: ["ugc-pack", "new-menu", "new-arrivals"] },
+  { id: "new-year", from: [12, 26], to: [1, 15], label: "New year season", prefer: ["class-launch", "challenge-week", "new-service"] },
+];
+function promptSeasonNow(now) {
+  const d = new Date(now);
+  const md = (d.getMonth() + 1) * 100 + d.getDate();
+  for (const s of PROMPT_SEASONS) {
+    const from = s.from[0] * 100 + s.from[1];
+    const to = s.to[0] * 100 + s.to[1];
+    const hit = from <= to ? (md >= from && md <= to) : (md >= from || md <= to);
+    if (hit) return s;
+  }
+  return null;
+}
+async function promptStateFor(businessId) {
+  const s = await store.get(`promptstate:${businessId}`);
+  return s && typeof s === "object" ? s : { businessId, activePromptId: null, familyDismissedUntil: {}, snoozedUntil: null, silencedUntil: null, dismissStreak: 0, weekLog: [], lastShownAt: null };
+}
+async function savePromptState(s) { await store.set(`promptstate:${s.businessId}`, s); }
+function promptWeekCount(state, now) {
+  const weekAgo = now - 7 * 86400000;
+  return (state.weekLog || []).filter((t) => t > weekAgo).length;
+}
+// The brief a prompt runs: synthesized from the business record
+// + the family skeleton (spec §6 generation). Budget for a paid
+// skeleton is the cell median creator rate when the cell supports
+// one (n >= 3), so scores and the budget line read real numbers.
+function promptBriefFor(bizUser, family, medianRate) {
+  const biz = bizUser.business || {};
+  const fit = CATEGORY_FIT[biz.category] || { primary: [], adjacent: [] };
+  return {
+    market: bizUser.market || null,
+    category: biz.category || null,
+    categoryKind: "business",
+    kind: family.kind,
+    budget: family.kind === "paid" ? (medianRate || null) : null,
+    categories: fit.primary,
+  };
+}
+function promptWhyLine(card) {
+  const reasons = (card && card.matchReasons) || (card && card.match && card.match.reasons) || [];
+  return reasons[0] || "On the roster in your market";
+}
+// Budget shape from real cell data (spec §6): the listed rates of
+// bookable creators in the business's market x its primary creator
+// category. Shown as a range, labeled as listed rates — never a
+// promise of results.
+async function promptRateCell(bizUser) {
+  const biz = bizUser.business || {};
+  const fit = CATEGORY_FIT[biz.category] || { primary: [], adjacent: [] };
+  const primaries = fit.primary || [];
+  if (!primaries.length || !bizUser.market) return { n: 0, median: null, p25: null, p75: null };
+  const users = await allUsers();
+  const rates = users
+    .filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u) && isListedInMarket(u, bizUser.market) && (u.creator.categories || []).some((c) => primaries.includes(c)) && Number(u.creator.paidRate) > 0)
+    .map((u) => Number(u.creator.paidRate)).sort((a, b) => a - b);
+  if (!rates.length) return { n: 0, median: null, p25: null, p75: null };
+  const pick = (q) => rates[Math.min(rates.length - 1, Math.max(0, Math.floor(q * rates.length)))];
+  return { n: rates.length, median: pick(0.5), p25: pick(0.25), p75: pick(0.75) };
+}
+// Run the briefed discover for a prompt and keep the qualifying
+// band: score >= floor, top `limit`. suppressMatchImpression:
+// the campaign_prompt_shown event IS this prompt's impression
+// record, labeled with its trigger — no double counting.
+async function promptQualifyingCreators(biz, brief, excludeIds, floor, limit) {
+  const res = await discoverCards({}, biz, { brief, suppressMatchImpression: true });
+  const exclude = new Set(excludeIds || []);
+  return (res.creators || [])
+    .filter((c) => c.matchScore != null && c.matchScore >= floor && !exclude.has(c.userId))
+    .sort((a, b) => b.matchScore - a.matchScore)
+    .slice(0, limit || 3)
+    .map((c) => ({ userId: c.userId, name: c.name, handle: c.handle || null, photoUrl: c.photoUrl || null, score: c.matchScore, why: promptWhyLine(c) }));
+}
+// Trigger evaluation (spec §6). Returns the first firing trigger
+// in priority order, or null. All reads are the business's own
+// real records; "starving" compares against the market median
+// applications per open offer in the same business category.
+async function promptTriggerFor(biz, state, now) {
+  const bizId = biz.id;
+  const myOffers = (await allOffers()).filter((o) => o.businessId === bizId);
+  // Trigger 1 (highest value per spec): approved >= 3 days, zero offers.
+  const approvedAt = Date.parse(biz.approvedAt || biz.createdAt || "");
+  if (myOffers.length === 0 && Number.isFinite(approvedAt) && now - approvedAt >= PROMPT_NEW_BIZ_DAYS * 86400000) return { trigger: "new_business" };
+  // Trigger 3: a live offer is starving.
+  const openOffers = myOffers.filter((o) => o.status === "open" && o.publishedAt && now - Date.parse(o.publishedAt) >= 4 * 86400000);
+  if (openOffers.length) {
+    const apps = await allApplications();
+    const appsFor = (oid) => apps.filter((a) => a.offerId === oid && a.status !== "withdrawn").length;
+    const marketOpen = (await allOffers()).filter((o) => o.status === "open" && normalizeMarketName(o.market) === normalizeMarketName(biz.market) && o.category === biz.business.category);
+    const counts = marketOpen.map((o) => appsFor(o.id)).sort((a, b) => a - b);
+    const median = counts.length ? counts[Math.floor(counts.length / 2)] : 0;
+    for (const o of openOffers) {
+      const n = appsFor(o.id);
+      if ((median >= 1 && n === 0) || (median >= 2 && n < median * 0.5)) return { trigger: "starving_offer", offerId: o.id, offerTitle: o.title || "Your offer" };
+    }
+  }
+  // Trigger 5: repeat success — a past booking delivered on time
+  // (its post carries onTime); the prompt is built from
+  // lookalikes of that creator.
+  const bookings = (await allBookings()).filter((b) => b.businessId === bizId && b.post && b.redeemedAt);
+  const delivered = bookings.filter((b) => b.post.onTime === true);
+  if (delivered.length) {
+    const last = delivered.sort((a, b) => String(b.redeemedAt || "").localeCompare(String(a.redeemedAt || "")))[0];
+    return { trigger: "repeat_success", creatorId: last.creatorId, creatorName: last.creatorName || "A creator" };
+  }
+  // Trigger 2: a strong new creator approved in the last 7 days.
+  const users = await allUsers();
+  const fresh = users.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && u.approvedAt && now - Date.parse(u.approvedAt) <= 7 * 86400000 && isListedInMarket(u, biz.market));
+  if (fresh.length) return { trigger: "new_creator", freshIds: fresh.map((u) => u.id) };
+  // Trigger 4: a seasonal moment from the fixed table.
+  const season = promptSeasonNow(now);
+  if (season) return { trigger: "seasonal", season };
+  return null;
+}
+// Compute (or return) the business's one active campaign prompt.
+// Returns the prompt record or null when any gate closes: not an
+// active business, profile basics incomplete, a waiting decision,
+// silenced / snoozed, weekly cap reached, or fewer than
+// PROMPT_MIN_CREATORS qualifying creators for every candidate.
+async function currentCampaignPrompt(bizUser, opts) {
+  const now = Date.now();
+  const biz = bizUser.business || {};
+  if (bizUser.role !== "business" || bizUser.status !== "approved" || isFoundingBusiness(bizUser)) return null;
+  if (!(biz.businessName && biz.category && biz.about)) return null; // profile basics first
+  const state = await promptStateFor(bizUser.id);
+  // An existing active prompt rides until it is answered or expires.
+  if (state.activePromptId) {
+    const existing = await store.get(`campaignprompt:${state.activePromptId}`);
+    if (existing && existing.status === "shown") {
+      if (now - Date.parse(existing.createdAt) > PROMPT_TTL_DAYS * 86400000) {
+        existing.status = "expired"; existing.expiredAt = new Date(now).toISOString();
+        await store.set(`campaignprompt:${existing.id}`, existing);
+        await logCapture({ type: "campaign_prompt_expired", actorId: bizUser.id, actorRole: "business", subjectId: existing.id, market: bizUser.market, data: { promptId: existing.id, trigger: existing.trigger, family: existing.family } });
+        state.activePromptId = null; await savePromptState(state);
+      } else if (state.snoozedUntil && Date.parse(state.snoozedUntil) > now && state.snoozedPromptId === existing.id) {
+        return null; // "Later" hid this one; it stays the active record
+      } else return existing;
+    } else { state.activePromptId = null; await savePromptState(state); }
+  }
+  if (state.silencedUntil && Date.parse(state.silencedUntil) > now) return null;
+  if (promptWeekCount(state, now) >= PROMPT_WEEK_CAP) return null;
+  // No prompt while the business has a waiting decision.
+  const apps = await allApplications();
+  if (apps.some((a) => a.businessId === bizUser.id && (a.status === "applied" || a.status === "backfill_offered"))) return null;
+  const fired = await promptTriggerFor(bizUser, state, now);
+  if (!fired) return null;
+  const families = promptFamiliesFor(biz.category);
+  if (!families.length) return null;
+  const famSnoozed = (fid) => state.familyDismissedUntil && state.familyDismissedUntil[fid] && Date.parse(state.familyDismissedUntil[fid]) > now;
+  let ordered = families.slice();
+  if (fired.trigger === "seasonal" && fired.season) {
+    const pref = fired.season.prefer.map((id) => families.find((f) => f.id === id)).filter(Boolean);
+    ordered = [...pref, ...families.filter((f) => !pref.includes(f))];
+  }
+  if (fired.trigger === "repeat_success") {
+    const ugc = families.find((f) => f.id === "ugc-pack");
+    if (ugc) ordered = [ugc, ...families.filter((f) => f.id !== "ugc-pack")];
+  }
+  ordered = ordered.filter((f) => !famSnoozed(f.id));
+  if (!ordered.length) return null;
+  const rateCell = await promptRateCell(bizUser);
+  const marketTalk = marketTalkName(bizUser.market);
+  for (const family of ordered) {
+    // Budget shape rule (spec §6): a paid skeleton needs a real
+    // cell median (n >= 3) or the family runs comp-first.
+    const fam = { ...family };
+    if (fam.kind === "paid" && !(rateCell.n >= 3 && rateCell.median)) fam.kind = "comp";
+    const brief = promptBriefFor(bizUser, fam, rateCell.median);
+    let creators = await promptQualifyingCreators(bizUser, brief, null, PROMPT_QUALIFYING_SCORE, 3);
+    if (fired.trigger === "new_creator") {
+      // The new creator must be IN the qualifying set, top band.
+      const strong = creators.filter((c) => (fired.freshIds || []).includes(c.userId) && c.score >= 70);
+      if (!strong.length) continue;
+    }
+    if (fired.trigger === "starving_offer") {
+      const offer = await store.get(`offer:${fired.offerId}`);
+      if (offer) {
+        const ob = { market: offer.market, category: offer.category, categoryKind: "business", kind: kindOf(offer), budget: kindOf(offer) === "paid" ? (Number(offer.cashRate) || null) : null, categories: (CATEGORY_FIT[offer.category] || {}).primary || [] };
+        creators = await promptQualifyingCreators(bizUser, ob, null, PROMPT_QUALIFYING_SCORE, 3);
+      }
+    }
+    if (creators.length < PROMPT_MIN_CREATORS) continue;
+    const id = `prompt_${crypto.randomUUID().slice(0, 8)}`;
+    const headline = promptHeadline(fired, fam, bizUser, marketTalk);
+    const budgetLine = fam.kind === "paid"
+      ? (rateCell.n >= 3 ? `Creators like these list $${rateCell.p25}–$${rateCell.p75} for a visit like this (median $${rateCell.median}). Listed rates — you pick the final number in the composer.` : "You set the rate in the composer; creators see it before they apply.")
+      : "This one runs on a comped visit: the experience is the payment, plus one post and one story from each creator.";
+    const record = {
+      id, businessId: bizUser.id, trigger: fired.trigger, family: fam.id, familyLabel: fam.label,
+      brief, creators, budgetLine, headline,
+      draft: { title: fam.title, kind: fam.kind, spots: fam.spots, ask: fam.ask, category: biz.category },
+      sourceBrief: { source: "maggie-prompt", promptId: id, market: brief.market, category: brief.category, kind: fam.kind, budget: brief.budget },
+      createdAt: new Date(now).toISOString(), status: "shown", offerId: null,
+      ...(fired.offerId ? { starvingOfferId: fired.offerId } : {}),
+      ...(fired.season ? { seasonId: fired.season.id } : {}),
+    };
+    // LLM phrasing: headline + why-lines only, from returned
+    // fields, token-validated (the -146 discipline). Any doubt
+    // keeps the template text.
+    try {
+      const cfg = maggieAi.maggieAiConfig();
+      if (cfg) {
+        const lines = [record.headline, ...creators.map((c) => c.why)];
+        const phrased = await maggieAi.maggiePhrase(cfg, lines);
+        if (Array.isArray(phrased) && phrased.length === lines.length) {
+          record.headline = phrased[0];
+          record.creators = creators.map((c, i) => ({ ...c, why: phrased[i + 1] }));
+          record.phrased = true;
+        }
+      }
+    } catch (e) { /* phrasing never blocks a prompt */ }
+    await store.set(`campaignprompt:${id}`, record);
+    state.activePromptId = id;
+    state.weekLog = [...(state.weekLog || []).filter((t) => t > now - 7 * 86400000), now];
+    state.lastShownAt = new Date(now).toISOString();
+    await savePromptState(state);
+    await logCapture({ type: "campaign_prompt_shown", actorId: bizUser.id, actorRole: "business", subjectId: id, market: bizUser.market, data: { promptId: id, trigger: fired.trigger, family: fam.id, creatorIds: creators.map((c) => c.userId), scores: creators.map((c) => c.score) } });
+    return record;
+  }
+  return null;
+}
+function promptHeadline(fired, family, bizUser, marketTalk) {
+  const bizName = (bizUser.business && bizUser.business.businessName) || "your business";
+  switch (fired.trigger) {
+    case "new_business": return `Ready for your first campaign in ${marketTalk}? ${family.label} is an easy first one.`;
+    case "starving_offer": return `"${fired.offerTitle || "Your offer"}" is live but quiet. These creators fit it — a direct invite can move it.`;
+    case "repeat_success": return `${fired.creatorName || "A creator"} delivered for you before. Here is a next one in the same spirit.`;
+    case "new_creator": return `A strong new creator just joined in ${marketTalk}, and they fit ${bizName}.`;
+    case "seasonal": return `${(fired.season && fired.season.label) || "A busy season"} is coming to ${marketTalk} — a good moment for ${family.label.toLowerCase()}.`;
+    default: return `An idea for ${bizName}: ${family.label.toLowerCase()} with creators who fit.`;
+  }
+}
+// "Show me others": re-run the same brief one band down, excluding
+// the creators already shown. Fewer than 2 in the lower band
+// leaves the card exactly as it was.
+async function promptOthers(record) {
+  const bizUser = await store.get(`user:${record.businessId}`);
+  if (!bizUser) return record;
+  const more = await promptQualifyingCreators(bizUser, record.brief, record.creators.map((c) => c.userId), 45, 3);
+  if (more.length >= PROMPT_MIN_CREATORS) {
+    record.creators = more;
+    record.othersShown = (record.othersShown || 0) + 1;
+    await store.set(`campaignprompt:${record.id}`, record);
+  }
+  return record;
+}
+async function promptAct(bizUser, promptId, action) {
+  const record = await store.get(`campaignprompt:${promptId}`);
+  if (!record || record.businessId !== bizUser.id) return { error: "That idea is no longer here.", status: 404 };
+  const state = await promptStateFor(bizUser.id);
+  const now = Date.now();
+  if (action === "others") {
+    if (record.status !== "shown") return { error: "That idea is no longer active.", status: 409 };
+    const updated = await promptOthers(record);
+    return { prompt: campaignPromptView(updated) };
+  }
+  if (action === "use") {
+    if (record.status !== "shown") return { error: "That idea is no longer active.", status: 409 };
+    await logCapture({ type: "campaign_prompt_used", actorId: bizUser.id, actorRole: "business", subjectId: record.id, market: bizUser.market, data: { promptId: record.id, stage: "composer_opened", family: record.family, trigger: record.trigger } });
+    state.dismissStreak = 0;
+    await savePromptState(state);
+    // The record stays "shown" until the offer actually exists;
+    // POST /offers closes the chain via sourceBrief.promptId.
+    return { prompt: campaignPromptView(record), draft: record.draft, sourceBrief: record.sourceBrief };
+  }
+  if (action === "dismiss") {
+    record.status = "dismissed"; record.dismissedAt = new Date(now).toISOString();
+    await store.set(`campaignprompt:${record.id}`, record);
+    state.familyDismissedUntil = state.familyDismissedUntil || {};
+    state.familyDismissedUntil[record.family] = new Date(now + PROMPT_FAMILY_SNOOZE_DAYS * 86400000).toISOString();
+    state.dismissStreak = (state.dismissStreak || 0) + 1;
+    if (state.dismissStreak >= 2) { state.silencedUntil = new Date(now + PROMPT_SILENCE_DAYS * 86400000).toISOString(); state.dismissStreak = 0; }
+    if (state.activePromptId === record.id) state.activePromptId = null;
+    await savePromptState(state);
+    await logCapture({ type: "campaign_prompt_dismissed", actorId: bizUser.id, actorRole: "business", subjectId: record.id, market: bizUser.market, data: { promptId: record.id, family: record.family, trigger: record.trigger, silencedDays: state.silencedUntil && Date.parse(state.silencedUntil) > now ? PROMPT_SILENCE_DAYS : 0 } });
+    return { ok: true };
+  }
+  if (action === "snooze") {
+    state.snoozedUntil = new Date(now + PROMPT_LATER_HIDE_DAYS * 86400000).toISOString();
+    state.snoozedPromptId = record.id;
+    state.dismissStreak = 0;
+    await savePromptState(state);
+    await logCapture({ type: "campaign_prompt_snoozed", actorId: bizUser.id, actorRole: "business", subjectId: record.id, market: bizUser.market, data: { promptId: record.id, family: record.family, days: PROMPT_LATER_HIDE_DAYS } });
+    return { ok: true };
+  }
+  return { error: "Unknown action.", status: 400 };
+}
+// Called from POST /offers (and deal materialization) when a
+// created offer carries sourceBrief.promptId: closes the chain.
+async function linkPromptToOffer(promptId, offer, actor) {
+  if (!promptId || !offer) return;
+  const record = await store.get(`campaignprompt:${promptId}`);
+  if (!record || record.businessId !== offer.businessId) return;
+  record.status = "used"; record.offerId = offer.id; record.usedAt = new Date().toISOString();
+  await store.set(`campaignprompt:${record.id}`, record);
+  const state = await promptStateFor(record.businessId);
+  if (state.activePromptId === record.id) { state.activePromptId = null; await savePromptState(state); }
+  await logCapture({ type: "campaign_prompt_used", actorId: actor && actor.id, actorRole: "business", subjectId: record.id, market: offer.market, data: { promptId: record.id, offerId: offer.id, stage: "offer_created", family: record.family, trigger: record.trigger } });
+}
+function campaignPromptView(r) {
+  if (!r) return null;
+  return { id: r.id, trigger: r.trigger, family: r.family, familyLabel: r.familyLabel, headline: r.headline, budgetLine: r.budgetLine, creators: (r.creators || []).map((c) => ({ userId: c.userId, name: c.name, handle: c.handle, photoUrl: c.photoUrl, score: c.score, why: c.why })), draft: r.draft, createdAt: r.createdAt };
+}
+
+// --- Creator coaching ladder (spec §7) ---
+// Successor to the -143 greeting embryo: ONE next step at a time,
+// detected from the system's own records (profile fields, the
+// audience stack, posts) — never new user effort. State lives in
+// coachstate:{userId}; events creator_step_offered / _done /
+// _snoozed. A step's why-line may cite a pick-rate statistic ONLY
+// when the market x category cell clears the evidence gate below;
+// otherwise the why stays generic-true and cites nothing.
+const COACH_SNOOZE_DAYS = 3; // spec: a "later" snoozes the step 3 days
+const COACH_EVIDENCE_MIN_SHOWN = 30;  // impressions in the cell, last 90d
+const COACH_EVIDENCE_MIN_ARM = 10;    // impressions per arm (with / without the trait)
+const COACH_EVIDENCE_MIN_RATIO = 1.2; // with-trait pick rate must beat without-trait by >= 1.2x
+const COACH_PLATFORM_PRIORITY = ["instagram", "tiktok", "youtube", "facebook", "x", "threads", "snapchat", "twitch", "linkedin", "pinterest", "reddit", "kick", "bluesky", "discord", "spotify", "patreon", "substack"];
+// The ladder (spec §7 order): market -> biggest missing platform
+// -> local % -> rate -> categories -> first post. `done(user, ctx)`
+// reads the creator's own records; `target` is the earn deep-link
+// id the client already knows how to run.
+function coachLadderSteps() {
+  return [
+    { type: "market", done: (u) => !!marketByName(u.market || u.city), headline: (u) => "Set your home market", why: () => "Businesses find you by market first. With no market set, you do not show up in any city's roster.", target: "city" },
+    { type: "platform", done: (u) => coachMissingPlatform(u) === null, headline: (u) => { const p = coachMissingPlatform(u); return p ? `Add your ${PLATFORM_LABELS[p] || p} audience` : "Add another platform audience"; }, why: () => "Every platform you add stacks into one total audience — and a bigger total is what businesses see first.", target: "audience" },
+    { type: "local", done: (u) => { const c = u.creator || {}; return c.localAudiencePct !== null && c.localAudiencePct !== undefined; }, headline: () => "Add your local audience %", why: () => "Your local % is the number this platform ranks on. Businesses nearby see it before your follower count.", target: "local" },
+    { type: "rate", done: (u) => Number((u.creator || {}).paidRate) > 0, headline: () => "Set your paid rate", why: () => "Businesses can only book a rate that is listed. No rate set means paid bookings cannot start with you.", target: "rate", evidence: "rate" },
+    { type: "categories", done: (u) => ((u.creator || {}).categories || []).length >= 2, headline: () => "Add a second thing you create", why: () => "Each category you pick is another kind of business that can find you. One category means one kind of offer.", target: "categories" },
+    { type: "firstpost", done: (u, ctx) => ctx.hasPost, headline: () => "Link your first post", why: () => "Businesses look at your work before they pick. One linked post gives them something real to go on.", target: "bestwork" },
+  ];
+}
+// The biggest missing platform: prefer a platform the creator
+// already linked (link present, no count) — that count is one tap
+// from existing — else the highest-priority platform with neither.
+function coachMissingPlatform(u) {
+  const c = (u && u.creator) || {};
+  const stack = audienceStackOf(c);
+  const links = platformLinksOf(c);
+  const linkedNoCount = COACH_PLATFORM_PRIORITY.filter((p) => links[p] && !stack[p]);
+  if (linkedNoCount.length) return linkedNoCount[0];
+  const missing = COACH_PLATFORM_PRIORITY.filter((p) => !stack[p]);
+  // "Done" for the ladder means: at least the top-3 priority
+  // platforms are counted, or every linked platform is counted.
+  const topCounted = ["instagram", "tiktok", "youtube"].every((p) => stack[p]);
+  if (topCounted) return null;
+  return missing[0] || null;
+}
+// The evidence gate (spec §7): a trait claim may be made only
+// when the creator's market x primary-category cell has enough
+// impression->pick history. Reads match_impression events (90d)
+// and joins picks through applications. Returns { ratio } when
+// the gate clears for the "rate" trait, else null.
+async function coachRateEvidence(user) {
+  const c = (user && user.creator) || {};
+  const market = normalizeMarketName(user.market || user.city);
+  const cat = (c.categories || [])[0];
+  if (!market || !cat) return null;
+  const events = await eventsInRange(90, 90);
+  // Impressions are per-brief events carrying a `shown` list of
+  // { creatorId, score, parts }. The cell = this market, briefs
+  // whose category resolves to the creator's primary category.
+  // Only campaign briefs (subjectId = the offer) can join to a
+  // pick, so only those rows count.
+  const briefInCell = (b) => {
+    if (!b || !b.category) return false;
+    if (b.categoryKind === "creator") return b.category === cat;
+    const fit = CATEGORY_FIT[b.category];
+    return !!fit && (fit.primary || []).includes(cat);
+  };
+  const rows = [];
+  for (const e of events) {
+    if (e.type !== "match_impression" || e.market !== market || !e.subjectId || !e.data) continue;
+    if (!briefInCell(e.data.brief)) continue;
+    for (const s of e.data.shown || []) rows.push({ creatorId: s.creatorId, offerId: e.subjectId, signal: s.parts && s.parts.budgetSignal });
+  }
+  if (rows.length < COACH_EVIDENCE_MIN_SHOWN) return null;
+  const apps = await allApplications();
+  const picked = new Set(apps.filter((a) => a.status !== "withdrawn").map((a) => `${a.creatorId}:${a.offerId}`));
+  let withN = 0, withPicks = 0, noN = 0, noPicks = 0;
+  const seen = new Set();
+  for (const r of rows) {
+    const key = `${r.offerId}:${r.creatorId}`;
+    if (seen.has(key)) continue; seen.add(key);
+    const isPick = picked.has(`${r.creatorId}:${r.offerId}`);
+    if (r.signal === "norate") { noN++; if (isPick) noPicks++; }
+    else if (r.signal && r.signal !== "neutral") { withN++; if (isPick) withPicks++; }
+  }
+  if (withN < COACH_EVIDENCE_MIN_ARM || noN < COACH_EVIDENCE_MIN_ARM) return null;
+  const withRate = withPicks / withN, noRate = noPicks / noN;
+  if (!(noRate > 0) || !(withRate > noRate)) return null;
+  const ratio = withRate / noRate;
+  if (ratio < COACH_EVIDENCE_MIN_RATIO) return null;
+  return { ratio: Math.round(ratio * 10) / 10, cell: `${market} x ${cat}`, shown: rows.length };
+}
+async function coachStateFor(userId) {
+  const s = await store.get(`coachstate:${userId}`);
+  return s && typeof s === "object" ? s : { userId, currentStepType: null, offeredAt: null, snoozedUntil: null, lastOfferDay: null, doneLog: [] };
+}
+async function saveCoachState(s) { await store.set(`coachstate:${s.userId}`, s); }
+// Compute the creator's current coaching step (or graduation
+// prompt), reconciling completion from the creator's own records.
+// Returns { step } or null. Side effects are only the spec's own
+// events: done detection + at most one offer per day.
+async function currentCoachingStep(user, opts) {
+  if (!user || user.role !== "creator" || user.status !== "approved" || !user.creator) return null;
+  if (isTester(user)) return null;
+  const now = Date.now();
+  const state = await coachStateFor(user.id);
+  const posts = await allPosts();
+  const ctx = { hasPost: posts.some((p) => p.creatorId === user.id) || ((user.creator.bestWork || []).length >= 1) || !!user.creator.portfolioSample };
+  const steps = coachLadderSteps();
+  const stepDone = (s) => { try { return !!s.done(user, ctx); } catch (e) { return false; } };
+  // Completion reconciliation: the offered step's predicate now
+  // holds -> it got done (from the system's own events/records).
+  // Graduation steps (momentum / scarcity) complete on a
+  // delivered booking, which is also where coaching stops.
+  if (state.currentStepType && (state.currentStepType === "momentum" || state.currentStepType === "scarcity")) {
+    const gradBookings = await allBookings();
+    if (gradBookings.some((b) => b.creatorId === user.id && b.post)) {
+      const tookMs = state.offeredAt ? now - Date.parse(state.offeredAt) : null;
+      await logCapture({ type: "creator_step_done", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { step: state.currentStepType, timeToDoneMs: tookMs, timeToDoneDays: tookMs != null ? Math.round((tookMs / 86400000) * 10) / 10 : null } });
+      state.doneLog = [...(state.doneLog || []), { step: state.currentStepType, at: new Date(now).toISOString() }];
+      state.currentStepType = null; state.offeredAt = null; state.snoozedUntil = null;
+      await saveCoachState(state);
+      return null;
+    }
+    if (state.snoozedUntil && Date.parse(state.snoozedUntil) > now) return null;
+    // Recompute the graduation view below (bookkeeping keeps the
+    // same step type, so no duplicate offer event fires).
+  }
+  if (state.currentStepType) {
+    const offered = steps.find((s) => s.type === state.currentStepType);
+    if (offered && stepDone(offered)) {
+      const tookMs = state.offeredAt ? now - Date.parse(state.offeredAt) : null;
+      await logCapture({ type: "creator_step_done", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { step: state.currentStepType, timeToDoneMs: tookMs, timeToDoneDays: tookMs != null ? Math.round((tookMs / 86400000) * 10) / 10 : null } });
+      state.doneLog = [...(state.doneLog || []), { step: state.currentStepType, at: new Date(now).toISOString() }];
+      state.currentStepType = null; state.offeredAt = null; state.snoozedUntil = null; state.evidenceRatio = null;
+      await saveCoachState(state);
+    } else if (offered && !opts?.force) {
+      if (state.snoozedUntil && Date.parse(state.snoozedUntil) > now) return null;
+      // Still the active step; no new offer event. The evidence
+      // ratio stamped at offer time rides along so the why-line
+      // does not change its story between visits.
+      const ev = offered.type === "rate" && state.evidenceRatio ? { ratio: state.evidenceRatio } : null;
+      return { step: coachStepView(offered, user, ev) };
+    }
+  }
+  const next = steps.find((s) => !stepDone(s));
+  let view = null;
+  if (next) {
+    let evidence = null;
+    if (next.evidence === "rate") evidence = await coachRateEvidence(user);
+    view = coachStepView(next, user, evidence);
+  } else {
+    // Ladder complete: graduate. Steps stop entirely once the
+    // creator also has a delivered booking (spec §7); until then
+    // Momentum proximity outranks everything else.
+    const bookings = await allBookings();
+    const delivered = bookings.some((b) => b.creatorId === user.id && b.post);
+    if (delivered) return null;
+    const pctx = await pointsContext();
+    const pts = totalPointsFor(user, pctx).total;
+    const lvl = levelForPoints(pts);
+    if (lvl.nextAt && lvl.nextAt - pts <= 25 && lvl.nextAt - pts > 0) {
+      view = { type: "momentum", headline: `${lvl.nextAt - pts} points from ${lvl.nextName}`, why: `One delivered visit usually covers that. Higher levels get earlier access to new offers in your market.`, target: "momentum", evidence: null };
+    } else {
+      // Scarcity from real search data (M1): businesses searched
+      // this creator's category in their market and found nobody.
+      const funnel = buildFunnel(30);
+      const gaps = (funnel.zeroResultGaps || []).filter((g) => g.market === normalizeMarketName(user.market || user.city) && (user.creator.categories || []).includes(g.category));
+      const gapCount = gaps.reduce((s, g) => s + (g.count || 0), 0);
+      if (gapCount >= 3) {
+        view = { type: "scarcity", headline: `Businesses are looking for ${gaps[0].category} creators in ${marketTalkName(user.market || user.city)}`, why: `Searches like that came up empty ${gapCount} times in the last month. Your finished profile is what shows up when they look.`, target: "momentum", evidence: null };
+      }
+    }
+    if (!view) return null;
+  }
+  // Offer bookkeeping: a NEW step becomes the active step right
+  // away (so snooze + completion detection track IT), but the
+  // creator_step_offered event — the proactive opener — fires at
+  // most once per day (spec §7 cap). A step adopted silently
+  // after a same-day completion still detects its own completion
+  // on the next visit.
+  const today = new Date(now).toISOString().slice(0, 10);
+  if (state.currentStepType !== view.type) {
+    const firstOfferToday = state.lastOfferDay !== today || (opts && opts.force);
+    state.currentStepType = view.type;
+    state.offeredAt = new Date(now).toISOString();
+    state.snoozedUntil = null;
+    state.evidenceRatio = view.evidence ? view.evidence.ratio : null;
+    if (firstOfferToday) state.lastOfferDay = today;
+    await saveCoachState(state);
+    if (firstOfferToday) {
+      await logCapture({ type: "creator_step_offered", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { step: view.type, market: user.market || user.city || null, evidenceUsed: !!view.evidence } });
+    } else return { step: view, alreadyOfferedToday: true };
+  }
+  return { step: view };
+}
+function coachStepView(step, user, evidence) {
+  let why = step.why(user);
+  if (evidence && step.type === "rate") {
+    why = `In ${marketTalkName(user.market || user.city)}, businesses pick creators with a rate set about ${evidence.ratio}x as often as creators without one (from real picks here so far). A listed rate is what lets a paid booking start.`;
+  }
+  return { type: step.type, headline: step.headline(user), why, target: step.target, evidence: evidence ? { ratio: evidence.ratio } : null };
+}
+async function coachAct(user, action) {
+  const state = await coachStateFor(user.id);
+  const now = Date.now();
+  if (action === "snooze") {
+    if (!state.currentStepType) return { ok: true };
+    state.snoozedUntil = new Date(now + COACH_SNOOZE_DAYS * 86400000).toISOString();
+    await saveCoachState(state);
+    await logCapture({ type: "creator_step_snoozed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { step: state.currentStepType, days: COACH_SNOOZE_DAYS } });
+    return { ok: true };
+  }
+  return { error: "Unknown action.", status: 400 };
+}
+// Admin rollup (Data view): both systems' counts from the event
+// log + the LIVE ladder distribution over approved creators.
+async function buildPromptingAdmin(days) {
+  const events = await eventsInRange(days);
+  const count = (t) => events.filter((e) => e.type === t).length;
+  const byData = (t, key) => { const out = {}; for (const e of events) if (e.type === t) { const k = (e.data && e.data[key]) || "—"; out[k] = (out[k] || 0) + 1; } return out; };
+  const campaign = {
+    shown: count("campaign_prompt_shown"), used: count("campaign_prompt_used"), dismissed: count("campaign_prompt_dismissed"), snoozed: count("campaign_prompt_snoozed"), expired: count("campaign_prompt_expired"),
+    offersCreated: events.filter((e) => e.type === "campaign_prompt_used" && e.data && e.data.stage === "offer_created").length,
+    byTrigger: byData("campaign_prompt_shown", "trigger"), byFamily: byData("campaign_prompt_shown", "family"),
+  };
+  const users = await allUsers();
+  const posts = await allPosts();
+  const dist = {};
+  let complete = 0, coached = 0;
+  for (const u of users) {
+    if (u.role !== "creator" || u.status !== "approved" || isTester(u) || !u.creator) continue;
+    coached++;
+    const ctx = { hasPost: posts.some((p) => p.creatorId === u.id) || ((u.creator.bestWork || []).length >= 1) || !!u.creator.portfolioSample };
+    const next = coachLadderSteps().find((s) => { try { return !s.done(u, ctx); } catch (e) { return false; } });
+    if (next) dist[next.type] = (dist[next.type] || 0) + 1; else complete++;
+  }
+  const offered = count("creator_step_offered"), done = count("creator_step_done");
+  const coaching = { offered, done, snoozed: count("creator_step_snoozed"), byStep: byData("creator_step_offered", "step"), distribution: dist, ladderComplete: complete, creatorsTracked: coached, completionRate: offered ? Math.round((done / offered) * 100) : null };
+  return { campaign, coaching };
 }
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
@@ -2194,6 +2798,9 @@ async function materializeDeal(deal) {
   };
   offer.brief = normalizeBriefInput(null, kindOf(offer), briefSeedFromFields(offer));
   await store.set(`offer:${offer.id}`, offer);
+  // Build -148: a deal accepted from a prompt brief closes the
+  // prompt's outcome chain the same way a composer create does.
+  if (deal.sourceBrief && deal.sourceBrief.promptId) { try { await linkPromptToOffer(deal.sourceBrief.promptId, offer, { id: deal.businessId }); } catch (e) { /* linkage never blocks */ } }
   const creator = await store.get(`user:${deal.creatorId}`);
   const booking = await createBookingForOffer({ offer, creator, via: "deal_accept" });
   booking.dealId = deal.id;
@@ -7410,6 +8017,7 @@ function normalizeSourceBrief(raw) {
   const out = {
     source: str(raw.source),
     campaignId: str(raw.campaignId),
+    promptId: str(raw.promptId),
     market: str(raw.market),
     category: str(raw.category),
     kind: str(raw.kind),
@@ -21891,6 +22499,41 @@ async function route(event) {
     return json(200, { role: user.role, displayName, market: user.market || null, chips: home.chips });
   }
 
+  // ---------- Prompting systems (Build -148, spec §6 + §7) ----------
+  // GET /api/sig/prompts -> the caller's one proactive card:
+  // a campaign prompt for an active business, a coaching step
+  // for a creator, null when nothing true applies. The business
+  // prompt is computed on read and persisted on first show, so
+  // re-reads return the same card and campaign_prompt_shown
+  // fires exactly once per prompt.
+  if (method === "GET" && seg[0] === "sig" && seg[1] === "prompts" && seg.length === 2) {
+    if (user.role === "business") {
+      const record = await currentCampaignPrompt(user);
+      return json(200, { role: "business", campaignPrompt: campaignPromptView(record), coaching: null });
+    }
+    if (user.role === "creator") {
+      const got = await currentCoachingStep(user);
+      return json(200, { role: "creator", campaignPrompt: null, coaching: got ? got.step : null });
+    }
+    return json(200, { role: user.role, campaignPrompt: null, coaching: null });
+  }
+  // POST /api/sig/prompts/act { promptId, action: use|others|dismiss|snooze }
+  if (method === "POST" && seg[0] === "sig" && seg[1] === "prompts" && seg[2] === "act") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const b = parseBody(event);
+    const out = await promptAct(user, String(b.promptId || ""), String(b.action || ""));
+    if (out.error) return err(out.status || 400, out.error);
+    return json(200, out);
+  }
+  // POST /api/sig/coaching/act { action: "snooze" }
+  if (method === "POST" && seg[0] === "sig" && seg[1] === "coaching" && seg[2] === "act") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const b = parseBody(event);
+    const out = await coachAct(user, String(b.action || ""));
+    if (out.error) return err(out.status || 400, out.error);
+    return json(200, out);
+  }
+
   if (method === "POST" && seg[0] === "sig" && seg[1] === "ask") {
     const b = parseBody(event);
     const q = String(b.q || "").trim();
@@ -26049,6 +26692,7 @@ async function route(event) {
         health: { eventsToday: todayEvents.length, topTypesToday: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([type, count]) => ({ type, count })), captures, latestSnapshotDate: snapKeys.length ? snapKeys[snapKeys.length - 1].slice("snapshot:".length) : null },
         snapshots,
         outside: await buildOutsideAggregates(),
+        prompting: await buildPromptingAdmin(rangeDays),
       });
     }
     if (method === "GET" && seg[1] === "suggestions" && seg.length === 2) {
@@ -27800,6 +28444,9 @@ async function route(event) {
       }
       await store.set(`offer:${offer.id}`, offer);
       await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category, windowMode: offer.windowMode, lane, kind, cashRate, covers, hasBrief: !!paidBrief, targetTiers, templateId: offer.templateId, status: offer.status, strength: offerStrength(offer).score } });
+      // Build -148: an offer created from a Maggie campaign
+      // prompt closes the prompt's outcome chain.
+      if (sourceBrief && sourceBrief.promptId) { try { await linkPromptToOffer(sourceBrief.promptId, offer, user); } catch (e) { /* linkage never blocks a create */ } }
       // Build -68: only an OPEN offer notifies its creator. A
       // draft (a founding business's saved-for-opening-day
       // invite above all) is invisible to the creator until it
