@@ -4798,24 +4798,86 @@ function normalizePrimaryPlatform(raw) {
   return PRIMARY_PLATFORMS.some((p) => p.id === s) ? s : "instagram";
 }
 
-// Handle normalization (Jeff, 2026-10-26): a creator may type a
-// bare handle, an @handle, or paste a whole profile link
-// (instagram.com/foo, https://www.tiktok.com/@foo/, x.com/foo).
-// Every intake path stores the SAME clean handle, so the profile
-// URLs built from it (primaryPlatformUrl) always point at the
-// creator's real page, the one an admin or a business opens to
-// verify it is them. A pasted URL keeps its LAST path segment:
-// that is the handle on every supported platform, LinkedIn's
-// /in/<handle> included.
+// Handle normalization (Jeff, 2026-10-26; hardened Build -151):
+// a creator may type a bare handle, an @handle, or paste a whole
+// profile link (instagram.com/foo, https://www.tiktok.com/@foo/,
+// x.com/foo). Every intake path stores the SAME clean handle, so
+// the profile URLs built from it (primaryPlatformUrl) always
+// point at the creator's real page, the one an admin or a
+// business opens to verify it is them.
+//
+// Build -151: the old version split on /[/?#]/ and kept the LAST
+// piece, so a pasted TikTok profile link carrying its share
+// query (tiktok.com/@user?_r=1&_t=ZT-…) stored the QUERY TAIL
+// ("_r=1&_t=ZT-…") as the handle, and a share fragment
+// ("exln=…") stored whole. The handle now comes from the URL
+// PATH only — query and fragment are discarded first — skipping
+// path words that are never a handle (in, p, reel, t, share…)
+// and pure-numeric segments (post ids). The result must match
+// the handle shape every supported platform allows; anything
+// else (a bare share code, a fragment, punctuation junk) reads
+// as NO handle, and the intake paths reject it with a plain
+// message instead of storing junk.
+const HANDLE_SHAPE = /^[A-Za-z0-9._-]{2,40}$/;
+const HANDLE_PATH_WORDS = new Set(["in", "p", "reel", "reels", "video", "videos", "t", "share", "photo", "photos", "stories", "story", "tv", "channel", "channels", "user", "users", "profile", "status", "watch", "live", "music", "tag", "discover"]);
 function normalizeHandle(raw) {
   let h = String(raw == null ? "" : raw).trim();
   if (!h) return "";
   if (h.includes("/")) {
-    h = h.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
-    const parts = h.split(/[/?#]/).map((x) => x.trim()).filter(Boolean);
-    h = parts.length ? parts[parts.length - 1] : "";
+    let parts = null;
+    try {
+      const u = new URL(h.includes("://") ? h : `https://${h.replace(/^\/+/, "")}`);
+      // A share wrapper carries the real profile link in its
+      // own query (?url=…): unwrap one level and start over.
+      const wrapped = u.searchParams.get("url") || u.searchParams.get("u") || u.searchParams.get("target");
+      if (wrapped && /instagram\.com|tiktok\.com|youtube\.com|facebook\.com|linkedin\.com|x\.com|twitter\.com/i.test(wrapped)) return normalizeHandle(wrapped);
+      parts = u.pathname.split("/").map((x) => { try { return decodeURIComponent(x); } catch (e) { return x; } }).map((x) => x.trim()).filter(Boolean);
+    } catch (e) {
+      parts = h.split(/[/?#]/).map((x) => x.trim()).filter(Boolean);
+    }
+    h = "";
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const seg = parts[i].replace(/^@+/, "");
+      if (!seg || HANDLE_PATH_WORDS.has(seg.toLowerCase()) || /^\d+$/.test(seg)) continue;
+      h = seg;
+      break;
+    }
   }
-  return h.replace(/^@/, "").trim();
+  h = h.replace(/^@+/, "").trim();
+  return HANDLE_SHAPE.test(h) ? h : "";
+}
+
+// Business display name (Build -151): an offer card must never
+// present a business as a bare letter or a blank. A name is
+// plausible when, trimmed, it is at least two characters and
+// contains a letter. Resolution prefers the business record's
+// CURRENT name (a rename fixes old offers), then the name
+// stamped on the offer at creation; when neither is plausible
+// (a stored fragment like "V"), the card falls back to a
+// category-and-market label — "Food & Drink business in
+// Nashville" — which is true and readable, never nonsense.
+function plausibleBizName(s) {
+  const t = String(s == null ? "" : s).trim();
+  return t.length >= 2 && /[A-Za-z]/.test(t) ? t : "";
+}
+function displayBusinessName(offer, biz) {
+  const live = biz && biz.business ? biz.business.businessName : "";
+  const stamped = offer ? offer.businessName : "";
+  const name = plausibleBizName(live) || plausibleBizName(stamped);
+  if (name) return name;
+  const cat = plausibleBizName(offer && offer.category) || plausibleBizName(biz && biz.business && biz.business.category) || "Local";
+  const mkt = (offer && offer.market) || (biz && biz.market) || "";
+  return `${cat} business${mkt ? ` in ${mkt}` : ""}`;
+}
+
+// The plain-language rejection for an intake whose handle field
+// was filled but holds nothing readable as a handle (a share
+// link or fragment): the person pasted SOMETHING, so "required"
+// alone would confuse them.
+function handleUnreadableMessage(raw, platformLabel) {
+  return String(raw == null ? "" : raw).trim()
+    ? `That link does not show a ${platformLabel} handle we can read — type your @handle instead of pasting a share link.`
+    : `Your ${platformLabel} handle is required`;
 }
 
 function primaryPlatformOf(creator) {
@@ -9676,6 +9738,82 @@ async function runProfileBackfill() {
   }
   await store.set(PROFILE_BACKFILL_KEY, { done: true, ranAt: audit.ranAt, audit });
   await logEvent({ type: "profile_backfill_completed", actorId: null, actorRole: "system", subjectId: null, market: null, data: audit });
+  return audit;
+}
+
+// ---------- Handle repair (Build -151) ----------
+// One-off, idempotent repair for creator records whose stored
+// handle is not a handle at all: a TikTok share link's query
+// tail ("_r=1&_t=ZT-…"), a share fragment ("exln=…"), a full
+// profile URL stored before the 2026-10-26 normalizer, or a
+// bare "@". The true handle is recovered ONLY from the record
+// itself — its stored profile URLs and platform links, run back
+// through the same normalizeHandle every write path now uses —
+// never guessed and never looked up outside the record.
+// Records with no recoverable handle are left exactly as they
+// are and reported for Jeff. Runs in sweep context only (the
+// route below), each repaired record persisted as it is fixed,
+// with the full before/after audit stored on
+// config:handleRepair151. Nobody is ever deleted here.
+function handleLooksBroken151(h) {
+  const s = String(h == null ? "" : h).trim();
+  if (!s) return true;
+  if (/^https?:\/\//i.test(s) || s.includes("/") || s.includes("?") || s.includes("&") || s.includes("=") || s.includes("#") || /\s/.test(s)) return true;
+  return !HANDLE_SHAPE.test(s.replace(/^@+/, ""));
+}
+function recoverHandle151(u) {
+  const c = u.creator || {};
+  const urls = [];
+  if (/^https?:\/\//i.test(String(c.handle || ""))) urls.push(c.handle);
+  for (const v of [c.primaryProfileUrl, c.instagramUrl, c.tiktokUrl, c.facebookUrl, c.linkedinUrl, c.xUrl]) if (v) urls.push(v);
+  if (c.youtubeChannel && /^https?:\/\//i.test(c.youtubeChannel)) urls.push(c.youtubeChannel);
+  const links = platformLinksOf(c);
+  for (const v of Object.values(links)) if (v && v.url) urls.push(v.url);
+  for (const cand of urls) {
+    const h = normalizeHandle(cand);
+    if (h) return h;
+  }
+  for (const v of Object.values(links)) if (v && v.handle) { const h = normalizeHandle(v.handle); if (h) return h; }
+  for (const raw of [c.tiktokHandle, c.xHandle]) {
+    if (raw && !handleLooksBroken151(raw)) { const h = normalizeHandle(raw); if (h) return h; }
+  }
+  return "";
+}
+async function runHandleRepair151({ dryRun = false } = {}) {
+  const users = await allUsers();
+  const changed = [];
+  const unrecoverable = [];
+  let scanned = 0;
+  for (const u of users) {
+    if (!u || u.role !== "creator" || !u.creator) continue;
+    scanned += 1;
+    const before = u.creator.handle || "";
+    if (!handleLooksBroken151(before)) continue;
+    const recovered = recoverHandle151(u);
+    if (!recovered || recovered === String(before).replace(/^@+/, "")) {
+      unrecoverable.push({ userId: u.id, name: u.name || "", email: u.email || "", handle: before });
+      continue;
+    }
+    changed.push({ userId: u.id, name: u.name || "", before, after: recovered });
+    if (!dryRun) {
+      u.creator.handle = recovered;
+      const plat = primaryPlatformOf(u.creator);
+      u.creator.primaryProfileUrl = primaryPlatformUrl(plat, recovered);
+      if (plat === "instagram") u.creator.instagramUrl = `https://instagram.com/${recovered}`;
+      if (plat === "tiktok") { u.creator.tiktokHandle = recovered; u.creator.tiktokUrl = `https://www.tiktok.com/@${recovered}`; }
+      if (plat === "facebook") u.creator.facebookUrl = `https://www.facebook.com/${recovered}`;
+      if (plat === "x") { u.creator.xHandle = recovered; u.creator.xUrl = `https://x.com/${recovered}`; }
+      if (plat === "linkedin") u.creator.linkedinUrl = `https://www.linkedin.com/in/${recovered}`;
+      if (plat === "youtube") u.creator.youtubeChannel = recovered;
+      u.updatedAt = nowIso();
+      await store.set(`user:${u.id}`, u);
+    }
+  }
+  const audit = { ranAt: nowIso(), dryRun, scanned, changed, unrecoverable };
+  if (!dryRun) {
+    await store.set("config:handleRepair151", audit);
+    await logEvent({ type: "handle_repair_151", actorId: null, actorRole: "system", subjectId: null, market: null, data: { changed: changed.length, unrecoverable: unrecoverable.length, scanned } });
+  }
   return audit;
 }
 
@@ -14659,7 +14797,7 @@ async function handleRegister(event) {
   // exactly as every claim link already in the wild behaves.
   const claimPlatform = normalizePrimaryPlatform(b.primaryPlatform);
   if (quickClaim) {
-    if (!claimHandle) return err(400, `Your ${primaryPlatformLabel(claimPlatform)} handle is required`);
+    if (!claimHandle) return err(400, handleUnreadableMessage(b.handle, primaryPlatformLabel(claimPlatform)));
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
   }
   // Business registration is founding-list intake (Jeff restored
@@ -14914,7 +15052,7 @@ async function handleRegister(event) {
     // confirmed as one attestation at first offer acceptance.
     const primaryPlatform = normalizePrimaryPlatform(b.primaryPlatform);
     const handle = normalizeHandle(b.handle);
-    if (!handle) return err(400, `Your ${primaryPlatformLabel(primaryPlatform)} handle is required`);
+    if (!handle) return err(400, handleUnreadableMessage(b.handle, primaryPlatformLabel(primaryPlatform)));
     const city = unlisted ? customCity : (b.city || "").trim();
     if (!unlisted && (!city || !market.cities.includes(city))) return err(400, `Choose your home city in the ${market.name} market`);
     if (b.followerCount === undefined || b.followerCount === null || b.followerCount === "") return err(400, "Your follower count is required");
@@ -15039,7 +15177,9 @@ async function handleRegister(event) {
     };
   } else {
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
-    if (!b.businessName) return err(400, "Business name is required");
+    // Build -151: a one-letter fragment is not a business name —
+    // creators see this name on every offer card.
+    if (!plausibleBizName(b.businessName)) return err(400, "Give your business its real name — creators see it on your offers.");
     const bizCity = (b.city || "").trim();
     if (bizCity && market.cities.length && !market.cities.includes(bizCity)) return err(400, `Choose your city in the ${market.name} market`);
     if (bizCity) user.city = bizCity;
@@ -15051,7 +15191,7 @@ async function handleRegister(event) {
     const plan = planInBook(b.planId || "self-service", bizCurrency.code) || planBookFor(bizCurrency.code)[0];
     user.business = {
       currency: bizCurrency.code,
-      businessName: String(b.businessName).trim(),
+      businessName: plausibleBizName(b.businessName),
       category: BUSINESS_CATEGORIES.includes(b.category) ? b.category : "Other",
       // Profile fields a creator sees when weighing an offer:
       // neighborhood/area and a short about, editable any time
@@ -22572,6 +22712,23 @@ async function route(event) {
     return json(200, { ok: true, sweep: summary });
   }
 
+  // Handle repair (Build -151): one-off sweep-context repair of
+  // creator handles stored as URL fragments/share junk. Same
+  // auth and placement discipline as the sweeps above: the
+  // x-signl-sweep-token header when SIGNL_SWEEP_TOKEN is set;
+  // without a matching token, only an admin session may run it.
+  // {dryRun:true} reports without writing. Never deletes a
+  // record; unrecoverable handles are reported, untouched.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "repairs" && seg[2] === "handles") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    const dryRun = !!(b && b.dryRun === true);
+    const audit = await runHandleRepair151({ dryRun });
+    return json(200, { ok: true, repair: audit });
+  }
+
   // Outside-joins importer (Build -147). Same auth and placement
   // discipline as the sweeps above: the runner
   // (scripts/import-outside.mjs) POSTs normalized batches here
@@ -23656,7 +23813,13 @@ async function route(event) {
         changes.primaryPlatform = [primaryPlatformOf(c), nextPlatform];
         c.primaryPlatform = nextPlatform;
       }
-      if (b.handle) { changes.handle = [c.handle, normalizeHandle(b.handle)]; c.handle = changes.handle[1]; }
+      if (b.handle) {
+        const nh = normalizeHandle(b.handle);
+        // Build -151: a pasted share link must never overwrite a
+        // good stored handle with junk — or with nothing.
+        if (!nh) return err(400, handleUnreadableMessage(b.handle, primaryPlatformLabel(primaryPlatformOf(c))));
+        changes.handle = [c.handle, nh]; c.handle = nh;
+      }
       if (b.handle || b.primaryPlatform !== undefined) {
         const plat = primaryPlatformOf(c);
         c.primaryProfileUrl = primaryPlatformUrl(plat, c.handle);
@@ -23841,7 +24004,7 @@ async function route(event) {
         c.compCategories = c.compCategories.filter((x) => x !== PAID_COMP);
         c.openToPaidCampaigns = false;
       }
-      if (b.tiktokHandle !== undefined) { const tk = normalizeHandle(b.tiktokHandle); c.tiktokHandle = tk || null; c.tiktokUrl = tk ? `https://www.tiktok.com/@${tk}` : null; }
+      if (b.tiktokHandle !== undefined) { const tk = normalizeHandle(b.tiktokHandle); if (String(b.tiktokHandle || "").trim() && !tk) return err(400, handleUnreadableMessage(b.tiktokHandle, "TikTok")); c.tiktokHandle = tk || null; c.tiktokUrl = tk ? `https://www.tiktok.com/@${tk}` : null; }
       if (b.youtubeChannel !== undefined) c.youtubeChannel = String(b.youtubeChannel).trim() || null;
       if (b.facebookUrl !== undefined || b.xHandle !== undefined || b.xUrl !== undefined || b.linkedinUrl !== undefined) {
         const socials = normalizeSocials({
@@ -24137,7 +24300,12 @@ async function route(event) {
     }
     if (user.role === "business" && user.business) {
       const bz = { ...user.business };
-      if (b.businessName) bz.businessName = String(b.businessName).trim();
+      if (b.businessName) {
+        // Build -151: same plausibility bar as sign-up.
+        const bn = plausibleBizName(b.businessName);
+        if (!bn) return err(400, "Give your business its real name — creators see it on your offers.");
+        bz.businessName = bn;
+      }
       if (b.category && BUSINESS_CATEGORIES.includes(b.category)) bz.category = b.category;
       if (b.neighborhood !== undefined) bz.neighborhood = String(b.neighborhood || "").trim().slice(0, 80);
       // Business ZIP (Build -31): the business's own address ZIP
@@ -26164,6 +26332,16 @@ async function route(event) {
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
           pub.momentum = momentum.summaryFor(u);
+          // Build -151: the row's completeness is the canonical
+          // computed value (profileCompleteOf — the same one the
+          // roster counts below, the coaching ladder and the
+          // match surfaces read), stamped where the Creators
+          // list badge and the Stats "Profile complete" count
+          // look for it. Before this the field never rode the
+          // payload, so every row read "Not finished" while the
+          // summary on the same payload said 60 complete.
+          pub.profileComplete = profileCompleteOf(u);
+          if (pub.creator) pub.creator.profileComplete = pub.profileComplete;
         }
         if (u.role === "business") {
           // Preferred language (S3): attached explicitly so
@@ -26277,6 +26455,11 @@ async function route(event) {
           if (pub.creator) pub.creator.audience = audienceView(u.creator);
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
+          // Build -151: same canonical completeness stamp as
+          // /admin/applications, so search results agree with
+          // the Creators list creator-by-creator.
+          pub.profileComplete = profileCompleteOf(u);
+          if (pub.creator) pub.creator.profileComplete = pub.profileComplete;
         }
         if (u.role === "business") {
           pub.preferredLanguage = (u.business && u.business.preferredLanguage) || "en";
@@ -26487,6 +26670,7 @@ async function route(event) {
       const audit = await runProfileBackfill();
       return json(200, { ok: true, audit });
     }
+
     // Business activation (Jeff, 2026-10-20 correction): approval
     // puts a business on the founding list; ACTIVATION is a
     // separate admin action that flips accessState to "active"
@@ -26888,11 +27072,30 @@ async function route(event) {
     if (seg[1] === "command" && seg[2] === "partners" && seg.length === 4 && method === "GET") {
       const P = await ccPrep(query);
       const rev = subRevenueByBizMonth(P.visUsers, P.charges);
-      const detail = ccPartnerDetailPayload(P, decodeURIComponent(seg[3]), rev);
-      if (!detail) return err(404, "Partner not found");
+      let detail = ccPartnerDetailPayload(P, decodeURIComponent(seg[3]), rev);
+      const orgUser = await store.get(`user:${decodeURIComponent(seg[3])}`);
+      if (!detail) {
+        // Build -151: ccPrep's money visibility excludes tester
+        // and demo partner orgs on purpose — their money never
+        // counts — but the Admin Partners list DOES show those
+        // orgs, and its Team seats section reads THIS payload.
+        // Excluded-from-the-books must not read as "not found":
+        // serve an identity-only detail (no deals, no money) so
+        // the seat rollup below still loads and can be managed.
+        if (!orgUser || orgUser.role !== "partner" || !orgUser.partner || orgUser.partner.teamOf) return err(404, "Partner not found");
+        detail = {
+          filters: ccFiltersEcho(P),
+          partner: { id: orgUser.id, name: orgUser.partner.name || orgUser.name || "", code: orgUser.partner.code || "", type: orgUser.partner.type || "", markets: orgUser.partner.markets || [], agreementStatus: orgUser.partner.agreementStatus || "unsigned", agreementSignedAt: orgUser.partner.agreementSignedAt || null, sharePct: typeof orgUser.partner.sharePct === "number" ? orgUser.partner.sharePct : null },
+          termsState: "not_entered",
+          deals: [],
+          payouts: [],
+          totals: { accrued: 0, paid: 0, owed: 0, currency: "USD", byCurrency: {} },
+          attributedBusinesses: 0,
+          excludedFromBooks: true,
+        };
+      }
       // Team seats (Build -107): Admin's full seat rollup for
       // the org, Admin-minted pilot leads included and labeled.
-      const orgUser = await store.get(`user:${decodeURIComponent(seg[3])}`);
       detail.team = { seats: orgUser ? await teamSeatsForOrg(orgUser, { includeAdminMinted: true }) : [] };
       return json(200, detail);
     }
@@ -27107,6 +27310,16 @@ async function route(event) {
       // records (lifecycle + shown events) and the board is the
       // top ~10 open, ranked. The response keeps the v1 shape
       // and adds the door (action) and the as-of stamp.
+      // Build -151: the built payload is aggregate-memoized
+      // (30s, invalidated by any store write — a dismiss or act
+      // writes, so post-action reads are fresh). The candidate
+      // build re-scans events, prospects and the funnel; on the
+      // production store that scan is thousands of fetches, and
+      // rebuilding it on every Stats load left the panel stuck
+      // on its loading line past the function budget. Same
+      // pattern as /admin/applications.
+      const memoHit = aggMemoGet("admin-suggestions", 30000);
+      if (memoHit !== undefined) return json(200, memoHit);
       const candidates = await buildSuggestionCandidates();
       let visible = await syncSuggestionRecords(candidates, user.id);
       let phrased = false;
@@ -27119,7 +27332,9 @@ async function route(event) {
         const lines = await maggieAi.maggiePhrase(cfg, visible.map((s) => s.text));
         if (lines) { visible = visible.map((s, i) => ({ ...s, text: lines[i] })); phrased = true; }
       }
-      return json(200, { suggestions: visible.map((s) => ({ id: s.id, kind: s.kind, type: s.type, text: s.text, receipt: s.receipt, action: s.action || null, score: s.score, surfacedAt: s.surfacedAt || null })), watching: SUGGESTION_WATCHING, phrased, generatedAt: nowIso() });
+      const payload = { suggestions: visible.map((s) => ({ id: s.id, kind: s.kind, type: s.type, text: s.text, receipt: s.receipt, action: s.action || null, score: s.score, surfacedAt: s.surfacedAt || null })), watching: SUGGESTION_WATCHING, phrased, generatedAt: nowIso() };
+      aggMemoSet("admin-suggestions", payload);
+      return json(200, payload);
     }
     if (method === "POST" && seg[1] === "suggestions" && seg[2] === "dismiss" && seg.length === 3) {
       const b = parseBody(event);
@@ -29905,6 +30120,11 @@ async function route(event) {
       const fitNote = buildFitNote(computeFit(fitBusiness, myFitInput), fitBusiness, myFitInput);
       out.push({
         ...o,
+        // Build -151: the card's business name resolves through
+        // the display-name guard (live record first, the
+        // offer's stamped name second, a category/market label
+        // last) — never a stored fragment like "V".
+        businessName: displayBusinessName(o, biz),
         lane: "open",
         kind: kindOf(o),
         filledCount: filledCountFor(o.id, bookings),
@@ -29964,7 +30184,9 @@ async function route(event) {
       for (const a of apps) {
         const offer = await store.get(`offer:${a.offerId}`);
         if (!offer) continue;
-        out.push({ ...a, offer: { id: offer.id, title: offer.title, businessName: offer.businessName, market: offer.market, kind: kindOf(offer), whatComped: offer.whatComped, dollarCap: offer.dollarCap, cashRate: offer.cashRate, windowStartAt: offer.windowStartAt || null, windowEndAt: offer.windowEndAt || null, status: offer.status } });
+        // Build -151: same display-name guard as the board.
+        const biz = offer.businessId ? await store.get(`user:${offer.businessId}`) : null;
+        out.push({ ...a, offer: { id: offer.id, title: offer.title, businessName: displayBusinessName(offer, biz), market: offer.market, kind: kindOf(offer), whatComped: offer.whatComped, dollarCap: offer.dollarCap, cashRate: offer.cashRate, windowStartAt: offer.windowStartAt || null, windowEndAt: offer.windowEndAt || null, status: offer.status } });
       }
       out.sort((a, b) => (a.appliedAt < b.appliedAt ? 1 : -1));
       return json(200, { applications: out });
@@ -32404,4 +32626,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };

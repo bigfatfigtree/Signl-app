@@ -85,16 +85,37 @@ function parseBody(event) {
 function nowIso() { return new Date().toISOString(); }
 function isEmail(s) { return typeof s === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(s); }
 
-// Same normalization the router applies to claim handles.
+// Same normalization the router applies to claim handles
+// (Build -151 hardened copy — keep the two in step: the handle
+// comes from the URL path only, query/fragment discarded,
+// non-handle path words and numeric ids skipped, and the
+// result must match the platform handle shape or it is no
+// handle at all, so a pasted share link can never be stored).
+const HANDLE_SHAPE = /^[A-Za-z0-9._-]{2,40}$/;
+const HANDLE_PATH_WORDS = new Set(["in", "p", "reel", "reels", "video", "videos", "t", "share", "photo", "photos", "stories", "story", "tv", "channel", "channels", "user", "users", "profile", "status", "watch", "live", "music", "tag", "discover"]);
 function normalizeHandle(raw) {
   let h = String(raw == null ? "" : raw).trim();
   if (!h) return "";
   if (h.includes("/")) {
-    h = h.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
-    const parts = h.split(/[/?#]/).map((x) => x.trim()).filter(Boolean);
-    h = parts.length ? parts[parts.length - 1] : "";
+    let parts = null;
+    try {
+      const u = new URL(h.includes("://") ? h : `https://${h.replace(/^\/+/, "")}`);
+      const wrapped = u.searchParams.get("url") || u.searchParams.get("u") || u.searchParams.get("target");
+      if (wrapped && /instagram\.com|tiktok\.com|youtube\.com|facebook\.com|linkedin\.com|x\.com|twitter\.com/i.test(wrapped)) return normalizeHandle(wrapped);
+      parts = u.pathname.split("/").map((x) => { try { return decodeURIComponent(x); } catch (e) { return x; } }).map((x) => x.trim()).filter(Boolean);
+    } catch (e) {
+      parts = h.split(/[/?#]/).map((x) => x.trim()).filter(Boolean);
+    }
+    h = "";
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const seg = parts[i].replace(/^@+/, "");
+      if (!seg || HANDLE_PATH_WORDS.has(seg.toLowerCase()) || /^\d+$/.test(seg)) continue;
+      h = seg;
+      break;
+    }
   }
-  return h.replace(/^@/, "").trim();
+  h = h.replace(/^@+/, "").trim();
+  return HANDLE_SHAPE.test(h) ? h : "";
 }
 function handleKey(raw) { return normalizeHandle(raw).toLowerCase(); }
 

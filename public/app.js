@@ -26166,7 +26166,7 @@ async function loadAdminSocial138() {
     const cards = (d.channels || []).map((ch) => {
       const latest = ch.series && ch.series.length ? ch.series[ch.series.length - 1] : null;
       return `<div class="a138-card"><h4>${label[ch.platform] || ch.platform}</h4>
-      <div class="a138-bignum">${latest && latest.followers != null ? fmtFull(latest.followers) : "—"}</div><div class="small muted">followers${latest ? ` · as of ${esc(latest.date)} (${esc(latest.source || "manual")})` : ""}</div>
+      <div class="a138-bignum">${latest && latest.followers != null ? fmtFull(latest.followers) : "—"}</div><div class="small muted">followers${latest ? ` · as of ${esc(latest.date)} (${esc(latest.source || "manual")})` : " · no count on file yet — counts come from the daily account check, typed in below"}</div>
       <div class="small" style="margin-top:8px">${ch.totals.posts} posts on record · ${fmtFull(ch.totals.likes)} likes · ${fmtFull(ch.totals.comments)} comments · ${fmtFull(ch.totals.shares)} shares${ch.totals.unreported ? `<br><span class="muted">${ch.totals.unreported} post${ch.totals.unreported === 1 ? "" : "s"} where the platform didn't report numbers — counted as nothing, never guessed.</span>` : ""}</div>
       <p class="small muted" style="margin-top:8px">${esc(ch.sourceNote)}</p></div>`;
     }).join("");
@@ -28613,7 +28613,10 @@ function astRevenueHtml() {
   for (const b of astData.businesses) {
     if (b.status !== "approved") continue;
     const id = (b.business && b.business.plan) || "";
-    if (!id) continue;
+    // Build -151: "on a plan" means the plan id resolves to a
+    // real plan in the book (the Command Center's definition) —
+    // a stale or invented plan id counts nowhere.
+    if (!id || !planRate(id)) continue;
     pipe[id] = (pipe[id] || 0) + 1;
   }
   const pipeRows = Object.entries(pipe).map(([id, n]) => ({ id, n, rate: planRate(id), total: n * planRate(id) })).sort((a, b) => b.total - a.total);
@@ -28804,6 +28807,11 @@ async function loadStats() {
       ])}
       <div id="cc-body"><p class="muted">Loading…</p></div>
       </div>`;
+    // Build -151: Suggestions load FIRST, on their own — the
+    // panel used to wait behind every other Stats read plus the
+    // Command tab render, so a slow tab left its loading line
+    // on screen indefinitely.
+    astLoadSuggestions();
     const [apps, money, race, sq, stats53] = await Promise.all([
       api("GET", "/admin/applications"),
       api("GET", "/admin/command/money?period=all").catch(() => null),
@@ -28814,7 +28822,11 @@ async function loadStats() {
     const rows = [...(apps.pending || []), ...(apps.decided || [])];
     astData = {
       creators: rows.filter((u) => u.role === "creator" && u.status !== "rejected" && !u.tester),
-      businesses: rows.filter((u) => u.role === "business"),
+      // Build -151: businesses carry the same tester fence as
+      // creators — the Command Center's Businesses list already
+      // excludes testers, and Revenue counted them, which is
+      // why the two surfaces disagreed.
+      businesses: rows.filter((u) => u.role === "business" && !u.tester),
       money: money || {},
     };
     astRender();
@@ -28864,9 +28876,9 @@ async function loadStats() {
     try { loadWebsiteStats138(); } catch (e) { /* the Website section never breaks Stats */ }
     await ccShowTab();
     // Build -145: the Suggestions panel rides every Stats load
-    // (it sits above the switcher, on purpose), and the Data
-    // view fills itself when it is the open view.
-    astLoadSuggestions();
+    // (it sits above the switcher, on purpose) — since Build
+    // -151 it is kicked off at the top of this load, not here.
+    // The Data view fills itself when it is the open view.
     if (astView === "data") astLoadData();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -28883,7 +28895,13 @@ async function astLoadSuggestions() {
   const host = document.getElementById("ast-suggest");
   if (!host) return;
   try {
-    const d = await api("GET", "/admin/suggestions");
+    // Build -151: a slow build must end in a named, retryable
+    // state — never an eternal "Loading suggestions…" and never
+    // a silently cleared strip.
+    const d = await Promise.race([
+      api("GET", "/admin/suggestions"),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Suggestions took too long to load.")), 25000)),
+    ]);
     astSuggestList = d.suggestions || [];
     if (!astSuggestList.length) {
       host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 4px">Suggestions</h3><p class="small muted" style="margin:0">Nothing needs a decision right now. Maggie is watching: ${(d.watching || []).map((w) => esc(w)).join(" · ")}.</p></div>`;
@@ -28893,7 +28911,9 @@ async function astLoadSuggestions() {
     host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 8px">Suggestions <span class="muted" style="font-weight:400">(${astSuggestList.length})</span></h3>${astSuggestList.map((s, i) => `
       <div class="kv sug-row" style="align-items:flex-start;gap:10px"><span>${esc(s.text)}<br><span class="small muted">${esc(astReceiptLine(s.receipt))}</span></span><span class="sug-acts">${s.action ? `<button type="button" class="btn small" onclick="return astOpenSuggestionIdx(${i})">${esc(s.action.label)}</button>` : ""}<button type="button" class="btn small ghost" onclick="return astDismissSuggestionIdx(${i})">Dismiss</button></span></div>`).join("")}
       <p class="small muted" style="margin:8px 0 0">Every button is a door, not a trigger — the action happens on the screen it opens, under the usual approvals. A dismissed suggestion stays away until its numbers change or two weeks pass.${asOf ? ` As of ${esc(asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }))}.` : ""}</p></div>`;
-  } catch (e) { host.innerHTML = ""; }
+  } catch (e) {
+    host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 4px">Suggestions</h3><p class="small muted" style="margin:0 0 8px">${esc(e.message || "Suggestions did not load.")}</p><button type="button" class="btn small" onclick="astLoadSuggestions(); return false">Try again</button></div>`;
+  }
 }
 function astReceiptLine(r) {
   if (!r) return "";
@@ -29878,10 +29898,11 @@ function renderPreview() {
     profile: "Step 3 of 4: the full creator profile",
     offer: "Step 4 of 4: the offer composer (simulation)",
     dashboard: "The business dashboard: bookings, codes, tracking and returns",
+    wallet: "The Wallet: the plan, paid bookings and receipts, as a signed-in business sees them",
     staffdemo: "The staff redemption demo: the register flow, simulated end to end",
     offers: "The creator side: the open-offer deck a creator swipes through (simulation)",
   }[pv.step] || "";
-  const planName = pv.step === "dashboard" && pv.dashboard
+  const planName = (pv.step === "dashboard" || pv.step === "wallet") && pv.dashboard
     ? pv.dashboard.plan.name
     : (state.boot.plans.find((p) => p.id === pv.planId) || {}).name || "";
   const navBtn = (step, label) => `<button class="${pv.step === step || (step === "discover" && (pv.step === "profile" || pv.step === "offer")) ? "active" : ""}" onclick="previewNavTo('${step}')">${label}</button>`;
@@ -29893,7 +29914,7 @@ function renderPreview() {
       : `<span><strong>Previewing as a business.</strong> Everything here is what a business sees. Offers sent in preview are simulations: they never reach a creator and nothing is saved.</span>`}
     <button class="btn small-btn" onclick="exitPreview()">Exit preview</button>
   </div>
-  <div class="tabs">${navBtn("plans", "Plans")}${navBtn("discover", "Discover")}${navBtn("dashboard", "Dashboard")}${navBtn("offers", "Creator offers")}</div>
+  <div class="tabs">${navBtn("plans", "Plans")}${navBtn("discover", "Discover")}${navBtn("dashboard", "Dashboard")}${navBtn("wallet", "Wallet")}${navBtn("offers", "Creator offers")}</div>
   <p class="muted small">${esc(stepLabel)} &middot; Plan: ${esc(planName)} &middot; Market: ${esc(pv.market)}</p>
   <div id="preview-main"></div>`;
   const main = document.getElementById("preview-main");
@@ -29902,6 +29923,7 @@ function renderPreview() {
   else if (pv.step === "profile" && pv.creator) main.innerHTML = creatorProfileDetailHtml(pv.creator, true);
   else if (pv.step === "offer") main.innerHTML = previewOfferHtml();
   else if (pv.step === "dashboard") { main.innerHTML = pv.dashboard ? previewDashboardHtml(pv.dashboard) : `<section class="panel"><p class="muted">Loading the dashboard...</p></section>`; if (pv.dashboard) startPreviewCountdown(); else loadPreviewDashboard(); }
+  else if (pv.step === "wallet") { main.innerHTML = pv.dashboard ? previewWalletHtml(pv.dashboard) : `<section class="panel"><p class="muted">Loading the wallet...</p></section>`; if (!pv.dashboard) loadPreviewDashboard(); }
   else if (pv.step === "staffdemo") main.innerHTML = pvStaffDemoHtml();
   else if (pv.step === "offers") { main.innerHTML = pvOffersHtml(); if (pv.offersList) renderPvBoardShell(); else loadPvOffers(); }
   else main.innerHTML = previewPlansHtml();
@@ -30265,7 +30287,7 @@ async function loadPreviewDashboard() {
   const pv = state.preview;
   try {
     const data = await api("GET", "/admin/preview/dashboard");
-    if (!state.preview || state.preview.step !== "dashboard") return;
+    if (!state.preview || (state.preview.step !== "dashboard" && state.preview.step !== "wallet")) return;
     pv.dashboard = data.dashboard;
     if (pv.wantStaffDemo) { pv.wantStaffDemo = false; return pvStaffEnter(); }
     renderPreview();
@@ -30714,6 +30736,75 @@ ${content}</div>` : ""}
     <div class="ana-block"><h4>Content library</h4>${bizLibraryHtml(h)}</div>
   </section>`,
   };
+}
+
+// Build -151: the business preview's Wallet step. The preview
+// walk had Plans / Discover / Dashboard / Creator offers and no
+// Wallet anywhere, while a signed-in business lives in its
+// Wallet (the Plan tab: plan, paid bookings, receipts). This
+// renders those same three segments from the same preview
+// dashboard payload — the plan Salt & Ember is on, the paid
+// lane's escrow ledger (the managed-plan example, labeled as
+// the dashboard labels it), and this cycle's receipt numbers
+// with their counted / recorded / modeled labels intact.
+function previewWalletHtml(d) {
+  const pv = state.preview;
+  const plan = d.plan;
+  const s = d.summary;
+  const mv = d.managedView || null;
+  const budget = (mv && mv.budget) || null;
+  const planCards = state.boot.plans.map((p) => `
+    <div class="plan-card ${plan.id === p.id ? "selected" : ""}">
+      <div class="price">$${fmtPrice(p.priceMonthly)}<span class="small muted">/mo</span></div>
+      <div class="founding-badge-row">${foundingBadgeHtml(p)}</div>
+      <strong>${esc(p.name)}</strong>
+      <p class="small muted">${p.minMonths}-month minimum. Founding rate, locked while your plan stays active.</p>
+      <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
+      ${plan.id === p.id ? `<p class="saved mt">Current plan in this preview</p>` : ""}
+    </div>`).join("");
+  return `
+  <section class="panel">
+    <div class="flex-between">
+      <div><h3 style="margin:0"><span class="preview-tag">PREVIEW</span> Wallet</h3><p class="muted small" style="margin:4px 0 0">${esc(d.business.name)} &middot; your plan, what paid visits cost, and your receipts — one place.</p></div>
+      <span class="badge info">${esc(plan.name)} plan &middot; $${fmtPrice(plan.priceMonthly)}/mo</span>
+    </div>
+    <p class="small muted" style="margin-bottom:0">Simulated over the real founding roster. Nothing is saved and no card exists to charge.</p>
+  </section>
+  <section class="panel">
+    <h3 style="margin-top:0">Plan</h3>
+    <div class="stat-band">
+      <div class="stat-cell"><div class="stat-num">$${fmtPrice(plan.priceMonthly)}<span class="small muted">/mo</span></div><div class="stat-lbl">${esc(plan.name)} plan &middot; ${plan.visitsPerMonth} visits/mo &middot; ${plan.minMonths}-month minimum</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtPrice(plan.foundingCredit || 0)}</div><div class="stat-lbl">Founding credit toward the first month (first month $${fmtPrice(plan.firstMonthPriceMonthly || plan.priceMonthly)}/mo)</div></div>
+      <div class="stat-cell"><div class="stat-num">${s.visitsUsed}<span class="small muted"> of ${s.visitsAllowance}</span></div><div class="stat-lbl">Visits booked this cycle &middot; ${s.visitsRemaining} left</div></div>
+    </div>
+    <div class="plan-cards" style="margin-top:12px">${planCards}</div>
+    <p class="small muted" style="margin-bottom:0">The Plans step at the top is where a different plan gets picked for the walkthrough.</p>
+  </section>
+  <section class="panel">
+    <h3 style="margin-top:0">Bookings — the paid lane</h3>
+    ${budget ? `
+    <p class="small muted" style="margin-top:0">The managed-plan example — ${esc(mv.business.name)}: paid bookings escrow on their own and Magpie holds each one until the post is live. ${esc(budget.note || "")}</p>
+    <div class="stat-band">
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(budget.monthlyTalentBudget)}</div><div class="stat-lbl">Monthly talent budget (a cap, not a deposit)</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(budget.spentThisMonth)}</div><div class="stat-lbl">Booked this month</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(budget.remaining)}</div><div class="stat-lbl">Budget left</div></div>
+    </div>
+    ${budget.paidBookings.map((b) => `
+    <div class="kv" style="align-items:flex-start;gap:6px 10px;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;overflow-wrap:anywhere"><strong>${esc(b.creatorName)}</strong> <span class="muted">@${esc(b.creatorHandle || "")}</span><br><span class="small muted">${esc(b.escrowNote || b.paymentNote || "")}</span></span><span style="text-align:right;margin-left:auto"><strong>$${fmtMoney(b.businessTotal)}</strong><br><span class="small muted">creator keeps $${fmtMoney(b.creatorNet)} &middot; ${esc(b.escrowState || "")}</span></span></div>`).join("")}
+    ` : `<p class="small muted">No paid bookings in this preview.</p>`}
+  </section>
+  <section class="panel">
+    <h3 style="margin-top:0">Receipts — ${esc(s.cycleLabel)} cycle</h3>
+    ${s.roas ? `
+    <div class="stat-row">
+      <div class="stat"><div class="num">$${fmtMoney(s.roas.registerValue)}</div><div class="lbl">Register value counted through creator codes (${s.roas.redemptions.count} redemptions, $${fmtMoney(s.roas.redemptions.basketTotal)} rung up)</div></div>
+      <div class="stat"><div class="num">$${fmtMoney(s.roas.mediaValue)}</div><div class="lbl">Media value, modeled at the published rates</div></div>
+      <div class="stat"><div class="num">$${fmtMoney(s.compValueGiven)}</div><div class="lbl">Comp given, at cost (modeled)</div></div>
+      <div class="stat"><div class="num">${s.postsDelivered}</div><div class="lbl">Posts delivered this cycle</div></div>
+    </div>
+    <p class="small muted" style="margin-bottom:0">Counted is what the register reported; recorded is what the plan and booking records say; modeled is an estimate and is labeled every time. In the live app this receipt exports by month for the bookkeeper.</p>
+    ` : `<p class="small muted">No receipt numbers yet this cycle.</p>`}
+  </section>`;
 }
 
 function previewDashboardHtml(d) {
