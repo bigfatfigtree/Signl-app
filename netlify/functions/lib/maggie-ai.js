@@ -232,4 +232,60 @@ async function askMaggieAI({ cfg, role, firstName, market, factsText, tools, his
   }
 }
 
-module.exports = { maggieAiConfig, askMaggieAI, maggieSystemPrompt, CAPABILITIES };
+// Plain one-shot phrasing for fixed lines (Build -145, the
+// Admin Suggestions panel): Maggie may reword a line, but every
+// number in it must survive verbatim — checked token by token
+// below. Any doubt at all returns null and the caller keeps the
+// template text, so the content a reader sees is identical with
+// the AI on or off; only the wording may soften.
+const NUMBER_TOKEN = /\$?\d[\d,]*(?:\.\d+)?%?/g;
+function numbersPreserved(before, after) {
+  const nums = (s) => (String(s).match(NUMBER_TOKEN) || []).map((t) => t.replace(/[$,]/g, ""));
+  const have = new Set(nums(after));
+  return nums(before).every((n) => have.has(n));
+}
+async function maggiePhrase(cfg, lines) {
+  const conf = cfg || maggieAiConfig();
+  if (!conf || !Array.isArray(lines) || !lines.length) return null;
+  const instruction = "Rewrite each of the following short platform-update lines in a warm, plain, direct voice. Keep every number, name, city, category and figure EXACTLY as written. Do not add facts. Do not use em dashes. Do not use exclamation marks. Reply with ONLY a JSON array of strings, one per line, in the same order.\n\n" + JSON.stringify(lines);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    let raw = null;
+    if (conf.provider === "gemini") {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(conf.model)}:generateContent`;
+      const body = { contents: [{ role: "user", parts: [{ text: instruction }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 1024 } };
+      if (/^gemini-3/.test(conf.model)) body.generationConfig.thinkingConfig = { thinkingLevel: "low" };
+      const res = await fetch(url, { method: "POST", signal: ctrl.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": conf.key }, body: JSON.stringify(body) });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null);
+      const cand = data && data.candidates && data.candidates[0];
+      raw = cand && cand.content && Array.isArray(cand.content.parts) ? cand.content.parts.filter((p) => p && typeof p.text === "string").map((p) => p.text).join("") : null;
+    } else {
+      const res = await fetch(`${conf.baseUrl}/chat/completions`, { method: "POST", signal: ctrl.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${conf.key}` }, body: JSON.stringify({ model: conf.model, messages: [{ role: "user", content: instruction }], max_tokens: 1024, temperature: 0.3 }) });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null);
+      const msg = data && data.choices && data.choices[0] && data.choices[0].message;
+      raw = msg && typeof msg.content === "string" ? msg.content : null;
+    }
+    if (!raw) return null;
+    const start = raw.indexOf("[");
+    const end = raw.lastIndexOf("]");
+    if (start < 0 || end <= start) return null;
+    const parsed = JSON.parse(raw.slice(start, end + 1));
+    if (!Array.isArray(parsed) || parsed.length !== lines.length) return null;
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = cleanText(String(parsed[i] || ""));
+      if (!line || !numbersPreserved(lines[i], line)) return null;
+      out.push(line);
+    }
+    return out;
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+module.exports = { maggieAiConfig, askMaggieAI, maggieSystemPrompt, CAPABILITIES, maggiePhrase };

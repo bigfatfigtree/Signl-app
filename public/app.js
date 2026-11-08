@@ -5661,7 +5661,7 @@ function sigAiCardsAttach(turn, reply) {
   turn.cardActs = top.map((c) => ({
     invite: () => sigOpPick(`${ST("Invite", "Invitar")} @${(c.profile || {}).handle || ""}`, async () => {
       state.sigFlow = null;
-      sigB1Start({ creatorId: c.userId, creatorName: c.name, creatorRate: (c.profile || {}).paidRate || null, creatorTier: (c.profile || {}).tierBand || null });
+      sigB1Start({ creatorId: c.userId, creatorName: c.name, creatorRate: (c.profile || {}).paidRate || null, creatorTier: (c.profile || {}).tierBand || null, sourceBrief: sigBriefArg(reply.matchBrief) });
     }),
     save: async () => {
       try { const r = await api("POST", "/favorites", { creatorId: c.userId }); c.isFavorite = !!r.isFavorite; }
@@ -7538,6 +7538,24 @@ function sigOfferCardHtml(p, ti, ci) {
   </div>`;
 }
 
+// Build -145 (the -144 addendum): the brief a briefed list was
+// scored against rides a direct Book into the offer as
+// sourceBrief, so the pick joins back to its impression for the
+// learning-to-rank training set. Normalized to the server's
+// accepted shape; label is display-only and stays behind. No
+// brief in scope, no field — never inferred after the fact.
+function sigBriefArg(matchBrief) {
+  if (!matchBrief || typeof matchBrief !== "object") return null;
+  const out = {};
+  for (const k of ["source", "campaignId", "market", "category", "kind"]) {
+    const v = matchBrief[k];
+    if (v != null && String(v).trim()) out[k] = String(v);
+  }
+  const budget = Number(matchBrief.budget);
+  if (Number.isFinite(budget) && budget > 0) out.budget = budget;
+  return Object.keys(out).length ? out : null;
+}
+
 // ---------- B1: set up a campaign (business) ----------
 // Walks the composer's exact questions, adds ONE brief goal
 // question, drafts the rest of the brief from the answers, and
@@ -7920,6 +7938,10 @@ async function sigB1Commit() {
     brief: briefFromParts({ goal: d.briefGoal || null, hook: d.briefHook, mustMention: d.briefMust, doNotSay: d.briefDont, timing: d.briefTiming, callToAction: d.briefCta }),
     assetPacketAttached: d.packetAttach !== null && d.packetAttach !== undefined ? !!d.packetAttach : d.kind === "paid",
   };
+  // Build -145: the brief this booking was picked from (threaded
+  // by sigB1Start from the briefed list's matchBrief) persists
+  // on the offer; absent when the booking had no brief context.
+  if (d.sourceBrief) payload.sourceBrief = d.sourceBrief;
   // Build -84: the deliverables set in the deliverables step
   // ride every commit, and a coupon commit carries the coupon.
   payload.deliverables = sigB1DeliverablesOf();
@@ -8257,7 +8279,7 @@ async function sigB2Run(crit) {
   const cardActs = top.map((c) => ({
     invite: () => sigOpPick(`${ST("Invite", "Invitar")} @${(c.profile || {}).handle || ""}`, async () => {
       state.sigFlow = null;
-      sigB1Start({ creatorId: c.userId, creatorName: c.name, creatorRate: (c.profile || {}).paidRate || null, creatorTier: (c.profile || {}).tierBand || null });
+      sigB1Start({ creatorId: c.userId, creatorName: c.name, creatorRate: (c.profile || {}).paidRate || null, creatorTier: (c.profile || {}).tierBand || null, sourceBrief: sigBriefArg(matchBrief) });
     }),
     // The deck's Save, in chat: the same favorites toggle the
     // grid heart and the deck card use, fence included server
@@ -28515,12 +28537,14 @@ async function loadStats() {
       .join("");
     el.innerHTML = `
       ${wsHead("Stats", { sub: "The platform in numbers — creators, reach, money and the books." })}
+      <div id="ast-suggest"><p class="muted small">Loading suggestions…</p></div>
       ${wsTabs([
         { label: "Creators", on: astView === "creators", onclick: "return astSetView('creators')" },
         { label: "Businesses", on: astView === "businesses", onclick: "return astSetView('businesses')" },
         { label: "Website", on: astView === "website", onclick: "return astSetView('website')" },
         { label: "Partners", on: astView === "partners", onclick: "return astSetView('partners')" },
         { label: "Revenue", on: astView === "revenue", onclick: "return astSetView('revenue')" },
+        { label: "Data", on: astView === "data", onclick: "return astSetView('data')" },
       ])}
       <div id="astview-creators"${astView === "creators" ? "" : ' style="display:none"'}>
       <div class="panel cc-filters">
@@ -28552,6 +28576,7 @@ async function loadStats() {
       </div>
       <div id="astview-revenue"${astView === "revenue" ? "" : ' style="display:none"'}><div id="ast-revenue"></div></div>
       <div id="astview-website"${astView === "website" ? "" : ' style="display:none"'}><div id="website-stats138"></div></div>
+      <div id="astview-data"${astView === "data" ? "" : ' style="display:none"'}><div id="ast-data"></div></div>
       <div id="astview-books"${["businesses", "partners", "revenue"].includes(astView) ? "" : ' style="display:none"'}>
       <h3 style="margin:22px 0 4px">The books</h3>
       <p class="muted small" style="margin:0 0 10px">Money in, money owed, and the month-end close — straight from the records.</p>
@@ -28651,9 +28676,133 @@ async function loadStats() {
     // it, visible or not.
     try { loadWebsiteStats138(); } catch (e) { /* the Website section never breaks Stats */ }
     await ccShowTab();
+    // Build -145: the Suggestions panel rides every Stats load
+    // (it sits above the switcher, on purpose), and the Data
+    // view fills itself when it is the open view.
+    astLoadSuggestions();
+    if (astView === "data") astLoadData();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+// ---------- Suggestions + the Data view (Build -145) ----------
+// Suggestions is Jeff's decision queue: it sits at the top of
+// Stats, above the view switcher, on purpose. One line per
+// call, its receipt numbers under it, and a Dismiss that holds
+// server-side until the underlying numbers change.
+let astSuggestList = [];
+async function astLoadSuggestions() {
+  const host = document.getElementById("ast-suggest");
+  if (!host) return;
+  try {
+    const d = await api("GET", "/admin/suggestions");
+    astSuggestList = d.suggestions || [];
+    if (!astSuggestList.length) {
+      host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 4px">Suggestions</h3><p class="small muted" style="margin:0">Nothing needs a decision right now. Maggie is watching: ${(d.watching || []).map((w) => esc(w)).join(" · ")}.</p></div>`;
+      return;
+    }
+    host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 8px">Suggestions <span class="muted" style="font-weight:400">(${astSuggestList.length})</span></h3>${astSuggestList.map((s, i) => `
+      <div class="kv" style="align-items:flex-start;gap:10px"><span style="flex:1">${esc(s.text)}<br><span class="small muted">${esc(astReceiptLine(s.receipt))}</span></span><button type="button" class="btn small ghost" onclick="return astDismissSuggestionIdx(${i})">Dismiss</button></div>`).join("")}
+      <p class="small muted" style="margin:8px 0 0">A dismissed suggestion stays away until its numbers change.</p></div>`;
+  } catch (e) { host.innerHTML = ""; }
+}
+function astReceiptLine(r) {
+  if (!r) return "";
+  return Object.entries(r).map(([k, v]) => `${k}: ${v}`).join(" · ");
+}
+async function astDismissSuggestionIdx(i) {
+  const s = astSuggestList[i];
+  if (!s) return false;
+  try { await api("POST", "/admin/suggestions/dismiss", { id: s.id }); } catch (e) { /* the reload below shows the truth either way */ }
+  astLoadSuggestions();
+  return false;
+}
+
+// The Data view: the audit's datasets, rendered from
+// /admin/stats/data. Event-sourced numbers always carry the
+// day their capture began; nothing here backfills.
+const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "match_impressions", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "events"];
+async function astLoadData() {
+  const host = document.getElementById("ast-data");
+  if (!host) return;
+  host.innerHTML = `<p class="muted">Loading the data view…</p>`;
+  let d;
+  try { d = await api("GET", "/admin/stats/data?days=30"); }
+  catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
+  const t = d.totals || {};
+  const tc = t.creators || {};
+  const tb = t.businesses || {};
+  const to = t.offers || {};
+  const tbk = t.bookings || {};
+  const h = d.health || {};
+  const cell = (num, lbl) => `<div class="stat-cell"><div class="stat-num">${num}</div><div class="stat-lbl">${lbl}</div></div>`;
+  let html = `<div class="stat-band" style="margin-top:6px">${cell(astFull(tc.approved || 0), "Approved creators")}${cell(astFull(tc.followers || 0), "Followers, stacked")}${cell(astFull(tb.approved || 0), "Approved businesses")}${cell(astFull(to.open || 0), "Open offers")}${cell(astFull(h.eventsToday || 0), "Events logged today")}${cell(h.latestSnapshotDate ? esc(h.latestSnapshotDate) : "none yet", "Latest daily snapshot")}</div>`;
+  // Capture health: what is being recorded, since when.
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Capture health</h3>
+  <p class="small muted" style="margin:0 0 8px">What the platform is recording, and the day each capture began. Counts are the last ${d.rangeDays} days.</p>
+  ${(h.captures || []).map((c) => `<div class="kv"><span>${esc(c.label)}</span><b>${astFull(c.inRange || 0)}${c.since ? ` <span class="muted" style="font-weight:400">since ${esc(c.since)}</span>` : ` <span class="muted" style="font-weight:400">not started yet</span>`}</b></div>`).join("")}
+  ${(h.topTypesToday || []).length ? `<p class="small muted" style="margin:8px 0 0">Most logged today: ${h.topTypesToday.map((x) => `${esc(x.type)} (${x.count})`).join(" · ")}</p>` : ""}
+  </div>`;
+  // The supply/demand matrix.
+  const matrix = d.matrix || {};
+  const catSet = [];
+  for (const cats of Object.values(matrix)) for (const cat of Object.keys(cats)) if (!catSet.includes(cat)) catSet.push(cat);
+  const catsUsed = catSet.filter((cat) => Object.values(matrix).some((cats) => (cats[cat] || {}).supply || (cats[cat] || {}).demand));
+  const marketRows = Object.entries(matrix).filter(([, cats]) => catsUsed.some((cat) => (cats[cat] || {}).supply || (cats[cat] || {}).demand));
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Supply and demand, by market and category</h3>
+  <p class="small muted" style="margin:0 0 8px">Each cell: approved, profile-complete creators / open offers that want that kind of creator (an offer's business category maps to creator categories the same way the match engine maps it). A red cell is demand with nobody to fill it.</p>
+  ${marketRows.length ? `<div class="table-wrap"><table><tr><th>Market</th>${catsUsed.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>
+  ${marketRows.map(([mk, cats]) => `<tr><td>${esc(mk)}</td>${catsUsed.map((cat) => { const cl = cats[cat] || { supply: 0, demand: 0 }; const gap = cl.demand > 0 && cl.supply === 0; return `<td data-label="${esc(cat)}"${gap ? ' style="background:rgba(214,48,49,.10)"' : ""}>${cl.supply} / <b>${cl.demand}</b></td>`; }).join("")}</tr>`).join("")}
+  </table></div>` : `<p class="small muted">No supply or open-offer demand in any cell yet.</p>`}
+  ${d.demandUnmapped ? `<p class="small muted" style="margin:8px 0 0">${d.demandUnmapped} open offer${d.demandUnmapped === 1 ? "" : "s"} carry a business category with no creator-category mapping, so they are not in the grid.</p>` : ""}
+  </div>`;
+  // The match funnel.
+  const fn = d.funnel || { stages: [], capturingSince: {} };
+  const sinceImp = fn.capturingSince && fn.capturingSince.impressions;
+  const sinceSea = fn.capturingSince && fn.capturingSince.searches;
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Match funnel, last ${fn.rangeDays || 30} days</h3>
+  ${sinceImp || sinceSea ? `<p class="small muted" style="margin:0 0 8px">Search and brief capture began ${esc(sinceSea || sinceImp)}. The top of this funnel only counts what was actually captured; the bottom half comes from the records, which are complete.</p>` : `<p class="small muted" style="margin:0 0 8px">No searches or briefs have been captured yet, so the top of this funnel is honestly empty. It starts filling with the first briefed search a business runs.</p>`}
+  <div class="fn2">${funnel2Html((fn.stages || []).map((s) => ({ label: s.label, n: s.n, cap: s.basis === "events" ? "from captured events" : "from the records" })))}</div>
+  ${(fn.zeroResultGaps || []).length ? `<p class="small" style="margin:10px 0 0"><strong>Searches that found nobody:</strong> ${fn.zeroResultGaps.map((g) => `${esc(g.market)} · ${esc(g.category)} (${g.count})`).join(" · ")}</p>` : ""}
+  </div>`;
+  // Reliability distribution.
+  const rel = d.reliability || { byDeliveries: {}, byOnTime: {} };
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Creator reliability</h3>
+  <p class="small muted" style="margin:0 0 8px">Approved creators, by delivered posts and on-time share.</p>
+  <div class="table-wrap"><table><tr><th>Delivered posts</th>${Object.keys(rel.byDeliveries).map((k) => `<th>${esc(k)}</th>`).join("")}</tr>
+  <tr><td>Creators</td>${Object.entries(rel.byDeliveries).map(([k, v]) => `<td data-label="${esc(k)} delivered">${v}</td>`).join("")}</tr></table></div>
+  <div class="table-wrap" style="margin-top:8px"><table><tr><th>On-time share</th>${Object.keys(rel.byOnTime).map((k) => `<th>${esc(k)}</th>`).join("")}</tr>
+  <tr><td>Creators</td>${Object.entries(rel.byOnTime).map(([k, v]) => `<td data-label="${esc(k)} on-time">${v}</td>`).join("")}</tr></table></div>
+  <p class="small muted" style="margin:8px 0 0">${rel.paused || 0} paused by the standards ladder · ${rel.banned || 0} removed.</p>
+  </div>`;
+  // Benchmarks.
+  const bench = Object.entries(d.benchmarks || {}).map(([key, b]) => { const parts = key.split("|"); return { market: parts[0], category: parts[1], ...b }; }).sort((a, b) => b.creators - a.creators).slice(0, 25);
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Cell benchmarks</h3>
+  <p class="small muted" style="margin:0 0 8px">Medians inside each market and category cell — the numbers an acquirer trends, frozen daily in the snapshots below.</p>
+  ${bench.length ? `<div class="table-wrap"><table><tr><th>Market</th><th>Category</th><th>Creators</th><th>Median local %</th><th>Median audience</th><th>Median paid rate</th><th>Median on-time %</th></tr>
+  ${bench.map((b) => `<tr><td>${esc(b.market)}</td><td data-label="Category">${esc(b.category)}</td><td data-label="Creators">${b.creators}</td><td data-label="Median local %">${b.medianLocalPct == null ? "—" : b.medianLocalPct + "%"}</td><td data-label="Median audience">${b.medianAudience == null ? "—" : astFull(b.medianAudience)}</td><td data-label="Median paid rate">${b.medianPaidRate == null ? "—" : "$" + astFull(b.medianPaidRate)}</td><td data-label="Median on-time %">${b.medianOnTimePct == null ? "—" : b.medianOnTimePct + "%"}</td></tr>`).join("")}
+  </table></div>` : `<p class="small muted">No bookable creators in any cell yet.</p>`}
+  </div>`;
+  // Typed-city backlog.
+  const bl = d.backlog || { unlistedByCity: [], cityRequests: [] };
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Demand from unlisted cities</h3>
+  ${(bl.unlistedByCity || []).length ? bl.unlistedByCity.map((r) => `<div class="kv"><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"} (${r.approved} approved)</b></div>`).join("") : `<p class="small muted">No sign-ups from unlisted cities yet.</p>`}
+  ${(bl.cityRequests || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>City requests on file:</strong></p>${bl.cityRequests.map((r) => `<div class="kv"><span>${esc(r.city)}${r.region ? ", " + esc(r.region) : ""}${r.handle ? " · @" + esc(r.handle) : ""}</span><b>${r.createdAt ? esc(fmtDay(r.createdAt)) : ""}</b></div>`).join("")}` : ""}
+  </div>`;
+  // Snapshot trend.
+  const snaps = d.snapshots || [];
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Daily snapshots</h3>
+  ${snaps.length ? `${sparkSvg119(snaps.map((s) => s.creatorsApproved))}<div class="table-wrap"><table><tr><th>Date</th><th>Approved creators</th><th>Followers</th><th>Open offers</th><th>Bookings</th><th>Page views</th></tr>
+  ${snaps.slice().reverse().map((s) => `<tr><td>${esc(s.date)}</td><td data-label="Approved creators">${s.creatorsApproved}</td><td data-label="Followers">${astFull(s.followers)}</td><td data-label="Open offers">${s.offersOpen}</td><td data-label="Bookings">${s.bookings}</td><td data-label="Page views">${s.pageviews}</td></tr>`).join("")}
+  </table></div>` : `<p class="small muted">No daily snapshot yet. The first one freezes tonight; trends exist from the day capture starts, never before.</p>`}
+  </div>`;
+  // Exports.
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Export the raw data</h3>
+  <p class="small muted" style="margin:0 0 8px">The core datasets, straight from the records. Event datasets cover the last 30 days (add &amp;days= up to 90 in the link for more); record datasets are whole. Event export is scoped to the capture types and the full log because those are the datasets the ML training set joins on.</p>
+  ${AST_EXPORT_DATASETS.map((ds) => `<div class="kv"><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=${ds}&format=csv">CSV</a> · <a href="/api/admin/stats/data/export?dataset=${ds}&format=json">JSON</a></span></div>`).join("")}
+  </div>`;
+  host.innerHTML = html;
 }
 
 async function ccShowTab() {

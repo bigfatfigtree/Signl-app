@@ -15,9 +15,414 @@ const { logEvent, listEvents, listEventsForSubject } = require("./events");
 async function logCapture(fields) {
   try { await logEvent(fields); } catch (e) { /* capture is best-effort by design */ }
 }
+
+// ---------- Data captures, round 2 (Build -145; Data Audit
+// 2026-11-07 items 5-7 + the loss-map sweep + the Admin Data
+// view + the Suggestions panel). Same doctrine as round 1:
+// observations only. Nothing in this section mutates a record,
+// a score, or a creator-facing surface; every write is an
+// append (an event, a daily counter, a daily snapshot) through
+// logCapture or a guarded store.set, and every failure is
+// swallowed so a capture can never break the flow it observes.
+
+// The audience facts of a creator record as a comparable
+// snapshot: the full platform stack, the per-platform local %
+// map, the home local %, and the stacked total.
+function audienceSnapshotOf(creator) {
+  const c = creator || {};
+  const stack = {};
+  for (const [k, v] of Object.entries(c.audienceStack || {})) { const n = Number(v); if (Number.isFinite(n) && n > 0) stack[k] = n; }
+  const rates = {};
+  const rawRates = normalizePlatformLocalPct(c.platformLocalPct) || {};
+  for (const [k, v] of Object.entries(rawRates)) { const n = Number(v); if (Number.isFinite(n)) rates[k] = n; }
+  return {
+    stack,
+    platformLocalPct: rates,
+    localAudiencePct: Number.isFinite(Number(c.localAudiencePct)) ? Number(c.localAudiencePct) : null,
+    totalAudience: Number.isFinite(Number(c.totalAudience)) ? Number(c.totalAudience) : 0,
+  };
+}
+
+// One audience_updated event whenever a write actually changed
+// a creator's follower counts or local % — audit loss #6 (syncs
+// and saves overwrote the stack silently, so no benchmark could
+// ever be trended). The full new stack and rates ride along,
+// with from/to on every field that moved. No change, no event.
+// source names the lane: "sync:youtube", "sync:instagram",
+// "profile_save", "concierge".
+async function logAudienceUpdated(userRec, before, source) {
+  if (!userRec || !userRec.creator || !before) return;
+  const after = audienceSnapshotOf(userRec.creator);
+  const changes = {};
+  const stackChanges = {};
+  for (const p of new Set([...Object.keys(before.stack), ...Object.keys(after.stack)])) {
+    const f = before.stack[p] || 0;
+    const t = after.stack[p] || 0;
+    if (f !== t) stackChanges[p] = { from: f, to: t };
+  }
+  if (Object.keys(stackChanges).length) changes.stack = stackChanges;
+  const rateChanges = {};
+  for (const p of new Set([...Object.keys(before.platformLocalPct), ...Object.keys(after.platformLocalPct)])) {
+    const f = before.platformLocalPct[p];
+    const t = after.platformLocalPct[p];
+    if (f !== t) rateChanges[p] = { from: f == null ? null : f, to: t == null ? null : t };
+  }
+  if (Object.keys(rateChanges).length) changes.platformLocalPct = rateChanges;
+  if (before.localAudiencePct !== after.localAudiencePct) changes.localAudiencePct = { from: before.localAudiencePct, to: after.localAudiencePct };
+  if (before.totalAudience !== after.totalAudience) changes.totalAudience = { from: before.totalAudience, to: after.totalAudience };
+  if (!Object.keys(changes).length) return;
+  await logCapture({
+    type: "audience_updated", actorId: userRec.id, actorRole: userRec.role || "creator", subjectId: userRec.id, market: userRec.market,
+    data: { source, stack: after.stack, platformLocalPct: after.platformLocalPct, localAudiencePct: after.localAudiencePct, totalAudience: after.totalAudience, changes },
+  });
+}
+
+// Public creator-page views (audit loss #7): one counter record
+// per creator per day, pageview:{yyyy-mm-dd}:{userId} — the
+// views -> bookings join. kind "claim" counts the claimed-but-
+// unfinished page inside the same record (claimViews).
+async function countPageview(userId, kind) {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const key = `pageview:${day}:${userId}`;
+    const rec = (await store.get(key)) || { date: day, userId, views: 0, claimViews: 0, firstViewAt: nowIso() };
+    rec.views = (Number(rec.views) || 0) + 1;
+    if (kind === "claim") rec.claimViews = (Number(rec.claimViews) || 0) + 1;
+    rec.lastViewAt = nowIso();
+    await store.set(key, rec);
+  } catch (e) { /* a view counter never breaks a page */ }
+}
+
+function medianOf(nums) {
+  const a = nums.filter((n) => Number.isFinite(n)).sort((x, y) => x - y);
+  if (!a.length) return null;
+  const mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : Math.round(((a[mid - 1] + a[mid]) / 2) * 10) / 10;
+}
+
+// The one aggregation the daily snapshot, the Admin Data view
+// and the Suggestions panel all read. Supply = approved,
+// profile-complete creators (the bookable roster) per home
+// market x creator category. Demand = open offers per market,
+// mapped from each offer's business category to creator
+// categories through the platform's own CATEGORY_FIT primaries
+// (the same map the match engine scores a business brief with).
+async function buildDataAggregates() {
+  const users = (await allUsers()).filter((u) => u.role !== "admin");
+  const creators = users.filter((u) => u.role === "creator" && !isTester(u));
+  const businesses = users.filter((u) => u.role === "business" && !isTester(u));
+  const offers = await allOffers();
+  const bookings = await allBookings();
+  const posts = await allPosts();
+  const approved = creators.filter((u) => u.status === "approved");
+  const bookable = approved.filter((u) => profileCompleteOf(u));
+  const followers = approved.reduce((s, u) => s + (Number(u.creator && u.creator.totalAudience) || 0), 0);
+  const localPcts = approved.map((u) => Number(u.creator && u.creator.localAudiencePct)).filter((n) => Number.isFinite(n) && n > 0);
+  const totals = {
+    creators: { signedUp: creators.length, pending: creators.filter((u) => u.status === "pending").length, approved: approved.length, complete: bookable.length, followers, avgLocalPct: localPcts.length ? Math.round(localPcts.reduce((s, n) => s + n, 0) / localPcts.length) : 0 },
+    businesses: { signedUp: businesses.length, pending: businesses.filter((u) => u.status === "pending").length, approved: businesses.filter((u) => u.status === "approved").length },
+    offers: { total: offers.length, open: offers.filter((o) => o.status === "open").length },
+    bookings: { total: bookings.length, redeemed: bookings.filter((b) => b.redeemedAt).length, completed: bookings.filter((b) => b.status === "completed").length },
+    posts: { total: posts.length, onTime: posts.filter((p) => p.onTime).length, late: posts.filter((p) => p.submittedAt && !p.onTime).length },
+  };
+  const postsByBooking = new Map();
+  for (const p of posts) { if (!postsByBooking.has(p.bookingId)) postsByBooking.set(p.bookingId, []); postsByBooking.get(p.bookingId).push(p); }
+  const historyOf = new Map();
+  for (const u of approved) {
+    const mine = bookings.filter((b) => b.creatorId === u.id);
+    const minePosts = mine.flatMap((b) => postsByBooking.get(b.id) || []);
+    historyOf.set(u.id, summarizeHistory(mine, minePosts));
+  }
+  const matrix = {};
+  const cellCreators = {};
+  for (const m of MARKETS) {
+    matrix[m.name] = {};
+    for (const cat of CREATOR_CATEGORIES) matrix[m.name][cat] = { supply: 0, demand: 0 };
+  }
+  for (const u of bookable) {
+    const mk = normalizeMarketName(u.market);
+    if (!matrix[mk]) continue;
+    for (const cat of (u.creator && u.creator.categories) || []) {
+      if (!matrix[mk][cat]) continue;
+      matrix[mk][cat].supply += 1;
+      (cellCreators[`${mk}|${cat}`] = cellCreators[`${mk}|${cat}`] || []).push(u);
+    }
+  }
+  let demandUnmapped = 0;
+  for (const o of offers) {
+    if (o.status !== "open") continue;
+    const mk = normalizeMarketName(o.market);
+    if (!matrix[mk]) continue;
+    const primaries = (CATEGORY_FIT[o.category] && CATEGORY_FIT[o.category].primary) || [];
+    if (!primaries.length) { demandUnmapped += 1; continue; }
+    for (const cat of primaries) if (matrix[mk][cat]) matrix[mk][cat].demand += 1;
+  }
+  const benchmarks = {};
+  for (const [key, cell] of Object.entries(cellCreators)) {
+    const onTime = [];
+    const locals = [];
+    const audiences = [];
+    const rates = [];
+    for (const u of cell) {
+      const h = historyOf.get(u.id) || { postsOnTime: 0, postsLate: 0 };
+      const delivered = h.postsOnTime + h.postsLate;
+      if (delivered > 0) onTime.push(Math.round((100 * h.postsOnTime) / delivered));
+      const lp = Number(u.creator && u.creator.localAudiencePct); if (Number.isFinite(lp) && lp > 0) locals.push(lp);
+      const ta = Number(u.creator && u.creator.totalAudience); if (Number.isFinite(ta) && ta > 0) audiences.push(ta);
+      const pr = Number(u.creator && u.creator.paidRate); if (Number.isFinite(pr) && pr > 0) rates.push(pr);
+    }
+    benchmarks[key] = { creators: cell.length, medianLocalPct: medianOf(locals), medianAudience: medianOf(audiences), medianPaidRate: medianOf(rates), medianOnTimePct: medianOf(onTime) };
+  }
+  const relBands = { "0": 0, "1-2": 0, "3-5": 0, "6+": 0 };
+  const relPct = { "no posts yet": 0, "100%": 0, "80-99%": 0, "50-79%": 0, "under 50%": 0 };
+  for (const u of approved) {
+    const h = historyOf.get(u.id) || { postsOnTime: 0, postsLate: 0 };
+    const delivered = h.postsOnTime + h.postsLate;
+    relBands[delivered === 0 ? "0" : delivered <= 2 ? "1-2" : delivered <= 5 ? "3-5" : "6+"] += 1;
+    if (delivered === 0) relPct["no posts yet"] += 1;
+    else { const pct = (100 * h.postsOnTime) / delivered; relPct[pct >= 100 ? "100%" : pct >= 80 ? "80-99%" : pct >= 50 ? "50-79%" : "under 50%"] += 1; }
+  }
+  const reliability = { byDeliveries: relBands, byOnTime: relPct, paused: approved.filter((u) => standingState(u) === "paused").length, banned: creators.filter((u) => standingState(u) === "banned").length };
+  const unlistedMap = {};
+  for (const u of creators) {
+    if (u.market === UNLISTED) {
+      const region = u.country || u.state || "";
+      const place = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
+      if (!unlistedMap[place]) unlistedMap[place] = { place, city: u.city || "Unknown", country: u.country || null, creators: 0, approved: 0 };
+      unlistedMap[place].creators += 1;
+      if (u.status === "approved") unlistedMap[place].approved += 1;
+    }
+  }
+  const unlistedByCity = Object.values(unlistedMap).sort((a, b) => b.creators - a.creators);
+  const cityReqs = (await store.list("cityrequest:")).map((r) => r.value).filter(Boolean);
+  const cityRequests = cityReqs.slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 25)
+    .map((r) => ({ city: r.city || "Unknown", region: r.region || r.country || r.state || "", handle: r.handle || null, createdAt: r.createdAt || null }));
+  return { totals, matrix, demandUnmapped, benchmarks, reliability, unlistedByCity, cityRequests, creators, businesses };
+}
+
+// The daily platform snapshot (audit item 5): one append-only
+// record per day, snapshot:{yyyy-mm-dd}, holding the aggregates
+// above so benchmark trends exist from the day this ships. An
+// existing day is never overwritten — a backfill would
+// fabricate history the platform never captured.
+async function runSnapshotSweep(opts = {}) {
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `snapshot:${day}`;
+  if (!opts.force && (await store.get(key))) return { day, wrote: false, reason: "already captured" };
+  const agg = await buildDataAggregates();
+  const pvKeys = await store.listKeys(`pageview:${day}:`);
+  const pvRows = pvKeys.length ? await store.getMany(pvKeys) : [];
+  const pageviews = pvRows.reduce((s, r) => s + (Number(r.value && r.value.views) || 0), 0);
+  const matrix = {};
+  for (const [mk, cats] of Object.entries(agg.matrix)) {
+    matrix[mk] = {};
+    for (const [cat, cell] of Object.entries(cats)) if (cell.supply || cell.demand) matrix[mk][cat] = cell;
+  }
+  const rec = { date: day, capturedAt: nowIso(), totals: agg.totals, matrix, demandUnmapped: agg.demandUnmapped, benchmarks: agg.benchmarks, reliability: agg.reliability, unlistedByCity: agg.unlistedByCity.slice(0, 20), pageviews };
+  await store.set(key, rec);
+  return { day, wrote: true, creators: agg.totals.creators.approved, pageviews };
+}
+
+let snapshotMemoAt = 0;
+let snapshotMemoDay = "";
+async function maybeRunSnapshotSweep() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (snapshotMemoDay === day) return;
+  if (Date.now() - snapshotMemoAt < 10 * 60 * 1000) return;
+  snapshotMemoAt = Date.now();
+  const cfg = await store.get("config:snapshotSweep");
+  if (cfg && cfg.lastDate === day) { snapshotMemoDay = day; return; }
+  await runSnapshotSweep();
+  await store.set("config:snapshotSweep", { lastDate: day, lastRunAt: nowIso() });
+  snapshotMemoDay = day;
+}
+
+// Events are keyed by UTC day, so a range read is a bounded set
+// of prefix scans. The day count is capped so an admin read can
+// never turn into an unbounded walk of the log.
+async function eventsInRange(days, maxDays = 31) {
+  const n = Math.max(1, Math.min(maxDays, Math.floor(Number(days) || 30)));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const keys = await store.listKeys(`event:${d}:`);
+    if (!keys.length) continue;
+    const rows = await store.getMany(keys);
+    for (const r of rows) if (r.value) out.push(r.value);
+  }
+  return out;
+}
+
+// The day capture of one event type began (its earliest record),
+// or null when it has never fired. Scans the log oldest-first in
+// bounded chunks; an honest null beats an invented date — the
+// Admin Data view labels its event-sourced stages with this.
+async function captureSince(type) {
+  const keys = await store.listKeys("event:");
+  const CHUNK = 400;
+  for (let i = 0; i < keys.length && i < 20000; i += CHUNK) {
+    const rows = await store.getMany(keys.slice(i, i + CHUNK));
+    for (const r of rows) if (r.value && r.value.type === type) return String(r.value.ts || "").slice(0, 10) || null;
+  }
+  return null;
+}
+
+// The match funnel. The top (searches -> briefs -> creators
+// shown) exists only in the event log, from the night capture
+// shipped; the bottom (picks -> selections -> bookings ->
+// redeemed -> posts) is computed from the records themselves,
+// which carry their own timestamps and are complete.
+async function buildFunnel(days) {
+  const rangeDays = Math.max(1, Math.min(31, Math.floor(Number(days) || 30)));
+  const sinceMs = Date.now() - rangeDays * 86400000;
+  const inRange = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) && t >= sinceMs; };
+  const events = await eventsInRange(rangeDays);
+  const searches = events.filter((e) => e.type === "discover_search");
+  const impressions = events.filter((e) => e.type === "match_impression");
+  const shown = impressions.reduce((s, e) => s + ((e.data && Array.isArray(e.data.shown)) ? e.data.shown.length : 0), 0);
+  const favs = (await store.list("favorite:")).map((r) => r.value).filter(Boolean);
+  const applications = await allApplications();
+  const bookings = await allBookings();
+  const posts = await allPosts();
+  const stages = [
+    { key: "searches", label: "Business searches", n: searches.length, basis: "events" },
+    { key: "briefs", label: "Match briefs run", n: impressions.length, basis: "events" },
+    { key: "shown", label: "Creators shown", n: shown, basis: "events" },
+    { key: "picks", label: "Picks (favorites + applications)", n: favs.filter((f) => inRange(f.createdAt)).length + applications.filter((a) => inRange(a.createdAt)).length, basis: "records" },
+    { key: "selections", label: "Selections", n: applications.filter((a) => a.status === "selected" && inRange(a.decidedAt || a.updatedAt)).length, basis: "records" },
+    { key: "bookings", label: "Bookings", n: bookings.filter((b) => inRange(b.createdAt)).length, basis: "records" },
+    { key: "redeemed", label: "Visits redeemed", n: bookings.filter((b) => inRange(b.redeemedAt)).length, basis: "records" },
+    { key: "posts", label: "Posts delivered", n: posts.filter((p) => inRange(p.submittedAt || p.createdAt)).length, basis: "records" },
+  ];
+  const zeroGaps = {};
+  for (const e of searches) {
+    if (!e.data || !e.data.zeroResults) continue;
+    const f = e.data.filters || {};
+    const key = `${e.market || f.market || "Anywhere"}|${f.category || "Any category"}`;
+    zeroGaps[key] = (zeroGaps[key] || 0) + 1;
+  }
+  const zeroResultGaps = Object.entries(zeroGaps).map(([key, count]) => { const parts = key.split("|"); return { market: parts[0], category: parts[1], count }; }).sort((a, b) => b.count - a.count).slice(0, 10);
+  return { rangeDays, stages, zeroResultGaps, searchesCount: searches.length, impressionsCount: impressions.length, shownCount: shown };
+}
+
+function suggestionFingerprint(parts) {
+  return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 16);
+}
+
+// Suggestions v1 (Jeff, 2026-11-08: "I need a place to see
+// those suggestions too. In my admin and obvious."). Computed
+// ONLY from the aggregations above: supply gaps against real
+// open-offer demand, the typed-city backlog, the review queues,
+// and funnel leaks once the capture exists. Every suggestion
+// carries its receipt numbers; a dismissal remembers the
+// fingerprint of those numbers, so a dismissed suggestion stays
+// dismissed until its numbers actually move.
+async function suggestionsRaw() {
+  const agg = await buildDataAggregates();
+  const out = [];
+  const gaps = [];
+  for (const [mk, cats] of Object.entries(agg.matrix)) {
+    for (const [cat, cell] of Object.entries(cats)) {
+      if (cell.demand > 0 && cell.supply === 0) gaps.push({ mk, cat, supply: cell.supply, demand: cell.demand, hard: true });
+      else if (cell.demand >= 3 && cell.supply > 0 && cell.demand > cell.supply * 2) gaps.push({ mk, cat, supply: cell.supply, demand: cell.demand, hard: false });
+    }
+  }
+  gaps.sort((a, b) => b.demand - a.demand);
+  for (const g of gaps.slice(0, 5)) {
+    out.push({
+      id: `gap:${g.mk}:${g.cat}`, kind: "gap",
+      text: g.hard
+        ? `No approved ${g.cat} creators in ${g.mk} yet, and ${g.demand} open offer${g.demand === 1 ? "" : "s"} there want them. Recruiting ${g.cat} in ${g.mk} is the gap.`
+        : `Only ${g.supply} approved ${g.cat} creator${g.supply === 1 ? "" : "s"} in ${g.mk} for ${g.demand} open offers. That cell is thin.`,
+      receipt: { market: g.mk, category: g.cat, supply: g.supply, demand: g.demand },
+      fingerprint: suggestionFingerprint(["gap", g.mk, g.cat, g.supply, g.demand]),
+    });
+  }
+  const now = Date.now();
+  const waitOf = (list) => {
+    const pending = list.filter((u) => u.status === "pending");
+    if (!pending.length) return null;
+    const oldest = pending.reduce((min, u) => Math.min(min, Date.parse(u.createdAt || "") || now), now);
+    return { count: pending.length, oldestDays: Math.max(0, Math.floor((now - oldest) / 86400000)) };
+  };
+  const wc = waitOf(agg.creators);
+  if (wc) out.push({ id: "waiting:creators", kind: "waiting", text: `${wc.count} creator application${wc.count === 1 ? "" : "s"} waiting on review${wc.oldestDays > 0 ? `; the oldest has waited ${wc.oldestDays} day${wc.oldestDays === 1 ? "" : "s"}` : ""}. They sit in Applications.`, receipt: wc, fingerprint: suggestionFingerprint(["waiting:creators", wc.count, wc.oldestDays]) });
+  const wb = waitOf(agg.businesses);
+  if (wb) out.push({ id: "waiting:businesses", kind: "waiting", text: `${wb.count} business application${wb.count === 1 ? "" : "s"} waiting on review${wb.oldestDays > 0 ? `; the oldest has waited ${wb.oldestDays} day${wb.oldestDays === 1 ? "" : "s"}` : ""}.`, receipt: wb, fingerprint: suggestionFingerprint(["waiting:businesses", wb.count, wb.oldestDays]) });
+  for (const city of agg.unlistedByCity.slice(0, 3)) {
+    if (city.creators < 5) break;
+    out.push({ id: `city:${city.place}`, kind: "backlog", text: `${city.creators} creators signed up from ${city.place}, which is not a listed market yet. Worth a look before it gets bigger.`, receipt: { place: city.place, creators: city.creators, approved: city.approved }, fingerprint: suggestionFingerprint(["city", city.place, city.creators]) });
+  }
+  const funnel = await buildFunnel(30);
+  const topGap = funnel.zeroResultGaps[0];
+  if (topGap && topGap.count >= 3) out.push({ id: `search:${topGap.market}:${topGap.category}`, kind: "funnel", text: `Businesses searched ${topGap.market} for ${topGap.category} ${topGap.count} times in the last 30 days and found nobody. That is unmet demand on tape.`, receipt: { searches: topGap.count, market: topGap.market, category: topGap.category }, fingerprint: suggestionFingerprint(["search", topGap.market, topGap.category, topGap.count]) });
+  const picksStage = funnel.stages.find((s) => s.key === "picks");
+  if (funnel.impressionsCount > 0 && funnel.shownCount > 0 && picksStage && picksStage.n === 0) {
+    out.push({ id: "funnel:picks", kind: "funnel", text: `Creators were shown ${funnel.shownCount} times in match lists in the last 30 days, and none were picked or applied to yet.`, receipt: { shown: funnel.shownCount, picks: 0 }, fingerprint: suggestionFingerprint(["funnel:picks", funnel.shownCount]) });
+  }
+  const dismissed = ((await store.get("config:suggestionDismissals")) || {}).dismissals || {};
+  const watching = [
+    "Supply gaps in every market and category, against open-offer demand",
+    "Creators signing up from cities that are not listed markets yet",
+    "Applications waiting on review, and how long the oldest has waited",
+    "Searches that found nobody, and match lists that end without a pick",
+  ];
+  return { all: out, watching, dismissed };
+}
+
+// Raw export datasets for the Admin Data view. User rows pass
+// through a safe field mapper (never the raw record: no password
+// hashes, no tokens); event rows keep the log's own shape with
+// the data payload nested. Event datasets are day-scoped
+// because the log is keyed by day; record datasets are whole.
+const EXPORT_EVENT_TYPES = {
+  match_impressions: ["match_impression"],
+  discover_searches: ["discover_search"],
+  sig_asks: ["sig_ask"],
+  deck_actions: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"],
+  audience_updates: ["audience_updated"],
+  profile_views: ["profile_view"],
+  audience_verifications: ["audience_verification_updated"],
+  events: null,
+};
+function exportUserRow(u) {
+  if (u.role === "creator") {
+    const c = u.creator || {};
+    return { id: u.id, role: "creator", name: u.name || null, email: u.email || null, status: u.status, market: u.market || null, city: u.city || null, state: u.state || null, country: u.country || null, createdAt: u.createdAt || null, handle: c.handle || null, categories: (c.categories || []).join("; "), totalAudience: c.totalAudience || 0, localAudiencePct: c.localAudiencePct != null ? c.localAudiencePct : null, paidRate: c.paidRate != null ? c.paidRate : null, profileComplete: !!profileCompleteOf(u), tierBand: c.tierBand || null };
+  }
+  const b = u.business || {};
+  return { id: u.id, role: "business", name: u.name || null, email: u.email || null, status: u.status, market: u.market || null, city: u.city || null, state: u.state || null, country: u.country || null, createdAt: u.createdAt || null, businessName: b.businessName || null, category: b.category || null };
+}
+async function buildExportDataset(dataset, days) {
+  const flat = (rows) => ({ rows });
+  if (dataset === "creators" || dataset === "businesses") {
+    const users = (await allUsers()).filter((u) => !isTester(u) && u.role === (dataset === "creators" ? "creator" : "business"));
+    return flat(users.map(exportUserRow));
+  }
+  if (dataset === "offers") return flat((await allOffers()).map((o) => ({ id: o.id, businessId: o.businessId || null, creatorId: o.creatorId || null, title: o.title || null, market: o.market || null, category: o.category || null, status: o.status || null, kind: o.kind || null, createdAt: o.createdAt || null, expiresAt: o.expiresAt || null, sourceBrief: o.sourceBrief || null })));
+  if (dataset === "applications") return flat((await allApplications()).map((a) => ({ id: a.id, offerId: a.offerId || null, creatorId: a.creatorId || null, businessId: a.businessId || null, status: a.status || null, createdAt: a.createdAt || null, decidedAt: a.decidedAt || null, snapshotLocalPct: a.snapshot && a.snapshot.localAudiencePct != null ? a.snapshot.localAudiencePct : null, snapshotTotalAudience: a.snapshot && a.snapshot.totalAudience != null ? a.snapshot.totalAudience : null })));
+  if (dataset === "bookings") return flat((await allBookings()).map((b) => ({ id: b.id, offerId: b.offerId || null, businessId: b.businessId || null, creatorId: b.creatorId || null, market: b.market || null, status: b.status || null, createdAt: b.createdAt || null, redeemedAt: b.redeemedAt || null })));
+  if (dataset === "posts") return flat((await allPosts()).map((p) => ({ id: p.id, bookingId: p.bookingId || null, creatorId: p.creatorId || null, url: p.url || null, submittedAt: p.submittedAt || p.createdAt || null, onTime: !!p.onTime })));
+  if (dataset === "snapshots") return flat((await store.list("snapshot:")).map((r) => r.value).filter(Boolean));
+  if (dataset === "pageviews") return flat((await store.list("pageview:")).map((r) => r.value).filter(Boolean).map((r) => ({ date: r.date, userId: r.userId, views: r.views || 0, claimViews: r.claimViews || 0, firstViewAt: r.firstViewAt || null, lastViewAt: r.lastViewAt || null })));
+  if (dataset === "cityrequests") return flat((await store.list("cityrequest:")).map((r) => r.value).filter(Boolean).map((r) => ({ city: r.city || null, region: r.region || r.country || r.state || "", handle: r.handle || null, email: r.email || null, createdAt: r.createdAt || null })));
+  if (Object.prototype.hasOwnProperty.call(EXPORT_EVENT_TYPES, dataset)) {
+    const types = EXPORT_EVENT_TYPES[dataset];
+    const events = await eventsInRange(days, 90);
+    const rows = events.filter((e) => !types || types.includes(e.type)).map((e) => ({ id: e.id, ts: e.ts, type: e.type, actorId: e.actorId || null, actorRole: e.actorRole || null, subjectId: e.subjectId || null, market: e.market || null, data: e.data || {} }));
+    return flat(rows);
+  }
+  return null;
+}
+function exportRowsToCsv(rows) {
+  const cols = [];
+  for (const r of rows) for (const k of Object.keys(r)) if (!cols.includes(k)) cols.push(k);
+  const cell = (v) => csvCell(v != null && typeof v === "object" ? JSON.stringify(v) : v);
+  return [cols.join(","), ...rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n");
+}
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
-const { computeFit, buildFitNote } = require("./fit");
+const { computeFit, buildFitNote, CATEGORY_FIT } = require("./fit");
 const { computeMatchScore } = require("./match");
 const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES, brandedEmailHtml } = require("./email");
 const claimEvidence = require("./claim-evidence");
@@ -2816,6 +3221,10 @@ function audienceView(creator) {
 async function applySyncedAudienceCount(userId, conn, count) {
   const record = await store.get(`user:${userId}`);
   if (!record || !record.creator) return null;
+  // Build -145: the pre-sync audience, so the overwrite this
+  // function is about to make lands in the log with from/to
+  // (audit loss #6) instead of erasing the old numbers.
+  const audienceBefore = audienceSnapshotOf(record.creator);
   const c = record.creator;
   const stack = audienceStackOf(c);
   const clean = Math.floor(Number(count));
@@ -2837,6 +3246,7 @@ async function applySyncedAudienceCount(userId, conn, count) {
   };
   record.updatedAt = nowIso();
   await store.set(`user:${userId}`, record);
+  await logAudienceUpdated(record, audienceBefore, `sync:${conn.platform}`);
   return record;
 }
 
@@ -2910,9 +3320,20 @@ async function syncYouTubeForConnection(conn) {
 async function applyAudienceVerification(userId, record) {
   const fresh = await store.get(`user:${userId}`);
   if (!fresh || !fresh.creator) return null;
+  // Build -145 (loss-map sweep): each verification pass replaces
+  // this record wholesale, which used to erase the per-market
+  // geography history. The from/to now lands in the event log
+  // whenever the status or the per-market shares move.
+  const prev = fresh.creator.audienceVerification || null;
+  const slim = (v) => (v ? { status: v.status || null, perMarket: v.perMarket || null, followerCountVerified: v.followerCountVerified != null ? v.followerCountVerified : null } : null);
+  const prevSlim = slim(prev);
+  const nextSlim = slim(record);
   fresh.creator.audienceVerification = record;
   fresh.updatedAt = nowIso();
   await store.set(`user:${userId}`, fresh);
+  if (JSON.stringify(prevSlim) !== JSON.stringify(nextSlim)) {
+    await logCapture({ type: "audience_verification_updated", actorId: fresh.id, actorRole: fresh.role || "creator", subjectId: fresh.id, market: fresh.market, data: { source: "sync:instagram", from: prevSlim, to: nextSlim } });
+  }
   return fresh;
 }
 
@@ -9110,7 +9531,11 @@ async function handleFinishEngineReply(user, rawBody) {
   // city is consent to start, not an answer: the opener and the
   // first question go out and nothing is written from it.
   if (startedNow && writes.length && writes.every((w) => w.field === "city")) writes = [];
+  // Build -145: a concierge answer can carry audience numbers;
+  // the same audience_updated capture as a profile save applies.
+  const conciergeAudienceBefore = audienceSnapshotOf(rec.creator);
   const confirms = applyConciergeWrites(rec, writes);
+  await logAudienceUpdated(rec, conciergeAudienceBefore, "concierge");
   const nowComplete = profileCompleteOf(rec);
   if (nowComplete) {
     rec.creator.profileComplete = true;
@@ -19118,6 +19543,7 @@ function adminGate138(user, seg, method, query) {
     case "stats":
       if (seg[2] === "website") return null; // scope-checked in the handler
       return need("stats.view");
+    case "suggestions": return need("stats.view"); // Build -145: the Suggestions panel reads the same numbers as Stats
     case "command": {
       const g = need("stats.view"); if (g) return g;
       if (["money", "owed", "close"].includes(seg[2]) && !perms138.hasStatScope(user, "money")) {
@@ -19751,6 +20177,12 @@ async function route(event) {
     // alone never fired in production, so a throttled pass runs on
     // ordinary API traffic, exactly like compliance above.
     (async () => { try { await maybeRunCampaignSweep(); } catch (e) { /* sweep is best-effort on the request path */ } })(),
+    // Daily platform snapshot (Build -145): one append-only
+    // record per day; the maybe is date-gated, so this costs one
+    // config read on the first request of a day and nothing
+    // after. The scheduled function + admin endpoint below are
+    // the explicit triggers, exactly like the other sweeps.
+    (async () => { try { await maybeRunSnapshotSweep(); } catch (e) { /* snapshot is best-effort on the request path */ } })(),
   ]);
   const ctx = await getAuthUser(event);
   const user = ctx.user;
@@ -20041,6 +20473,7 @@ async function route(event) {
       // approved profile takes over under the 2026-10-23 ruling.
       const claimed = await findClaimPageUser(sanitizePublicHandle(seg[1]));
       if (!claimed) return htmlPage(shell);
+      await countPageview(claimed.id, "claim");
       const cp = claimPagePayload(claimed);
       const chost = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.magpielocal.com";
       return htmlPage(buildClaimPageHtml(shell, {
@@ -20050,6 +20483,7 @@ async function route(event) {
         origin: `https://${chost}`,
       }));
     }
+    await countPageview(target.id, "public");
     const p = await publicProfilePayload(target);
     const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.magpielocal.com";
     const place = p.unlisted ? p.city : p.market;
@@ -20117,7 +20551,16 @@ async function route(event) {
   // active businesses additionally see socials and can message.
   if (method === "GET" && seg[0] === "c" && seg.length === 2) {
     const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
-    if (target) return json(200, { profile: await bookMePayload(target, user) });
+    if (target) {
+      // Build -145 (loss-map sweep): an in-app profile view by
+      // someone other than the creator is a connection-graph
+      // edge — who looked at whom, the in-app half of the
+      // page-view loss (#7). Anonymous and self views stay out.
+      if (user && user.id !== target.id) {
+        await logCapture({ type: "profile_view", actorId: user.id, actorRole: user.role, subjectId: target.id, market: target.market, data: { via: "bookme" } });
+      }
+      return json(200, { profile: await bookMePayload(target, user) });
+    }
     // Demo showcase fence (Build -67): a demo creator's profile
     // resolves ONLY for an allowlisted business viewer (the
     // walkthrough). For everyone else, including logged-out
@@ -20363,6 +20806,24 @@ async function route(event) {
       if (!Number.isNaN(d.getTime())) opts.now = d;
     }
     const summary = await runCampaignSweep(opts);
+    return json(200, { ok: true, sweep: summary });
+  }
+
+  // Daily snapshot trigger (Build -145). Same auth and placement
+  // discipline as the campaign sweep above: the Netlify
+  // scheduled function (netlify/functions/snapshot-sweep.mjs)
+  // POSTs here daily with no session, carrying the
+  // x-signl-sweep-token header when SIGNL_SWEEP_TOKEN is set;
+  // without a matching token, only an admin session may trigger
+  // it. One record per day; a same-day re-run is a no-op unless
+  // the body says force (the verify suites use that).
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "snapshot" && seg[2] === "sweep") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    const summary = await runSnapshotSweep({ force: !!(b && b.force) });
+    if (summary.wrote) { try { await store.set("config:snapshotSweep", { lastDate: summary.day, lastRunAt: nowIso() }); } catch (e) { /* memo is an optimization */ } }
     return json(200, { ok: true, sweep: summary });
   }
 
@@ -21357,6 +21818,9 @@ async function route(event) {
     }
     const ts = nowIso();
     if (user.role === "creator" && user.creator) {
+      // Build -145: the pre-save audience, for the
+      // audience_updated capture after the write (audit #6).
+      const audienceBefore = audienceSnapshotOf(user.creator);
       const c = { ...user.creator };
       const changes = {};
       // Build -140: geography completion BEFORE this save, so
@@ -21832,6 +22296,7 @@ async function route(event) {
       user.updatedAt = ts;
       await store.set(`user:${user.id}`, user);
       await logEvent({ type: "profile_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { changes } });
+      await logAudienceUpdated(user, audienceBefore, "profile_save");
       if (nowComplete && !wasComplete) {
         await logEvent({ type: "profile_completed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { via: "completion_flow", handle: c.handle, city: user.city, neighborhood: c.neighborhood, university: c.university, followerCount: c.followerCount, audienceStack: c.audienceStack, totalAudience: c.totalAudience, avgViews: c.avgViews, tierBand: normalizeTierBand(c.tierBand), localAudiencePct: c.localAudiencePct, localAudienceSource: c.localAudienceSource, categories: c.categories, compCategories: c.compCategories, topAudienceCities: c.topAudienceCities, hasTiktok: !!c.tiktokHandle, hasYoutube: !!c.youtubeChannel, facebookUrl: c.facebookUrl, xHandle: c.xHandle, xUrl: c.xUrl, linkedinUrl: c.linkedinUrl, hasPhoto: !!c.hasPhoto, openToPaidCampaigns: c.openToPaidCampaigns } });
       }
@@ -24756,6 +25221,89 @@ async function route(event) {
         body: csv,
       };
     }
+    // ---- Build -145: the Admin Data view + Suggestions ----
+    // The audit's designed view, inside Stats: the supply/
+    // demand matrix with benchmarks, the match funnel, the
+    // reliability distribution, the typed-city backlog, capture
+    // health, the snapshot trend, and raw exports. Everything
+    // here is computed from the records and the event log at
+    // read time; event-sourced stages carry their
+    // capturing-since date so nothing pretends to history that
+    // was never captured.
+    if (method === "GET" && seg[1] === "stats" && seg[2] === "data" && seg[3] === "export") {
+      const dataset = String(query.dataset || "");
+      const format = String(query.format || "csv") === "json" ? "json" : "csv";
+      const daysRaw = Number(query.days);
+      const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.max(1, Math.min(90, Math.floor(daysRaw))) : 30;
+      const built = await buildExportDataset(dataset, days);
+      if (!built) return err(404, "Unknown dataset");
+      if (format === "json") {
+        return { statusCode: 200, headers: { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": `attachment; filename="magpie-${dataset}.json"` }, body: JSON.stringify(built.rows, null, 2) };
+      }
+      return { statusCode: 200, headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="magpie-${dataset}.csv"` }, body: exportRowsToCsv(built.rows) };
+    }
+    if (method === "GET" && seg[1] === "stats" && seg[2] === "data" && seg.length === 3) {
+      const daysRaw = Number(query.days);
+      const rangeDays = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.max(1, Math.min(31, Math.floor(daysRaw))) : 30;
+      const agg = await buildDataAggregates();
+      const funnel = await buildFunnel(rangeDays);
+      const todayEvents = await eventsInRange(1);
+      const byType = {};
+      for (const e of todayEvents) byType[e.type] = (byType[e.type] || 0) + 1;
+      const rangeEvents = rangeDays > 1 ? await eventsInRange(rangeDays) : todayEvents;
+      const countType = (t) => rangeEvents.filter((e) => e.type === t).length;
+      const captureKinds = [
+        { type: "match_impression", label: "Match impressions" },
+        { type: "discover_search", label: "Discover searches" },
+        { type: "sig_ask", label: "Maggie asks" },
+        { type: "audience_updated", label: "Audience updates" },
+        { type: "profile_view", label: "In-app profile views" },
+      ];
+      const captures = [];
+      for (const k of captureKinds) captures.push({ ...k, inRange: countType(k.type), since: await captureSince(k.type) });
+      captures.push({ type: "deck_actions", label: "Deck passes / Laters", inRange: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"].reduce((s, t) => s + countType(t), 0), since: await captureSince("deck_later") });
+      const snapKeys = await store.listKeys("snapshot:");
+      const snapshots = snapKeys.length ? (await store.getMany(snapKeys.slice(-14))).map((r) => r.value).filter(Boolean)
+        .map((s) => ({ date: s.date, creatorsApproved: s.totals && s.totals.creators ? s.totals.creators.approved : 0, followers: s.totals && s.totals.creators ? s.totals.creators.followers : 0, offersOpen: s.totals && s.totals.offers ? s.totals.offers.open : 0, bookings: s.totals && s.totals.bookings ? s.totals.bookings.total : 0, pageviews: s.pageviews || 0 })) : [];
+      return json(200, {
+        generatedAt: nowIso(), rangeDays,
+        totals: agg.totals, matrix: agg.matrix, demandUnmapped: agg.demandUnmapped, benchmarks: agg.benchmarks, reliability: agg.reliability,
+        backlog: { unlistedByCity: agg.unlistedByCity, cityRequests: agg.cityRequests },
+        funnel: { ...funnel, capturingSince: { searches: await captureSince("discover_search"), impressions: await captureSince("match_impression") } },
+        health: { eventsToday: todayEvents.length, topTypesToday: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([type, count]) => ({ type, count })), captures, latestSnapshotDate: snapKeys.length ? snapKeys[snapKeys.length - 1].slice("snapshot:".length) : null },
+        snapshots,
+      });
+    }
+    if (method === "GET" && seg[1] === "suggestions" && seg.length === 2) {
+      const raw = await suggestionsRaw();
+      let visible = raw.all.filter((s) => raw.dismissed[s.id] !== s.fingerprint);
+      let phrased = false;
+      // Maggie may phrase the lines when her AI is on; the
+      // numbers are validated token-by-token inside
+      // maggiePhrase, and any doubt keeps the template text —
+      // the content is identical either way.
+      const cfg = maggieAi.maggieAiConfig();
+      if (cfg && visible.length) {
+        const lines = await maggieAi.maggiePhrase(cfg, visible.map((s) => s.text));
+        if (lines) { visible = visible.map((s, i) => ({ ...s, text: lines[i] })); phrased = true; }
+      }
+      return json(200, { suggestions: visible.map((s) => ({ id: s.id, kind: s.kind, text: s.text, receipt: s.receipt })), watching: raw.watching, phrased });
+    }
+    if (method === "POST" && seg[1] === "suggestions" && seg[2] === "dismiss" && seg.length === 3) {
+      const b = parseBody(event);
+      const id = String((b && b.id) || "");
+      const raw = await suggestionsRaw();
+      const target = raw.all.find((s) => s.id === id);
+      if (!target) return err(404, "That suggestion is not live anymore.");
+      const rec = (await store.get("config:suggestionDismissals")) || { dismissals: {} };
+      rec.dismissals = rec.dismissals || {};
+      rec.dismissals[id] = target.fingerprint;
+      rec.updatedAt = nowIso();
+      await store.set("config:suggestionDismissals", rec);
+      await logEvent({ type: "suggestion_dismissed", actorId: user.id, actorRole: "admin", subjectId: null, data: { id } });
+      return json(200, { ok: true });
+    }
+
     if (method === "GET" && seg[1] === "stats") {
       const users = (await allUsers()).filter((u) => u.role !== "admin");
       const offers = await allOffers();
