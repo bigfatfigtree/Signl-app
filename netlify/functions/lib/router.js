@@ -8,6 +8,7 @@ const { logEvent, listEvents, listEventsForSubject } = require("./events");
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
+const { computeMatchScore } = require("./match");
 const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES, brandedEmailHtml } = require("./email");
 const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
@@ -6159,11 +6160,85 @@ function creatorFitInputOf(user, extra) {
   };
 }
 
+// ---------- Match Engine v1: brief resolution ----------
+// A match score exists only against a BRIEF (lib/match.js). Two
+// briefs resolve here, plus one internal override:
+//   campaign: ?campaignId=<offer id> — the offer must belong to
+//     the requesting business (an admin may score any campaign).
+//     The brief is the offer itself: its market, its business
+//     category, its kind, and (paid) its cash rate as budget.
+//   filters:  ?sort=match with ?budget= and at least one
+//     ?category= — the Find filters carrying market + category +
+//     budget. The market is the market being browsed; the first
+//     selected category is the brief's category (creator
+//     vocabulary, the vocabulary the filters speak).
+//   opts.brief: a brief object handed in by a caller that already
+//     holds it (the campaign matched-list route), so the scoring
+//     below runs identically there.
+// No brief, no scores: every existing caller (default Discover,
+// the roster preview, Sig's B2 search, the admin preview) gets
+// exactly the payload it gets today.
+async function resolveMatchBrief(query, viewer, marketName, catSet, opts) {
+  if (opts && opts.brief) return opts.brief;
+  const cid = query.campaignId || query.offerId;
+  if (cid) {
+    const offer = await store.get(`offer:${cid}`);
+    const mine = offer && viewer && (viewer.role === "admin" || offer.businessId === viewer.id);
+    if (offer && mine) {
+      const kind = kindOf(offer);
+      return {
+        source: "campaign",
+        campaignId: offer.id,
+        label: offer.title || "Your campaign",
+        market: normalizeMarketName(offer.market) || marketName,
+        category: offer.category || null,
+        categoryKind: "business",
+        kind,
+        budget: kind === "paid" ? (Number(offer.cashRate) || null) : null,
+      };
+    }
+    return null;
+  }
+  if (query.sort === "match") {
+    const budget = Number(query.budget);
+    const cats = catSet ? [...catSet] : [];
+    if (Number.isFinite(budget) && budget > 0 && cats.length && marketName) {
+      return {
+        source: "filters",
+        campaignId: null,
+        label: "your search",
+        market: marketName,
+        category: cats[0],
+        categoryKind: "creator",
+        kind: "paid",
+        budget,
+      };
+    }
+  }
+  return null;
+}
+
+// The public shape of a resolved brief, safe to ride the
+// discovery response so the client can say what the ranking is
+// FOR (and Sig can state it too). Null when no brief resolved.
+function matchBriefView(brief) {
+  if (!brief) return null;
+  return {
+    source: brief.source,
+    campaignId: brief.campaignId || null,
+    label: brief.label || null,
+    market: brief.market || null,
+    category: brief.category || null,
+    kind: brief.kind || null,
+    budget: brief.budget || null,
+  };
+}
+
 // The discovery query, shared verbatim by the real business surface
 // and the admin Business Preview so both answer identically. `viewer`
 // only drives the favorite flag and the default market; every filter
 // reads a field stored on the creator record.
-async function discoverCards(query, viewer) {
+async function discoverCards(query, viewer, opts) {
   const users = await allUsers();
   // Banned creators (redeemed a comp, never posted, cure expired) are
   // out of discovery entirely: a business can never select them again.
@@ -6301,6 +6376,37 @@ async function discoverCards(query, viewer) {
   const bookedUp = await bookedUpCreatorIds(users, bookings);
   const fitBusiness = businessFitInputOf(viewer);
   const rosterUsers36 = await allUsers();
+  // Match Engine v1: resolve the brief (if any) and precompute
+  // the per-creator inputs the score reads — reliability counts
+  // (the summarizeHistory basis: for each of the creator's
+  // bookings, redeemed or not, the FIRST linked post counts as
+  // on-time or late) and the in-brief-market delivery counts the
+  // track bonus bands on. One pass over bookings + posts, only
+  // when a brief resolved; the no-brief path pays nothing.
+  const matchBrief = await resolveMatchBrief(query, viewer, marketName, catSet, opts);
+  let matchStats = null;
+  if (matchBrief) {
+    matchStats = new Map();
+    const briefKey = normalizeMarketName(matchBrief.market || "");
+    const firstPostByBooking = new Map();
+    for (const p of posts) {
+      if (p.bookingId && !firstPostByBooking.has(p.bookingId)) firstPostByBooking.set(p.bookingId, p);
+    }
+    for (const bk of bookings) {
+      if (!bk.creatorId) continue;
+      const st = matchStats.get(bk.creatorId) || { redeemed: 0, onTime: 0, late: 0, trackPosts: 0, trackRedemptions: 0 };
+      if (bk.redeemedAt) st.redeemed += 1;
+      const post = firstPostByBooking.get(bk.id);
+      if (post) {
+        if (post.onTime) st.onTime += 1; else st.late += 1;
+        if (briefKey && normalizeMarketName(bk.market || "") === briefKey) st.trackPosts += 1;
+      }
+      if (bk.redeemedAt && briefKey && normalizeMarketName(bk.market || "") === briefKey) {
+        st.trackRedemptions += bk.redemptions && Number(bk.redemptions.count) > 0 ? Math.floor(Number(bk.redemptions.count)) : 0;
+      }
+      matchStats.set(bk.creatorId, st);
+    }
+  }
   const out = [];
   for (const c of creators) {
     const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null, marketName);
@@ -6330,6 +6436,37 @@ async function discoverCards(query, viewer) {
       }));
       card.fit = { score: fit.score, reasons: fit.reasons };
     }
+    // Match Engine v1: when a brief resolved, the card carries
+    // its score for THIS brief — matchScore for ranking and for
+    // Sig, match { score, parts, reasons } mirroring the
+    // applicant stack's rankScore / rankParts shape. The track
+    // reach is the per-post local reach (the creator's current
+    // stacked audience x their share in the brief's market, the
+    // homeAnalyticsExtras formula) times their delivered posts
+    // in that market.
+    if (matchBrief && matchStats) {
+      const st = matchStats.get(c.id) || { redeemed: 0, onTime: 0, late: 0, trackPosts: 0, trackRedemptions: 0 };
+      const share = audienceShareInMarket(c, matchBrief.market);
+      const perPostReach = share !== null && share !== undefined ? Math.round(((card.totalAudience || 0) * Number(share)) / 100) : 0;
+      const m = computeMatchScore(matchBrief, {
+        categories: ((c.creator && c.creator.categories) || []).map((x) => canonicalFromList(x, CREATOR_CATEGORIES) || x),
+        compCategories: (c.creator && c.creator.compCategories) || [],
+        paidRate: card.profile && typeof card.profile.paidRate === "number" ? card.profile.paidRate : null,
+        localPctInMarket: share === undefined ? null : share,
+        momentumPoints: card.pointsTotal || 0,
+        redeemed: st.redeemed,
+        postsOnTime: st.onTime,
+        postsLate: st.late,
+        track: { reach: perPostReach * st.trackPosts, posts: st.trackPosts, redemptions: st.trackRedemptions },
+      });
+      card.matchScore = m.score;
+      // matchReasons is a first-class top-level field on purpose:
+      // it is the contract Maggie's rebuild merges against
+      // (matchScore + matchReasons on the creator-search payload),
+      // so it stays put even though match.reasons mirrors it.
+      card.matchReasons = m.reasons;
+      card.match = { score: m.score, parts: m.parts, reasons: m.reasons };
+    }
     // At their weekly visit cap: still visible, NOT greyed (that is
     // the paused treatment), flagged "Booked up this week".
     card.bookedUp = bookedUp.has(c.id);
@@ -6354,6 +6491,16 @@ async function discoverCards(query, viewer) {
     out.sort((a, b) => ((b.pointsTotal || 0) - (a.pointsTotal || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
   } else if (query.sort === "fit") {
     out.sort((a, b) => ((b.fit ? b.fit.score : -1) - (a.fit ? a.fit.score : -1)) || (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
+  } else if (query.sort === "match" && matchBrief) {
+    // Best match: the brief's score leads; equal scores break
+    // toward the Instagram-verified share in the browsed market,
+    // then founding order — the same tiebreak family as the
+    // score sort and the applicant stack. With no brief resolved
+    // this branch never runs and the default order stands.
+    const byIdCards = new Map(users.map((u) => [u.id, u]));
+    out.sort((a, b) => ((b.matchScore || 0) - (a.matchScore || 0))
+      || ((verifiedInMarket(byIdCards.get(b.userId), marketName || b.market) ? 1 : 0) - (verifiedInMarket(byIdCards.get(a.userId), marketName || a.market) ? 1 : 0))
+      || (a.createdAt < b.createdAt ? -1 : 1));
   } else {
     out.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   }
@@ -6366,6 +6513,7 @@ async function discoverCards(query, viewer) {
       ...out.filter((c) => c.standing === "paused"),
     ],
     universities: universityFacet,
+    matchBrief: matchBriefView(matchBrief),
   };
 }
 
@@ -24820,7 +24968,7 @@ async function route(event) {
     // preview offer can never reach a creator, a count, or a metric.
     if (method === "GET" && seg[1] === "preview" && seg[2] === "discover") {
       const disc = await discoverCards(query, { id: "__preview__", role: "business", market: null });
-      return json(200, { creators: disc.creators.map(decoratePreviewCard), universities: disc.universities, preview: true });
+      return json(200, { creators: disc.creators.map(decoratePreviewCard), universities: disc.universities, matchBrief: disc.matchBrief || null, preview: true });
     }
     if (method === "GET" && seg[1] === "preview" && seg[2] === "creator" && seg[3]) {
       const target = await store.get(`user:${seg[3]}`);
@@ -25609,12 +25757,17 @@ async function route(event) {
   //   ?q=             name or handle text search
   //   ?sort=          founding (default) | score | momentum | fit
   //                   (fit = matching fit against the requesting
-  //                   business's own record, lib/fit.js)
+  //                   business's own record, lib/fit.js) | match
+  //                   (Match Engine v1: best match for a brief —
+  //                   ?campaignId=<own offer id>, or ?budget= with
+  //                   a ?category=; scores ride each card as
+  //                   matchScore + match { score, parts, reasons }
+  //                   and the resolved brief as matchBrief)
   if (method === "GET" && seg[0] === "discover") {
     // The query itself lives in discoverCards() so the admin Business
     // Preview answers with the identical roster, filters, and sorts.
     const disc = await discoverCards(query, user);
-    return json(200, { creators: disc.creators, universities: disc.universities });
+    return json(200, { creators: disc.creators, universities: disc.universities, matchBrief: disc.matchBrief || null });
   }
 
   // ---------- deck state: Later piles + not-a-fit (Jeff, 2026-10-26) ----------
@@ -26257,6 +26410,45 @@ async function route(event) {
       const mine = (await allApplications()).filter((a) => a.offerId === offer.id && a.status !== "withdrawn");
       const ranked = await rankApplications(mine);
       return json(200, { offer: { ...offer, filledCount: filledCountFor(offer.id, bookings), earlyAccessUntil: offerEarlyAccessUntil(offer, await isMarketLive(offer.market), Date.now()) }, applications: ranked });
+    }
+
+    // Match Engine v1: the matched-creators list for one of the
+    // business's campaigns. The offer IS the brief (its market,
+    // its business category, its kind, its cash rate as budget);
+    // the market's roster is scored against it through the same
+    // discoverCards path Find creators uses, so a campaign match
+    // and a Find match can never disagree. Ranked best first,
+    // paused creators sunk last exactly as discovery sinks them,
+    // capped at 20. The direct target of a direct offer is the
+    // one creator never listed: they already hold the campaign.
+    if (method === "GET" && seg.length === 3 && seg[2] === "matches") {
+      if (user.role !== "business") return err(403, "Businesses only");
+      const offer = await store.get(`offer:${seg[1]}`);
+      if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
+      const kind = kindOf(offer);
+      const brief = {
+        source: "campaign",
+        campaignId: offer.id,
+        label: offer.title || "Your campaign",
+        market: normalizeMarketName(offer.market),
+        category: offer.category || null,
+        categoryKind: "business",
+        kind,
+        budget: kind === "paid" ? (Number(offer.cashRate) || null) : null,
+      };
+      const disc = await discoverCards({ market: offer.market }, user, { brief });
+      const scored = disc.creators
+        .filter((c) => c.userId !== offer.creatorId)
+        .sort((a, b) => ((b.matchScore || 0) - (a.matchScore || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
+      const matches = [
+        ...scored.filter((c) => c.standing !== "paused"),
+        ...scored.filter((c) => c.standing === "paused"),
+      ].slice(0, 20);
+      return json(200, {
+        offer: { id: offer.id, title: offer.title, kind, status: offer.status },
+        brief: matchBriefView(brief),
+        matches,
+      });
     }
 
     // Select an applicant: creates the booking through the same

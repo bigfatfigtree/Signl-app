@@ -1599,3 +1599,20 @@ img.maggie-char-img { object-fit: cover; }
   .msg-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
   .msg-pane-note { padding: 16px 18px; margin: 0; }
 }
+
+/* Match Engine v1 (2026-11-07): the brief match score on the
+   business surfaces. One visual language on every card shape:
+   the score reads as a strong label, the why-line sits under it
+   in the fit-line's voice, and no why-line may ever push a card
+   wider than its column (single-line ellipsis on the compact
+   tiles, wrapping rows in the campaign list). */
+.cc-match { margin-top: 12px; padding: 0 6px; font-size: .84rem; color: var(--ink2); line-height: 1.5; }
+.cc-match strong { color: var(--ink); }
+.shelf-match { display: flex; align-items: baseline; gap: 7px; margin-top: 5px; min-width: 0; }
+.shelf-match-score { font-weight: 800; font-size: .85rem; color: var(--ink); white-space: nowrap; }
+.shelf-match-why { font-size: .8rem; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dcard-match { display: flex; align-items: baseline; gap: 7px; margin-top: 8px; min-width: 0; }
+.dcard-match-score { font-weight: 800; font-size: .85rem; color: var(--ink); white-space: nowrap; }
+.dcard-match-why { font-size: .8rem; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.offer-matches { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
+.offer-matches-head { margin-bottom: 10px; }

@@ -11874,6 +11874,7 @@ function creatorCard(c, viewer, opts) {
     ${bestWorkHtml(c.bestWork, true)}
     ${trackLine || reviewLine ? `<div class="cc-track">${trackLine}${reviewLine}</div>` : ""}
     ${c.fit && c.fit.reasons && c.fit.reasons.length ? `<p class="small cc-fit"><strong>Why they fit:</strong> ${c.fit.reasons.slice(0, 2).map(esc).join(" &middot; ")}</p>` : ""}
+    ${c.match ? `<p class="small cc-match"><span class="badge ok">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? ` <strong>Why this match:</strong> ${c.match.reasons.map(esc).join(" &middot; ")}` : ""}</p>` : ""}
     <p class="small muted">Every Magpie comped visit: 1 post or reel + 1 story that shares the post within 48 hours, tracked as proof. Paid bookings carry the deliverables set in the booking's terms. Content rights follow the visit: comp visits are native share only; paid visits add repost and ad rights for 90 days.</p>
     <div class="cc-actions">
       ${opts.preview
@@ -20844,6 +20845,7 @@ function shelfTileHtml(c, opts) {
       ${pct === null ? `<div class="shelf-local-none">Local audience not reported yet</div>` : `<div class="shelf-local"><span class="shelf-pct">${pct}%</span><span class="shelf-local-tx">of their followers live in ${esc(marketDisplayName(market))}</span></div><div class="shelf-bar"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>${count !== null ? `<div class="shelf-localcount">about ${fmtFull(count)} local followers</div>` : ""}`}
       <div class="shelf-price-row"><div class="shelf-price">${esc(price.main)}${price.sub ? ` <span>${esc(price.sub)}</span>` : ""}</div>${acceptanceHtml(c)}</div>
       ${preview && !c.trackRecord ? "" : `<div class="shelf-proof">${esc(shelfProofLine(c))}</div>`}
+      ${c.match ? `<div class="shelf-match"><span class="shelf-match-score">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? `<span class="shelf-match-why" title="${esc(c.match.reasons.join(" · "))}">${esc(c.match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
       <div class="shelf-quiet">${fmtNum(totalAudienceOf(c))} followers total${p.avgViews ? ` · about ${fmtNum(p.avgViews)} views a post` : ""}</div>
       ${preview ? "" : `<div class="shelf-acts">
         <button type="button" class="btn small-btn" onclick="startOffer('${c.userId}')">Book</button>
@@ -21581,8 +21583,13 @@ async function loadDiscover() {
         <div class="df-label">Where &amp; sort</div>
         <div class="filters disc-top">
           <div><label>Market</label><select id="f-market-m" onchange="var m=document.getElementById('f-market'); if(m){m.value=this.value;} runDiscover()">${marketOptions(u.market)}</select></div>
-          <div><label>Sort by</label><select id="f-sort-m" onchange="var m=document.getElementById('f-sort'); if(m){m.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></div>
+          <div><label>Sort by</label><select id="f-sort-m" onchange="var m=document.getElementById('f-sort'); if(m){m.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></div>
         </div>
+      </div>
+      <div class="df-group">
+        <div class="df-label">Match to a campaign</div>
+        <div class="filters disc-top"><div><select id="f-campaign" onchange="return discCampaignSet(this.value)"><option value="">No campaign picked</option></select></div></div>
+        <p class="small muted" style="margin:4px 0 0">Every creator gets a match score for that campaign.</p>
       </div>
       <div class="df-group">
         <div class="df-label">Category</div>
@@ -21604,6 +21611,7 @@ async function loadDiscover() {
           <button type="button" class="bookseg-btn${state.discoverBookMode === "comp" ? " on" : ""}" data-bookmode="comp" onclick="return discoverBookModeSet('comp')">Comped visit</button>
           <button type="button" class="bookseg-btn${state.discoverBookMode === "paid" ? " on" : ""}" data-bookmode="paid" onclick="return discoverBookModeSet('paid')">Paid booking</button>
         </div>
+        <div class="filters disc-top" style="margin-top:8px"><div><label>Your budget per paid visit</label><input type="number" id="f-budget" min="0" placeholder="e.g. 200" onchange="runDiscover()"></div></div>
       </div>
       <div class="df-group">
         <div class="df-label">Their rate</div>
@@ -21635,15 +21643,43 @@ async function loadDiscover() {
     <div class="shop-searchrow">
       <span class="sr-q"><input type="search" id="f-q" placeholder="Search name or handle" oninput="discQInput(this)"></span>
       <span class="sr-sel"><select id="f-market" aria-label="Market" onchange="var m=document.getElementById('f-market-m'); if(m){m.value=this.value;} runDiscover()">${marketOptions(u.market)}</select></span>
-      <span class="sr-sel"><select id="f-sort" aria-label="Sort by" onchange="var m=document.getElementById('f-sort-m'); if(m){m.value=this.value;} runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option></select></span>
+      <span class="sr-sel"><select id="f-sort" aria-label="Sort by" onchange="var m=document.getElementById('f-sort-m'); if(m){m.value=this.value;} runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></span>
       <button type="button" class="btn small-btn sr-filters" id="disc-rail-btn" onclick="return shopRailToggle('disc-rail')">Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}</button>
     </div>
     <p id="discover-count" class="disc-count" aria-live="polite"></p>
+    <p id="match-hint" class="small muted" style="margin:2px 0 0"></p>
     <div id="discover-toggle"></div>
     <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>
     </div>
     </div>`;
+  loadDiscCampaigns();
   runDiscover();
+}
+
+// Match Engine v1: the campaign picker in the Find filters rail.
+// Picking one of the business's own campaigns makes it the brief
+// every card is scored against (scores ride the cards under any
+// sort), and flips the sort to Best match so the ranking follows
+// the scores. Clearing it returns Discover to exactly what it
+// was: no brief, no scores.
+function discCampaignSet(id) {
+  state.discoverCampaignId = id || "";
+  if (id) {
+    const s1 = document.getElementById("f-sort"); if (s1) s1.value = "match";
+    const s2 = document.getElementById("f-sort-m"); if (s2) s2.value = "match";
+  }
+  runDiscover();
+  return false;
+}
+async function loadDiscCampaigns() {
+  const sel = document.getElementById("f-campaign");
+  if (!sel) return;
+  try {
+    const data = await api("GET", "/offers");
+    const offers = (data.offers || []).filter((o) => !offerIsArchived(o));
+    const cur = state.discoverCampaignId || "";
+    sel.innerHTML = `<option value="">No campaign picked</option>` + offers.map((o) => `<option value="${o.id}"${cur === o.id ? " selected" : ""}>${esc(o.title)} (${o.kind === "paid" ? "paid $" + fmtPrice(o.cashRate) : o.kind === "coupon" ? "coupon" : "comp up to $" + fmtMoney(o.dollarCap)})</option>`).join("");
+  } catch (e) { /* the picker only adds match scoring; Discover works without it */ }
 }
 
 // Campus filter options (U1): the server facet lists the
@@ -21691,6 +21727,14 @@ async function runDiscover() {
   // deck already ranked this way); the named server sorts pass
   // through untouched.
   if (sort && sort !== "local") params.set("sort", sort);
+  // Match Engine v1: Best match sends the brief — the picked
+  // campaign, or the budget that pairs with the categories above
+  // (the server builds the filter brief from market + category +
+  // budget). A picked campaign scores the cards under any sort;
+  // the budget only ever rides with Best match.
+  const budgetEl = document.getElementById("f-budget");
+  if (state.discoverCampaignId) params.set("campaignId", state.discoverCampaignId);
+  else if (sort === "match" && budgetEl && budgetEl.value) params.set("budget", budgetEl.value);
   if (document.getElementById("f-paid").checked) params.set("paid", "1");
   if (state.discoverSpanish) params.set("spanish", "1");
   if (state.discoverMusician) params.set("musician", state.discoverMusician);
@@ -21707,6 +21751,21 @@ async function runDiscover() {
       });
     }
     state.discover = data.creators;
+    // Match Engine v1: say what the ranking is for — or, when
+    // Best match was asked for without a usable brief, say what
+    // it needs instead of silently showing another order.
+    const mh = document.getElementById("match-hint");
+    if (mh) {
+      if (data.matchBrief && (sort === "match" || state.discoverCampaignId)) {
+        mh.textContent = data.matchBrief.source === "campaign"
+          ? `Match scores are for your campaign "${data.matchBrief.label}".`
+          : `Match scores are for ${data.matchBrief.category} within a $${fmtPrice(Number(data.matchBrief.budget))} budget.`;
+      } else if (sort === "match") {
+        mh.textContent = "Best match needs one of your campaigns (pick it in Filters), or a category and your budget. Showing the roster in the usual order until then.";
+      } else {
+        mh.textContent = "";
+      }
+    }
     if (!cats.length) {
       const cc = {};
       for (const c of data.creators) for (const x of ((c.profile || {}).categories || [])) cc[x] = (cc[x] || 0) + 1;
@@ -21792,7 +21851,7 @@ function renderDiscoverResults() {
       return;
     }
     const sortSel = document.getElementById("f-sort");
-    const localSort = !sortSel || !sortSel.value || sortSel.value === "local";
+    const localSort = !sortSel || !sortSel.value || sortSel.value === "local" || sortSel.value === "match";
     el.innerHTML = `<div class="shelf-grid">${vis.map((c, i) => shelfTileHtml(c, { topMatch: i === 0 && localSort })).join("")}</div>` + shelfTrayHtml();
     syncDeckChrome("discover");
     return;
@@ -21876,6 +21935,7 @@ function discoverStackCard(c) {
       <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} followers</span>${c.distanceBand ? `<span class="dcard-band">${esc(c.distanceBand)}</span>` : ""}</div>
       ${thumbs.length ? `<div class="deck2-thumbs">${thumbs.map((t) => `<img src="${esc(t)}" alt="" loading="lazy">`).join("")}</div>` : ""}
       ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<div class="dcard-meta"><span>${p.spanishAudiencePct}% Spanish-speaking audience</span></div>` : ""}
+      ${c.match ? `<div class="dcard-match"><span class="dcard-match-score">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? `<span class="dcard-match-why">${esc(c.match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
       ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
       ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
     </div>
@@ -21912,6 +21972,14 @@ function discoverClearFilters() {
   if (muChip) { muChip.classList.remove("on"); muChip.setAttribute("aria-pressed", "false"); }
   const mkt = document.getElementById("f-market");
   if (mkt && state.user) mkt.value = state.user.market;
+  // Match Engine v1: clearing filters clears the brief too.
+  state.discoverCampaignId = "";
+  const campSel = document.getElementById("f-campaign");
+  if (campSel) campSel.value = "";
+  const budEl = document.getElementById("f-budget");
+  if (budEl) budEl.value = "";
+  const mhEl = document.getElementById("match-hint");
+  if (mhEl) mhEl.textContent = "";
   runDiscover();
   return false;
 }
@@ -23498,13 +23566,48 @@ function offerCardHtml(o) {
       <div><div class="ws-price">${o.kind === "coupon" ? esc(couponFaceLabelClient(o.coupon)) : `$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}`}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : o.kind === "coupon" ? "Coupon value" : "Comp cap"}</div></div>
       <div class="slot-actions">
         ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn ws-primary" onclick="return goApplicants('${o.id}')">Applicants (${o.applicationCount || 0})</button>` : ""}
+        ${!offerIsArchived(o) ? `<button class="btn small-btn ws-outline" onclick="return toggleOfferMatches('${o.id}')">Best matches</button>` : ""}
         ${offerIsArchived(o) ? `<button class="btn small-btn ws-outline" onclick="return duplicateOffer('${o.id}')">Duplicate</button>` : ""}
         ${o.status === "draft" && isFoundingBusiness(state.user) ? `<span class="small" style="font-weight:700">Saved for opening day</span>` : o.status === "draft" ? `<button class="btn small-btn ws-primary" onclick="publishOffer('${o.id}')">Publish</button>` : ""}
         ${o.nudgeSentAt && o.status === "open" && !(o.applicationCount > 0) ? `<button class="btn small-btn ws-outline" onclick="fixOffer('${o.id}','raise')">Raise comp +$25</button><button class="btn small-btn ws-outline" onclick="fixOffer('${o.id}','widen')">Widen window +3 days</button>` : ""}
         ${(o.status === "open" || o.status === "draft") ? `<button class="btn small-btn ws-outline" onclick="closeOffer('${o.id}')">Close offer</button>` : ""}
       </div>
     </div>
+    <div id="offer-matches-${o.id}" class="offer-matches" style="display:none"></div>
   </div>`;
+}
+
+// Match Engine v1: the campaign's matched-creators list, loaded
+// on demand into the offer card. The campaign is the brief; the
+// rows are the roster scored against it, best first, each with
+// its score, its why-line, and the same Book / View actions the
+// Find creators cards carry.
+async function toggleOfferMatches(offerId) {
+  const host = document.getElementById(`offer-matches-${offerId}`);
+  if (!host) return false;
+  if (host.style.display !== "none" && host.innerHTML) { host.style.display = "none"; return false; }
+  host.style.display = "";
+  if (!host.dataset.loaded) {
+    host.innerHTML = skelHtml("Scoring the roster for this campaign...", 1);
+    try {
+      const data = await api("GET", `/offers/${offerId}/matches`);
+      host.dataset.loaded = "1";
+      host.innerHTML = offerMatchesHtml(data);
+    } catch (e) {
+      host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+    }
+  }
+  return false;
+}
+function offerMatchesHtml(data) {
+  const rows = data.matches || [];
+  if (!rows.length) return `<p class="small muted" style="margin:10px 0 2px">No creators on the roster to score yet. As creators finish their pages in your market, they rank here for this campaign.</p>`;
+  // One card language (Jeff, 2026-11-07): the matched list is
+  // the SAME creator card Find creators shows — same photo,
+  // same local %, same match badge and why-line, same actions
+  // in the same places. No second, smaller card dialect here.
+  return `<div class="offer-matches-head"><strong>Best matches for this campaign</strong></div>`
+    + `<div class="creator-grid">${rows.map((c) => creatorCard(c, state.user)).join("")}</div>`;
 }
 
 async function publishOffer(offerId) {
