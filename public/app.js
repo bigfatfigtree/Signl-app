@@ -28764,7 +28764,7 @@ async function astOpenSuggestionIdx(i) {
 // The Data view: the audit's datasets, rendered from
 // /admin/stats/data. Event-sourced numbers always carry the
 // day their capture began; nothing here backfills.
-const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "suggestions", "match_impressions", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "events"];
+const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "suggestions", "match_impressions", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "outreach", "outside_prospects", "events"];
 async function astLoadData() {
   const host = document.getElementById("ast-data");
   if (!host) return;
@@ -28832,6 +28832,33 @@ async function astLoadData() {
   ${(bl.unlistedByCity || []).length ? bl.unlistedByCity.map((r) => `<div class="kv"><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"} (${r.approved} approved)</b></div>`).join("") : `<p class="small muted">No sign-ups from unlisted cities yet.</p>`}
   ${(bl.cityRequests || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>City requests on file:</strong></p>${bl.cityRequests.map((r) => `<div class="kv"><span>${esc(r.city)}${r.region ? ", " + esc(r.region) : ""}${r.handle ? " · @" + esc(r.handle) : ""}</span><b>${r.createdAt ? esc(fmtDay(r.createdAt)) : ""}</b></div>`).join("")}` : ""}
   </div>`;
+  // Outside the app (Build -147): the streams that live outside
+  // the product — outreach sends, the verified roster universe,
+  // site form demand, replies, bounces, conversions — joined
+  // into the same store and counted here. The Gmail lane has no
+  // open or click tracking (plain sends, no pixel), so none is
+  // shown; the lane's honest numbers are sent / bounced /
+  // replied / converted.
+  const ox = d.outside || null;
+  if (ox) {
+    const os = ox.sends || { total: 0, byLane: {} };
+    const op = ox.prospects || { total: 0, verified: 0, contacted: 0, joined: 0, byMarket: [] };
+    const ofm = ox.forms || { imported: 0, byType: {}, cityRequests: 0, businessApplications: 0 };
+    const orp = ox.replies || { total: 0, byOutcome: {} };
+    const ob = ox.bounces || { total: 0, byClass: {} };
+    const laneLine = Object.entries(os.byLane || {}).map(([k, v]) => `${k === "dm" ? "DM" : "Gmail"} ${astFull(v)}`).join(" · ");
+    const outcomeLine = Object.entries(orp.byOutcome || {}).map(([k, v]) => `${esc(k.replace(/_/g, " "))} ${astFull(v)}`).join(" · ");
+    const bounceLine = Object.entries(ob.byClass || {}).map(([k, v]) => `${esc(k)} ${astFull(v)}`).join(" · ");
+    html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Outside the app — outreach, rosters, forms</h3>
+  <p class="small muted" style="margin:0 0 8px">What happened outside the product, joined to it on email and handle. Outreach sends carry no open or click tracking — plain Gmail sends have none — so the lane is measured on sends, bounces, replies, and sign-ups.</p>
+  <div class="stat-band" style="margin:0 0 6px">${cell(astFull(os.total || 0), "Outreach sends imported")}${cell(astFull(op.total || 0), "Prospects on file")}${cell(astFull(op.joined || 0), "Prospects now signed up")}${cell(astFull(ofm.imported || 0), "Form submissions imported")}${cell(astFull(orp.total || 0), "Replies on record")}${cell(astFull(ob.total || 0), "Bounces on record")}</div>
+  ${os.since ? `<p class="small muted" style="margin:4px 0 0">Send history imported from ${esc(os.since)}${laneLine ? ` — ${esc(laneLine)}` : ""}.</p>` : `<p class="small muted" style="margin:4px 0 0">No outreach sends imported yet.</p>`}
+  ${orp.total ? `<p class="small" style="margin:8px 0 0"><strong>Reply outcomes:</strong> ${outcomeLine}</p>` : ""}
+  ${ob.total ? `<p class="small" style="margin:4px 0 0"><strong>Bounces:</strong> ${bounceLine} (from delivery notices — the authoritative source, not Sent copies).</p>` : ""}
+  ${ofm.imported ? `<p class="small" style="margin:4px 0 0"><strong>Site forms:</strong> ${astFull(ofm.cityRequests || 0)} city request${ofm.cityRequests === 1 ? "" : "s"} and ${astFull(ofm.businessApplications || 0)} business application${ofm.businessApplications === 1 ? "" : "s"} now land in the backlog and application records above${ofm.since ? `, captured from ${esc(ofm.since)}` : ""}.</p>` : ""}
+  ${(op.byMarket || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>Prospect universe by market</strong> (verified from rosters · contacted by outreach · signed up):</p>${op.byMarket.map((r) => `<div class="kv"><span>${esc(r.market)}</span><b>${astFull(r.verified || 0)} verified · ${astFull(r.contacted || 0)} contacted · ${astFull(r.joined || 0)} signed up</b></div>`).join("")}` : `<p class="small muted" style="margin:8px 0 0">No prospects imported yet.</p>`}
+  </div>`;
+  }
   // Snapshot trend.
   const snaps = d.snapshots || [];
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Daily snapshots</h3>

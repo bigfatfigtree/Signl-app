@@ -9,8 +9,15 @@
 const crypto = require("crypto");
 const store = require("./store");
 
-async function logEvent({ type, actorId = null, actorRole = null, subjectId = null, market = null, data = {} }) {
-  const ts = new Date().toISOString();
+async function logEvent({ type, actorId = null, actorRole = null, subjectId = null, market = null, data = {}, ts: tsOverride = null }) {
+  // tsOverride exists for the outside-joins importer (Build
+  // -147): a historical fact (a send on 2026-11-02) must land in
+  // the log ON its own date, keyed and timestamped as what it
+  // is — never backdated silently, never stamped as today. The
+  // override is honored only when it parses as a date; every
+  // other caller keeps the default (now).
+  const parsed = tsOverride ? Date.parse(tsOverride) : NaN;
+  const ts = Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
   const id = crypto.randomUUID();
   const record = { id, ts, type, actorId, actorRole, subjectId, market, data };
   await store.set(`event:${ts.slice(0, 10)}:${id}`, record);

@@ -464,6 +464,19 @@ async function buildSuggestionCandidates() {
     const mk = typedCityMarket().get(String(r.city || "").trim().toLowerCase());
     if (mk) typedByMarket[mk] = (typedByMarket[mk] || 0) + 1;
   }
+  // Build -147: the outside mirror joins M1's receipts — how
+  // much of the recruiting target is already sitting in the
+  // verified roster universe, and how much of it outreach has
+  // already touched. Receipt context only; the fingerprint (and
+  // therefore dismissal behavior) is unchanged.
+  const prospectsByMarket = {};
+  for (const r of await store.list("outprospect:")) {
+    const p = r.value;
+    if (!p || !p.market) continue;
+    const row = prospectsByMarket[p.market] || (prospectsByMarket[p.market] = { verified: 0, contacted: 0 });
+    if (p.verifiedAt) row.verified += 1;
+    if (p.contacted) row.contacted += 1;
+  }
   const recruitCells = new Set();
   const recruitCands = [];
   for (const [mk, cats] of Object.entries(agg.matrix)) {
@@ -473,7 +486,7 @@ async function buildSuggestionCandidates() {
       if (!composite) continue;
       const target = Math.max(cell.demand - cell.supply, 3, zero >= 5 ? 5 : 0);
       recruitCells.add(`${mk}|${cat}`);
-      recruitCands.push({ id: `recruit:${mk}:${cat}`, kind: "recruit", type: "marketing.recruit_target", family: "marketing", score: 92, market: mk, category: cat, text: `Recruit ${cat} creators in ${mk}: ${cell.demand} open offer${cell.demand === 1 ? "" : "s"} want them and businesses searched ${zero} times in the last 30 days and found nobody. ${cell.supply === 0 ? "No approved creator covers the cell yet" : `Only ${cell.supply} approved creator${cell.supply === 1 ? "" : "s"} cover${cell.supply === 1 ? "s" : ""} it`}. Target: about ${target} more.`, receipt: { market: mk, category: cat, supply: cell.supply, openOffers: cell.demand, zeroSearches: zero, typedCityRequests: typedByMarket[mk] || 0, recruitTarget: target }, action: { label: "See the cell", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["recruit", mk, cat, cell.supply, cell.demand, zero, typedByMarket[mk] || 0]) });
+      recruitCands.push({ id: `recruit:${mk}:${cat}`, kind: "recruit", type: "marketing.recruit_target", family: "marketing", score: 92, market: mk, category: cat, text: `Recruit ${cat} creators in ${mk}: ${cell.demand} open offer${cell.demand === 1 ? "" : "s"} want them and businesses searched ${zero} times in the last 30 days and found nobody. ${cell.supply === 0 ? "No approved creator covers the cell yet" : `Only ${cell.supply} approved creator${cell.supply === 1 ? "" : "s"} cover${cell.supply === 1 ? "s" : ""} it`}. Target: about ${target} more.`, receipt: { market: mk, category: cat, supply: cell.supply, openOffers: cell.demand, zeroSearches: zero, typedCityRequests: typedByMarket[mk] || 0, recruitTarget: target, prospectsVerified: (prospectsByMarket[mk] || {}).verified || 0, prospectsContacted: (prospectsByMarket[mk] || {}).contacted || 0 }, action: { label: "See the cell", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["recruit", mk, cat, cell.supply, cell.demand, zero, typedByMarket[mk] || 0]) });
     }
   }
   for (const c of recruitCands) push(c);
@@ -773,6 +786,313 @@ async function suggestionsRaw() {
   return { all, watching: SUGGESTION_WATCHING, dismissed: {} };
 }
 
+// ---------- Outside joins (Build -147; decision-layer spec
+// 2026-11-08 §2 + §4 Phase 2) ----------
+// The streams outside the app — the Gmail-lane sent map, the
+// frozen city rosters, Netlify Forms demand, reply outcomes —
+// join the in-app graph here, on the only two strong keys that
+// exist (email, handle) plus market for aggregates. Record-level
+// facts land as events in the same append-only log everything
+// else reads (outreach_sent / outreach_bounced /
+// prospect_replied / outreach_converted / prospect_verified /
+// form_received), each carrying data.source. Aggregates ride
+// one mirror record per creator prospect.
+//
+// The mirror key is outprospect:{handle}, deliberately NOT the
+// spec's literal prospect:{handle}: prospect:{id} is the
+// recruiter console's live queue record (Build -70) with its
+// own shape and lifecycle, and writing a second shape into that
+// prefix would corrupt the console's reads. Same intent — one
+// outside record per handle — a prefix that cannot collide.
+//
+// HONESTY RULES (spec §1/§2, load-bearing): the Gmail lane has
+// NO open or click metrics — sends go out plain, no pixel, no
+// redirect wrapper — so no field anywhere in this section
+// records or implies one. The lane's true numbers are sent,
+// bounced (MDS notices are authoritative), replied, converted.
+// Roster numbers are point-in-time at verification and are
+// always carried with their verifiedAt date. Imports are
+// additive and idempotent: every item carries an importKey,
+// lands behind an impkey:{stream}:{importKey} record, and a
+// re-run writes nothing twice. The conversion join stamps the
+// PROSPECT record only — user records are never mutated here.
+const OUTSIDE_REPLY_OUTCOMES = ["interested", "question", "not_now", "declined", "converted"];
+const OUTSIDE_BOUNCE_RANK = { soft: 1, blocked: 2, hard: 3 };
+
+function outsideHandleKey(h) {
+  return String(h || "").trim().replace(/^@+/, "").toLowerCase();
+}
+
+async function loadOutProspect(handle) {
+  const key = outsideHandleKey(handle);
+  if (!key) return { key: "", rec: null };
+  const existing = await store.get(`outprospect:${key}`);
+  if (existing) return { key, rec: existing };
+  return { key, rec: { handle: key, markets: [], verifiedMarkets: [], sources: [], createdAt: nowIso(), updatedAt: nowIso() } };
+}
+
+async function saveOutProspect(key, rec) {
+  rec.updatedAt = nowIso();
+  await store.set(`outprospect:${key}`, rec);
+  return rec;
+}
+
+function outProspectAddMarket(rec, market) {
+  if (!market) return;
+  if (!rec.markets.includes(market)) rec.markets.push(market);
+  if (!rec.market) rec.market = market;
+}
+
+function outProspectAddSource(rec, source) {
+  if (!rec.sources.includes(source)) rec.sources.push(source);
+}
+
+// One form submission, however it arrived (Gmail-notification
+// backfill, the live webhook, a future dashboard import): the
+// demand record the in-app readers already understand — a
+// cityrequest:{id} for city requests (the typed-city backlog
+// and M1 read these), a bizapp:{id} for business applications
+// (the same shape handleFoundingApplication writes) — plus a
+// form_received event either way. Creator-application and any
+// other form land as the event only; the app signup is the
+// real path for those.
+async function ingestFormSubmission({ formType, at, fields, source, sourceRef }) {
+  const f = fields || {};
+  let recordId = null;
+  let recordKind = null;
+  if (formType === "city-request") {
+    const id = crypto.randomUUID();
+    await store.set(`cityrequest:${id}`, { id, city: f.city || "Unknown", region: f.region || "", handle: f.handle || null, email: f.email || null, createdAt: at || nowIso(), source: "netlify_form", sourceRef: sourceRef || null });
+    recordId = id; recordKind = "cityrequest";
+  } else if (formType === "business-application") {
+    const id = crypto.randomUUID();
+    await store.set(`bizapp:${id}`, { id, businessName: f.businessName || "", category: f.category || "", type: f.type || "", contactName: f.contactName || "", email: f.email || "", phone: f.phone || "", city: f.city || "", tierInterest: f.tierInterest || "", source: "netlify-form", sourceRef: sourceRef || null, createdAt: at || nowIso() });
+    recordId = id; recordKind = "bizapp";
+  }
+  const ev = await logEvent({ type: "form_received", ts: at || null, subjectId: recordId, data: { source: source || "netlify_form", formType, city: f.city || null, businessName: f.businessName || null, email: f.email || null, handle: f.handle || null, recordId, recordKind, sourceRef: sourceRef || null } });
+  return { recordId, recordKind, eventId: ev.id };
+}
+
+// The conversion join (spec §2): a prospect whose email or
+// handle matches a creator account converted — freeze it as an
+// outreach_converted event on the signup's own date and stamp
+// the join on the prospect record (the only mutation this
+// section ever makes, on its own record, fully recorded:
+// joinedUserId / joinedOn / joinedAt say exactly what was set).
+async function runOutsideConversionJoin() {
+  const rows = await store.list("outprospect:");
+  const users = (await allUsers()).filter((u) => u.role === "creator" && !isTester(u));
+  const byEmail = new Map();
+  const byHandle = new Map();
+  for (const u of users) {
+    if (u.email) byEmail.set(String(u.email).toLowerCase(), u);
+    const h = u.creator && outsideHandleKey(u.creator.handle);
+    if (h && !byHandle.has(h)) byHandle.set(h, u);
+  }
+  let joined = 0;
+  const detail = [];
+  for (const r of rows) {
+    const rec = r.value;
+    if (!rec || rec.joinedUserId) continue;
+    let user = null;
+    let joinedOn = null;
+    if (rec.email && byEmail.has(String(rec.email).toLowerCase())) { user = byEmail.get(String(rec.email).toLowerCase()); joinedOn = "email"; }
+    else if (rec.handle && byHandle.has(rec.handle)) { user = byHandle.get(rec.handle); joinedOn = "handle"; }
+    if (!user) continue;
+    const firstTouch = rec.firstContactAt || rec.verifiedAt || null;
+    const daysToConvert = firstTouch && user.createdAt && Number.isFinite(Date.parse(user.createdAt)) && Number.isFinite(Date.parse(firstTouch))
+      ? Math.max(0, Math.floor((Date.parse(user.createdAt) - Date.parse(firstTouch)) / 86400000)) : null;
+    rec.joinedUserId = user.id;
+    rec.joinedOn = joinedOn;
+    rec.joinedAt = user.createdAt || nowIso();
+    await saveOutProspect(rec.handle, rec);
+    await logEvent({ type: "outreach_converted", ts: user.createdAt || null, actorId: user.id, actorRole: "creator", subjectId: `outprospect:${rec.handle}`, market: normalizeMarketName(user.market) || rec.market || null, data: { source: "outside_join", userId: user.id, handle: rec.handle, joinedOn, daysToConvert, lane: rec.contactLane || null } });
+    joined += 1;
+    detail.push({ handle: rec.handle, userId: user.id, joinedOn, daysToConvert });
+  }
+  return { joined, detail };
+}
+
+// Process one batch of normalized import items. Items are
+// processed in array order (the runner orders sends and roster
+// prospects before bounces/replies so identity resolution sees
+// them). Returns per-kind received/written/skipped counts.
+async function processOutsideImport(items) {
+  const counts = {};
+  const bump = (kind, field) => { counts[kind] = counts[kind] || { received: 0, written: 0, skipped: 0 }; counts[kind][field] += 1; };
+  for (const item of items) {
+    const kind = String((item && item.kind) || "");
+    if (!["send", "prospect", "reply", "bounce", "form"].includes(kind) || !item.importKey) continue;
+    bump(kind, "received");
+    const impKey = `impkey:${kind}:${item.importKey}`;
+    if (await store.get(impKey)) { bump(kind, "skipped"); continue; }
+    const handle = outsideHandleKey(item.handle);
+    // Market resolution follows the platform's own rules: the
+    // canonical name when there is one (incl. the Hampton Roads
+    // -> Virginia Beach alias), else the listed market whose
+    // published town list contains the typed city (a Clarksville
+    // send is a Nashville send), else the label as given.
+    let market = item.market ? (normalizeMarketName(String(item.market)) || String(item.market)) : null;
+    if (market && !MARKETS.some((m) => m.name === market)) {
+      const resolved = typedCityMarket().get(market.trim().toLowerCase());
+      if (resolved) market = resolved;
+    }
+    if (kind === "send") {
+      if (!handle) { bump(kind, "skipped"); continue; }
+      const lane = item.lane === "dm" ? "dm" : "gmail";
+      const ev = await logEvent({ type: "outreach_sent", ts: item.sentAt || null, subjectId: `outprospect:${handle}`, market, data: { source: lane === "dm" ? "dm_lane" : "gmail_lane", email: item.email ? String(item.email).toLowerCase() : null, handle, lane, message_id: item.messageId || null, subject: item.subject || null, template: item.template || null, cityRaw: item.cityRaw || null, note: item.note || null, importKey: item.importKey } });
+      const { key, rec } = await loadOutProspect(handle);
+      rec.contacted = true;
+      if (item.sentAt && (!rec.firstContactAt || item.sentAt < rec.firstContactAt)) rec.firstContactAt = item.sentAt;
+      if (item.sentAt && (!rec.lastContactAt || item.sentAt > rec.lastContactAt)) rec.lastContactAt = item.sentAt;
+      if (!rec.contactLane) rec.contactLane = lane;
+      if (item.email && !rec.email) rec.email = String(item.email).toLowerCase();
+      outProspectAddMarket(rec, market);
+      outProspectAddSource(rec, "sent_map");
+      await saveOutProspect(key, rec);
+      await store.set(impKey, { at: nowIso(), eventId: ev.id, lane });
+      bump(kind, "written");
+    } else if (kind === "prospect") {
+      if (!handle) { bump(kind, "skipped"); continue; }
+      const { key, rec } = await loadOutProspect(handle);
+      if (item.name && !rec.name) rec.name = item.name;
+      if (item.email && !rec.email) rec.email = String(item.email).toLowerCase();
+      if (item.category && !rec.category) rec.category = item.category;
+      if (item.followers != null && rec.followers == null) rec.followers = item.followers;
+      if (item.followersDetail && !rec.followersDetail) rec.followersDetail = item.followersDetail;
+      if (item.localEvidence && !rec.localEvidence) rec.localEvidence = item.localEvidence;
+      if (item.lane && !rec.rosterLane) rec.rosterLane = item.lane;
+      if (item.emailSource && !rec.emailSource) rec.emailSource = item.emailSource;
+      if (item.mxVerified != null && rec.mxVerified == null) rec.mxVerified = !!item.mxVerified;
+      if (item.verifiedAt && !rec.verifiedAt) rec.verifiedAt = item.verifiedAt;
+      outProspectAddMarket(rec, market);
+      outProspectAddSource(rec, "roster");
+      const isNewMarket = !!market && !rec.verifiedMarkets.includes(market);
+      if (isNewMarket) rec.verifiedMarkets.push(market);
+      await saveOutProspect(key, rec);
+      let eventId = null;
+      if (isNewMarket) {
+        const ev = await logEvent({ type: "prospect_verified", ts: item.verifiedAt || null, subjectId: `outprospect:${handle}`, market, data: { source: "roster", handle, email: rec.email || null, category: rec.category || null, followers: rec.followers != null ? rec.followers : null, followersDetail: rec.followersDetail || null, localEvidence: rec.localEvidence || null, rosterFile: item.rosterFile || null, importKey: item.importKey } });
+        eventId = ev.id;
+      }
+      await store.set(impKey, { at: nowIso(), eventId, market });
+      bump(kind, "written");
+    } else if (kind === "reply") {
+      const outcome = String(item.outcome || "");
+      if (!OUTSIDE_REPLY_OUTCOMES.includes(outcome)) { bump(kind, "skipped"); continue; }
+      // Identity: handle from the item, else resolved from the
+      // email against prospects the earlier items created.
+      let h = handle;
+      if (!h && item.email) {
+        const rows = await store.list("outprospect:");
+        const hit = rows.map((r) => r.value).filter(Boolean).find((p) => p.email && String(p.email).toLowerCase() === String(item.email).toLowerCase());
+        if (hit) h = hit.handle;
+      }
+      const ev = await logEvent({ type: "prospect_replied", ts: item.at || null, subjectId: h ? `outprospect:${h}` : null, market, data: { source: item.source || "state_records", outcome, email: item.email ? String(item.email).toLowerCase() : null, handle: h || null, threadRef: item.threadRef || null, summary: item.summary || null, importKey: item.importKey } });
+      if (h) {
+        const { key, rec } = await loadOutProspect(h);
+        if (!rec.replyAt || (item.at && item.at >= rec.replyAt)) { rec.replyOutcome = outcome; rec.replyAt = item.at || nowIso(); rec.replyThreadRef = item.threadRef || null; }
+        if (item.email && !rec.email) rec.email = String(item.email).toLowerCase();
+        outProspectAddMarket(rec, market);
+        outProspectAddSource(rec, "reply_records");
+        await saveOutProspect(key, rec);
+      }
+      await store.set(impKey, { at: nowIso(), eventId: ev.id, outcome });
+      bump(kind, "written");
+    } else if (kind === "bounce") {
+      const bounceClass = ["hard", "soft", "blocked"].includes(item.bounceClass) ? item.bounceClass : "hard";
+      let h = handle;
+      if (!h && item.email) {
+        const rows = await store.list("outprospect:");
+        const hit = rows.map((r) => r.value).filter(Boolean).find((p) => p.email && String(p.email).toLowerCase() === String(item.email).toLowerCase());
+        if (hit) h = hit.handle;
+      }
+      const ev = await logEvent({ type: "outreach_bounced", ts: item.at || null, subjectId: h ? `outprospect:${h}` : null, market, data: { source: "gmail_mds", email: item.email ? String(item.email).toLowerCase() : null, handle: h || null, bounceClass, smtpCode: item.smtpCode || null, enhancedCode: item.enhancedCode || null, noticeId: item.noticeId || null, importKey: item.importKey } });
+      if (h) {
+        const { key, rec } = await loadOutProspect(h);
+        rec.bounceCount = (rec.bounceCount || 0) + 1;
+        if (item.at && (!rec.firstBounceAt || item.at < rec.firstBounceAt)) rec.firstBounceAt = item.at;
+        if (item.at && (!rec.lastBounceAt || item.at > rec.lastBounceAt)) rec.lastBounceAt = item.at;
+        if (!rec.bounceClass || (OUTSIDE_BOUNCE_RANK[bounceClass] || 0) >= (OUTSIDE_BOUNCE_RANK[rec.bounceClass] || 0)) { rec.bounceClass = bounceClass; rec.bounceCode = item.enhancedCode || item.smtpCode || null; }
+        if (item.email && !rec.email) rec.email = String(item.email).toLowerCase();
+        outProspectAddMarket(rec, market);
+        outProspectAddSource(rec, "gmail_mds");
+        await saveOutProspect(key, rec);
+      }
+      await store.set(impKey, { at: nowIso(), eventId: ev.id, bounceClass });
+      bump(kind, "written");
+    } else if (kind === "form") {
+      const res = await ingestFormSubmission({ formType: String(item.formType || ""), at: item.at || null, fields: item.fields || {}, source: item.source || "netlify_form", sourceRef: item.sourceRef || item.importKey });
+      await store.set(impKey, { at: nowIso(), eventId: res.eventId, formType: String(item.formType || ""), recordId: res.recordId });
+      bump(kind, "written");
+    }
+  }
+  return counts;
+}
+
+// The Outside section of the Admin Data view: what the outside
+// streams have contributed, counted from the import keys (the
+// exact event counts) and the prospect mirror — with the day
+// each capture began, per the view's honesty pattern.
+async function buildOutsideAggregates() {
+  const prospects = (await store.list("outprospect:")).map((r) => r.value).filter(Boolean);
+  let verified = 0;
+  let contacted = 0;
+  let joined = 0;
+  const byMarketMap = {};
+  for (const p of prospects) {
+    const mk = p.market || "Unknown";
+    const row = byMarketMap[mk] || (byMarketMap[mk] = { market: mk, prospects: 0, verified: 0, contacted: 0, joined: 0 });
+    row.prospects += 1;
+    if (p.verifiedAt) { verified += 1; row.verified += 1; }
+    if (p.contacted) { contacted += 1; row.contacted += 1; }
+    if (p.joinedUserId) { joined += 1; row.joined += 1; }
+  }
+  const impCounts = async (prefix, field) => {
+    const keys = await store.listKeys(prefix);
+    if (!keys.length) return { total: 0, by: {} };
+    const rows = await store.getMany(keys);
+    const by = {};
+    for (const r of rows) { const v = r.value && r.value[field]; if (v) by[v] = (by[v] || 0) + 1; }
+    return { total: keys.length, by };
+  };
+  const sends = await impCounts("impkey:send:", "lane");
+  const bounces = await impCounts("impkey:bounce:", "bounceClass");
+  const replies = await impCounts("impkey:reply:", "outcome");
+  const formsImp = await impCounts("impkey:form:", "formType");
+  const cityReqForms = (await store.list("cityrequest:")).map((r) => r.value).filter((v) => v && v.source === "netlify_form").length;
+  const bizForms = (await store.list("bizapp:")).map((r) => r.value).filter((v) => v && v.source === "netlify-form").length;
+  return {
+    sends: { total: sends.total, byLane: sends.by, since: await captureSince("outreach_sent") },
+    prospects: { total: prospects.length, verified, contacted, joined, byMarket: Object.values(byMarketMap).sort((a, b) => b.prospects - a.prospects) },
+    forms: { imported: formsImp.total, byType: formsImp.by, cityRequests: cityReqForms, businessApplications: bizForms, since: await captureSince("form_received") },
+    replies: { total: replies.total, byOutcome: replies.by },
+    bounces: { total: bounces.total, byClass: bounces.by },
+    converted: joined,
+  };
+}
+
+// Netlify's outgoing-webhook payload -> the normalized fields
+// ingestFormSubmission eats. Field-name spellings are tolerant
+// (the site forms have used several); unknown fields are
+// ignored, never stored raw.
+function formFieldsFromNetlify(formType, data) {
+  const d = data || {};
+  const pick = (...keys) => { for (const k of keys) { const v = d[k]; if (typeof v === "string" && v.trim()) return v.trim().slice(0, 300); } return ""; };
+  if (formType === "city-request") {
+    const contact = pick("contact", "handle_or_email", "handle", "instagram", "email");
+    const isEmail = /@.+\./.test(contact) && !/\s/.test(contact);
+    return { city: pick("city", "your_city", "your-city"), region: pick("state", "region", "state_province", "province"), handle: isEmail ? "" : contact.replace(/^@+/, ""), email: isEmail ? contact.toLowerCase() : pick("email").toLowerCase() };
+  }
+  if (formType === "business-application") {
+    return { businessName: pick("business_name", "businessName", "business-name", "name"), category: pick("business-category", "business_category", "category"), type: pick("business-type", "business_type", "type"), contactName: pick("contact_name", "contactName", "contact-name"), email: pick("email").toLowerCase(), phone: pick("phone"), city: pick("city", "business_city", "business-city"), tierInterest: pick("tier_interest", "tierInterest", "tier-interest", "tier") };
+  }
+  if (formType === "creator-application") {
+    return { name: pick("name", "your_name"), handle: pick("handle", "instagram", "instagram_or_tiktok_handle").replace(/^@+/, ""), email: pick("email").toLowerCase(), city: pick("city", "home_city", "home-city") };
+  }
+  return { city: pick("city"), email: pick("email").toLowerCase(), businessName: pick("business_name", "name") };
+}
+
 // Raw export datasets for the Admin Data view. User rows pass
 // through a safe field mapper (never the raw record: no password
 // hashes, no tokens); event rows keep the log's own shape with
@@ -786,6 +1106,7 @@ const EXPORT_EVENT_TYPES = {
   audience_updates: ["audience_updated"],
   profile_views: ["profile_view"],
   audience_verifications: ["audience_verification_updated"],
+  outreach: ["outreach_sent", "outreach_bounced", "prospect_replied", "outreach_converted", "prospect_verified", "form_received"],
   events: null,
 };
 function exportUserRow(u) {
@@ -810,6 +1131,7 @@ async function buildExportDataset(dataset, days) {
   if (dataset === "suggestions") return flat((await store.list("suggestion:")).map((r) => r.value).filter(Boolean).map((s) => ({ id: s.id, type: s.type || null, kind: s.kind || null, headline: s.headline || null, market: s.market || null, category: s.category || null, status: s.status || null, score: s.score != null ? s.score : null, receipt: s.receipt || null, createdAt: s.createdAt || null, shownAt: s.shownAt || null, actedAt: s.actedAt || null, dismissedAt: s.dismissedAt || null, timesSurfaced: s.timesSurfaced || 0 })));
   if (dataset === "pageviews") return flat((await store.list("pageview:")).map((r) => r.value).filter(Boolean).map((r) => ({ date: r.date, userId: r.userId, views: r.views || 0, claimViews: r.claimViews || 0, firstViewAt: r.firstViewAt || null, lastViewAt: r.lastViewAt || null })));
   if (dataset === "cityrequests") return flat((await store.list("cityrequest:")).map((r) => r.value).filter(Boolean).map((r) => ({ city: r.city || null, region: r.region || r.country || r.state || "", handle: r.handle || null, email: r.email || null, createdAt: r.createdAt || null })));
+  if (dataset === "outside_prospects") return flat((await store.list("outprospect:")).map((r) => r.value).filter(Boolean).map((p) => ({ handle: p.handle || null, name: p.name || null, email: p.email || null, market: p.market || null, markets: (p.markets || []).join("; "), category: p.category || null, followers: p.followers != null ? p.followers : null, verifiedAt: p.verifiedAt || null, contacted: !!p.contacted, firstContactAt: p.firstContactAt || null, contactLane: p.contactLane || null, replyOutcome: p.replyOutcome || null, bounceClass: p.bounceClass || null, joinedUserId: p.joinedUserId || null, joinedOn: p.joinedOn || null, joinedAt: p.joinedAt || null, sources: (p.sources || []).join("; ") })));
   if (Object.prototype.hasOwnProperty.call(EXPORT_EVENT_TYPES, dataset)) {
     const types = EXPORT_EVENT_TYPES[dataset];
     const events = await eventsInRange(days, 90);
@@ -20797,6 +21119,35 @@ async function route(event) {
     if (method === "POST") return handleFoundingApplication(event);
   }
 
+  // Netlify Forms webhook (Build -147): the live wire that makes
+  // site form demand land in the app the moment it is submitted
+  // (spec §4 Phase 2 item 2). Netlify's outgoing webhook POSTs
+  // the submission JSON here. Auth is a shared token — the
+  // SIGNL_FORM_TOKEN env var, carried as ?token= on the webhook
+  // URL or the x-signl-form-token header — and the route fails
+  // CLOSED when the env var is unset (503), because an
+  // unauthenticated public write endpoint is worse than none.
+  // Duplicate deliveries dedupe on a hash of the payload.
+  if (seg[0] === "forms" && seg[1] === "netlify" && seg.length === 2) {
+    if (method === "OPTIONS") return { statusCode: 204, headers: foundingApplicationCors(event), body: "" };
+    if (method !== "POST") return err(405, "POST only");
+    const expected = process.env.SIGNL_FORM_TOKEN;
+    if (!expected) return err(503, "Form webhook is not configured");
+    const given = String(query.token || event.headers["x-signl-form-token"] || event.headers["X-Signl-Form-Token"] || "");
+    if (!given || given !== expected) return err(401, "Bad form token");
+    const b = parseBody(event);
+    const formType = String((b && (b.form_name || b.formName)) || "").trim();
+    if (!formType) return err(400, "Missing form_name");
+    const fields = formFieldsFromNetlify(formType, (b && b.data) || {});
+    const at = (b && typeof b.created_at === "string" && Number.isFinite(Date.parse(b.created_at))) ? new Date(Date.parse(b.created_at)).toISOString() : nowIso();
+    const importKey = "wh:" + crypto.createHash("sha256").update([formType, at, JSON.stringify(fields)].join("|")).digest("hex").slice(0, 24);
+    const impKey = `impkey:form:${importKey}`;
+    if (await store.get(impKey)) return json(200, { ok: true, deduped: true });
+    const res = await ingestFormSubmission({ formType, at, fields, source: "netlify_form", sourceRef: `webhook:${formType}` });
+    await store.set(impKey, { at: nowIso(), eventId: res.eventId, formType, recordId: res.recordId });
+    return json(200, { ok: true, id: res.recordId, kind: res.recordKind });
+  }
+
   // Instagram handle onboarding (Phase 2, Jeff, 2026-10-28;
   // spec: signl-handle-onboarding-spec-2026-10-28.md). POST
   // /api/ig-prefill turns a public handle into a DRAFT the user
@@ -21230,6 +21581,26 @@ async function route(event) {
     const summary = await runSnapshotSweep({ force: !!(b && b.force) });
     if (summary.wrote) { try { await store.set("config:snapshotSweep", { lastDate: summary.day, lastRunAt: nowIso() }); } catch (e) { /* memo is an optimization */ } }
     return json(200, { ok: true, sweep: summary });
+  }
+
+  // Outside-joins importer (Build -147). Same auth and placement
+  // discipline as the sweeps above: the runner
+  // (scripts/import-outside.mjs) POSTs normalized batches here
+  // with the x-signl-sweep-token header when SIGNL_SWEEP_TOKEN
+  // is set; without a matching token, only an admin session may
+  // import. Every item is idempotent on its importKey, so a
+  // batch is safe to re-send whole. `join: true` runs the
+  // conversion join after the batch lands.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "imports" && seg[2] === "outside") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    const items = Array.isArray(b && b.items) ? b.items.slice(0, 500) : [];
+    const counts = await processOutsideImport(items);
+    let join = null;
+    if (b && b.join) join = await runOutsideConversionJoin();
+    return json(200, { ok: true, counts, join });
   }
 
   // Metrics sync trigger (UX redesign section 3, 2026-10-24). Same
@@ -25677,6 +26048,7 @@ async function route(event) {
         funnel: { ...funnel, capturingSince: { searches: await captureSince("discover_search"), impressions: await captureSince("match_impression") } },
         health: { eventsToday: todayEvents.length, topTypesToday: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([type, count]) => ({ type, count })), captures, latestSnapshotDate: snapKeys.length ? snapKeys[snapKeys.length - 1].slice("snapshot:".length) : null },
         snapshots,
+        outside: await buildOutsideAggregates(),
       });
     }
     if (method === "GET" && seg[1] === "suggestions" && seg.length === 2) {
