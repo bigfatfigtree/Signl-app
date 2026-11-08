@@ -159,23 +159,34 @@ try:
         sug2 = page.evaluate("() => document.getElementById('ast-suggest').textContent.replace(/\\s+/g, ' ')")
         check("admin Stats: the dismissal PERSISTS across a full reload", "Food & Drink creators in Austin" not in sug2 and "waiting on review" in sug2, sug2[:220])
         page.screenshot(path=f"{OUT}/02-suggestions-after-reload-desktop.png")
-        # Data view.
+        # Data view — Build -150: panels now live behind
+        # plain-word sub-tabs, each loading its own payload.
+        def data_section(name, marker):
+            page.evaluate(f"astSetDataSection('{name}')")
+            page.wait_for_function(f"() => {{ const h = document.getElementById('ast-data-section'); return h && h.textContent.includes('{marker}'); }}", timeout=30000)
+            page.wait_for_timeout(300)
+            return page.evaluate("() => document.getElementById('ast-data-section').textContent.replace(/\\s+/g, ' ')")
         page.evaluate("astSetView('data')")
-        page.wait_for_function("() => { const h = document.getElementById('ast-data'); return h && h.textContent.includes('Supply and demand'); }", timeout=30000)
-        page.wait_for_timeout(500)
-        dv = page.evaluate("""() => {
-          const host = document.getElementById('ast-data');
-          const txt = host.textContent.replace(/\\s+/g, ' ');
-          const austinRow = [...host.querySelectorAll('table tr')].find((tr) => tr.textContent.trim().startsWith('Austin'));
-          const exportLinks = [...host.querySelectorAll('a[href*=\"/api/admin/stats/data/export\"]')].length;
-          return { txt: txt.slice(0, 400), austin: austinRow ? austinRow.textContent.replace(/\\s+/g, ' ') : '',
-                   funnel: txt.includes('Match funnel'), health: txt.includes('Capture health'),
-                   backlog: txt.includes('Franklin'), snaps: txt.includes('Daily snapshots'), exportLinks };
+        ov = data_section("overview", "Capture health")
+        page.evaluate("astSetDataSection('supply')")
+        page.wait_for_function("() => { const h = document.getElementById('ast-data-section'); return h && h.textContent.includes('Supply and demand'); }", timeout=30000)
+        page.wait_for_timeout(300)
+        austin = page.evaluate("""() => {
+          const host = document.getElementById('ast-data-section');
+          const row = [...host.querySelectorAll('table tr')].find((tr) => tr.textContent.trim().startsWith('Austin'));
+          return { row: row ? row.textContent.replace(/\\s+/g, ' ') : '',
+                   backlog: host.textContent.includes('Franklin') };
         }""")
-        check("admin Data view: matrix renders the Austin gap cell (0 supply / 1 demand)", "0 / 1" in dv["austin"], dv["austin"])
+        fn = data_section("funnel", "Match funnel")
+        sn = data_section("snapshots", "Daily snapshots")
+        ex = page.evaluate("astSetDataSection('export')")
+        page.wait_for_function("() => { const h = document.getElementById('ast-data-section'); return h && h.textContent.includes('Export the raw data'); }", timeout=30000)
+        page.wait_for_timeout(300)
+        export_links = page.evaluate("() => [...document.querySelectorAll('#ast-data-section a[href*=\"/api/admin/stats/data/export\"]')].length")
+        check("admin Data view: matrix renders the Austin gap cell (0 supply / 1 demand)", "0 / 1" in austin["row"], austin["row"])
         check("admin Data view: funnel, capture health, backlog (Franklin), snapshots all render",
-              dv["funnel"] and dv["health"] and dv["backlog"] and dv["snaps"], dv["txt"])
-        check("admin Data view: export links present for the datasets", dv["exportLinks"] >= 10, dv["exportLinks"])
+              "Match funnel" in fn and "Capture health" in ov and austin["backlog"] and "Daily snapshots" in sn, ov[:220])
+        check("admin Data view: export links present for the datasets", export_links >= 10, export_links)
         f = page_facts(page)
         check("admin Data view desktop: no horizontal overflow, every image loaded", not f["overflow"] and f["imgBroken"] == 0, f)
         page.screenshot(path=f"{OUT}/03-data-view-desktop.png", full_page=True)
@@ -187,8 +198,10 @@ try:
         page.evaluate("go('dashboard','Stats')")
         page.wait_for_function("() => { const h = document.getElementById('ast-suggest'); return h && h.textContent.includes('Suggestions'); }", timeout=30000)
         page.evaluate("astSetView('data')")
-        page.wait_for_function("() => { const h = document.getElementById('ast-data'); return h && h.textContent.includes('Supply and demand'); }", timeout=30000)
-        page.wait_for_timeout(500)
+        page.wait_for_function("() => { const h = document.getElementById('ast-data-section'); return h && h.textContent.includes('Capture health'); }", timeout=30000)
+        page.evaluate("astSetDataSection('supply')")
+        page.wait_for_function("() => { const h = document.getElementById('ast-data-section'); return h && h.textContent.includes('Supply and demand'); }", timeout=30000)
+        page.wait_for_timeout(300)
         f = page_facts(page)
         dvtxt = page.evaluate("() => document.getElementById('ast-data').textContent.replace(/\\s+/g, ' ')")
         check("admin Data view 390: renders, no horizontal overflow, every image loaded", "Supply and demand" in dvtxt and "Match funnel" in dvtxt and not f["overflow"] and f["imgBroken"] == 0, f)

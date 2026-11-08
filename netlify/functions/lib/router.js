@@ -220,6 +220,17 @@ async function runSnapshotSweep(opts = {}) {
     for (const [cat, cell] of Object.entries(cats)) if (cell.supply || cell.demand) matrix[mk][cat] = cell;
   }
   const rec = { date: day, capturedAt: nowIso(), totals: agg.totals, matrix, demandUnmapped: agg.demandUnmapped, benchmarks: agg.benchmarks, reliability: agg.reliability, unlistedByCity: agg.unlistedByCity.slice(0, 20), pageviews };
+  // Build -150: the training-pairs summary is frozen here, once
+  // a day, so the Data view's Export section reads ONE record
+  // instead of walking every match impression per page load.
+  // The walk itself is unchanged (buildTrainingPairs); it just
+  // moved off the request path. The capture first-seen backfill
+  // rides the same daily pass.
+  try { rec.training = (await buildTrainingPairs()).summary; } catch (e) { /* the summary lands with the next sweep */ }
+  try { await backfillCaptureSince(); } catch (e) { /* labels repair on the next sweep */ }
+  // Warm the daily rollups for the full Data range so a section
+  // read never pays the one-time per-day build (Build -150).
+  try { await rollupsInRange(31); } catch (e) { /* sections compute any missing day on read */ }
   await store.set(key, rec);
   return { day, wrote: true, creators: agg.totals.creators.approved, pageviews };
 }
@@ -232,7 +243,23 @@ async function maybeRunSnapshotSweep() {
   if (Date.now() - snapshotMemoAt < 10 * 60 * 1000) return;
   snapshotMemoAt = Date.now();
   const cfg = await store.get("config:snapshotSweep");
-  if (cfg && cfg.lastDate === day) { snapshotMemoDay = day; return; }
+  if (cfg && cfg.lastDate === day) {
+    snapshotMemoDay = day;
+    // Build -150 migration: a same-day snapshot written by the
+    // pre--150 code carries no training summary. Patch it once
+    // (the summary is cumulative, so today's record is the
+    // right home) and backfill the capture first-seen map.
+    try {
+      const snap = await store.get(`snapshot:${day}`);
+      if (snap && !snap.training) {
+        snap.training = (await buildTrainingPairs()).summary;
+        await store.set(`snapshot:${day}`, snap);
+      }
+      await backfillCaptureSince();
+      await rollupsInRange(31);
+    } catch (e) { /* best-effort, retried on the next window */ }
+    return;
+  }
   await runSnapshotSweep();
   await store.set("config:snapshotSweep", { lastDate: day, lastRunAt: nowIso() });
   snapshotMemoDay = day;
@@ -268,6 +295,182 @@ async function captureSince(type) {
   return null;
 }
 
+// Capture first-seen, read side (Build -150): the map logEvent
+// maintains at write time (lib/events.js) plus the snapshot
+// sweep's backfill. One small config read replaces the full-log
+// scan above; captureSince itself now runs only inside the
+// daily backfill, never on a page load.
+const CAPTURE_SINCE_TYPES = ["match_impression", "discover_search", "sig_ask", "audience_updated", "profile_view", "deck_later", "outreach_sent", "form_received"];
+async function captureSinceMap() {
+  return (await store.get("config:captureSince")) || {};
+}
+async function captureSinceFast(type) {
+  const map = await captureSinceMap();
+  return map[type] || null;
+}
+async function backfillCaptureSince() {
+  // The sweep is the authority: logEvent's write-time stamps
+  // can race on concurrent first-writes, so every stamp is
+  // recomputed from the log here, once a day, and corrected.
+  // The scan cost lives in the sweep, never on a page load.
+  const map = await captureSinceMap();
+  let changed = false;
+  for (const t of CAPTURE_SINCE_TYPES) {
+    const d = await captureSince(t);
+    if (d && map[t] !== d) { map[t] = d; changed = true; }
+  }
+  if (changed) await store.set("config:captureSince", map);
+  return map;
+}
+
+// Daily event rollups (Build -150). ROOT CAUSE of the Data view
+// failure Jeff hit on 2026-11-08: one Data load re-read the
+// ENTIRE event log's values about thirteen times (captureSince
+// per kind, the funnel, prompting, the training walk, the
+// outside panel's own scans). On fixture data that was
+// invisible; on the real store — after the -147 import landed
+// 1,346 records — a single load issued ~19,000 individual
+// Netlify Blobs fetches (measured: scripts/qa-count-data150.mjs)
+// and the function was killed at its time limit, so the phone
+// got the generic error instead of data. The fix is structural:
+// per-day counts are computed ONCE into rollup:events:{day}
+// records (a past day never changes; today is recomputed per
+// read from today's keys only, which are few), and every
+// consumer below reads rollups instead of the log.
+async function buildDayRollup(day) {
+  const keys = await store.listKeys(`event:${day}:`);
+  const byType = {};
+  let shownTotal = 0;
+  const zeroGaps = {};
+  const promptByTrigger = {};
+  const promptByFamily = {};
+  const stepByType = {};
+  let promptOffersCreated = 0;
+  if (keys.length) {
+    const rows = await store.getMany(keys);
+    for (const r of rows) {
+      const e = r.value;
+      if (!e || !e.type) continue;
+      byType[e.type] = (byType[e.type] || 0) + 1;
+      if (e.type === "match_impression") shownTotal += (e.data && Array.isArray(e.data.shown)) ? e.data.shown.length : 0;
+      if (e.type === "discover_search" && e.data && e.data.zeroResults) {
+        const f = e.data.filters || {};
+        const k = `${e.market || f.market || "Anywhere"}|${f.category || "Any category"}`;
+        zeroGaps[k] = (zeroGaps[k] || 0) + 1;
+      }
+      if (e.type === "campaign_prompt_shown") {
+        const t = (e.data && e.data.trigger) || "—";
+        promptByTrigger[t] = (promptByTrigger[t] || 0) + 1;
+        const fm = (e.data && e.data.family) || "—";
+        promptByFamily[fm] = (promptByFamily[fm] || 0) + 1;
+      }
+      if (e.type === "campaign_prompt_used" && e.data && e.data.stage === "offer_created") promptOffersCreated += 1;
+      if (e.type === "creator_step_offered") {
+        const s = (e.data && e.data.step) || "—";
+        stepByType[s] = (stepByType[s] || 0) + 1;
+      }
+    }
+  }
+  return { day, byType, shownTotal, zeroGaps, promptByTrigger, promptByFamily, stepByType, promptOffersCreated, events: keys.length, computedAt: nowIso() };
+}
+async function dayRollup(day) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (day !== today) {
+    const hit = await store.get(`rollup:events:${day}`);
+    if (hit) return hit;
+  }
+  const rec = await buildDayRollup(day);
+  await store.set(`rollup:events:${day}`, rec);
+  return rec;
+}
+async function rollupsInRange(days) {
+  const n = Math.max(1, Math.min(31, Math.floor(Number(days) || 30)));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    out.push(await dayRollup(d));
+  }
+  return out;
+}
+function rollupCount(rollups, type) {
+  return rollups.reduce((s, r) => s + ((r.byType && r.byType[type]) || 0), 0);
+}
+function rollupMerge(rollups, field) {
+  const out = {};
+  for (const r of rollups) for (const [k, v] of Object.entries(r[field] || {})) out[k] = (out[k] || 0) + v;
+  return out;
+}
+
+// The Data view's snapshot trend rows, shared by the legacy
+// full payload and the Snapshots section.
+async function snapshotTrendRows() {
+  const snapKeys = await store.listKeys("snapshot:");
+  const snapshots = snapKeys.length ? (await store.getMany(snapKeys.slice(-14))).map((r) => r.value).filter(Boolean)
+    .map((s) => ({ date: s.date, creatorsApproved: s.totals && s.totals.creators ? s.totals.creators.approved : 0, followers: s.totals && s.totals.creators ? s.totals.creators.followers : 0, offersOpen: s.totals && s.totals.offers ? s.totals.offers.open : 0, bookings: s.totals && s.totals.bookings ? s.totals.bookings.total : 0, pageviews: s.pageviews || 0 })) : [];
+  return { snapKeys, snapshots };
+}
+
+// Build -150: section-scoped Data payloads. The Data view is
+// six sub-tabs; each loads ONLY its own slice, so a slow or
+// broken corner can never take the whole view down (the -149
+// failure mode), and the daily-glance sections stay fast no
+// matter how large the log grows. Returns null for an unknown
+// section so the route answers a plain 400.
+const DATA_SECTION_NAMES = ["overview", "supply", "funnel", "outside", "snapshots", "export"];
+async function dataSectionPayload(section, rangeDays) {
+  if (!DATA_SECTION_NAMES.includes(section)) return null;
+  const base = { generatedAt: nowIso(), rangeDays, section };
+  if (section === "overview") {
+    const agg = await buildDataAggregates();
+    const todayEvents = await eventsInRange(1);
+    const byType = {};
+    for (const e of todayEvents) byType[e.type] = (byType[e.type] || 0) + 1;
+    const rollups = await rollupsInRange(rangeDays);
+    const sinceMap = await captureSinceMap();
+    const captureKinds = [
+      { type: "match_impression", label: "Match impressions" },
+      { type: "discover_search", label: "Discover searches" },
+      { type: "sig_ask", label: "Maggie asks" },
+      { type: "audience_updated", label: "Audience updates" },
+      { type: "profile_view", label: "In-app profile views" },
+    ];
+    const captures = captureKinds.map((k) => ({ ...k, inRange: rollupCount(rollups, k.type), since: sinceMap[k.type] || null }));
+    captures.push({ type: "deck_actions", label: "Deck passes / Laters", inRange: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"].reduce((s, t) => s + rollupCount(rollups, t), 0), since: sinceMap["deck_later"] || null });
+    const snapKeys = await store.listKeys("snapshot:");
+    return { ...base, totals: agg.totals, health: { eventsToday: todayEvents.length, topTypesToday: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([type, count]) => ({ type, count })), captures, latestSnapshotDate: snapKeys.length ? snapKeys[snapKeys.length - 1].slice("snapshot:".length) : null } };
+  }
+  if (section === "supply") {
+    const agg = await buildDataAggregates();
+    return { ...base, matrix: agg.matrix, demandUnmapped: agg.demandUnmapped, benchmarks: agg.benchmarks, backlog: { unlistedByCity: agg.unlistedByCity, cityRequests: agg.cityRequests } };
+  }
+  if (section === "funnel") {
+    const agg = await buildDataAggregates();
+    const funnel = await buildFunnel(rangeDays);
+    const sinceMap = await captureSinceMap();
+    return { ...base, funnel: { ...funnel, capturingSince: { searches: sinceMap["discover_search"] || null, impressions: sinceMap["match_impression"] || null } }, reliability: agg.reliability, prompting: await buildPromptingAdmin(rangeDays) };
+  }
+  if (section === "outside") {
+    return { ...base, outside: await buildOutsideAggregates() };
+  }
+  if (section === "snapshots") {
+    const { snapshots } = await snapshotTrendRows();
+    return { ...base, snapshots };
+  }
+  // export: the training summary frozen into the newest daily
+  // snapshot that carries one (see runSnapshotSweep) — one
+  // record read, never a per-load walk of the impressions.
+  const snapKeys = await store.listKeys("snapshot:");
+  let training = null;
+  let trainingAsOf = null;
+  if (snapKeys.length) {
+    const rows = (await store.getMany(snapKeys.slice(-14))).map((r) => r.value).filter(Boolean);
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].training) { training = rows[i].training; trainingAsOf = rows[i].date; break; }
+    }
+  }
+  return { ...base, training, trainingAsOf };
+}
+
 // The match funnel. The top (searches -> briefs -> creators
 // shown) exists only in the event log, from the night capture
 // shipped; the bottom (picks -> selections -> bookings ->
@@ -277,33 +480,29 @@ async function buildFunnel(days) {
   const rangeDays = Math.max(1, Math.min(31, Math.floor(Number(days) || 30)));
   const sinceMs = Date.now() - rangeDays * 86400000;
   const inRange = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) && t >= sinceMs; };
-  const events = await eventsInRange(rangeDays);
-  const searches = events.filter((e) => e.type === "discover_search");
-  const impressions = events.filter((e) => e.type === "match_impression");
-  const shown = impressions.reduce((s, e) => s + ((e.data && Array.isArray(e.data.shown)) ? e.data.shown.length : 0), 0);
+  // Build -150: the event-sourced top of the funnel reads the
+  // daily rollups, not the raw log (see buildDayRollup).
+  const rollups = await rollupsInRange(rangeDays);
+  const searchesCount = rollupCount(rollups, "discover_search");
+  const impressionsCount = rollupCount(rollups, "match_impression");
+  const shownCount = rollups.reduce((s, r) => s + (r.shownTotal || 0), 0);
   const favs = (await store.list("favorite:")).map((r) => r.value).filter(Boolean);
   const applications = await allApplications();
   const bookings = await allBookings();
   const posts = await allPosts();
   const stages = [
-    { key: "searches", label: "Business searches", n: searches.length, basis: "events" },
-    { key: "briefs", label: "Match briefs run", n: impressions.length, basis: "events" },
-    { key: "shown", label: "Creators shown", n: shown, basis: "events" },
+    { key: "searches", label: "Business searches", n: searchesCount, basis: "events" },
+    { key: "briefs", label: "Match briefs run", n: impressionsCount, basis: "events" },
+    { key: "shown", label: "Creators shown", n: shownCount, basis: "events" },
     { key: "picks", label: "Picks (favorites + applications)", n: favs.filter((f) => inRange(f.createdAt)).length + applications.filter((a) => inRange(a.createdAt)).length, basis: "records" },
     { key: "selections", label: "Selections", n: applications.filter((a) => a.status === "selected" && inRange(a.decidedAt || a.updatedAt)).length, basis: "records" },
     { key: "bookings", label: "Bookings", n: bookings.filter((b) => inRange(b.createdAt)).length, basis: "records" },
     { key: "redeemed", label: "Visits redeemed", n: bookings.filter((b) => inRange(b.redeemedAt)).length, basis: "records" },
     { key: "posts", label: "Posts delivered", n: posts.filter((p) => inRange(p.submittedAt || p.createdAt)).length, basis: "records" },
   ];
-  const zeroGaps = {};
-  for (const e of searches) {
-    if (!e.data || !e.data.zeroResults) continue;
-    const f = e.data.filters || {};
-    const key = `${e.market || f.market || "Anywhere"}|${f.category || "Any category"}`;
-    zeroGaps[key] = (zeroGaps[key] || 0) + 1;
-  }
+  const zeroGaps = rollupMerge(rollups, "zeroGaps");
   const zeroResultGaps = Object.entries(zeroGaps).map(([key, count]) => { const parts = key.split("|"); return { market: parts[0], category: parts[1], count }; }).sort((a, b) => b.count - a.count).slice(0, 10);
-  return { rangeDays, stages, zeroResultGaps, searchesCount: searches.length, impressionsCount: impressions.length, shownCount: shown };
+  return { rangeDays, stages, zeroResultGaps, searchesCount, impressionsCount, shownCount };
 }
 
 function suggestionFingerprint(parts) {
@@ -1206,9 +1405,9 @@ async function buildOutsideAggregates() {
   const cityReqForms = (await store.list("cityrequest:")).map((r) => r.value).filter((v) => v && v.source === "netlify_form").length;
   const bizForms = (await store.list("bizapp:")).map((r) => r.value).filter((v) => v && v.source === "netlify-form").length;
   return {
-    sends: { total: sends.total, byLane: sends.by, since: await captureSince("outreach_sent") },
+    sends: { total: sends.total, byLane: sends.by, since: await captureSinceFast("outreach_sent") },
     prospects: { total: prospects.length, verified, contacted, joined, byMarket: Object.values(byMarketMap).sort((a, b) => b.prospects - a.prospects) },
-    forms: { imported: formsImp.total, byType: formsImp.by, cityRequests: cityReqForms, businessApplications: bizForms, since: await captureSince("form_received") },
+    forms: { imported: formsImp.total, byType: formsImp.by, cityRequests: cityReqForms, businessApplications: bizForms, since: await captureSinceFast("form_received") },
     replies: { total: replies.total, byOutcome: replies.by },
     bounces: { total: bounces.total, byClass: bounces.by },
     converted: joined,
@@ -1905,13 +2104,15 @@ async function coachAct(user, action) {
 // Admin rollup (Data view): both systems' counts from the event
 // log + the LIVE ladder distribution over approved creators.
 async function buildPromptingAdmin(days) {
-  const events = await eventsInRange(days);
-  const count = (t) => events.filter((e) => e.type === t).length;
-  const byData = (t, key) => { const out = {}; for (const e of events) if (e.type === t) { const k = (e.data && e.data[key]) || "—"; out[k] = (out[k] || 0) + 1; } return out; };
+  // Build -150: counts read the daily rollups, not the raw log
+  // (see buildDayRollup); the coaching distribution below stays
+  // a live read of the user records, as before.
+  const rollups = await rollupsInRange(days);
+  const count = (t) => rollupCount(rollups, t);
   const campaign = {
     shown: count("campaign_prompt_shown"), used: count("campaign_prompt_used"), dismissed: count("campaign_prompt_dismissed"), snoozed: count("campaign_prompt_snoozed"), expired: count("campaign_prompt_expired"),
-    offersCreated: events.filter((e) => e.type === "campaign_prompt_used" && e.data && e.data.stage === "offer_created").length,
-    byTrigger: byData("campaign_prompt_shown", "trigger"), byFamily: byData("campaign_prompt_shown", "family"),
+    offersCreated: rollups.reduce((s, r) => s + (r.promptOffersCreated || 0), 0),
+    byTrigger: rollupMerge(rollups, "promptByTrigger"), byFamily: rollupMerge(rollups, "promptByFamily"),
   };
   const users = await allUsers();
   const posts = await allPosts();
@@ -1925,7 +2126,7 @@ async function buildPromptingAdmin(days) {
     if (next) dist[next.type] = (dist[next.type] || 0) + 1; else complete++;
   }
   const offered = count("creator_step_offered"), done = count("creator_step_done");
-  const coaching = { offered, done, snoozed: count("creator_step_snoozed"), byStep: byData("creator_step_offered", "step"), distribution: dist, ladderComplete: complete, creatorsTracked: coached, completionRate: offered ? Math.round((done / offered) * 100) : null };
+  const coaching = { offered, done, snoozed: count("creator_step_snoozed"), byStep: rollupMerge(rollups, "stepByType"), distribution: dist, ladderComplete: complete, creatorsTracked: coached, completionRate: offered ? Math.round((done / offered) * 100) : null };
   return { campaign, coaching };
 }
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea } = require("./markets");
@@ -22390,6 +22591,16 @@ async function route(event) {
     const counts = await processOutsideImport(items);
     let join = null;
     if (b && b.join) join = await runOutsideConversionJoin();
+    // Build -150: imported events land on their own historical
+    // days, which may already have frozen rollup records. Any
+    // batch that wrote invalidates the rollups; they recompute
+    // from the log on next read. (Imports are rare; correctness
+    // beats cleverness here.)
+    const wroteAny = Object.values(counts || {}).some((c) => c && c.written > 0);
+    if (wroteAny || join) {
+      const rollupKeys = await store.listKeys("rollup:events:");
+      for (const k of rollupKeys) await store.del(k);
+    }
     return json(200, { ok: true, counts, join });
   }
 
@@ -26852,13 +27063,25 @@ async function route(event) {
     if (method === "GET" && seg[1] === "stats" && seg[2] === "data" && seg.length === 3) {
       const daysRaw = Number(query.days);
       const rangeDays = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.max(1, Math.min(31, Math.floor(daysRaw))) : 30;
+      // Build -150: the Data view's sub-tabs load section-scoped
+      // payloads (see dataSectionPayload). The no-section full
+      // payload below remains for the verify suites and any
+      // older client; it now reads the same rollups and the
+      // capture first-seen map instead of scanning the log.
+      const section = String(query.section || "");
+      if (section) {
+        const payload = await dataSectionPayload(section, rangeDays);
+        if (!payload) return err(400, `Unknown data section "${section}". Sections: ${DATA_SECTION_NAMES.join(", ")}.`);
+        return json(200, payload);
+      }
       const agg = await buildDataAggregates();
       const funnel = await buildFunnel(rangeDays);
       const todayEvents = await eventsInRange(1);
       const byType = {};
       for (const e of todayEvents) byType[e.type] = (byType[e.type] || 0) + 1;
-      const rangeEvents = rangeDays > 1 ? await eventsInRange(rangeDays) : todayEvents;
-      const countType = (t) => rangeEvents.filter((e) => e.type === t).length;
+      const rollups = await rollupsInRange(rangeDays);
+      const countType = (t) => rollupCount(rollups, t);
+      const sinceMap = await captureSinceMap();
       const captureKinds = [
         { type: "match_impression", label: "Match impressions" },
         { type: "discover_search", label: "Discover searches" },
@@ -26866,17 +27089,14 @@ async function route(event) {
         { type: "audience_updated", label: "Audience updates" },
         { type: "profile_view", label: "In-app profile views" },
       ];
-      const captures = [];
-      for (const k of captureKinds) captures.push({ ...k, inRange: countType(k.type), since: await captureSince(k.type) });
-      captures.push({ type: "deck_actions", label: "Deck passes / Laters", inRange: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"].reduce((s, t) => s + countType(t), 0), since: await captureSince("deck_later") });
-      const snapKeys = await store.listKeys("snapshot:");
-      const snapshots = snapKeys.length ? (await store.getMany(snapKeys.slice(-14))).map((r) => r.value).filter(Boolean)
-        .map((s) => ({ date: s.date, creatorsApproved: s.totals && s.totals.creators ? s.totals.creators.approved : 0, followers: s.totals && s.totals.creators ? s.totals.creators.followers : 0, offersOpen: s.totals && s.totals.offers ? s.totals.offers.open : 0, bookings: s.totals && s.totals.bookings ? s.totals.bookings.total : 0, pageviews: s.pageviews || 0 })) : [];
+      const captures = captureKinds.map((k) => ({ ...k, inRange: countType(k.type), since: sinceMap[k.type] || null }));
+      captures.push({ type: "deck_actions", label: "Deck passes / Laters", inRange: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"].reduce((s, t) => s + countType(t), 0), since: sinceMap["deck_later"] || null });
+      const { snapKeys, snapshots } = await snapshotTrendRows();
       return json(200, {
         generatedAt: nowIso(), rangeDays,
         totals: agg.totals, matrix: agg.matrix, demandUnmapped: agg.demandUnmapped, benchmarks: agg.benchmarks, reliability: agg.reliability,
         backlog: { unlistedByCity: agg.unlistedByCity, cityRequests: agg.cityRequests },
-        funnel: { ...funnel, capturingSince: { searches: await captureSince("discover_search"), impressions: await captureSince("match_impression") } },
+        funnel: { ...funnel, capturingSince: { searches: sinceMap["discover_search"] || null, impressions: sinceMap["match_impression"] || null } },
         health: { eventsToday: todayEvents.length, topTypesToday: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([type, count]) => ({ type, count })), captures, latestSnapshotDate: snapKeys.length ? snapKeys[snapKeys.length - 1].slice("snapshot:".length) : null },
         snapshots,
         outside: await buildOutsideAggregates(),

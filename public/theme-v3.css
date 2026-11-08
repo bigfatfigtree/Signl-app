@@ -1644,3 +1644,12 @@ img.maggie-char-img { object-fit: cover; }
 .prompt-cname { font-weight: 700; font-size: .95rem; }
 .prompt-cwhy { font-size: .86rem; color: var(--ink2); line-height: 1.35; }
 .prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+/* Build -150: .kv rows whose value is a long counts line (the
+   Data view's prospect-universe and unlisted-city rows) stack
+   the value under the label on phone widths instead of
+   overflowing over it. Desktop rows are unchanged. */
+@media (max-width: 560px) {
+  .kv.kv-wrap { flex-wrap: wrap; }
+  .kv.kv-wrap > b { flex-basis: 100%; text-align: left; }
+}

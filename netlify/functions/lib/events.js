@@ -21,7 +21,38 @@ async function logEvent({ type, actorId = null, actorRole = null, subjectId = nu
   const id = crypto.randomUUID();
   const record = { id, ts, type, actorId, actorRole, subjectId, market, data };
   await store.set(`event:${ts.slice(0, 10)}:${id}`, record);
+  noteCaptureFirstSeen(type, ts.slice(0, 10));
   return record;
+}
+
+// Capture first-seen map (Build -150): config:captureSince holds
+// { type: "yyyy-mm-dd" } — the day each event type was first
+// logged. The Admin Data view used to derive this by re-reading
+// the whole event log on every page load (one of the full-log
+// scans that made the Data view time out on production data).
+// Now the day is recorded when the event is written: the first
+// time an instance sees a type it checks the map once; a type
+// already on the map costs nothing. The daily snapshot sweep
+// backfills types that predate this build. Best-effort by
+// design — a missed stamp only delays a "since" label, and the
+// sweep repairs it.
+const captureSeenChecked = new Set();
+function noteCaptureFirstSeen(type, day) {
+  if (!type || captureSeenChecked.has(type)) return;
+  captureSeenChecked.add(type);
+  (async () => {
+    try {
+      const map = (await store.get("config:captureSince")) || {};
+      // Only ever FILLS an absent type — never moves a stamp.
+      // Concurrent first-writes can still race (the last writer
+      // wins for that type), which is why the daily sweep
+      // recomputes every stamp authoritatively from the log.
+      if (!map[type]) {
+        map[type] = day;
+        await store.set("config:captureSince", map);
+      }
+    } catch (e) { /* bookkeeping only */ }
+  })();
 }
 
 // Hard bound on how many event records one read may fetch. The log

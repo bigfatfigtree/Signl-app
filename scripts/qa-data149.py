@@ -106,12 +106,16 @@ try:
             page.evaluate("go('dashboard','Stats')")
             page.wait_for_function("() => { const h = document.getElementById('ast-suggest'); return h && h.textContent.includes('Suggestions'); }", timeout=30000)
             page.evaluate("astSetView('data')")
-            page.wait_for_function("() => { const h = document.getElementById('ast-data'); return h && h.textContent.includes('Export the raw data'); }", timeout=30000)
+            # Build -150: the export panel lives behind the
+            # Export sub-tab; its training volume is read from
+            # the nightly snapshot the sweep froze.
+            page.evaluate("astSetDataSection('export')")
+            page.wait_for_function("() => { const h = document.getElementById('ast-data-section'); return h && h.textContent.includes('Export the raw data') && h.textContent.includes('holds 3 rows'); }", timeout=30000)
             page.wait_for_timeout(600)
 
         def export_facts(page):
             return page.evaluate("""() => {
-              const host = document.getElementById('ast-data');
+              const host = document.getElementById('ast-data-section');
               const txt = host.textContent.replace(/\\s+/g, ' ');
               const tpRow = [...host.querySelectorAll('.kv')].find((r) => r.textContent.includes('training_pairs'));
               const jsonl = tpRow ? tpRow.querySelector('a[href*="format=jsonl"]') : null;
@@ -132,7 +136,7 @@ try:
         check("desktop: training_pairs row carries the JSONL link", ef["jsonlHref"] == "/api/admin/stats/data/export?dataset=training_pairs&format=jsonl", ef["tpRow"])
         f = page_facts(page)
         check("desktop: no horizontal overflow, every image loaded", not f["overflow"] and f["imgBroken"] == 0, f)
-        panel = page.locator("#ast-data .panel", has_text="Export the raw data")
+        panel = page.locator("#ast-data-section .panel", has_text="Export the raw data")
         panel.scroll_into_view_if_needed()
         page.wait_for_timeout(400)
         panel.screenshot(path=f"{OUT}/01-data-export-desktop.png")
@@ -148,7 +152,7 @@ try:
         check("390: training_pairs JSONL link present", ef["jsonlHref"] == "/api/admin/stats/data/export?dataset=training_pairs&format=jsonl", ef["tpRow"])
         f = page_facts(page)
         check("390: no horizontal overflow, every image loaded", not f["overflow"] and f["imgBroken"] == 0, f)
-        panel = page.locator("#ast-data .panel", has_text="Export the raw data")
+        panel = page.locator("#ast-data-section .panel", has_text="Export the raw data")
         panel.scroll_into_view_if_needed()
         page.wait_for_timeout(400)
         panel.screenshot(path=f"{OUT}/02-data-export-390.png")

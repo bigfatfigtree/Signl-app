@@ -107,9 +107,10 @@ try:
             page.evaluate("go('dashboard','Stats')")
             page.wait_for_function("() => { const h = document.getElementById('ast-suggest'); return h && h.textContent.includes('Suggestions'); }", timeout=30000)
             page.evaluate("astSetView('data')")
-            page.wait_for_function("() => { const h = document.getElementById('ast-data'); return h && h.textContent.includes('Outside the app'); }", timeout=30000)
+            page.evaluate("astSetDataSection('outside')")
+            page.wait_for_function("() => { const h = document.getElementById('ast-data-section'); return h && h.textContent.includes('Outside the app'); }", timeout=30000)
             page.wait_for_timeout(700)
-            txt = page.evaluate("() => document.getElementById('ast-data').textContent.replace(/\\s+/g, ' ')")
+            txt = page.evaluate("() => document.getElementById('ast-data-section').textContent.replace(/\\s+/g, ' ')")
             facts = page.evaluate("""() => {
               const imgs = [...document.images];
               return { overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
@@ -134,8 +135,14 @@ try:
               "Site forms:" in txt and "1 city request" in txt and "1 business application" in txt, "")
         check("outside panel: prospect universe by market (Austin 2v/1c/1j, Raleigh 1v, London 1c)",
               "Prospect universe by market" in txt and "Austin" in txt and "2 verified · 1 contacted · 1 signed up" in txt and "Raleigh" in txt and "London" in txt, txt[txt.find("Prospect universe"):txt.find("Prospect universe") + 200] if "Prospect universe" in txt else "")
+        # Build -150: the backlog panel lives in the Supply &
+        # demand sub-tab now; open it for the Franklin check.
+        page.evaluate("astSetDataSection('supply')")
+        page.wait_for_function("() => { const h = document.getElementById('ast-data-section'); return h && h.textContent.includes('Demand from unlisted cities'); }", timeout=30000)
+        page.wait_for_timeout(300)
+        supply_txt = page.evaluate("() => document.getElementById('ast-data-section').textContent.replace(/\\s+/g, ' ')")
         check("backlog: the imported Franklin city request shows in Demand from unlisted cities",
-              "Franklin" in txt and "franklinfoodie" in txt, "")
+              "Franklin" in supply_txt and "franklinfoodie" in supply_txt, supply_txt[:200])
         check("desktop: no horizontal overflow, every image loaded", not f["overflow"] and f["imgBroken"] == 0, f)
         page.screenshot(path=f"{OUT}/01-outside-desktop.png", full_page=True)
         ctx.close()

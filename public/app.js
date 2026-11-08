@@ -15857,7 +15857,7 @@ function zeroAudienceWarnings(stackTotal) {
 // "Move to Tester" and My Offers "Close offer" buttons shipped
 // dead that way, 2026-10-24). A DOM sheet always renders, always
 // resolves, and works with touch, mouse, and keyboard alike.
-function showConfirmSheet(heading, body, confirmLabel) {
+function showConfirmSheet(heading, body, confirmLabel, opts) {
   return new Promise((resolve) => {
     closeConfirmSheet();
     const el = document.createElement("div");
@@ -15867,7 +15867,7 @@ function showConfirmSheet(heading, body, confirmLabel) {
     <div class="sheet" role="dialog" aria-label="${esc(heading)}">
       <strong>${esc(heading)}</strong>
       <p class="small muted">${esc(body)}</p>
-      <button class="btn" style="width:100%" id="confirm-sheet-yes">${esc(confirmLabel || "Confirm")}</button>
+      <button class="btn${opts && opts.danger ? " danger" : ""}" style="width:100%" id="confirm-sheet-yes">${esc(confirmLabel || "Confirm")}</button>
       <button class="btn ghost" style="width:100%;margin-top:8px" id="confirm-sheet-no">Cancel</button>
     </div>`;
     document.body.appendChild(el);
@@ -15875,6 +15875,10 @@ function showConfirmSheet(heading, body, confirmLabel) {
     document.getElementById("confirm-sheet-yes").onclick = () => done(true);
     document.getElementById("confirm-sheet-no").onclick = () => done(false);
     el.addEventListener("click", (e) => { if (e.target === el) done(false); });
+    // Build -150: for destructive confirms, Cancel — the safe
+    // action — takes focus, so a stray Enter or space can never
+    // land the destructive choice by default.
+    if (opts && opts.danger) { const no = document.getElementById("confirm-sheet-no"); if (no) no.focus(); }
   });
 }
 
@@ -27612,6 +27616,9 @@ async function adminDeckDecide(userId, decision) {
   if (decision === "reject") {
     const sel = document.getElementById("admin-deck-rej-reason");
     reason = sel ? sel.value : "";
+    // The reject guard (Build -150): confirm before the write;
+    // cancelling leaves the card and its reason box untouched.
+    if (!(await adminConfirmReject(userId, reason))) return;
   }
   document.querySelectorAll(".admin-deck-btn").forEach((b) => { b.disabled = true; });
   try {
@@ -27684,6 +27691,7 @@ function adminCardToggleReject(userId) {
 async function adminCardConfirmReject(userId) {
   const sel = document.getElementById(`cardrej-reason-${userId}`);
   const reason = sel ? sel.value : "";
+  if (!(await adminConfirmReject(userId, reason))) return;
   try {
     await api("POST", "/admin/review", { userId, decision: "reject", ...(reason ? { reason } : {}) });
     showToast("Rejected.");
@@ -28123,6 +28131,10 @@ function renderAdminRefilePanel() {
   <p><button type="button" class="btn small-btn" onclick="return runRefileSweep(this)">File everyone in their market</button></p>`;
 }
 async function runRefileSweep(btn) {
+  // One tap here rewrites many records at once, so it takes the
+  // same confirmation discipline as a rejection (Build -150).
+  const okSweep = await showConfirmSheet("File everyone in their market?", "Every sign-up whose typed city belongs to a market — creators and businesses — gets filed under that market, and each move is logged. Records whose city fits two markets or none stay put. Nothing is deleted.", "File everyone");
+  if (!okSweep) return false;
   try {
     if (btn) btn.disabled = true;
     const data = await api("POST", "/admin/users/refile-sweep", {});
@@ -28130,6 +28142,30 @@ async function runRefileSweep(btn) {
     loadApplications();
   } catch (err) { alert(err.message); if (btn) btn.disabled = false; }
   return false;
+}
+
+// The reject guard (Build -150, Jeff, 2026-11-08): EVERY
+// rejection on the review surface — the list editor, the deck,
+// and the Find-a-user card — passes through this confirmation
+// before anything is written. The sheet names the applicant and
+// says plainly what rejecting does; Cancel is the focused, safe
+// action and the Reject button is destructive-styled
+// (showConfirmSheet's danger mode). Approve stays one tap: Jeff
+// asked for the guard on Reject only.
+function adminApplicantLabel(u) {
+  if (!u) return "this applicant";
+  if (u.role === "creator" && u.creator && u.creator.handle) return `@${u.creator.handle} (${u.name || "unnamed"})`;
+  if (u.role === "business" && u.business && u.business.businessName) return `${u.business.businessName} (${u.name || "unnamed"})`;
+  return u.name || u.email || "this applicant";
+}
+async function adminConfirmReject(userId, reason) {
+  const pools = [state.adminAppsPend || [], state.adminAppsDec || [], (typeof adminUserSearchState !== "undefined" && adminUserSearchState.users) || []];
+  let u = null;
+  for (const p of pools) { const hit = p.find((x) => x.id === userId); if (hit) { u = hit; break; } }
+  const who = adminApplicantLabel(u);
+  const kind = u && u.role === "business" ? "business" : "creator";
+  const body = `This turns down ${who}'s ${kind} application${reason ? ` with the reason "${reason}"` : ""}. They move out of the pending queue into your Decided list${u && u.role === "creator" ? ", and they get the rejection email" : ""}. Nothing is deleted — the application stays on file.`;
+  return showConfirmSheet(`Reject ${who}?`, body, "Reject application", { danger: true });
 }
 
 // Rejection with an optional reason (audit F4): the Reject button
@@ -28145,6 +28181,7 @@ function toggleRejectEditor(userId) {
 async function confirmRejectApp(userId) {
   const sel = document.getElementById("rej-reason-" + userId);
   const reason = sel ? sel.value : "";
+  if (!(await adminConfirmReject(userId, reason))) return;
   try {
     await api("POST", "/admin/review", { userId, decision: "reject", ...(reason ? { reason } : {}) });
     loadApplications();
@@ -28892,28 +28929,71 @@ async function astOpenSuggestionIdx(i) {
 // The Data view: the audit's datasets, rendered from
 // /admin/stats/data. Event-sourced numbers always carry the
 // day their capture began; nothing here backfills.
+//
+// Build -150 restructure (Jeff, 2026-11-08): the one giant
+// scrolling page is now six plain-word sub-tabs, and each one
+// loads ONLY its own section payload (?section=) when opened —
+// the daily-glance numbers are one tap away, the deep data one
+// layer down, and a section that fails shows its own named
+// error instead of taking the whole view down (the failure
+// Jeff hit on the morning of 2026-11-08, when the single
+// all-in-one payload died on production data).
 const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "suggestions", "match_impressions", "training_pairs", "campaign_prompts", "creator_steps", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "outreach", "outside_prospects", "events"];
+const AST_DATA_SECTIONS = [["overview", "Overview"], ["supply", "Supply & demand"], ["funnel", "Match funnel"], ["outside", "Outside the app"], ["snapshots", "Snapshots"], ["export", "Export"]];
+let astDataSection = "overview";
+const astDataCache = {};
+function astDataCell(num, lbl) { return `<div class="stat-cell"><div class="stat-num">${num}</div><div class="stat-lbl">${lbl}</div></div>`; }
+function astDataSectionLabel(id) { const hit = AST_DATA_SECTIONS.find(([k]) => k === id); return hit ? hit[1] : id; }
 async function astLoadData() {
   const host = document.getElementById("ast-data");
   if (!host) return;
-  host.innerHTML = `<p class="muted">Loading the data view…</p>`;
+  host.innerHTML = `<div style="margin:2px 0 4px">${wsTabs(AST_DATA_SECTIONS.map(([id, label]) => ({ label, on: astDataSection === id, onclick: `return astSetDataSection('${id}')` })))}</div><div id="ast-data-section"></div>`;
+  await astLoadDataSection(astDataSection);
+}
+function astSetDataSection(id) {
+  astDataSection = id;
+  astLoadData();
+  return false;
+}
+function astRetryDataSection(id) {
+  delete astDataCache[id];
+  astLoadDataSection(id);
+  return false;
+}
+async function astLoadDataSection(section) {
+  const host = document.getElementById("ast-data-section");
+  if (!host) return;
+  if (astDataCache[section]) { host.innerHTML = astDataCache[section]; return; }
+  host.innerHTML = `<p class="muted">Loading ${esc(astDataSectionLabel(section))}…</p>`;
   let d;
-  try { d = await api("GET", "/admin/stats/data?days=30"); }
-  catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
-  const t = d.totals || {};
-  const tc = t.creators || {};
-  const tb = t.businesses || {};
-  const to = t.offers || {};
-  const tbk = t.bookings || {};
-  const h = d.health || {};
-  const cell = (num, lbl) => `<div class="stat-cell"><div class="stat-num">${num}</div><div class="stat-lbl">${lbl}</div></div>`;
-  let html = `<div class="stat-band" style="margin-top:6px">${cell(astFull(tc.approved || 0), "Approved creators")}${cell(astFull(tc.followers || 0), "Followers, stacked")}${cell(astFull(tb.approved || 0), "Approved businesses")}${cell(astFull(to.open || 0), "Open offers")}${cell(astFull(h.eventsToday || 0), "Events logged today")}${cell(h.latestSnapshotDate ? esc(h.latestSnapshotDate) : "none yet", "Latest daily snapshot")}</div>`;
+  try { d = await api("GET", `/admin/stats/data?section=${section}&days=30`); }
+  catch (e) {
+    host.innerHTML = `<div class="error-box"><strong>${esc(astDataSectionLabel(section))} did not load.</strong><br>${esc(e.message)}<br><button class="btn small-btn" style="margin-top:8px" onclick="return astRetryDataSection('${section}')">Try again</button><p class="small muted" style="margin:8px 0 0">The rest of Data is unaffected — the other tabs above still open.</p></div>`;
+    return;
+  }
+  const render = AST_DATA_RENDER[section];
+  const html = render ? render(d) : "";
+  astDataCache[section] = html;
+  host.innerHTML = html;
+}
+const AST_DATA_RENDER = {
+  overview(d) {
+    const t = d.totals || {};
+    const tc = t.creators || {};
+    const tb = t.businesses || {};
+    const to = t.offers || {};
+    const h = d.health || {};
+  let html = `<div class="stat-band" style="margin-top:6px">${astDataCell(astFull(tc.approved || 0), "Approved creators")}${astDataCell(astFull(tc.followers || 0), "Followers, stacked")}${astDataCell(astFull(tb.approved || 0), "Approved businesses")}${astDataCell(astFull(to.open || 0), "Open offers")}${astDataCell(astFull(h.eventsToday || 0), "Events logged today")}${astDataCell(h.latestSnapshotDate ? esc(h.latestSnapshotDate) : "none yet", "Latest daily snapshot")}</div>`;
   // Capture health: what is being recorded, since when.
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Capture health</h3>
   <p class="small muted" style="margin:0 0 8px">What the platform is recording, and the day each capture began. Counts are the last ${d.rangeDays} days.</p>
   ${(h.captures || []).map((c) => `<div class="kv"><span>${esc(c.label)}</span><b>${astFull(c.inRange || 0)}${c.since ? ` <span class="muted" style="font-weight:400">since ${esc(c.since)}</span>` : ` <span class="muted" style="font-weight:400">not started yet</span>`}</b></div>`).join("")}
   ${(h.topTypesToday || []).length ? `<p class="small muted" style="margin:8px 0 0">Most logged today: ${h.topTypesToday.map((x) => `${esc(x.type)} (${x.count})`).join(" · ")}</p>` : ""}
   </div>`;
+    return html;
+  },
+  supply(d) {
+    let html = "";
   // The supply/demand matrix.
   const matrix = d.matrix || {};
   const catSet = [];
@@ -28927,6 +29007,24 @@ async function astLoadData() {
   </table></div>` : `<p class="small muted">No supply or open-offer demand in any cell yet.</p>`}
   ${d.demandUnmapped ? `<p class="small muted" style="margin:8px 0 0">${d.demandUnmapped} open offer${d.demandUnmapped === 1 ? "" : "s"} carry a business category with no creator-category mapping, so they are not in the grid.</p>` : ""}
   </div>`;
+  // Benchmarks.
+  const bench = Object.entries(d.benchmarks || {}).map(([key, b]) => { const parts = key.split("|"); return { market: parts[0], category: parts[1], ...b }; }).sort((a, b) => b.creators - a.creators).slice(0, 25);
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Cell benchmarks</h3>
+  <p class="small muted" style="margin:0 0 8px">Medians inside each market and category cell — the numbers an acquirer trends, frozen daily in the Snapshots tab.</p>
+  ${bench.length ? `<div class="table-wrap"><table><tr><th>Market</th><th>Category</th><th>Creators</th><th>Median local %</th><th>Median audience</th><th>Median paid rate</th><th>Median on-time %</th></tr>
+  ${bench.map((b) => `<tr><td>${esc(b.market)}</td><td data-label="Category">${esc(b.category)}</td><td data-label="Creators">${b.creators}</td><td data-label="Median local %">${b.medianLocalPct == null ? "—" : b.medianLocalPct + "%"}</td><td data-label="Median audience">${b.medianAudience == null ? "—" : astFull(b.medianAudience)}</td><td data-label="Median paid rate">${b.medianPaidRate == null ? "—" : "$" + astFull(b.medianPaidRate)}</td><td data-label="Median on-time %">${b.medianOnTimePct == null ? "—" : b.medianOnTimePct + "%"}</td></tr>`).join("")}
+  </table></div>` : `<p class="small muted">No bookable creators in any cell yet.</p>`}
+  </div>`;
+  // Typed-city backlog.
+  const bl = d.backlog || { unlistedByCity: [], cityRequests: [] };
+  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Demand from unlisted cities</h3>
+  ${(bl.unlistedByCity || []).length ? bl.unlistedByCity.map((r) => `<div class="kv kv-wrap"><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"} (${r.approved} approved)</b></div>`).join("") : `<p class="small muted">No sign-ups from unlisted cities yet.</p>`}
+  ${(bl.cityRequests || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>City requests on file:</strong></p>${bl.cityRequests.map((r) => `<div class="kv"><span>${esc(r.city)}${r.region ? ", " + esc(r.region) : ""}${r.handle ? " · @" + esc(r.handle) : ""}</span><b>${r.createdAt ? esc(fmtDay(r.createdAt)) : ""}</b></div>`).join("")}` : ""}
+  </div>`;
+    return html;
+  },
+  funnel(d) {
+    let html = "";
   // The match funnel.
   const fn = d.funnel || { stages: [], capturingSince: {} };
   const sinceImp = fn.capturingSince && fn.capturingSince.impressions;
@@ -28946,20 +29044,30 @@ async function astLoadData() {
   <tr><td>Creators</td>${Object.entries(rel.byOnTime).map(([k, v]) => `<td data-label="${esc(k)} on-time">${v}</td>`).join("")}</tr></table></div>
   <p class="small muted" style="margin:8px 0 0">${rel.paused || 0} paused by the standards ladder · ${rel.banned || 0} removed.</p>
   </div>`;
-  // Benchmarks.
-  const bench = Object.entries(d.benchmarks || {}).map(([key, b]) => { const parts = key.split("|"); return { market: parts[0], category: parts[1], ...b }; }).sort((a, b) => b.creators - a.creators).slice(0, 25);
-  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Cell benchmarks</h3>
-  <p class="small muted" style="margin:0 0 8px">Medians inside each market and category cell — the numbers an acquirer trends, frozen daily in the snapshots below.</p>
-  ${bench.length ? `<div class="table-wrap"><table><tr><th>Market</th><th>Category</th><th>Creators</th><th>Median local %</th><th>Median audience</th><th>Median paid rate</th><th>Median on-time %</th></tr>
-  ${bench.map((b) => `<tr><td>${esc(b.market)}</td><td data-label="Category">${esc(b.category)}</td><td data-label="Creators">${b.creators}</td><td data-label="Median local %">${b.medianLocalPct == null ? "—" : b.medianLocalPct + "%"}</td><td data-label="Median audience">${b.medianAudience == null ? "—" : astFull(b.medianAudience)}</td><td data-label="Median paid rate">${b.medianPaidRate == null ? "—" : "$" + astFull(b.medianPaidRate)}</td><td data-label="Median on-time %">${b.medianOnTimePct == null ? "—" : b.medianOnTimePct + "%"}</td></tr>`).join("")}
-  </table></div>` : `<p class="small muted">No bookable creators in any cell yet.</p>`}
+  // Prompting systems (Build -148): Maggie's campaign prompts to
+  // businesses and the creator coaching ladder — shown / used /
+  // dismissed from the event log, plus the LIVE ladder-step
+  // distribution over approved creators.
+  const pr = d.prompting || null;
+  if (pr) {
+    const pc = pr.campaign || {};
+    const pco = pr.coaching || {};
+    const trigLine = Object.entries(pc.byTrigger || {}).map(([k, v]) => `${esc(k.replace(/_/g, " "))} ${astFull(v)}`).join(" · ");
+    const famLine = Object.entries(pc.byFamily || {}).map(([k, v]) => `${esc(k)} ${astFull(v)}`).join(" · ");
+    const distRows = Object.entries(pco.distribution || {}).map(([k, v]) => `<div class="kv"><span>Stuck at: ${esc(k)}</span><b>${astFull(v)} creator${v === 1 ? "" : "s"}</b></div>`).join("");
+    html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Maggie's prompts — campaigns &amp; coaching</h3>
+  <p class="small muted" style="margin:0 0 8px">Proactive prompts from the last ${d.rangeDays} days. Campaign prompts go to active businesses only (one active card, at most two a week, family snoozed 30 days on a dismissal). Coaching walks each creator one step at a time; the distribution below is computed live.</p>
+  <div class="stat-band" style="margin:0 0 6px">${astDataCell(astFull(pc.shown || 0), "Campaign prompts shown")}${astDataCell(astFull(pc.used || 0), "Prompt actions: used")}${astDataCell(astFull(pc.offersCreated || 0), "Offers created from prompts")}${astDataCell(astFull(pc.dismissed || 0), "Dismissed")}${astDataCell(astFull(pc.snoozed || 0), "Snoozed (later)")}${astDataCell(astFull(pc.expired || 0), "Expired unanswered")}</div>
+  ${trigLine ? `<p class="small" style="margin:8px 0 0"><strong>By trigger:</strong> ${trigLine}</p>` : ""}
+  ${famLine ? `<p class="small" style="margin:4px 0 0"><strong>By family:</strong> ${famLine}</p>` : ""}
+  <div class="stat-band" style="margin:12px 0 6px">${astDataCell(astFull(pco.offered || 0), "Coaching steps offered")}${astDataCell(astFull(pco.done || 0), "Steps completed")}${astDataCell(astFull(pco.snoozed || 0), "Steps snoozed")}${astDataCell(pco.completionRate == null ? "—" : pco.completionRate + "%", "Step completion rate")}${astDataCell(astFull(pco.ladderComplete || 0), "Creators ladder-complete")}${astDataCell(astFull(pco.creatorsTracked || 0), "Approved creators tracked")}</div>
+  ${distRows ? `<p class="small" style="margin:8px 0 4px"><strong>Where creators are stuck right now:</strong></p>${distRows}` : `<p class="small muted" style="margin:8px 0 0">No creator is mid-ladder right now.</p>`}
   </div>`;
-  // Typed-city backlog.
-  const bl = d.backlog || { unlistedByCity: [], cityRequests: [] };
-  html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Demand from unlisted cities</h3>
-  ${(bl.unlistedByCity || []).length ? bl.unlistedByCity.map((r) => `<div class="kv"><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"} (${r.approved} approved)</b></div>`).join("") : `<p class="small muted">No sign-ups from unlisted cities yet.</p>`}
-  ${(bl.cityRequests || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>City requests on file:</strong></p>${bl.cityRequests.map((r) => `<div class="kv"><span>${esc(r.city)}${r.region ? ", " + esc(r.region) : ""}${r.handle ? " · @" + esc(r.handle) : ""}</span><b>${r.createdAt ? esc(fmtDay(r.createdAt)) : ""}</b></div>`).join("")}` : ""}
-  </div>`;
+  }
+    return html;
+  },
+  outside(d) {
+    let html = "";
   // Outside the app (Build -147): the streams that live outside
   // the product — outreach sends, the verified roster universe,
   // site form demand, replies, bounces, conversions — joined
@@ -28979,34 +29087,18 @@ async function astLoadData() {
     const bounceLine = Object.entries(ob.byClass || {}).map(([k, v]) => `${esc(k)} ${astFull(v)}`).join(" · ");
     html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Outside the app — outreach, rosters, forms</h3>
   <p class="small muted" style="margin:0 0 8px">What happened outside the product, joined to it on email and handle. Outreach sends carry no open or click tracking — plain Gmail sends have none — so the lane is measured on sends, bounces, replies, and sign-ups.</p>
-  <div class="stat-band" style="margin:0 0 6px">${cell(astFull(os.total || 0), "Outreach sends imported")}${cell(astFull(op.total || 0), "Prospects on file")}${cell(astFull(op.joined || 0), "Prospects now signed up")}${cell(astFull(ofm.imported || 0), "Form submissions imported")}${cell(astFull(orp.total || 0), "Replies on record")}${cell(astFull(ob.total || 0), "Bounces on record")}</div>
+  <div class="stat-band" style="margin:0 0 6px">${astDataCell(astFull(os.total || 0), "Outreach sends imported")}${astDataCell(astFull(op.total || 0), "Prospects on file")}${astDataCell(astFull(op.joined || 0), "Prospects now signed up")}${astDataCell(astFull(ofm.imported || 0), "Form submissions imported")}${astDataCell(astFull(orp.total || 0), "Replies on record")}${astDataCell(astFull(ob.total || 0), "Bounces on record")}</div>
   ${os.since ? `<p class="small muted" style="margin:4px 0 0">Send history imported from ${esc(os.since)}${laneLine ? ` — ${esc(laneLine)}` : ""}.</p>` : `<p class="small muted" style="margin:4px 0 0">No outreach sends imported yet.</p>`}
   ${orp.total ? `<p class="small" style="margin:8px 0 0"><strong>Reply outcomes:</strong> ${outcomeLine}</p>` : ""}
   ${ob.total ? `<p class="small" style="margin:4px 0 0"><strong>Bounces:</strong> ${bounceLine} (from delivery notices — the authoritative source, not Sent copies).</p>` : ""}
-  ${ofm.imported ? `<p class="small" style="margin:4px 0 0"><strong>Site forms:</strong> ${astFull(ofm.cityRequests || 0)} city request${ofm.cityRequests === 1 ? "" : "s"} and ${astFull(ofm.businessApplications || 0)} business application${ofm.businessApplications === 1 ? "" : "s"} now land in the backlog and application records above${ofm.since ? `, captured from ${esc(ofm.since)}` : ""}.</p>` : ""}
-  ${(op.byMarket || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>Prospect universe by market</strong> (verified from rosters · contacted by outreach · signed up):</p>${op.byMarket.map((r) => `<div class="kv"><span>${esc(r.market)}</span><b>${astFull(r.verified || 0)} verified · ${astFull(r.contacted || 0)} contacted · ${astFull(r.joined || 0)} signed up</b></div>`).join("")}` : `<p class="small muted" style="margin:8px 0 0">No prospects imported yet.</p>`}
+  ${ofm.imported ? `<p class="small" style="margin:4px 0 0"><strong>Site forms:</strong> ${astFull(ofm.cityRequests || 0)} city request${ofm.cityRequests === 1 ? "" : "s"} and ${astFull(ofm.businessApplications || 0)} business application${ofm.businessApplications === 1 ? "" : "s"} now land in the backlog (the Supply &amp; demand tab) and the application records${ofm.since ? `, captured from ${esc(ofm.since)}` : ""}.</p>` : ""}
+  ${(op.byMarket || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>Prospect universe by market</strong> (verified from rosters · contacted by outreach · signed up):</p>${op.byMarket.map((r) => `<div class="kv kv-wrap"><span>${esc(r.market)}</span><b>${astFull(r.verified || 0)} verified · ${astFull(r.contacted || 0)} contacted · ${astFull(r.joined || 0)} signed up</b></div>`).join("")}` : `<p class="small muted" style="margin:8px 0 0">No prospects imported yet.</p>`}
   </div>`;
   }
-  // Prompting systems (Build -148): Maggie's campaign prompts to
-  // businesses and the creator coaching ladder — shown / used /
-  // dismissed from the event log, plus the LIVE ladder-step
-  // distribution over approved creators.
-  const pr = d.prompting || null;
-  if (pr) {
-    const pc = pr.campaign || {};
-    const pco = pr.coaching || {};
-    const trigLine = Object.entries(pc.byTrigger || {}).map(([k, v]) => `${esc(k.replace(/_/g, " "))} ${astFull(v)}`).join(" · ");
-    const famLine = Object.entries(pc.byFamily || {}).map(([k, v]) => `${esc(k)} ${astFull(v)}`).join(" · ");
-    const distRows = Object.entries(pco.distribution || {}).map(([k, v]) => `<div class="kv"><span>Stuck at: ${esc(k)}</span><b>${astFull(v)} creator${v === 1 ? "" : "s"}</b></div>`).join("");
-    html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Maggie's prompts — campaigns &amp; coaching</h3>
-  <p class="small muted" style="margin:0 0 8px">Proactive prompts from the last ${d.rangeDays} days. Campaign prompts go to active businesses only (one active card, at most two a week, family snoozed 30 days on a dismissal). Coaching walks each creator one step at a time; the distribution below is computed live.</p>
-  <div class="stat-band" style="margin:0 0 6px">${cell(astFull(pc.shown || 0), "Campaign prompts shown")}${cell(astFull(pc.used || 0), "Prompt actions: used")}${cell(astFull(pc.offersCreated || 0), "Offers created from prompts")}${cell(astFull(pc.dismissed || 0), "Dismissed")}${cell(astFull(pc.snoozed || 0), "Snoozed (later)")}${cell(astFull(pc.expired || 0), "Expired unanswered")}</div>
-  ${trigLine ? `<p class="small" style="margin:8px 0 0"><strong>By trigger:</strong> ${trigLine}</p>` : ""}
-  ${famLine ? `<p class="small" style="margin:4px 0 0"><strong>By family:</strong> ${famLine}</p>` : ""}
-  <div class="stat-band" style="margin:12px 0 6px">${cell(astFull(pco.offered || 0), "Coaching steps offered")}${cell(astFull(pco.done || 0), "Steps completed")}${cell(astFull(pco.snoozed || 0), "Steps snoozed")}${cell(pco.completionRate == null ? "—" : pco.completionRate + "%", "Step completion rate")}${cell(astFull(pco.ladderComplete || 0), "Creators ladder-complete")}${cell(astFull(pco.creatorsTracked || 0), "Approved creators tracked")}</div>
-  ${distRows ? `<p class="small" style="margin:8px 0 4px"><strong>Where creators are stuck right now:</strong></p>${distRows}` : `<p class="small muted" style="margin:8px 0 0">No creator is mid-ladder right now.</p>`}
-  </div>`;
-  }
+    return html || `<div class="panel" style="margin-top:14px"><p class="small muted" style="margin:0">Nothing from outside the app has been imported yet.</p></div>`;
+  },
+  snapshots(d) {
+    let html = "";
   // Snapshot trend.
   const snaps = d.snapshots || [];
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Daily snapshots</h3>
@@ -29014,18 +29106,22 @@ async function astLoadData() {
   ${snaps.slice().reverse().map((s) => `<tr><td>${esc(s.date)}</td><td data-label="Approved creators">${s.creatorsApproved}</td><td data-label="Followers">${astFull(s.followers)}</td><td data-label="Open offers">${s.offersOpen}</td><td data-label="Bookings">${s.bookings}</td><td data-label="Page views">${s.pageviews}</td></tr>`).join("")}
   </table></div>` : `<p class="small muted">No daily snapshot yet. The first one freezes tonight; trends exist from the day capture starts, never before.</p>`}
   </div>`;
+    return html;
+  },
+  export(d) {
+    let html = "";
   // Exports.
   const tr = d.training || null;
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Export the raw data</h3>
   <p class="small muted" style="margin:0 0 8px">The core datasets, straight from the records. Event datasets cover the last 30 days (add &amp;days= up to 90 in the link for more); record datasets are whole. Event export is scoped to the capture types and the full log because those are the datasets the ML training set joins on.</p>
-  ${tr ? `<p class="small" style="margin:0 0 8px"><strong>Match training pairs</strong> (the training_pairs dataset below): one row for every creator shown in a match list, with the score's ingredients and whether that creator was picked — and, where the visit settled, whether they delivered on time, late, or not at all. Right now the set holds <strong>${astFull(tr.rows || 0)} rows</strong> from <strong>${astFull(tr.impressions || 0)} match lists</strong>, <strong>${astFull(tr.pickedRows || 0)} of them picks</strong> across <strong>${astFull(tr.labeledBriefs || 0)} briefs</strong>. That is the learned ranker's food: it trains only when the offline evaluation harness (scripts/eval-ranker.mjs) says the volume is real, and its weights ship only if it beats the hand-set formula on held-out picks and Jeff approves. The JSONL format is the one the harness reads.</p>` : ""}
+  ${tr ? `<p class="small" style="margin:0 0 8px"><strong>Match training pairs</strong> (the training_pairs dataset below): one row for every creator shown in a match list, with the score's ingredients and whether that creator was picked — and, where the visit settled, whether they delivered on time, late, or not at all. Right now the set holds <strong>${astFull(tr.rows || 0)} rows</strong> from <strong>${astFull(tr.impressions || 0)} match lists</strong>, <strong>${astFull(tr.pickedRows || 0)} of them picks</strong> across <strong>${astFull(tr.labeledBriefs || 0)} briefs</strong>. That is the learned ranker's food: it trains only when the offline evaluation harness (scripts/eval-ranker.mjs) says the volume is real, and its weights ship only if it beats the hand-set formula on held-out picks and Jeff approves. The JSONL format is the one the harness reads.</p>` : `<p class="small muted" style="margin:0 0 8px">Training-pair counts are frozen into each night's snapshot — the first count lands with tonight's snapshot.</p>`}
   ${AST_EXPORT_DATASETS.map((ds) => ds === "training_pairs"
     ? `<div class="kv"><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=training_pairs&format=jsonl">JSONL</a> · <a href="/api/admin/stats/data/export?dataset=training_pairs&format=json">JSON</a> · <a href="/api/admin/stats/data/export?dataset=training_pairs&format=csv">CSV</a></span></div>`
     : `<div class="kv"><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=${ds}&format=csv">CSV</a> · <a href="/api/admin/stats/data/export?dataset=${ds}&format=json">JSON</a></span></div>`).join("")}
   </div>`;
-  host.innerHTML = html;
-}
-
+    return html;
+  },
+};
 async function ccShowTab() {
   const host = document.getElementById("cc-body");
   if (!host) return;
