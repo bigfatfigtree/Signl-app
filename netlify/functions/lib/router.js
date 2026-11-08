@@ -21,6 +21,7 @@ const clover = require("./clover");
 const { askSigAI } = require("./sigai");
 const sigdata = require("./sigdata");
 const { sigConverse } = require("./sigconvo");
+const maggieAi = require("./maggie-ai");
 const { buildProfilePageHtml, buildClaimPageHtml, buildRosterPageHtml, buildRosterNotFoundHtml } = require("./profile-meta");
 const { videoEmbedFor } = require("./video-embed");
 const intentLib = require("./intent");
@@ -12269,6 +12270,112 @@ async function buildSigFacts(user, full) {
 
 // ---------- auth context ----------
 
+// Maggie Real-AI tools (Jeff, 2026-11-07): the toolset the
+// LLM path (lib/maggie-ai.js) may call for THIS asker. Every
+// tool wraps an existing scoped read — the asker's own fact
+// sheet (sigdata), the admin aggregates that are Jeff's own
+// scope, and discoverCards, the identical query the business
+// surfaces run — so the model can only ever reach what this
+// asker may see today. Admin tools exist only in the admin
+// lane. Side outputs a chat turn renders (creator cards and
+// the resolved match brief) collect on `out` for the router
+// to attach to the ask response.
+function buildMaggieTools(user, facts) {
+  const out = { cards: null, matchBrief: null };
+  const tools = [];
+  if (!user || !facts) return { tools, out };
+  tools.push({
+    name: "my_numbers",
+    description: "Pull the asker's own current numbers and state from their Magpie records: their offers, applications, bookings, applicants, profile state, Momentum or funnel, depending on their role. Use when they ask how things stand for them.",
+    parameters: { type: "object", properties: {} },
+    run: async () => ({ text: sigdata.factsLines(user.role, facts).join(" ") }),
+  });
+  if (user.role === "admin") {
+    const f = facts;
+    tools.push({
+      name: "platform_overview",
+      description: "The platform's live totals right now: creators and businesses signed up, approved and waiting, followers, claims today, offers open, partners, live markets. Use for platform-wide questions in the admin lane.",
+      parameters: { type: "object", properties: {} },
+      run: async () => ({
+        creatorsSignedUp: f.creators.signedUp, creatorsApproved: f.creators.approved, creatorsPending: f.creators.pending,
+        totalFollowers: f.creators.totalFollowers, avgLocalPct: f.creators.avgLocalPct,
+        claimsToday: f.creators.claimsToday, creatorSignupsLast7d: f.creators.signups7d,
+        businessesApproved: f.businesses.approved, businessesPending: f.businesses.pending,
+        businessesActive: f.businesses.active, businessesFounding: f.businesses.founding,
+        waitingTotal: f.waiting.total, offersOpen: f.offers.open, offersTotal: f.offers.total,
+        visitsCompleted: f.visits.completed, postsLive: f.visits.postsLive,
+        partners: f.partners.total, partnersPaused: f.partners.paused, liveMarkets: f.markets.liveCount,
+      }),
+    });
+    tools.push({
+      name: "creators_in_market",
+      description: "Creator counts for ONE named market: total creator records, approved, and finished profiles, plus combined followers where known. Use when the admin asks about a specific market.",
+      parameters: { type: "object", properties: { market: { type: "string", description: "The market name, e.g. Nashville" } }, required: ["market"] },
+      run: async (args) => {
+        const wanted = String((args && args.market) || "").trim().toLowerCase();
+        const row = (f.creators.byMarket || []).find((m) => m.market.toLowerCase() === wanted);
+        if (!row) return { found: false, market: args && args.market, knownMarkets: (f.creators.byMarket || []).slice(0, 12).map((m) => m.market) };
+        const reach = (f.creators.marketReach || []).find((m) => m.market === row.market);
+        return { found: true, market: row.market, creators: row.creators, approved: row.approved, finishedProfiles: row.complete, combinedFollowers: reach ? reach.combinedFollowers : null };
+      },
+    });
+    tools.push({
+      name: "waiting_applications",
+      description: "Who is waiting on an approval decision right now: the total, the creator/business split, and the names at the front of the queue with how long they have waited. Use when the admin asks who is waiting or says yes to pulling the queue up.",
+      parameters: { type: "object", properties: {} },
+      run: async () => ({ total: f.waiting.total, creators: f.waiting.creators, businesses: f.waiting.businesses, waiting: (f.waiting.list || []).map((w) => ({ who: w.label, waited: w.waited })) }),
+    });
+    tools.push({
+      name: "list_markets",
+      description: "The markets Magpie knows and which of them are live right now.",
+      parameters: { type: "object", properties: {} },
+      run: async () => ({ live: f.markets.liveNames || [], liveCount: f.markets.liveCount || 0, known: f.markets.names || [] }),
+    });
+  }
+  if (user.role === "business") {
+    tools.push({
+      name: "find_creators",
+      description: "Find creators for this business and rank them. Give a category and/or a budget (or one of the business's own campaign ids) and the match engine scores every card: the ranked cards are shown to the business under your answer, with Match scores and reasons. Without a category or budget, creators rank by how local their audience is. Always call this when the business asks you to find creators.",
+      parameters: {
+        type: "object",
+        properties: {
+          market: { type: "string", description: "Market to search; defaults to the business's own market" },
+          category: { type: "string", description: "Creator category, e.g. Food & Drink" },
+          budget: { type: "number", description: "Budget in dollars for the brief, e.g. 200" },
+          campaignId: { type: "string", description: "One of the business's own offer/campaign ids to match against" },
+          limit: { type: "number", description: "How many top cards to show (default 5, max 8)" },
+        },
+      },
+      run: async (args) => {
+        const a = args || {};
+        const query = {};
+        if (a.market) query.market = String(a.market);
+        if (a.category) query.category = String(a.category);
+        if (a.budget) query.budget = String(a.budget);
+        if (a.campaignId) query.campaignId = String(a.campaignId);
+        if (query.category || query.budget || query.campaignId) query.sort = "match";
+        const disc = await discoverCards(query, user);
+        const lim = Math.min(Math.max(parseInt(a.limit, 10) || 5, 1), 8);
+        out.cards = (disc.creators || []).slice(0, lim);
+        out.matchBrief = disc.matchBrief || null;
+        return {
+          count: (disc.creators || []).length,
+          shown: out.cards.length,
+          matchBrief: out.matchBrief,
+          top: out.cards.map((c) => ({
+            name: c.name, handle: (c.profile || {}).handle || null, market: c.market || null,
+            localPct: (c.profile || {}).localAudiencePct == null ? null : Number(c.profile.localAudiencePct),
+            totalAudience: c.totalAudience || 0, paidRate: (c.profile || {}).paidRate || null,
+            matchScore: c.matchScore != null ? c.matchScore : (c.match ? c.match.score : null),
+            matchReasons: c.matchReasons || (c.match ? c.match.reasons : []),
+          })),
+        };
+      },
+    });
+  }
+  return { tools, out };
+}
+
 async function getAuthUser(event) {
   const cookies = auth.parseCookies(event.headers.cookie || event.headers.Cookie || "");
   const token = cookies.signl_session;
@@ -20533,6 +20640,33 @@ async function route(event) {
       const warning = live ? "" : " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new.";
       const route = " If you still want to go ahead: Settings, then Account, then \"Delete my account\" at the bottom. The screen explains exactly what goes and what happens to anything still in flight, and asks you to type DELETE to confirm, so it cannot happen by accident. I cannot delete it from here; that last step is yours, on that screen.";
       return json(200, { source: "data", text: reminder + warning + route, link });
+    }
+    // Maggie Real-AI (Jeff, 2026-11-07, ordered after the
+    // pattern layer failed his live test): when a real model
+    // is configured (MAGGIE_AI_ENABLED + a provider key), the
+    // model is the brain — it converses, reasons over the
+    // asker's live fact sheet, and calls the scoped tools
+    // (buildMaggieTools). The privacy screen above has already
+    // run; the delete-account flow above stays scripted. Any
+    // failure, timeout, or unusable answer returns null here
+    // and the deterministic stack below answers exactly as
+    // before: this block can only ever add a brain, never
+    // remove the floor.
+    {
+      const aiCfg = maggieAi.maggieAiConfig();
+      if (aiCfg && facts) {
+        const built = buildMaggieTools(user, facts);
+        let factsText = sigdata.factsLines(user.role, facts).join(" ");
+        if (user.lang === "es" || (user.business && user.business.preferredLanguage === "es")) factsText += " This person prefers Spanish. Answer in Spanish.";
+        const ai = await maggieAi.askMaggieAI({
+          cfg: aiCfg, role: user.role,
+          firstName: String(user.name || "").trim().split(/\s+/)[0] || "",
+          market: user.market, factsText, tools: built.tools, history, question: q,
+        }).catch(() => null);
+        if (ai && ai.text) {
+          return json(200, { source: "ai", text: ai.text, ...(built.out.cards ? { cards: built.out.cards, matchBrief: built.out.matchBrief || null } : {}) });
+        }
+      }
     }
     // Maggie Rebuild v1 (Jeff, 2026-11-07): the conversational
     // layer. Purely conversational whole messages (greetings,
