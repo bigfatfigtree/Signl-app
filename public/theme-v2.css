@@ -3060,6 +3060,15 @@ body.rail-on main, body.preview-on main { min-width: 0; }
 .kv:last-child { border-bottom: 0; }
 .kv > span { flex: 1 1 auto; min-width: 0; }
 .kv > b { flex: none; text-align: right; }
+/* Build -146: Statistics suggestion rows carry a door AND a
+   dismiss; on phone widths the buttons drop to their own line
+   so the headline keeps a readable column. */
+.kv > span.sug-acts { display: flex; gap: 8px; flex: none; align-items: center; }
+@media (max-width: 640px) {
+  .sug-row { flex-wrap: wrap; }
+  .sug-row > span:first-child { flex: 1 1 100%; }
+  .sug-acts { margin-left: auto; }
+}
 .roas-bar.slim { height: 8px; max-width: 280px; }
 .roas-wks { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
 .roas-wk { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }

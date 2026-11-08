@@ -6160,6 +6160,10 @@ function go(view, tab) {
   // is kept (state.offerDraft survives re-renders); only the
   // direct targeting ends when the business walks away from it.
   if (tab && tab !== "My Offers" && tab !== "Campaign Setup") state.offerTarget = null;
+  // Build -146: the discover brief belongs to the Discover
+  // visit that produced it. Walking to any other tab ends it,
+  // so a booking started elsewhere never inherits it.
+  if (tab && tab !== "Discover") state.discoverBrief = null;
   // Multi-scope exit (Build -106): the Impact Portal's
   // "Partner view" row leaves the pilot scope and lands back
   // on the license partner's Home.
@@ -16263,8 +16267,13 @@ async function sendDeal(creatorId) {
   body.deliverables = { posts: Number(document.getElementById("ds-posts").value || 1), story: document.getElementById("ds-story").value === "1" };
   const ptt = document.getElementById("ds-pttype").value;
   body.postingTerms = ptt === "bydate" ? { type: "bydate", byDate: document.getElementById("ds-ptdate").value } : { type: "standard" };
+  // Build -146: the brief snapshotted at Book time rides the
+  // deal; the server stores it on the deal and on the offer the
+  // deal becomes. No snapshot, no field — never inferred.
+  if (state.bookingSourceBrief) body.sourceBrief = state.bookingSourceBrief;
   try {
     const d = await api("POST", "/deals", body);
+    state.bookingSourceBrief = null;
     if (note) note.textContent = d.deal && d.deal.status === "accepted" ? "Their standing terms accepted it on the spot — the visit is booked." : d.deal && d.deal.status === "declined" ? "Their standing terms closed this one automatically: the numbers did not fit their floor." : "Deal sent. It sits in your Deals until they answer or it expires.";
   } catch (e) { if (note) note.textContent = e.message; }
 }
@@ -21885,6 +21894,14 @@ async function runDiscover() {
       });
     }
     state.discover = data.creators;
+    // Build -146 (the -145 remainder): the brief this list was
+    // scored against rides a grid Book into the deal (and the
+    // offer it becomes) as sourceBrief, the same normalization
+    // the Sig card paths use. It belongs to THIS result set: a
+    // re-run without a brief clears it, and leaving Discover
+    // clears it (see go()), so a later booking can never pick
+    // up a stale brief it did not come from.
+    state.discoverBrief = (data.matchBrief && (sort === "match" || state.discoverCampaignId)) ? sigBriefArg(data.matchBrief) : null;
     // Match Engine v1: say what the ranking is for — or, when
     // Best match was asked for without a usable brief, say what
     // it needs instead of silently showing another order.
@@ -22255,6 +22272,11 @@ function prefillDirectDraft(creator) {
 // the dedicated booking page for that creator only.
 function startOffer(creatorId) {
   pileUnlater("discover", creatorId);
+  // Build -146: snapshot the brief of the list this booking
+  // starts from (only when the creator is actually on it — the
+  // booking flow itself refuses anyone else). sendDeal attaches
+  // the snapshot; a brief-less start attaches nothing.
+  state.bookingSourceBrief = state.discoverBrief && (state.discover || []).some((x) => x.userId === creatorId) ? state.discoverBrief : null;
   return openBookingFlow(creatorId);
 }
 function bkPickDay(btn) {
@@ -28702,9 +28724,10 @@ async function astLoadSuggestions() {
       host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 4px">Suggestions</h3><p class="small muted" style="margin:0">Nothing needs a decision right now. Maggie is watching: ${(d.watching || []).map((w) => esc(w)).join(" · ")}.</p></div>`;
       return;
     }
+    const asOf = d.generatedAt ? new Date(d.generatedAt) : null;
     host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 8px">Suggestions <span class="muted" style="font-weight:400">(${astSuggestList.length})</span></h3>${astSuggestList.map((s, i) => `
-      <div class="kv" style="align-items:flex-start;gap:10px"><span style="flex:1">${esc(s.text)}<br><span class="small muted">${esc(astReceiptLine(s.receipt))}</span></span><button type="button" class="btn small ghost" onclick="return astDismissSuggestionIdx(${i})">Dismiss</button></div>`).join("")}
-      <p class="small muted" style="margin:8px 0 0">A dismissed suggestion stays away until its numbers change.</p></div>`;
+      <div class="kv sug-row" style="align-items:flex-start;gap:10px"><span>${esc(s.text)}<br><span class="small muted">${esc(astReceiptLine(s.receipt))}</span></span><span class="sug-acts">${s.action ? `<button type="button" class="btn small" onclick="return astOpenSuggestionIdx(${i})">${esc(s.action.label)}</button>` : ""}<button type="button" class="btn small ghost" onclick="return astDismissSuggestionIdx(${i})">Dismiss</button></span></div>`).join("")}
+      <p class="small muted" style="margin:8px 0 0">Every button is a door, not a trigger — the action happens on the screen it opens, under the usual approvals. A dismissed suggestion stays away until its numbers change or two weeks pass.${asOf ? ` As of ${esc(asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }))}.` : ""}</p></div>`;
   } catch (e) { host.innerHTML = ""; }
 }
 function astReceiptLine(r) {
@@ -28718,11 +28741,30 @@ async function astDismissSuggestionIdx(i) {
   astLoadSuggestions();
   return false;
 }
+// Build -146: a suggestion's door. Taking it is recorded
+// server-side (the suggestion leaves the board until its
+// numbers move), then the route opens the existing surface
+// where the action lives. The door never performs the action.
+async function astOpenSuggestionIdx(i) {
+  const s = astSuggestList[i];
+  if (!s || !s.action) return false;
+  try { await api("POST", "/admin/suggestions/act", { id: s.id }); } catch (e) { /* routing still serves Jeff */ }
+  const a = s.action;
+  if (a.route === "applications") return go("dashboard", "Applications");
+  if (a.route === "stats-creators") {
+    if (a.params && a.params.market) astFilters.market = a.params.market;
+    go("dashboard", "Stats");
+    return astSetView("creators");
+  }
+  if (a.route === "stats-businesses") { go("dashboard", "Stats"); return astSetView("businesses"); }
+  go("dashboard", "Stats");
+  return astSetView("data");
+}
 
 // The Data view: the audit's datasets, rendered from
 // /admin/stats/data. Event-sourced numbers always carry the
 // day their capture began; nothing here backfills.
-const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "match_impressions", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "events"];
+const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "suggestions", "match_impressions", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "events"];
 async function astLoadData() {
   const host = document.getElementById("ast-data");
   if (!host) return;

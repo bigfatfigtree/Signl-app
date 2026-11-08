@@ -309,36 +309,106 @@ function suggestionFingerprint(parts) {
   return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 16);
 }
 
-// Suggestions v1 (Jeff, 2026-11-08: "I need a place to see
-// those suggestions too. In my admin and obvious."). Computed
-// ONLY from the aggregations above: supply gaps against real
-// open-offer demand, the typed-city backlog, the review queues,
-// and funnel leaks once the capture exists. Every suggestion
-// carries its receipt numbers; a dismissal remembers the
-// fingerprint of those numbers, so a dismissed suggestion stays
-// dismissed until its numbers actually move.
-async function suggestionsRaw() {
+// ---------- Suggestions, matured (Build -146; decision-layer
+// spec 2026-11-08 §3 + §5). Phase 1 decision reports computed
+// from the same aggregations the Data view reads, persisted as
+// suggestion:{id} records so the layer keeps its own history:
+// every candidate carries its receipt numbers and a door (a
+// link into the Admin surface that acts on it — never a
+// trigger; nothing here sends, recruits, prices, or promises).
+// A dismissal binds to the fingerprint of the numbers it was
+// shown: the card stays away while those numbers stand, for at
+// least the 14-day suppression window, and resurfaces when the
+// numbers move. Shown / acted / dismissed land in the event log
+// — the ranking data Phase 3 will learn from. The v1 kinds
+// (gap / waiting / backlog / funnel) keep their ids, texts,
+// receipts, and fingerprints, so v1 dismissals stay valid; the
+// legacy config:suggestionDismissals map is migrated into
+// records on first sync and still written on dismiss.
+const SUGGESTION_OPEN_CAP = 10;
+const SUGGESTION_SUPPRESS_MS = 14 * 86400000;
+const SUGGESTION_TTL_MS = 14 * 86400000;
+// The market business gate (Jeff's canon): ~50-60 approved,
+// profile-complete creators, balanced across the launch
+// categories. Balance floor per category follows the spec's own
+// worked example (54 creators, fitness at 4 -> "6 more").
+const GATE_LOW = 50;
+const GATE_CATEGORY_FLOOR = 10;
+const GATE_CATEGORIES = ["Food & Drink", "Fitness & Wellness", "Beauty & Grooming", "Lifestyle", "Nightlife"];
+const SUGGESTION_WATCHING = [
+  "Supply gaps in every market and category, against open-offer demand",
+  "Recruiting targets where offers, fruitless searches, and typed-city requests agree",
+  "Every market's run at its 50-60 creator business gate, category balance included",
+  "Creators signing up from cities that are not listed markets yet",
+  "Applications waiting on review, and how long the oldest has waited",
+  "Searches that found nobody, and match lists that end without a pick",
+  "Creators and businesses going quiet, named, with the stall spelled out",
+  "The budgets businesses offer against the rates creators list (inputs only — pricing stays Jeff's call)",
+  "The questions Maggie cannot answer yet, clustered by who asked and what about",
+];
+
+function suggestionReceiptsOf(flat) {
+  return Object.entries(flat || {}).map(([label, value]) => ({ label, value }));
+}
+
+function percentileOf(nums, p) {
+  const a = nums.filter((n) => Number.isFinite(n)).sort((x, y) => x - y);
+  if (!a.length) return null;
+  const rank = Math.max(1, Math.ceil((p / 100) * a.length));
+  return a[Math.min(a.length, rank) - 1];
+}
+
+// Which listed market a typed city belongs to (its published
+// town list), so a typed-city request counts as demand for the
+// market that would serve it. Raleigh and Charlotte are their
+// own markets with their own town lists — never merged.
+let TYPED_CITY_MARKET = null;
+function typedCityMarket() {
+  if (TYPED_CITY_MARKET) return TYPED_CITY_MARKET;
+  const map = new Map();
+  for (const m of MARKETS) {
+    map.set(m.name.toLowerCase(), m.name);
+    for (const c of m.cities || []) map.set(String(c).toLowerCase(), m.name);
+  }
+  TYPED_CITY_MARKET = map;
+  return map;
+}
+
+// Maggie's curriculum (spec C3): the topic of an ask, from a
+// small deterministic keyword map — the same honesty rule as
+// the rest of the layer (a cluster is only named when the words
+// are actually there). Order matters: first match wins.
+const SIG_ASK_TOPICS = [
+  ["licensing", "licensing and usage rights", /licen[cs]e|licensing|usage rights|perpetuity|repost|advertis/i],
+  ["matching", "how matching and ranking work", /match|rank|scor(e|ing)|algorithm|why was i not|why wasn't i/i],
+  ["pricing", "pricing and money", /pric|cost|charge|fee|budget|\brate\b|how much|pay|paid|money|comp\b|coupon/i],
+  ["profile", "getting picked and profile setup", /profile|photo|handle|follower|audience|local %|local percent|bio|set ?up|picked|get chosen|stand out/i],
+  ["offers", "offers and bookings", /offer|book|campaign|brief|visit|redeem|deal|appl(y|ied|ication)/i],
+  ["account", "account and access", /password|sign ?in|log ?in|delete|account|verif|email/i],
+  ["markets", "markets and launch timing", /launch|market|city|cities|\bopen\b|when.*(start|live)|available/i],
+];
+function sigAskTopic(q) {
+  const text = String(q || "");
+  for (const [key, label, re] of SIG_ASK_TOPICS) if (re.test(text)) return { key, label };
+  return null;
+}
+
+// Every suggestion the records support right now, ranked by a
+// static per-kind priority (Jeff's doctrine: waiting items and
+// gate trips outrank learnings; anything naming a person
+// outranks an aggregate). Pure computation — persistence and
+// lifecycle live in syncSuggestionRecords below.
+async function buildSuggestionCandidates() {
   const agg = await buildDataAggregates();
+  const funnel = await buildFunnel(30);
+  const offers = await allOffers();
+  const applications = await allApplications();
   const out = [];
-  const gaps = [];
-  for (const [mk, cats] of Object.entries(agg.matrix)) {
-    for (const [cat, cell] of Object.entries(cats)) {
-      if (cell.demand > 0 && cell.supply === 0) gaps.push({ mk, cat, supply: cell.supply, demand: cell.demand, hard: true });
-      else if (cell.demand >= 3 && cell.supply > 0 && cell.demand > cell.supply * 2) gaps.push({ mk, cat, supply: cell.supply, demand: cell.demand, hard: false });
-    }
-  }
-  gaps.sort((a, b) => b.demand - a.demand);
-  for (const g of gaps.slice(0, 5)) {
-    out.push({
-      id: `gap:${g.mk}:${g.cat}`, kind: "gap",
-      text: g.hard
-        ? `No approved ${g.cat} creators in ${g.mk} yet, and ${g.demand} open offer${g.demand === 1 ? "" : "s"} there want them. Recruiting ${g.cat} in ${g.mk} is the gap.`
-        : `Only ${g.supply} approved ${g.cat} creator${g.supply === 1 ? "" : "s"} in ${g.mk} for ${g.demand} open offers. That cell is thin.`,
-      receipt: { market: g.mk, category: g.cat, supply: g.supply, demand: g.demand },
-      fingerprint: suggestionFingerprint(["gap", g.mk, g.cat, g.supply, g.demand]),
-    });
-  }
+  const push = (c) => out.push(c);
   const now = Date.now();
+  const daysAgo = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / 86400000)) : 0; };
+
+  // ---- ops.waiting (v1, unchanged) ----
   const waitOf = (list) => {
     const pending = list.filter((u) => u.status === "pending");
     if (!pending.length) return null;
@@ -346,28 +416,361 @@ async function suggestionsRaw() {
     return { count: pending.length, oldestDays: Math.max(0, Math.floor((now - oldest) / 86400000)) };
   };
   const wc = waitOf(agg.creators);
-  if (wc) out.push({ id: "waiting:creators", kind: "waiting", text: `${wc.count} creator application${wc.count === 1 ? "" : "s"} waiting on review${wc.oldestDays > 0 ? `; the oldest has waited ${wc.oldestDays} day${wc.oldestDays === 1 ? "" : "s"}` : ""}. They sit in Applications.`, receipt: wc, fingerprint: suggestionFingerprint(["waiting:creators", wc.count, wc.oldestDays]) });
+  if (wc) push({ id: "waiting:creators", kind: "waiting", type: "ops.waiting", family: "ops", score: 100, text: `${wc.count} creator application${wc.count === 1 ? "" : "s"} waiting on review${wc.oldestDays > 0 ? `; the oldest has waited ${wc.oldestDays} day${wc.oldestDays === 1 ? "" : "s"}` : ""}. They sit in Applications.`, receipt: wc, action: { label: "Open Applications", route: "applications", params: {} }, fingerprint: suggestionFingerprint(["waiting:creators", wc.count, wc.oldestDays]) });
   const wb = waitOf(agg.businesses);
-  if (wb) out.push({ id: "waiting:businesses", kind: "waiting", text: `${wb.count} business application${wb.count === 1 ? "" : "s"} waiting on review${wb.oldestDays > 0 ? `; the oldest has waited ${wb.oldestDays} day${wb.oldestDays === 1 ? "" : "s"}` : ""}.`, receipt: wb, fingerprint: suggestionFingerprint(["waiting:businesses", wb.count, wb.oldestDays]) });
-  for (const city of agg.unlistedByCity.slice(0, 3)) {
-    if (city.creators < 5) break;
-    out.push({ id: `city:${city.place}`, kind: "backlog", text: `${city.creators} creators signed up from ${city.place}, which is not a listed market yet. Worth a look before it gets bigger.`, receipt: { place: city.place, creators: city.creators, approved: city.approved }, fingerprint: suggestionFingerprint(["city", city.place, city.creators]) });
+  if (wb) push({ id: "waiting:businesses", kind: "waiting", type: "ops.waiting", family: "ops", score: 100, text: `${wb.count} business application${wb.count === 1 ? "" : "s"} waiting on review${wb.oldestDays > 0 ? `; the oldest has waited ${wb.oldestDays} day${wb.oldestDays === 1 ? "" : "s"}` : ""}.`, receipt: wb, action: { label: "Open Applications", route: "applications", params: {} }, fingerprint: suggestionFingerprint(["waiting:businesses", wb.count, wb.oldestDays]) });
+
+  // ---- marketing.gate_watch (M3) ----
+  for (const mk of Object.keys(agg.matrix)) {
+    const cats = agg.matrix[mk];
+    let total = 0;
+    for (const u of agg.creators) {
+      if (u.status !== "approved" || !profileCompleteOf(u) || standingState(u) === "banned") continue;
+      if (normalizeMarketName(u.market) === mk) total += 1;
+    }
+    if (total < GATE_LOW - 10) continue;
+    let thin = null;
+    let thinN = Infinity;
+    for (const cat of GATE_CATEGORIES) {
+      const n = (cats[cat] || {}).supply || 0;
+      if (n < thinN) { thinN = n; thin = cat; }
+    }
+    const balanced = thinN >= GATE_CATEGORY_FLOOR;
+    if (total >= GATE_LOW && balanced) {
+      push({ id: `gate:${mk}`, kind: "gate", type: "marketing.gate_watch", family: "marketing", score: 97, market: mk, text: `${mk} clears its business gate: ${total} bookable creators, and every launch category covered (thinnest is ${thin} at ${thinN}). The stored business target list is the next move — approaching them stays your call.`, receipt: { market: mk, creators: total, gate: `${GATE_LOW}-${GATE_LOW + 10}`, thinnest: thin, thinnestCount: thinN }, action: { label: "See the roster", route: "stats-creators", params: { market: mk } }, fingerprint: suggestionFingerprint(["gate", mk, total, ...GATE_CATEGORIES.map((c) => (cats[c] || {}).supply || 0)]) });
+    } else if (total >= GATE_LOW) {
+      const deficit = GATE_CATEGORY_FLOOR - thinN;
+      push({ id: `gate:${mk}`, kind: "gate", type: "marketing.gate_watch", family: "marketing", score: 96, market: mk, text: `${mk} has the numbers for its business gate (${total} creators) but ${thin} is thin at ${thinN} — about ${deficit} more ${thin} creator${deficit === 1 ? "" : "s"} opens the business approach.`, receipt: { market: mk, creators: total, gate: `${GATE_LOW}-${GATE_LOW + 10}`, thinnest: thin, thinnestCount: thinN, needed: deficit }, action: { label: "See the roster", route: "stats-creators", params: { market: mk } }, fingerprint: suggestionFingerprint(["gate", mk, total, ...GATE_CATEGORIES.map((c) => (cats[c] || {}).supply || 0)]) });
+    } else {
+      const needed = GATE_LOW - total;
+      push({ id: `gate:${mk}`, kind: "gate", type: "marketing.gate_watch", family: "marketing", score: 95, market: mk, text: `${mk} is ${needed} creator${needed === 1 ? "" : "s"} from its business gate (${total} of ${GATE_LOW}). ${thin} is thinnest at ${thinN}.`, receipt: { market: mk, creators: total, gate: `${GATE_LOW}-${GATE_LOW + 10}`, thinnest: thin, thinnestCount: thinN, needed }, action: { label: "See the roster", route: "stats-creators", params: { market: mk } }, fingerprint: suggestionFingerprint(["gate", mk, total, ...GATE_CATEGORIES.map((c) => (cats[c] || {}).supply || 0)]) });
+    }
   }
-  const funnel = await buildFunnel(30);
+
+  // ---- marketing.recruit_target (M1): the composite cell ----
+  // Open-offer demand + zero-result searches (+ the market's
+  // typed-city requests as context) agreeing on one cell. A
+  // cell with a composite card does not also get the plain
+  // single-signal gap/search cards below — its receipts carry
+  // their numbers already.
+  const zeroByCell = {};
+  for (const g of funnel.zeroResultGaps) {
+    if (!CREATOR_CATEGORIES.includes(g.category)) continue;
+    zeroByCell[`${g.market}|${g.category}`] = g.count;
+  }
+  const cityReqsAll = (await store.list("cityrequest:")).map((r) => r.value).filter(Boolean);
+  const typedByMarket = {};
+  for (const r of cityReqsAll) {
+    const mk = typedCityMarket().get(String(r.city || "").trim().toLowerCase());
+    if (mk) typedByMarket[mk] = (typedByMarket[mk] || 0) + 1;
+  }
+  const recruitCells = new Set();
+  const recruitCands = [];
+  for (const [mk, cats] of Object.entries(agg.matrix)) {
+    for (const [cat, cell] of Object.entries(cats)) {
+      const zero = zeroByCell[`${mk}|${cat}`] || 0;
+      const composite = (cell.demand > 0 && zero >= 3) || (zero >= 5 && cell.supply === 0);
+      if (!composite) continue;
+      const target = Math.max(cell.demand - cell.supply, 3, zero >= 5 ? 5 : 0);
+      recruitCells.add(`${mk}|${cat}`);
+      recruitCands.push({ id: `recruit:${mk}:${cat}`, kind: "recruit", type: "marketing.recruit_target", family: "marketing", score: 92, market: mk, category: cat, text: `Recruit ${cat} creators in ${mk}: ${cell.demand} open offer${cell.demand === 1 ? "" : "s"} want them and businesses searched ${zero} times in the last 30 days and found nobody. ${cell.supply === 0 ? "No approved creator covers the cell yet" : `Only ${cell.supply} approved creator${cell.supply === 1 ? "" : "s"} cover${cell.supply === 1 ? "s" : ""} it`}. Target: about ${target} more.`, receipt: { market: mk, category: cat, supply: cell.supply, openOffers: cell.demand, zeroSearches: zero, typedCityRequests: typedByMarket[mk] || 0, recruitTarget: target }, action: { label: "See the cell", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["recruit", mk, cat, cell.supply, cell.demand, zero, typedByMarket[mk] || 0]) });
+    }
+  }
+  for (const c of recruitCands) push(c);
+
+  // ---- data.funnel_leak (v1, unchanged) ----
   const topGap = funnel.zeroResultGaps[0];
-  if (topGap && topGap.count >= 3) out.push({ id: `search:${topGap.market}:${topGap.category}`, kind: "funnel", text: `Businesses searched ${topGap.market} for ${topGap.category} ${topGap.count} times in the last 30 days and found nobody. That is unmet demand on tape.`, receipt: { searches: topGap.count, market: topGap.market, category: topGap.category }, fingerprint: suggestionFingerprint(["search", topGap.market, topGap.category, topGap.count]) });
+  if (topGap && topGap.count >= 3 && !recruitCells.has(`${topGap.market}|${topGap.category}`)) push({ id: `search:${topGap.market}:${topGap.category}`, kind: "funnel", type: "data.funnel_leak", family: "data", score: 90, market: topGap.market, text: `Businesses searched ${topGap.market} for ${topGap.category} ${topGap.count} times in the last 30 days and found nobody. That is unmet demand on tape.`, receipt: { searches: topGap.count, market: topGap.market, category: topGap.category }, action: { label: "See the funnel", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["search", topGap.market, topGap.category, topGap.count]) });
   const picksStage = funnel.stages.find((s) => s.key === "picks");
   if (funnel.impressionsCount > 0 && funnel.shownCount > 0 && picksStage && picksStage.n === 0) {
-    out.push({ id: "funnel:picks", kind: "funnel", text: `Creators were shown ${funnel.shownCount} times in match lists in the last 30 days, and none were picked or applied to yet.`, receipt: { shown: funnel.shownCount, picks: 0 }, fingerprint: suggestionFingerprint(["funnel:picks", funnel.shownCount]) });
+    push({ id: "funnel:picks", kind: "funnel", type: "data.funnel_leak", family: "data", score: 88, text: `Creators were shown ${funnel.shownCount} times in match lists in the last 30 days, and none were picked or applied to yet.`, receipt: { shown: funnel.shownCount, picks: 0 }, action: { label: "See the funnel", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["funnel:picks", funnel.shownCount]) });
   }
-  const dismissed = ((await store.get("config:suggestionDismissals")) || {}).dismissals || {};
-  const watching = [
-    "Supply gaps in every market and category, against open-offer demand",
-    "Creators signing up from cities that are not listed markets yet",
-    "Applications waiting on review, and how long the oldest has waited",
-    "Searches that found nobody, and match lists that end without a pick",
-  ];
-  return { all: out, watching, dismissed };
+
+  // ---- marketing.supply_gap (v1, unchanged) ----
+  const gaps = [];
+  for (const [mk, cats] of Object.entries(agg.matrix)) {
+    for (const [cat, cell] of Object.entries(cats)) {
+      if (recruitCells.has(`${mk}|${cat}`)) continue;
+      if (cell.demand > 0 && cell.supply === 0) gaps.push({ mk, cat, supply: cell.supply, demand: cell.demand, hard: true });
+      else if (cell.demand >= 3 && cell.supply > 0 && cell.demand > cell.supply * 2) gaps.push({ mk, cat, supply: cell.supply, demand: cell.demand, hard: false });
+    }
+  }
+  gaps.sort((a, b) => b.demand - a.demand);
+  for (const g of gaps.slice(0, 5)) {
+    push({
+      id: `gap:${g.mk}:${g.cat}`, kind: "gap", type: "marketing.supply_gap", family: "marketing", score: g.hard ? 85 : 65, market: g.mk, category: g.cat,
+      text: g.hard
+        ? `No approved ${g.cat} creators in ${g.mk} yet, and ${g.demand} open offer${g.demand === 1 ? "" : "s"} there want them. Recruiting ${g.cat} in ${g.mk} is the gap.`
+        : `Only ${g.supply} approved ${g.cat} creator${g.supply === 1 ? "" : "s"} in ${g.mk} for ${g.demand} open offers. That cell is thin.`,
+      receipt: { market: g.mk, category: g.cat, supply: g.supply, demand: g.demand },
+      action: { label: "See the cell", route: "stats-data", params: {} },
+      fingerprint: suggestionFingerprint(["gap", g.mk, g.cat, g.supply, g.demand]),
+    });
+  }
+
+  // ---- engaging.creator_cooling (E1): named stalls ----
+  // Activity means the creator's OWN actions: their asks,
+  // profile work, redemptions, and self-driven audience
+  // updates, plus their application / post / booking records.
+  // System events about a creator (our outbound mail queueing,
+  // scheduled syncs) and the record's updatedAt — which system
+  // sweeps stamp — never count: a stall is theirs, not ours.
+  const events60 = await eventsInRange(62, 90);
+  const CREATOR_ACTION_TYPES = new Set(["sig_ask", "profile_updated", "profile_completed", "profile_photo_uploaded", "profile_photo_cover", "profile_photo_removed", "booking_code_issued"]);
+  const lastEventByActor = {};
+  for (const e of events60) {
+    if (!e.actorId) continue;
+    const own = CREATOR_ACTION_TYPES.has(e.type) || (e.type === "audience_updated" && !(e.data && String(e.data.source || "").startsWith("sync")));
+    if (!own) continue;
+    const t = Date.parse(e.ts || "");
+    if (Number.isFinite(t) && (!lastEventByActor[e.actorId] || t > lastEventByActor[e.actorId])) lastEventByActor[e.actorId] = t;
+  }
+  const appsByCreator = {};
+  for (const a of applications) {
+    if (!a.creatorId) continue;
+    (appsByCreator[a.creatorId] = appsByCreator[a.creatorId] || []).push(a);
+  }
+  const posts = await allPosts();
+  const lastPostByCreator = {};
+  for (const p of posts) {
+    if (!p.creatorId) continue;
+    const t = Date.parse(p.submittedAt || p.createdAt || "");
+    if (Number.isFinite(t) && (!lastPostByCreator[p.creatorId] || t > lastPostByCreator[p.creatorId])) lastPostByCreator[p.creatorId] = t;
+  }
+  const bookings = await allBookings();
+  const lastBookingByCreator = {};
+  for (const b of bookings) {
+    if (!b.creatorId) continue;
+    const t = Date.parse(b.createdAt || "");
+    if (Number.isFinite(t) && (!lastBookingByCreator[b.creatorId] || t > lastBookingByCreator[b.creatorId])) lastBookingByCreator[b.creatorId] = t;
+  }
+  const cooling = [];
+  for (const u of agg.creators) {
+    if (u.status !== "approved" || u.market === UNLISTED || standingState(u) === "banned") continue;
+    const mk = normalizeMarketName(u.market);
+    if (!agg.matrix[mk]) continue;
+    const signedUpDays = daysAgo(u.createdAt);
+    if (signedUpDays < 14) continue;
+    let last = Date.parse(u.createdAt || "") || 0;
+    for (const a of appsByCreator[u.id] || []) { const t = Date.parse(a.createdAt || "") || 0; if (t > last) last = t; }
+    if (lastEventByActor[u.id] && lastEventByActor[u.id] > last) last = lastEventByActor[u.id];
+    if (lastPostByCreator[u.id] && lastPostByCreator[u.id] > last) last = lastPostByCreator[u.id];
+    if (lastBookingByCreator[u.id] && lastBookingByCreator[u.id] > last) last = lastBookingByCreator[u.id];
+    const daysQuiet = Math.max(0, Math.floor((now - last) / 86400000));
+    if (daysQuiet < 14) continue;
+    const complete = profileCompleteOf(u);
+    const apps = (appsByCreator[u.id] || []).length;
+    cooling.push({ u, mk, signedUpDays, daysQuiet, complete, apps });
+  }
+  cooling.sort((a, b) => b.daysQuiet - a.daysQuiet);
+  for (const c of cooling.slice(0, 3)) {
+    const handle = c.u.creator && c.u.creator.handle ? ` (@${c.u.creator.handle})` : "";
+    const stall = !c.complete
+      ? `their profile is still unfinished${c.apps ? `, though they sent ${c.apps} application${c.apps === 1 ? "" : "s"}` : " and they have never applied"}`
+      : c.apps
+        ? `their profile is finished and they sent ${c.apps} application${c.apps === 1 ? "" : "s"}, but nothing since`
+        : "their profile is finished, but they have never applied to an offer";
+    push({ id: `cooling:${c.u.id}`, kind: "cooling", type: "engaging.creator_cooling", family: "engaging", score: 80, market: c.mk, subjectId: c.u.id, text: `${c.u.name || "A creator"}${handle} has gone quiet in ${c.mk}: signed up ${c.signedUpDays} days ago, and ${stall}.`, receipt: { creator: (c.u.creator && c.u.creator.handle) || c.u.name || c.u.id, market: c.mk, daysQuiet: c.daysQuiet, signedUpDays: c.signedUpDays, applications: c.apps, profileComplete: c.complete ? "yes" : "no" }, action: { label: "See creators", route: "stats-creators", params: { market: c.mk } }, fingerprint: suggestionFingerprint(["cooling", c.u.id, Math.floor(c.daysQuiet / 7), c.apps, c.complete ? 1 : 0]) });
+  }
+
+  // ---- engaging.business_quiet (E2) ----
+  const appsByOffer = {};
+  for (const a of applications) {
+    if (!a.offerId) continue;
+    appsByOffer[a.offerId] = (appsByOffer[a.offerId] || 0) + 1;
+  }
+  const quiet = [];
+  for (const o of offers) {
+    if (o.status !== "open") continue;
+    const age = daysAgo(o.createdAt);
+    if (age < 4 || (appsByOffer[o.id] || 0) > 0) continue;
+    quiet.push({ age, cand: { id: `quiet:offer:${o.id}`, kind: "quiet", type: "engaging.business_quiet", family: "engaging", score: 78, market: o.market || null, subjectId: o.id, text: `"${o.title || "An offer"}" (${o.businessName || "a business"}, ${o.market || "their market"}) has been live ${age} days with no applications yet. The brief may be mispriced, or the cell is under-supplied.`, receipt: { business: o.businessName || o.businessId, market: o.market || null, daysLive: age, applications: 0 }, action: { label: "See businesses", route: "stats-businesses", params: {} }, fingerprint: suggestionFingerprint(["quietoffer", o.id, Math.floor(age / 3)]) } });
+  }
+  const offerCountByBiz = {};
+  for (const o of offers) offerCountByBiz[o.businessId] = (offerCountByBiz[o.businessId] || 0) + 1;
+  for (const b of agg.businesses) {
+    if (b.status !== "approved") continue;
+    const age = daysAgo(b.createdAt);
+    if (age < 14 || (offerCountByBiz[b.id] || 0) > 0) continue;
+    const bname = (b.business && b.business.businessName) || b.name || "A business";
+    quiet.push({ age, cand: { id: `quiet:biz:${b.id}`, kind: "quiet", type: "engaging.business_quiet", family: "engaging", score: 78, market: b.market || null, subjectId: b.id, text: `${bname} was approved ${age} days ago and has not published an offer yet.`, receipt: { business: bname, market: b.market || null, daysSinceApproval: age, offers: 0 }, action: { label: "See businesses", route: "stats-businesses", params: {} }, fingerprint: suggestionFingerprint(["quietbiz", b.id, Math.floor(age / 7)]) } });
+  }
+  quiet.sort((a, b) => b.age - a.age);
+  for (const q of quiet.slice(0, 3)) push(q.cand);
+
+  // ---- demand.backlog (v1, receipts enriched) ----
+  const completeByPlace = {};
+  for (const u of agg.creators) {
+    if (u.market !== UNLISTED) continue;
+    const region = u.country || u.state || "";
+    const place = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
+    if (!completeByPlace[place]) completeByPlace[place] = { n: 0, complete: 0 };
+    completeByPlace[place].n += 1;
+    if (profileCompleteOf(u)) completeByPlace[place].complete += 1;
+  }
+  for (const city of agg.unlistedByCity.slice(0, 3)) {
+    if (city.creators < 5) break;
+    const cp = completeByPlace[city.place];
+    const completePct = cp && cp.n ? Math.round((100 * cp.complete) / cp.n) : 0;
+    push({ id: `city:${city.place}`, kind: "backlog", type: "demand.backlog", family: "demand", score: 70, text: `${city.creators} creators signed up from ${city.place}, which is not a listed market yet. Worth a look before it gets bigger.`, receipt: { place: city.place, creators: city.creators, approved: city.approved, completePct }, action: { label: "See the backlog", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["city", city.place, city.creators]) });
+  }
+
+  // ---- pricing.budget_gap (P2) + pricing.budget_distribution (P1) ----
+  // Inputs for Jeff's pricing calls. Nothing here changes a
+  // price, phrases itself as a change, or fires on thin cells.
+  const paidByBizCell = {};
+  const paidByCreatorCell = {};
+  const mixByMarket = {};
+  for (const o of offers) {
+    if (o.status === "draft") continue;
+    const mk = normalizeMarketName(o.market);
+    if (!mk) continue;
+    mixByMarket[mk] = mixByMarket[mk] || { paid: 0, other: 0 };
+    if (o.kind === "paid") mixByMarket[mk].paid += 1; else mixByMarket[mk].other += 1;
+    if (o.kind !== "paid" || !(Number(o.cashRate) > 0)) continue;
+    const bizKey = `${mk}|${o.category || "Other"}`;
+    (paidByBizCell[bizKey] = paidByBizCell[bizKey] || []).push(Number(o.cashRate));
+    for (const cat of (CATEGORY_FIT[o.category] && CATEGORY_FIT[o.category].primary) || []) {
+      const key = `${mk}|${cat}`;
+      (paidByCreatorCell[key] = paidByCreatorCell[key] || []).push(Number(o.cashRate));
+    }
+  }
+  const gapCands = [];
+  for (const [key, rates] of Object.entries(paidByCreatorCell)) {
+    if (rates.length < 3) continue;
+    const bench = agg.benchmarks[key];
+    if (!bench || bench.medianPaidRate == null || bench.creators < 2) continue;
+    const offered = medianOf(rates);
+    if (offered == null) continue;
+    const [mk, cat] = key.split("|");
+    if (offered < bench.medianPaidRate * 0.8) {
+      gapCands.push({ n: rates.length, cand: { id: `pricinggap:${mk}:${cat}`, kind: "pricing_gap", type: "pricing.budget_gap", family: "pricing", score: 60, market: mk, category: cat, text: `${mk} ${cat}: the median offer is $${fmtPriceS(offered)} against a median listed creator rate of $${fmtPriceS(bench.medianPaidRate)} (${rates.length} paid offers). Expect declines, or shape briefs toward the rate. An input for your pricing calls — nothing changes on its own.`, receipt: { market: mk, category: cat, offers: rates.length, medianOffer: offered, medianCreatorRate: bench.medianPaidRate }, action: { label: "See the cell", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["pricinggap", mk, cat, rates.length, offered, bench.medianPaidRate]) } });
+    } else if (offered > bench.medianPaidRate * 1.25) {
+      gapCands.push({ n: rates.length, cand: { id: `pricinggap:${mk}:${cat}`, kind: "pricing_gap", type: "pricing.budget_gap", family: "pricing", score: 60, market: mk, category: cat, text: `${mk} ${cat}: businesses are offering a median $${fmtPriceS(offered)} against a median listed creator rate of $${fmtPriceS(bench.medianPaidRate)} (${rates.length} paid offers). Briefs could land for less. An input for your pricing calls — nothing changes on its own.`, receipt: { market: mk, category: cat, offers: rates.length, medianOffer: offered, medianCreatorRate: bench.medianPaidRate }, action: { label: "See the cell", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["pricinggap", mk, cat, rates.length, offered, bench.medianPaidRate]) } });
+    }
+  }
+  gapCands.sort((a, b) => b.n - a.n);
+  for (const g of gapCands.slice(0, 2)) push(g.cand);
+  const distCands = [];
+  for (const [key, rates] of Object.entries(paidByBizCell)) {
+    if (rates.length < 3) continue;
+    const [mk, bizCat] = key.split("|");
+    const mix = mixByMarket[mk] || { paid: 0, other: 0 };
+    const mixTotal = mix.paid + mix.other;
+    const compShare = mixTotal ? Math.round((100 * mix.other) / mixTotal) : 0;
+    distCands.push({ n: rates.length, cand: { id: `pricing:${mk}:${bizCat}`, kind: "pricing", type: "pricing.budget_distribution", family: "pricing", score: 55, market: mk, text: `Businesses offered a median $${fmtPriceS(medianOf(rates))} for ${bizCat} in ${mk} (${rates.length} paid offers; the middle half runs $${fmtPriceS(percentileOf(rates, 25))}–$${fmtPriceS(percentileOf(rates, 75))}). Comp and coupon are ${compShare}% of ${mk} offers. An input for your pricing calls — nothing changes on its own.`, receipt: { market: mk, category: bizCat, offers: rates.length, median: medianOf(rates), p25: percentileOf(rates, 25), p75: percentileOf(rates, 75), compSharePct: compShare }, action: { label: "See the data", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["pricing", mk, bizCat, rates.length, medianOf(rates)]) } });
+  }
+  distCands.sort((a, b) => b.n - a.n);
+  for (const d of distCands.slice(0, 2)) push(d.cand);
+
+  // ---- maggie.curriculum (C3): who is Maggie failing? ----
+  const asks = events60.filter((e) => e.type === "sig_ask" && Date.parse(e.ts || "") >= now - 30 * 86400000);
+  const clusters = {};
+  for (const e of asks) {
+    const src = e.data && e.data.source;
+    if (src !== "unavailable" && src !== "convo") continue;
+    const topic = sigAskTopic(e.data && e.data.q);
+    if (!topic) continue;
+    const role = e.actorRole || "creator";
+    const key = `${role}|${topic.key}`;
+    if (!clusters[key]) clusters[key] = { role, topic, count: 0, unanswered: 0, fallback: 0 };
+    clusters[key].count += 1;
+    if (src === "unavailable") clusters[key].unanswered += 1; else clusters[key].fallback += 1;
+  }
+  const ROLE_PLURAL = { creator: "Creators", business: "Businesses", admin: "Admin", partner: "Partners", pilot_partner: "Pilot partners" };
+  const clusterList = Object.values(clusters).filter((c) => c.count >= 3).sort((a, b) => b.count - a.count);
+  for (const c of clusterList.slice(0, 3)) {
+    const who = ROLE_PLURAL[c.role] || "Users";
+    push({ id: `curriculum:${c.role}:${c.topic.key}`, kind: "curriculum", type: "maggie.curriculum", family: "maggie", score: 40, subjectId: null, text: `${who} asked Maggie about ${c.topic.label} ${c.count} times in the last 30 days; ${c.unanswered} got no real answer and ${c.fallback} landed on the scripted fallback. That is her next lesson.`, receipt: { role: c.role, topic: c.topic.label, asks: c.count, unanswered: c.unanswered, fallback: c.fallback }, action: { label: "See the asks", route: "stats-data", params: {} }, fingerprint: suggestionFingerprint(["curriculum", c.role, c.topic.key, c.count, c.unanswered]) });
+  }
+
+  out.sort((a, b) => b.score - a.score);
+  return out;
+}
+
+// Persist the candidates as suggestion records and work out
+// which ones are on the board. Lifecycle: a fresh candidate
+// opens a record (and logs suggestion_shown — Phase 3's ranking
+// data); a dismissed record holds while its fingerprint stands
+// inside the suppression window, and resurfaces the moment the
+// numbers move or the window lapses; an acted record stays off
+// the board until its numbers move; a vanished candidate's open
+// record expires. At most SUGGESTION_OPEN_CAP ride the board.
+async function syncSuggestionRecords(candidates, actorId) {
+  const nowMs = Date.now();
+  const now = nowIso();
+  const rows = await store.list("suggestion:");
+  const byKey = new Map();
+  for (const r of rows) if (r.value && r.value.key) byKey.set(r.value.key, r.value);
+  const legacy = ((await store.get("config:suggestionDismissals")) || {}).dismissals || {};
+  const visible = [];
+  for (const c of candidates) {
+    let rec = byKey.get(c.id) || null;
+    if (!rec && legacy[c.id]) {
+      rec = { id: c.id, key: c.id, type: c.type, family: c.family, kind: c.kind, headline: c.text, receipts: suggestionReceiptsOf(c.receipt), receipt: c.receipt, action: c.action, market: c.market || null, category: c.category || null, subjectId: c.subjectId || null, score: c.score, fingerprint: legacy[c.id], status: "dismissed", createdAt: now, updatedAt: now, expiresAt: new Date(nowMs + SUGGESTION_TTL_MS).toISOString(), shownAt: null, actedAt: null, dismissedAt: now, dismissedFingerprint: legacy[c.id], outcome: null, timesSurfaced: 0 };
+      await store.set(`suggestion:${c.id}`, rec);
+      byKey.set(c.id, rec);
+    }
+    const resurface = async (was) => {
+      rec.status = "open";
+      rec.type = c.type; rec.family = c.family; rec.kind = c.kind;
+      rec.headline = c.text; rec.receipt = c.receipt; rec.receipts = suggestionReceiptsOf(c.receipt); rec.action = c.action;
+      rec.market = c.market || null; rec.category = c.category || null; rec.subjectId = c.subjectId || null;
+      rec.score = c.score; rec.fingerprint = c.fingerprint;
+      rec.createdAt = now; rec.updatedAt = now; rec.expiresAt = new Date(nowMs + SUGGESTION_TTL_MS).toISOString();
+      rec.shownAt = now; rec.actedAt = null; rec.dismissedAt = null; rec.dismissedFingerprint = null; rec.outcome = null;
+      rec.timesSurfaced = (rec.timesSurfaced || 0) + 1;
+      await store.set(`suggestion:${c.id}`, rec);
+      await logCapture({ type: "suggestion_shown", actorId: actorId || null, actorRole: "admin", subjectId: null, market: c.market || null, data: { key: c.id, kind: c.kind, type: c.type, resurfaced: !!was } });
+      visible.push({ ...c, recordId: rec.id, surfacedAt: rec.createdAt });
+    };
+    if (!rec) {
+      rec = { id: c.id, key: c.id, type: c.type, family: c.family, kind: c.kind, headline: c.text, receipts: suggestionReceiptsOf(c.receipt), receipt: c.receipt, action: c.action, market: c.market || null, category: c.category || null, subjectId: c.subjectId || null, score: c.score, fingerprint: c.fingerprint, status: "open", createdAt: now, updatedAt: now, expiresAt: new Date(nowMs + SUGGESTION_TTL_MS).toISOString(), shownAt: null, actedAt: null, dismissedAt: null, dismissedFingerprint: null, outcome: null, timesSurfaced: 0 };
+      byKey.set(c.id, rec);
+      await resurface(false);
+      continue;
+    }
+    if (rec.status === "dismissed") {
+      const samePrint = rec.dismissedFingerprint === c.fingerprint;
+      const withinWindow = rec.dismissedAt && nowMs - Date.parse(rec.dismissedAt) < SUGGESTION_SUPPRESS_MS;
+      if (samePrint && withinWindow) continue;
+      await resurface(true);
+      continue;
+    }
+    if (rec.status === "acted") {
+      if (rec.fingerprint === c.fingerprint) continue;
+      await resurface(true);
+      continue;
+    }
+    if (rec.status === "expired") {
+      await resurface(true);
+      continue;
+    }
+    // status open: refresh the receipts in place when they move.
+    if (rec.fingerprint !== c.fingerprint) {
+      rec.headline = c.text; rec.receipt = c.receipt; rec.receipts = suggestionReceiptsOf(c.receipt); rec.action = c.action; rec.score = c.score; rec.fingerprint = c.fingerprint;
+      rec.updatedAt = now; rec.expiresAt = new Date(nowMs + SUGGESTION_TTL_MS).toISOString();
+      await store.set(`suggestion:${c.id}`, rec);
+    }
+    visible.push({ ...c, recordId: rec.id, surfacedAt: rec.createdAt });
+  }
+  const candKeys = new Set(candidates.map((c) => c.id));
+  for (const [key, rec] of byKey) {
+    if (!candKeys.has(key) && rec.status === "open") {
+      rec.status = "expired";
+      rec.updatedAt = now;
+      await store.set(`suggestion:${key}`, rec);
+    }
+  }
+  visible.sort((a, b) => b.score - a.score);
+  return visible.slice(0, SUGGESTION_OPEN_CAP);
+}
+
+// Compatibility wrapper for the v1 readers (the dismiss flow):
+// the raw candidate list plus the watching lines, no lifecycle.
+async function suggestionsRaw() {
+  const all = await buildSuggestionCandidates();
+  return { all, watching: SUGGESTION_WATCHING, dismissed: {} };
 }
 
 // Raw export datasets for the Admin Data view. User rows pass
@@ -404,6 +807,7 @@ async function buildExportDataset(dataset, days) {
   if (dataset === "bookings") return flat((await allBookings()).map((b) => ({ id: b.id, offerId: b.offerId || null, businessId: b.businessId || null, creatorId: b.creatorId || null, market: b.market || null, status: b.status || null, createdAt: b.createdAt || null, redeemedAt: b.redeemedAt || null })));
   if (dataset === "posts") return flat((await allPosts()).map((p) => ({ id: p.id, bookingId: p.bookingId || null, creatorId: p.creatorId || null, url: p.url || null, submittedAt: p.submittedAt || p.createdAt || null, onTime: !!p.onTime })));
   if (dataset === "snapshots") return flat((await store.list("snapshot:")).map((r) => r.value).filter(Boolean));
+  if (dataset === "suggestions") return flat((await store.list("suggestion:")).map((r) => r.value).filter(Boolean).map((s) => ({ id: s.id, type: s.type || null, kind: s.kind || null, headline: s.headline || null, market: s.market || null, category: s.category || null, status: s.status || null, score: s.score != null ? s.score : null, receipt: s.receipt || null, createdAt: s.createdAt || null, shownAt: s.shownAt || null, actedAt: s.actedAt || null, dismissedAt: s.dismissedAt || null, timesSurfaced: s.timesSurfaced || 0 })));
   if (dataset === "pageviews") return flat((await store.list("pageview:")).map((r) => r.value).filter(Boolean).map((r) => ({ date: r.date, userId: r.userId, views: r.views || 0, claimViews: r.claimViews || 0, firstViewAt: r.firstViewAt || null, lastViewAt: r.lastViewAt || null })));
   if (dataset === "cityrequests") return flat((await store.list("cityrequest:")).map((r) => r.value).filter(Boolean).map((r) => ({ city: r.city || null, region: r.region || r.country || r.state || "", handle: r.handle || null, email: r.email || null, createdAt: r.createdAt || null })));
   if (Object.prototype.hasOwnProperty.call(EXPORT_EVENT_TYPES, dataset)) {
@@ -1462,6 +1866,7 @@ async function materializeDeal(deal) {
     deliverables: t.deliverables,
     ...(t.coupon ? { coupon: t.coupon } : {}),
     ...(t.postingTerms ? { postingTerms: t.postingTerms, postingTermsLine: postingTermsLine(t.postingTerms) } : {}),
+    ...(deal.sourceBrief ? { sourceBrief: deal.sourceBrief } : {}),
     dealId: deal.id,
     assetPacketAttached: t.kind === "paid",
   };
@@ -25275,8 +25680,12 @@ async function route(event) {
       });
     }
     if (method === "GET" && seg[1] === "suggestions" && seg.length === 2) {
-      const raw = await suggestionsRaw();
-      let visible = raw.all.filter((s) => raw.dismissed[s.id] !== s.fingerprint);
+      // Build -146: candidates sync into persisted suggestion
+      // records (lifecycle + shown events) and the board is the
+      // top ~10 open, ranked. The response keeps the v1 shape
+      // and adds the door (action) and the as-of stamp.
+      const candidates = await buildSuggestionCandidates();
+      let visible = await syncSuggestionRecords(candidates, user.id);
       let phrased = false;
       // Maggie may phrase the lines when her AI is on; the
       // numbers are validated token-by-token inside
@@ -25287,20 +25696,58 @@ async function route(event) {
         const lines = await maggieAi.maggiePhrase(cfg, visible.map((s) => s.text));
         if (lines) { visible = visible.map((s, i) => ({ ...s, text: lines[i] })); phrased = true; }
       }
-      return json(200, { suggestions: visible.map((s) => ({ id: s.id, kind: s.kind, text: s.text, receipt: s.receipt })), watching: raw.watching, phrased });
+      return json(200, { suggestions: visible.map((s) => ({ id: s.id, kind: s.kind, type: s.type, text: s.text, receipt: s.receipt, action: s.action || null, score: s.score, surfacedAt: s.surfacedAt || null })), watching: SUGGESTION_WATCHING, phrased, generatedAt: nowIso() });
     }
     if (method === "POST" && seg[1] === "suggestions" && seg[2] === "dismiss" && seg.length === 3) {
       const b = parseBody(event);
       const id = String((b && b.id) || "");
-      const raw = await suggestionsRaw();
-      const target = raw.all.find((s) => s.id === id);
-      if (!target) return err(404, "That suggestion is not live anymore.");
-      const rec = (await store.get("config:suggestionDismissals")) || { dismissals: {} };
-      rec.dismissals = rec.dismissals || {};
-      rec.dismissals[id] = target.fingerprint;
-      rec.updatedAt = nowIso();
-      await store.set("config:suggestionDismissals", rec);
+      const candidates = await buildSuggestionCandidates();
+      await syncSuggestionRecords(candidates, user.id);
+      const target = candidates.find((s) => s.id === id);
+      let rec = await store.get(`suggestion:${id}`);
+      if (!target && !rec) return err(404, "That suggestion is not live anymore.");
+      const fingerprint = target ? target.fingerprint : (rec && rec.fingerprint);
+      const now = nowIso();
+      if (!rec && target) {
+        rec = { id, key: id, type: target.type, family: target.family, kind: target.kind, headline: target.text, receipts: suggestionReceiptsOf(target.receipt), receipt: target.receipt, action: target.action, market: target.market || null, category: target.category || null, subjectId: target.subjectId || null, score: target.score, fingerprint: target.fingerprint, status: "open", createdAt: now, updatedAt: now, expiresAt: new Date(Date.now() + SUGGESTION_TTL_MS).toISOString(), shownAt: now, actedAt: null, dismissedAt: null, dismissedFingerprint: null, outcome: null, timesSurfaced: 1 };
+      }
+      rec.status = "dismissed";
+      rec.dismissedAt = now;
+      rec.dismissedFingerprint = fingerprint;
+      rec.updatedAt = now;
+      await store.set(`suggestion:${id}`, rec);
+      // The legacy v1 dismissal map stays written so any reader
+      // of the old shape sees the same truth.
+      const legacyCfg = (await store.get("config:suggestionDismissals")) || { dismissals: {} };
+      legacyCfg.dismissals = legacyCfg.dismissals || {};
+      if (fingerprint) legacyCfg.dismissals[id] = fingerprint;
+      legacyCfg.updatedAt = now;
+      await store.set("config:suggestionDismissals", legacyCfg);
       await logEvent({ type: "suggestion_dismissed", actorId: user.id, actorRole: "admin", subjectId: null, data: { id } });
+      return json(200, { ok: true });
+    }
+    if (method === "POST" && seg[1] === "suggestions" && seg[2] === "act" && seg.length === 3) {
+      // Jeff took a suggestion's door. The door only routes —
+      // the action itself happens on the surface it opens — but
+      // the taking is recorded (status + outcome stamp + event):
+      // acted-on-these-numbers stays off the board until the
+      // numbers move, and the log is Phase 3's ranking data.
+      const b = parseBody(event);
+      const id = String((b && b.id) || "");
+      let rec = await store.get(`suggestion:${id}`);
+      if (!rec) {
+        const candidates = await buildSuggestionCandidates();
+        await syncSuggestionRecords(candidates, user.id);
+        rec = await store.get(`suggestion:${id}`);
+      }
+      if (!rec) return err(404, "That suggestion is not live anymore.");
+      const now = nowIso();
+      rec.status = "acted";
+      rec.actedAt = now;
+      rec.updatedAt = now;
+      rec.outcome = { actedAt: now, via: "door", route: (rec.action && rec.action.route) || null };
+      await store.set(`suggestion:${id}`, rec);
+      await logEvent({ type: "suggestion_acted", actorId: user.id, actorRole: "admin", subjectId: rec.subjectId || null, market: rec.market || null, data: { id, kind: rec.kind, route: rec.outcome.route } });
       return json(200, { ok: true });
     }
 
@@ -27640,6 +28087,11 @@ async function route(event) {
       } else {
         creator = await store.get(`user:${String(b.creatorId || "")}`);
       }
+      // Outcome linkage (Build -146, the -145 remainder): a deal
+      // sent from a briefed Discover grid carries the brief it
+      // was picked under, normalized exactly like POST /offers —
+      // absent or empty stores nothing, never inferred.
+      const sourceBrief = normalizeSourceBrief(b.sourceBrief);
       if (!creator || creator.role !== "creator" || creator.status !== "approved") return err(400, "That creator is not an approved creator");
       if (isTester(creator)) return err(400, "That creator is not an approved creator");
       if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take deals.");
@@ -27680,8 +28132,9 @@ async function route(event) {
         createdAt: ts, updatedAt: ts,
       };
       deal.creatorRateText = deal.creatorRate !== null ? `$${fmtPriceS(deal.creatorRate)}` : null;
+      if (sourceBrief) deal.sourceBrief = sourceBrief;
       await store.set(`vdeal:${deal.id}`, deal);
-      await logEvent({ type: "deal_created", actorId: user.id, actorRole: "business", subjectId: deal.id, market: deal.market, data: { creatorId: creator.id, kind: terms.kind, amount, rebook: !!rebookOf } });
+      await logEvent({ type: "deal_created", actorId: user.id, actorRole: "business", subjectId: deal.id, market: deal.market, data: { creatorId: creator.id, kind: terms.kind, amount, rebook: !!rebookOf, ...(sourceBrief ? { sourceBrief } : {}) } });
       // Standing terms resolve qualifying deals instantly, with
       // no conversation at all (the eBay pattern).
       const standing = await evaluateStandingTerms(deal, creator, user.id);
