@@ -4346,9 +4346,31 @@ async function sigBoxSend(ev, key) {
   const paint = () => {
     if (!document.body.contains(thread)) return;
     thread.hidden = false;
-    thread.innerHTML = turns.map((t) => t.who === "user"
+    thread.innerHTML = turns.map((t, ti) => t.who === "user"
       ? `<div class="sig-turn user"><div class="sig-bub">${esc(t.text)}</div></div>`
-      : `<div class="sig-turn sig"><span class="sig-turn-ava">${t.pending ? sigAvatarHtml("think") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(t.text)}${t.pending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}${t.flow != null && sigFlowsFor()[t.flow] ? `<button type="button" class="btn small-btn sig-turn-act" onclick="return sigBoxFlow(${t.flow})">${esc(sigFlowsFor()[t.flow].label)}</button>` : ""}${t.linkDest ? `<button type="button" class="btn small-btn sig-turn-act" onclick="return sigLinkGo('${esc(t.linkDest)}')">${esc(t.linkLabel || "Open")}</button>` : ""}</div></div>`).join("");
+      : `<div class="sig-turn sig"><span class="sig-turn-ava">${t.pending ? sigAvatarHtml("think") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(t.text)}${t.pending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}${t.cardKind ? sigCardsHtmlFor(t, ti) : ""}${t.flow != null && sigFlowsFor()[t.flow] ? `<button type="button" class="btn small-btn sig-turn-act" onclick="return sigBoxFlow(${t.flow})">${esc(sigFlowsFor()[t.flow].label)}</button>` : ""}${t.linkDest ? `<button type="button" class="btn small-btn sig-turn-act" onclick="return sigLinkGo('${esc(t.linkDest)}')">${esc(t.linkLabel || "Open")}</button>` : ""}</div></div>`).join("");
+    // Maggie Real-AI: card actions inside a box turn act on
+    // this box's own turns (same descriptors the Sig thread
+    // uses; the handlers are the turn's own closures).
+    thread.querySelectorAll("[data-sigcard]").forEach((btn) => {
+      btn.onclick = async () => {
+        const parts = btn.getAttribute("data-sigcard").split(":");
+        const turn = turns[Number(parts[0])];
+        const acts = turn && turn.cardActs && turn.cardActs[Number(parts[1])];
+        const fn = acts && acts[parts[2]];
+        if (typeof fn !== "function") return;
+        btn.disabled = true;
+        try { await fn(); } catch (e) { /* card handlers surface their own errors */ }
+        paint();
+      };
+    });
+    thread.querySelectorAll("[data-sigprofile]").forEach((el) => {
+      el.onclick = (ev) => {
+        if (ev.target.closest("[data-sigcard]")) return;
+        const uid = el.getAttribute("data-sigprofile");
+        if (uid) openCreatorProfile(uid);
+      };
+    });
     thread.scrollTop = thread.scrollHeight;
   };
   paint();
@@ -4356,6 +4378,7 @@ async function sigBoxSend(ev, key) {
   pending.text = reply.text;
   pending.flow = reply.flow != null ? reply.flow : null;
   if (reply.link && reply.link.dest) { pending.linkDest = reply.link.dest; pending.linkLabel = reply.link.label; }
+  sigAiCardsAttach(pending, reply);
   delete pending.pending;
   paint();
   if (document.body.contains(input)) input.focus();
@@ -5592,7 +5615,11 @@ async function sigAsk(text) {
       }
       // Build -131: a clarify answer's tappable options ride
       // through as suggest chips, same as the bank's.
-      return { text: data.text, flow, link: data.link || null, suggest: data.suggest || [] };
+      // Maggie Real-AI: an AI answer that ran the discover
+      // tool carries the ranked cards + the resolved brief;
+      // they ride through so the turn renders Find's exact
+      // cards (sigAskSubmit attaches them like a B2 run).
+      return { text: data.text, flow, link: data.link || null, suggest: data.suggest || [], cards: Array.isArray(data.cards) && data.cards.length ? data.cards : null, matchBrief: data.matchBrief || null };
     }
   } catch (e) { /* the bank answers instead */ }
   if (state.user && state.user.role === "partner") return { text: "I cannot reach your numbers right now. Everything is still on your tabs: Wallet for money and packs, Markets for the funnel, Links for your claim links.", flow: null, link: null };
@@ -5611,6 +5638,36 @@ function sigThreadHtml() {
   return turns.map((turn, ti) => turn.who === "user"
     ? `<div class="sig-turn user"><div class="sig-bub">${esc(turn.text)}</div></div>`
     : `<div class="sig-turn sig"><span class="sig-turn-ava">${turn.pending ? sigAvatarHtml("think") : turn.talk ? sigAvatarHtml("talk") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.pending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}${turn.cardKind ? sigCardsHtmlFor(turn, ti) : ""}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}${ti === lastActionTurn ? (turn.actions || []).map((a, ai) => `<button type="button" class="btn small-btn sig-turn-act${a.primary ? "" : " ghost"}" data-opact="${ti}:${ai}">${esc(a.label)}</button>`).join("") : ""}</div></div>`).join("");
+}
+// Maggie Real-AI: attach an AI answer's discover cards to a
+// chat turn, in Find's exact card language and with the same
+// per-card actions a B2 run builds (Invite starts the
+// pick-first offer flow — Book when the brief scored them —
+// Save is the favorites toggle). Match order and the Top
+// match tag follow the resolved brief, exactly as B2 does
+// it. Shared by the Sig tab thread and the home chat box.
+function sigAiCardsAttach(turn, reply) {
+  if (!reply || !reply.cards || !reply.cards.length) return;
+  const cards = reply.cards.slice();
+  const matchMode = !!(reply.matchBrief && cards.some((c) => c.match && typeof c.match.score === "number"));
+  if (matchMode) {
+    cards.sort((a, b) => (((b.matchScore != null ? b.matchScore : b.match.score) || 0) - ((a.matchScore != null ? a.matchScore : a.match.score) || 0)) || (sigLocalPct(b) - sigLocalPct(a)) || ((Number(b.totalAudience) || 0) - (Number(a.totalAudience) || 0)));
+    if (cards.length) cards[0].__topMatch = true;
+  }
+  const top = cards.slice(0, 5);
+  state.sigOpData = { cards, universities: [] };
+  turn.cardKind = "creators";
+  turn.cards = top.map((c) => ({ c }));
+  turn.cardActs = top.map((c) => ({
+    invite: () => sigOpPick(`${ST("Invite", "Invitar")} @${(c.profile || {}).handle || ""}`, async () => {
+      state.sigFlow = null;
+      sigB1Start({ creatorId: c.userId, creatorName: c.name, creatorRate: (c.profile || {}).paidRate || null, creatorTier: (c.profile || {}).tierBand || null });
+    }),
+    save: async () => {
+      try { const r = await api("POST", "/favorites", { creatorId: c.userId }); c.isFavorite = !!r.isFavorite; }
+      catch (e) { sigOpSay(e.message, sigOpHomeActions()); }
+    },
+  }));
 }
 async function sigAskSubmit(ev) {
   if (ev) ev.preventDefault();
@@ -5682,6 +5739,9 @@ async function sigAskSubmit(ev) {
     }];
   }
   pending.suggest = reply.suggest || [];
+  // Maggie Real-AI: cards from the AI's discover run render
+  // on this turn in Find's exact card language.
+  sigAiCardsAttach(pending, reply);
   delete pending.pending;
   pending.talk = true;
   paint();

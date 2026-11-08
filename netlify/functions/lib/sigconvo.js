@@ -46,7 +46,7 @@ function isConversational(q) {
 }
 
 const IDENTITY_RE = /\b(who are you|what are you|your name|who is magpie|what is maggie|who is maggie|introduce yourself|are you a bot|are you a robot|are you an ai|are you ai|are you real|are you human|are you a real person|are you actually a bird|are you a bird)\b/;
-const CAPABILITY_RE = /^(help|help me|i need help|what can you do|what do you do|how can you help|how can you help me|what can i ask|what can i ask you|what should i ask|what else can you do|show me what you can do|menu|options|what are my options|get started|how do i get started)$/;
+const CAPABILITY_RE = /^(help|help me|i need help|what can you do|what can you do for me|what do you do|how can you help|how can you help me|how else can you help|how else can you help me|what can you help with|what can you help me with|what else can you help with|what else can you help me with|what can i ask|what can i ask you|what should i ask|what else can you do|what else can you do for me|what more can you do|anything else you can do|show me what you can do|menu|options|what are my options|get started|how do i get started)$/;
 
 function fmtN(n) { return Math.round(Number(n) || 0).toLocaleString("en-US"); }
 function plural(n, one, many) { return n === 1 ? one : (many || one + "s"); }
@@ -97,6 +97,49 @@ const LANE_DO = {
   pilot_partner: "your pilot's sign-ups, posts, and report",
 };
 
+// The next-step offer that pairs with the bright spot, or
+// null when the spot carries no action. Maggie prompts; she
+// does not just state (Jeff, 2026-11-07: "she doesn't prompt
+// anything"). The yes-handler below answers these offers
+// from the same fact sheet, so the promise is always kept.
+function spotOffer(role, f) {
+  if (!f) return null;
+  try {
+    if (role === "admin" && f.waiting && f.waiting.total > 0) return "Want me to pull up who is waiting?";
+    if (role === "creator" && f.profileComplete === false) return "Want me to walk you through what is left?";
+    if (role === "business" && f.applicantsWaiting > 0) return "Want me to pull them up?";
+    if (role === "partner" && f.totals && f.totals.creatorsAttributed > 0) return "Want the breakdown by market?";
+  } catch (e) { return null; }
+  return null;
+}
+
+const YES_WORDS = new Set(["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "please", "yes please", "go ahead", "do it", "pull it up", "show me"]);
+
+// A bare "yes" right after Maggie's offered next step keeps
+// the promise from the asker's own fact sheet. Anything else
+// falls through untouched.
+function yesAnswer(role, facts, history) {
+  const hist = Array.isArray(history) ? history : [];
+  const prevSig = [...hist].reverse().find((h) => h && h.who === "sig" && typeof h.text === "string");
+  if (!prevSig || !facts) return null;
+  const pt = prevSig.text;
+  if (/pull up who is waiting/i.test(pt) && role === "admin" && facts.waiting && (facts.waiting.list || []).length) {
+    const names = facts.waiting.list.map((w) => `${w.label} (${w.waited})`).join("; ");
+    const more = facts.waiting.total > facts.waiting.list.length ? ` Plus ${facts.waiting.total - facts.waiting.list.length} more in the queue.` : "";
+    return { text: `Here is who is waiting: ${names}.${more} The Applications tab is where each one gets its decision.` };
+  }
+  if (/walk you through what is left/i.test(pt) && role === "creator" && facts.profileComplete === false && (facts.missingLabels || []).length) {
+    return { text: `Here is what is left on your profile: ${facts.missingLabels.join(", ")}. Each one finishes on your Profile, and a finished profile is what puts you in front of businesses.` };
+  }
+  if (/pull them up/i.test(pt) && role === "business" && facts.applicantsWaiting > 0) {
+    return { text: `You have ${fmtN(facts.applicantsWaiting)} ${plural(facts.applicantsWaiting, "applicant")} waiting on your answer. They sit under My Offers, in Applicants, and every applicant gets an answer within 2 business days.` };
+  }
+  if (/breakdown by market/i.test(pt) && role === "partner" && facts.totals && facts.totals.creatorsAttributed > 0) {
+    return { text: `${fmtN(facts.totals.creatorsAttributed)} ${plural(facts.totals.creatorsAttributed, "creator")} came in through your links so far. The Markets tab holds the split by market, and Links holds the claim links doing it.` };
+  }
+  return null;
+}
+
 function greetingWord(q) {
   const b = bare(q);
   if (b.includes("morning") || b.includes("dias")) return "Good morning";
@@ -120,10 +163,16 @@ function sigConverse(role, facts, question, history, who) {
       return { text: `Hey again${name ? ", " + name : ""}. ${LANE_OFFER[lane]}` };
     }
     const spotLine = spot ? ` Right now: ${spot}.` : "";
-    return { text: `${greetingWord(question)}${name ? ", " + name : ""}. I am Maggie, and I keep an eye on your numbers so you do not have to.${spotLine} ${LANE_OFFER[lane]}` };
+    const offer = spot ? spotOffer(role, facts) : null;
+    return { text: `${greetingWord(question)}${name ? ", " + name : ""}. I am Maggie, and I keep an eye on your numbers so you do not have to.${spotLine} ${offer || LANE_OFFER[lane]}` };
+  }
+  if (YES_WORDS.has(b)) {
+    const yes = yesAnswer(role, facts, hist);
+    if (yes) return yes;
   }
   if (THANKS.has(b)) {
-    return { text: `Any time${name ? ", " + name : ""}. ${spot ? `Still true right now: ${spot}. ` : ""}Shout when you want the next step.` };
+    const offer = spot ? spotOffer(role, facts) : null;
+    return { text: `Any time${name ? ", " + name : ""}. ${spot ? `Still true right now: ${spot}. ` : ""}${offer || "Shout when you want the next step."}` };
   }
   if (FAREWELL.has(b)) {
     return { text: "Any time. I will be right here when you need me." };
