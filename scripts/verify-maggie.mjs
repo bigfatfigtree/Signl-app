@@ -185,13 +185,15 @@ try {
   r = await ask(business, "how many followers does @maggieeats have?");
   check("BUSINESS asking for a creator's account data is refused or scoped", r.status === 200 && noBag(r.data.text || "") && (/only see your own/.test(r.data.text || "") || /Find creators/.test(r.data.text || "")), r.data.text);
 
-  // The join degrades gracefully without the engine (asked as
-  // the seeded ACTIVE business: the roster gate is real).
+  // The join with the engine (asked as the seeded ACTIVE
+  // business: the roster gate is real). Since the merge, the
+  // real engine is present on main, so a briefed discover must
+  // resolve the brief and carry match fields on every card.
   const activeBiz = client();
   const rl = await activeBiz("POST", "/api/auth/login", { email: "active@fixtures.dev", password: SEED_PW });
   check("seeded active business signed in", rl.status === 200, JSON.stringify(rl.data).slice(0, 160));
   const disc = await activeBiz("GET", "/api/discover?market=Austin&sort=match&category=Food%20%26%20Drink&budget=200");
-  check("JOIN: briefed discover without the engine answers 200 and carries no match fields", disc.status === 200 && Array.isArray(disc.data.creators) && disc.data.creators.length >= 1 && disc.data.creators.every((c) => c.match === undefined), JSON.stringify(disc.data).slice(0, 200));
+  check("JOIN: briefed discover with the engine answers 200, resolves the brief (source filters), and every card carries a numeric matchScore and match.reasons", disc.status === 200 && Array.isArray(disc.data.creators) && disc.data.creators.length >= 1 && disc.data.matchBrief && disc.data.matchBrief.source === "filters" && disc.data.creators.every((c) => typeof c.matchScore === "number" && c.match && Array.isArray(c.match.reasons)), JSON.stringify(disc.data).slice(0, 200));
 } finally {
   server.kill("SIGTERM");
 }
