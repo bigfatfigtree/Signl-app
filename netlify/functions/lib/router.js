@@ -5,6 +5,16 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents, listEventsForSubject } = require("./events");
+
+// Data captures (Data Audit 2026-11-07, Jeff's doctrine: everything
+// on the platform tells a data story): observations of demand —
+// match impressions, searches, Maggie asks, deck passes — are
+// written through this wrapper, NEVER the raw logEvent. A capture
+// observes a request; it must never be able to break the request
+// it observes, so every failure is swallowed here.
+async function logCapture(fields) {
+  try { await logEvent(fields); } catch (e) { /* capture is best-effort by design */ }
+}
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
@@ -6236,6 +6246,30 @@ function matchBriefView(brief) {
   };
 }
 
+// Outcome linkage (Data Audit 2026-11-07 + ML mandate 2026-11-08):
+// when an offer-create call carries the discovery brief the offer
+// was composed from (a briefed Find list or a Maggie match), the
+// brief is stored on the offer record as `sourceBrief` so the
+// eventual pick — this offer, its bookings — can be joined back
+// to the match_impression events that preceded it. Deliberately
+// separate from the offer's content brief (offer.brief). Strictly
+// accept-and-normalize: an absent or empty brief stores nothing,
+// and nothing is ever inferred from the offer's own fields.
+function normalizeSourceBrief(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const str = (v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 80) : null);
+  const budget = Number(raw.budget);
+  const out = {
+    source: str(raw.source),
+    campaignId: str(raw.campaignId),
+    market: str(raw.market),
+    category: str(raw.category),
+    kind: str(raw.kind),
+    budget: Number.isFinite(budget) && budget > 0 ? budget : null,
+  };
+  return Object.values(out).some((v) => v !== null) ? out : null;
+}
+
 // The discovery query, shared verbatim by the real business surface
 // and the admin Business Preview so both answer identically. `viewer`
 // only drives the favorite flag and the default market; every filter
@@ -6509,11 +6543,34 @@ async function discoverCards(query, viewer, opts) {
   // Paused creators stay visible but sink below creators in good
   // standing on EVERY sort (stable partition applied last): greyed
   // out and deprioritized until they deliver the missing post.
+  const ranked = [
+    ...out.filter((c) => c.standing !== "paused"),
+    ...out.filter((c) => c.standing === "paused"),
+  ];
+  // Data capture #1 (Data Audit 2026-11-07): a briefed read is a
+  // match impression — the brief and the ranked list it produced
+  // are the top of the match funnel and Maggie's future training
+  // pairs, so they are recorded before they evaporate. Callers
+  // that re-rank for display (the campaign matches handler) opt
+  // out here and log their own final list, so one surface read is
+  // exactly one impression. The admin Business Preview's synthetic
+  // viewer is not an impression either.
+  if (matchBrief && !(opts && opts.suppressMatchImpression) && viewer && viewer.id && viewer.id !== "__preview__") {
+    await logCapture({
+      type: "match_impression",
+      actorId: viewer.id,
+      actorRole: viewer.role || null,
+      subjectId: matchBrief.campaignId || null,
+      market: matchBrief.market || null,
+      data: {
+        brief: matchBriefView(matchBrief),
+        via: "discover",
+        shown: ranked.map((c) => ({ creatorId: c.userId, score: typeof c.matchScore === "number" ? c.matchScore : null, parts: c.match ? c.match.parts : null })),
+      },
+    });
+  }
   return {
-    creators: [
-      ...out.filter((c) => c.standing !== "paused"),
-      ...out.filter((c) => c.standing === "paused"),
-    ],
+    creators: ranked,
     universities: universityFacet,
     matchBrief: matchBriefView(matchBrief),
   };
@@ -20601,6 +20658,27 @@ async function route(event) {
     const b = parseBody(event);
     const q = String(b.q || "").trim();
     if (!q) return err(400, "Ask a question first");
+    // Data capture #3 (Data Audit 2026-11-07): every ask is
+    // recorded — the question, who asked, and which layer
+    // answered (screen / ai / convo / data / unavailable) — the
+    // unanswered-question corpus and the AI feedback stream in
+    // one record. First-party product analytics on our own
+    // platform, same treatment as in-app messages. Fail-silent:
+    // logging never touches the answer path.
+    const logAsk = (answerSource, extra = {}) => logCapture({
+      type: "sig_ask",
+      actorId: user.id,
+      actorRole: user.role,
+      subjectId: user.id,
+      market: user.market || null,
+      data: {
+        q: q.slice(0, 500),
+        source: answerSource,
+        cards: !!extra.cards,
+        link: !!extra.link,
+        action: !!extra.action,
+      },
+    });
     const history = Array.isArray(b.history) ? b.history.filter((t) => t && (t.who === "user" || t.who === "sig") && typeof t.text === "string").map((t) => ({ who: t.who, text: t.text })) : [];
     const full = await withFounding(user);
     let facts = null;
@@ -20613,7 +20691,10 @@ async function route(event) {
     // is the platform). Runs even when the fact sheet failed to
     // build: fail closed.
     const screened = sigdata.sigPrivacyScreen(user.role, facts, q);
-    if (screened) return json(200, { source: "data", text: screened.text, ...(screened.link ? { link: screened.link } : {}) });
+    if (screened) {
+      await logAsk("screen", { link: !!screened.link });
+      return json(200, { source: "data", text: screened.text, ...(screened.link ? { link: screened.link } : {}) });
+    }
     // Build -132: "delete my account" used to route to support.
     // Sig's deletion conversation (Jeff, 2026-11-05) runs three
     // steps, in order, once: (1) ONE short honest reminder of
@@ -20631,6 +20712,7 @@ async function route(event) {
       const link = { label: "Open Settings → Account", dest };
       const askedBefore = history.some((h) => h && h.who === "user" && /\bdelete\b[^.?!]{0,40}\b(account|profile|magpie)\b/i.test(h.text || "")) || history.some((h) => h && h.who === "sig" && /Delete my account/.test(h.text || ""));
       if (askedBefore) {
+        await logAsk("data", { link: true });
         return json(200, { source: "data", text: "Of course. Settings, then Account, then \"Delete my account\" at the bottom. The screen explains exactly what goes and asks you to type DELETE to confirm. That is the whole route.", link });
       }
       const live = facts && typeof facts.marketLive === "boolean" ? facts.marketLive : await isMarketLive(user.market);
@@ -20639,6 +20721,7 @@ async function route(event) {
         : "Before you do: keeping your account keeps your founding rate locked for as long as your plan stays active. Deleting gives that up, and any banked founding credit (like the $100 first-month credit) is lost with it.";
       const warning = live ? "" : " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new.";
       const route = " If you still want to go ahead: Settings, then Account, then \"Delete my account\" at the bottom. The screen explains exactly what goes and what happens to anything still in flight, and asks you to type DELETE to confirm, so it cannot happen by accident. I cannot delete it from here; that last step is yours, on that screen.";
+      await logAsk("data", { link: true });
       return json(200, { source: "data", text: reminder + warning + route, link });
     }
     // Maggie Real-AI (Jeff, 2026-11-07, ordered after the
@@ -20664,6 +20747,7 @@ async function route(event) {
           market: user.market, factsText, tools: built.tools, history, question: q,
         }).catch(() => null);
         if (ai && ai.text) {
+          await logAsk("ai", { cards: !!built.out.cards });
           return json(200, { source: "ai", text: ai.text, ...(built.out.cards ? { cards: built.out.cards, matchBrief: built.out.matchBrief || null } : {}) });
         }
       }
@@ -20682,7 +20766,10 @@ async function route(event) {
     // privacy screen, so a screened question is still refused
     // first.
     const convo = sigConverse(user.role, facts, q, history, { firstName: String(user.name || "").trim().split(/\s+/)[0] || "" });
-    if (convo) return json(200, { source: "data", text: convo.text });
+    if (convo) {
+      await logAsk("convo");
+      return json(200, { source: "data", text: convo.text });
+    }
     if (facts) {
       const direct = sigdata.answerFactsRaw(user.role, facts, q, history);
       // Build -81: a data answer that shows records carries
@@ -20696,13 +20783,19 @@ async function route(event) {
         // the client renders it as a labeled button and nothing
         // happens until the person taps it.
         const da = typeof direct === "string" ? null : direct.action;
-        if (dt) return json(200, { source: "data", text: dt, ...(dl ? { link: dl } : {}), ...(da ? { action: da } : {}) });
+        if (dt) {
+          await logAsk("data", { link: !!dl, action: !!da });
+          return json(200, { source: "data", text: dt, ...(dl ? { link: dl } : {}), ...(da ? { action: da } : {}) });
+        }
       }
       // Build -131 clarify: a question too vague to route gets
       // one short question back with tappable options, each of
       // which the answerer answers from the asker's own records.
       const clarify = sigdata.sigClarify(user.role, facts, q);
-      if (clarify) return json(200, { source: "data", text: clarify.text, suggest: clarify.suggest });
+      if (clarify) {
+        await logAsk("data");
+        return json(200, { source: "data", text: clarify.text, suggest: clarify.suggest });
+      }
     }
     const lines = [];
     if (facts) {
@@ -20752,7 +20845,11 @@ async function route(event) {
     }
     }
     const ans = await askSigAI({ role: user.role, stateLines: lines.join(" "), question: q, history, market: user.market });
-    if (ans.source === "ai") return json(200, { source: "ai", text: ans.text });
+    if (ans.source === "ai") {
+      await logAsk("ai");
+      return json(200, { source: "ai", text: ans.text });
+    }
+    await logAsk("unavailable");
     return json(200, { source: "unavailable" });
   }
 
@@ -25917,6 +26014,21 @@ async function route(event) {
     // The query itself lives in discoverCards() so the admin Business
     // Preview answers with the identical roster, filters, and sorts.
     const disc = await discoverCards(query, user);
+    // Data capture #2 (Data Audit 2026-11-07): every search is a
+    // demand signal — the filters as sent, how many creators came
+    // back, and the zero-result flag that maps the supply gaps.
+    const filters = {};
+    for (const [k, v] of Object.entries(query || {})) {
+      if (typeof v === "string" && v) filters[k] = v.slice(0, 200);
+    }
+    await logCapture({
+      type: "discover_search",
+      actorId: user ? user.id : null,
+      actorRole: user ? user.role : null,
+      subjectId: null,
+      market: (disc.matchBrief && disc.matchBrief.market) || query.market || null,
+      data: { filters, resultCount: disc.creators.length, zeroResults: disc.creators.length === 0, briefed: !!disc.matchBrief },
+    });
     return json(200, { creators: disc.creators, universities: disc.universities, matchBrief: disc.matchBrief || null });
   }
 
@@ -25957,6 +26069,33 @@ async function route(event) {
         d.hidden = d.hidden.filter((x) => x !== itemId);
       }
       await store.set(`deckstate:${user.id}`, decks);
+      // Data capture #4 (Data Audit 2026-11-07): the piles keep
+      // only current state, and an un-action erases the only
+      // trace — so the ACTION is the event. Later / pass signals
+      // get their history and timestamps here; the deckstate
+      // record itself stays exactly as the UI expects. Brief
+      // context rides along when the caller sends it.
+      const deckCtx = {};
+      if (typeof b.campaignId === "string" && b.campaignId) deckCtx.campaignId = b.campaignId;
+      if (typeof b.offerId === "string" && b.offerId) deckCtx.offerId = b.offerId;
+      if (b.brief && typeof b.brief === "object") {
+        deckCtx.brief = {
+          market: typeof b.brief.market === "string" ? b.brief.market : null,
+          category: typeof b.brief.category === "string" ? b.brief.category : null,
+          kind: typeof b.brief.kind === "string" ? b.brief.kind : null,
+          budget: typeof b.brief.budget === "number" ? b.brief.budget : null,
+          source: typeof b.brief.source === "string" ? b.brief.source : null,
+          campaignId: typeof b.brief.campaignId === "string" ? b.brief.campaignId : null,
+        };
+      }
+      await logCapture({
+        type: `deck_${action}`,
+        actorId: user.id,
+        actorRole: user.role,
+        subjectId: itemId,
+        market: user.market || null,
+        data: { deck, itemId, ...deckCtx },
+      });
       return json(200, { decks });
     }
     return err(405, "Method not allowed");
@@ -26245,6 +26384,11 @@ async function route(event) {
       if (offer.timingWindow && !offer.visitWindow) offer.visitWindow = timingWindowLabel137(offer.timingWindow, offer.visitDate);
       offer.assetPacketAttached = b.assetPacketAttached !== undefined ? b.assetPacketAttached === true : kind === "paid";
       offer.brief = normalizeBriefInput(b.brief, kind, briefSeedFromFields(offer));
+      // Outcome linkage (see normalizeSourceBrief): a create that
+      // arrives from a briefed context stores the brief it came
+      // from; a create without one stores nothing extra.
+      const sourceBrief = normalizeSourceBrief(b.sourceBrief);
+      if (sourceBrief) offer.sourceBrief = sourceBrief;
       if (lane === "open") {
         const tl = offerTimeline({ applyWindowDays: b.applyWindowDays, windowDays: b.windowDays, windowStartAt: b.windowStartAt }, Date.parse(ts));
         Object.assign(offer, tl);
@@ -26586,7 +26730,7 @@ async function route(event) {
         kind,
         budget: kind === "paid" ? (Number(offer.cashRate) || null) : null,
       };
-      const disc = await discoverCards({ market: offer.market }, user, { brief });
+      const disc = await discoverCards({ market: offer.market }, user, { brief, suppressMatchImpression: true });
       const scored = disc.creators
         .filter((c) => c.userId !== offer.creatorId)
         .sort((a, b) => ((b.matchScore || 0) - (a.matchScore || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
@@ -26594,6 +26738,22 @@ async function route(event) {
         ...scored.filter((c) => c.standing !== "paused"),
         ...scored.filter((c) => c.standing === "paused"),
       ].slice(0, 20);
+      // Data capture #1 (Data Audit 2026-11-07): this read is a
+      // match impression. discoverCards was told to stay silent
+      // so the FINAL list — direct target excluded, best first,
+      // capped at 20 — is the one impression this surface records.
+      await logCapture({
+        type: "match_impression",
+        actorId: user.id,
+        actorRole: user.role,
+        subjectId: offer.id,
+        market: brief.market || null,
+        data: {
+          brief: matchBriefView(brief),
+          via: "campaign_matches",
+          shown: matches.map((c) => ({ creatorId: c.userId, score: typeof c.matchScore === "number" ? c.matchScore : null, parts: c.match ? c.match.parts : null })),
+        },
+      });
       return json(200, {
         offer: { id: offer.id, title: offer.title, kind, status: offer.status },
         brief: matchBriefView(brief),
