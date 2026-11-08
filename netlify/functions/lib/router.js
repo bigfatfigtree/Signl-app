@@ -220,18 +220,29 @@ async function runSnapshotSweep(opts = {}) {
     for (const [cat, cell] of Object.entries(cats)) if (cell.supply || cell.demand) matrix[mk][cat] = cell;
   }
   const rec = { date: day, capturedAt: nowIso(), totals: agg.totals, matrix, demandUnmapped: agg.demandUnmapped, benchmarks: agg.benchmarks, reliability: agg.reliability, unlistedByCity: agg.unlistedByCity.slice(0, 20), pageviews };
+  // The snapshot record lands FIRST, at the cost the -145 sweep
+  // always paid. Everything below is progressive: each step's
+  // progress persists on its own, so a sweep that runs out of
+  // runway still leaves the store strictly better than it found
+  // it. (Build -150 hotfix: the first version ran these inline
+  // in the request preamble too, and on Blobs latency the stack
+  // of full-log scans blew the gateway limit on EVERY request.)
+  await store.set(key, rec);
   // Build -150: the training-pairs summary is frozen here, once
   // a day, so the Data view's Export section reads ONE record
   // instead of walking every match impression per page load.
   // The walk itself is unchanged (buildTrainingPairs); it just
-  // moved off the request path. The capture first-seen backfill
-  // rides the same daily pass.
-  try { rec.training = (await buildTrainingPairs()).summary; } catch (e) { /* the summary lands with the next sweep */ }
+  // moved off the request path, and the record is patched in a
+  // second write. The capture first-seen backfill rides the
+  // same daily pass.
+  try {
+    rec.training = (await buildTrainingPairs()).summary;
+    await store.set(key, rec);
+  } catch (e) { /* the summary lands with the next sweep */ }
   try { await backfillCaptureSince(); } catch (e) { /* labels repair on the next sweep */ }
   // Warm the daily rollups for the full Data range so a section
   // read never pays the one-time per-day build (Build -150).
   try { await rollupsInRange(31); } catch (e) { /* sections compute any missing day on read */ }
-  await store.set(key, rec);
   return { day, wrote: true, creators: agg.totals.creators.approved, pageviews };
 }
 
@@ -245,19 +256,6 @@ async function maybeRunSnapshotSweep() {
   const cfg = await store.get("config:snapshotSweep");
   if (cfg && cfg.lastDate === day) {
     snapshotMemoDay = day;
-    // Build -150 migration: a same-day snapshot written by the
-    // pre--150 code carries no training summary. Patch it once
-    // (the summary is cumulative, so today's record is the
-    // right home) and backfill the capture first-seen map.
-    try {
-      const snap = await store.get(`snapshot:${day}`);
-      if (snap && !snap.training) {
-        snap.training = (await buildTrainingPairs()).summary;
-        await store.set(`snapshot:${day}`, snap);
-      }
-      await backfillCaptureSince();
-      await rollupsInRange(31);
-    } catch (e) { /* best-effort, retried on the next window */ }
     return;
   }
   await runSnapshotSweep();
