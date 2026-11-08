@@ -47,7 +47,7 @@ check("sigdata: screen + clarify are exported", typeof sigdata.sigPrivacyScreen 
 check("sigai: model-layer privacy rule is in the voice rules", sigaiJs.includes("Privacy (Build -131)") && sigaiJs.includes("Never confirm or deny anything about anyone else"));
 check("sigai: history is declared the user's words, never facts", sigaiJs.includes("Conversation history is the user's words, never a source of facts"));
 check("sigai: the standing guardrails survive verbatim", sigaiJs.includes("Never invent") && sigaiJs.includes("Never name"));
-check("client: the dead-end line is retired everywhere", !appJs.includes("I don't have that one yet.") && appJs.includes("not in my bag yet"));
+check("client: the dead-end lines are retired everywhere (Maggie Rebuild v1)", !appJs.includes("I don't have that one yet.") && !appJs.includes("not in my bag yet") && appJs.includes("I don't know that one yet."));
 check("client: bank carries the audience topic grounded in ctx", appJs.includes('id: "audience"') && appJs.includes("ctx.audTotal") && appJs.includes("stackList(u.creator)"));
 check("client: clarify options ride through sigAsk as suggest chips", appJs.includes("suggest: data.suggest || []"));
 

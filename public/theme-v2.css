@@ -2729,6 +2729,14 @@ body.v3-on .tab-item.on .tab-sig-img { box-shadow: 0 0 0 2px var(--ink); }
 .sig-ccard-thumbs { display: flex; gap: 6px; margin-top: 8px; }
 .sig-ccard-thumbs img { width: 54px; height: 54px; border-radius: 10px; object-fit: cover; }
 .sig-ccard-why { font-size: .82rem; color: var(--sage, #5F7265); margin-top: 6px; }
+/* Match Engine v1 join (Maggie Rebuild v1, 2026-11-07): the
+   chat card's match line mirrors the Find creators card —
+   the score as a strong chip, the why in the same plain
+   style, one line, never stacked with the fit line. */
+.sig-ccard-match { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.sig-ccard-match-score { font-weight: 800; font-size: .82rem; color: var(--blue, #006AFC); white-space: nowrap; }
+.sig-ccard-match-why { font-size: .82rem; color: var(--sage, #5F7265); }
+.sig-ccard-topmatch { font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--blue, #006AFC); }
 .sig-ccard-acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .sig-ask-form { display: flex; gap: 8px; margin-top: 12px; }
 .sig-ask-form input {
