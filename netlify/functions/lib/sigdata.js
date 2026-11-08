@@ -253,7 +253,7 @@ function buildAdminFacts(d) {
     // Build -106: the London district race rollup (Admin and
     // the London partner only; never public).
     londonRace: d.londonRace || null,
-    markets: { liveNames, liveCount: liveNames.length, known: (d.marketNames || []).length },
+    markets: { liveNames, liveCount: liveNames.length, known: (d.marketNames || []).length, names: d.marketNames || [] },
   };
 }
 
@@ -765,7 +765,7 @@ function linked(text, label, dest) { return { text, link: { label, dest } }; }
 // ---------- ADMIN ----------
 function answerAdmin(f, q, t) {
   const c = f.creators, b = f.businesses;
-  const marketNames = [...new Set([...c.byMarket.map((m) => m.market), ...f.markets.liveNames])];
+  const marketNames = [...new Set([...c.byMarket.map((m) => m.market), ...f.markets.liveNames, ...(f.markets.names || [])])];
   const market = findMarketIn(q, marketNames);
   const row = marketRow(f, market);
   const countAsk = hasPhrase(t, "how many", "total", "count", "number of", "do we have", "do i have", "have we got", "how much of");
@@ -1020,6 +1020,11 @@ function answerAdmin(f, q, t) {
 
   // Creators (Jeff's question lands here)
   if (hasWord(t, "creator", "creators")) {
+    // Maggie Rebuild v1: a known market with no records yet is
+    // a real answer (zero), not a fall-through — market names
+    // now resolve from the full market list, not only from
+    // markets that already hold records.
+    if (market && !row) return `0 creators in ${market}: no creator records have landed there yet. ${market} is ${marketLive(f, market) ? "live" : "not live yet"}.`;
     if (market && row) {
       const live = marketLive(f, market);
       if (hasWord(t, "approved")) return `${fmt(row.approved)} approved ${plural(row.approved, "creator")} in ${market}, and ${fmt(row.complete)} of them have finished profiles. ${market} is ${live ? "live" : "not live yet"}.`;
@@ -1712,12 +1717,19 @@ function answerFactsRaw(role, facts, question, history) {
   // question re-runs that question scoped to the market (admin).
   if (role === "admin") {
     const toks = t.split(" ").filter(Boolean);
-    const marketNames = [...new Set([...facts.creators.byMarket.map((m) => m.market), ...facts.markets.liveNames])];
+    const marketNames = [...new Set([...facts.creators.byMarket.map((m) => m.market), ...facts.markets.liveNames, ...(facts.markets.names || [])])];
     const market = findMarketIn(question, marketNames);
     if (market && toks.length <= 7 && Array.isArray(history)) {
       const prev = history.filter((h) => h && h.who === "user" && typeof h.text === "string").pop();
       if (prev && prev.text.trim() && prev.text.trim().toLowerCase() !== String(question).trim().toLowerCase()) {
-        try { return answerAdmin(facts, `${prev.text} in ${market}`, normQ(`${prev.text} in ${market}`)); } catch (e) { return null; }
+        // Maggie Rebuild v1: a market-to-market follow-up
+        // ("...in Nashville?" then "And in Austin?") strips
+        // the old market before re-scoping — with both names
+        // in the text, findMarketIn would keep answering the
+        // first market forever.
+        const prevMarket = findMarketIn(prev.text, marketNames);
+        const baseQ = prevMarket ? prev.text.replace(new RegExp(prevMarket.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), " ") : prev.text;
+        try { return answerAdmin(facts, `${baseQ} in ${market}`, normQ(`${baseQ} in ${market}`)); } catch (e) { return null; }
       }
     }
   }

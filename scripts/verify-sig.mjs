@@ -105,40 +105,44 @@ check("bank battery is at least 40 questions per side", CREATOR_QS.length >= 40 
   check("gibberish falls back (no topic)", gib.topic === null);
 }
 
-// ---------- 1b. The Sig asset model (V4 2026-10-28; -124; -130) ----------
-// Build -130 (Jeff, 2026-11-05): Sig's mark is THE ORB — one
-// still + one living clip in /assets/sig-orb, replacing every
-// face (the V4 render, then Build -124's Concept A portrait).
-// The model the earlier builds built stays pinned: SIG_ART
-// names the one folder every surface resolves through, the
-// hero state machine and triggers are unchanged, the small
-// surfaces stay stills-only, reduced motion rests everything
-// on the still — and ZERO references to the retired face
-// folders remain, in code or on disk.
-console.log("== Sig asset model (Build -130: the orb) ==");
+// ---------- 1b. The Maggie asset model (Maggie Rebuild v1) ----------
+// Jeff's identity rule is the law here: Maggie's artwork is
+// his character sheet and nothing else. The app ships six
+// crops of that sheet in /assets/maggie-char (the set the
+// Magpie flip shipped), resolved through MAGGIE_CHAR with
+// SIG_MARK_MODE "character". Her motion is CSS transforms on
+// those exact tiles (theme-v3.css), never a redraw. The orb
+// code paths remain in the bundle as the retired fallback
+// mode; no surface resolves to them while the mode stands.
+// This section replaces the Build -130 orb pins, which went
+// stale the day character Maggie shipped.
+console.log("== Maggie asset model (character tiles, Jeff's sheet) ==");
 const themeCss = fs.readFileSync(path.join(ROOT, "public/theme-v2.css"), "utf8");
-const asset = (rel) => path.join(ROOT, "public/assets/sig-orb", rel);
-const sizeOf = (rel) => (fs.existsSync(asset(rel)) ? fs.statSync(asset(rel)).size : -1);
-check("one swappable reference: SIG_ART names the orb folder", appJs.includes('const SIG_ART = "/assets/sig-orb"'));
-check("the orb clip gate is open (SIG_ART_VIDEO true, hero + celeb both gated)", appJs.includes("const SIG_ART_VIDEO = true") && appJs.includes("if (!SIG_ART_VIDEO || sigReducedMotion())") && appJs.includes("if (!SIG_ART_VIDEO) return;"));
+const theme3Css = fs.readFileSync(path.join(ROOT, "public/theme-v3.css"), "utf8");
+const charAsset = (rel) => path.join(ROOT, "public/assets/maggie-char", rel);
+const charSize = (rel) => (fs.existsSync(charAsset(rel)) ? fs.statSync(charAsset(rel)).size : -1);
+check("character mode is the standing mode (SIG_MARK_MODE character)", appJs.includes('const SIG_MARK_MODE = "character"'));
+check("one swappable reference: MAGGIE_CHAR names the tile folder", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-char"'));
 check("no reference to any retired face folder remains in app.js", !appJs.includes("/assets/sig-a") && !appJs.includes("/assets/sig-v4") && !appJs.includes("head-idle"));
 check("the SVG character is retired from every surface", !appJs.includes("sigSvgHtml") && !appJs.includes("sig-musician") && !themeCss.includes("sig-ava-svg") && !fs.existsSync(path.join(ROOT, "public/assets/sig-musician.svg")));
-check("small Sig is the orb still in every mood (sigAvatarHtml -> sig-ava-img webp, no video)", appJs.includes('const SIG_STILL = "orb.webp"') && appJs.includes("sig-ava-img") && appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("${SIG_ART}/${SIG_STILL}") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
-check("the bottom tab icon is the orb still", appJs.includes('class="tab-sig-img" src="/assets/sig-orb/orb.webp"'));
+for (const tile of ["curious.jpg", "greet.jpg", "chirp.jpg", "listen.jpg", "hearts.jpg", "cool.jpg"]) {
+  check(`tile ships: ${tile} (sane weight)`, charSize(tile) > 5000 && charSize(tile) <= 400000, `${charSize(tile)} bytes`);
+}
+check("small Maggie is a character tile in every mood (sigAvatarHtml -> maggie-char, no video)", appJs.includes("MAGGIE_CHAR_AVA") && appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("${MAGGIE_CHAR}/") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
+check("the bottom tab icon resolves through sigMarkHtml (the character tile)", appJs.includes('sigMarkHtml("tab-sig-img")') && appJs.includes('src="${MAGGIE_CHAR}/curious.jpg"'));
 const heroSlice = appJs.slice(appJs.indexOf("function sigHeroMediaHtml"), appJs.indexOf("let sigHeroMode"));
-check("hero markup is a video stack over the orb poster, think still included", heroSlice.includes('data-sig-hero-video') && heroSlice.includes("muted") && heroSlice.includes("playsinline") && heroSlice.includes("autoplay") && heroSlice.includes('preload="none"') && heroSlice.includes('poster="${SIG_ART}/${SIG_STILL}"') && heroSlice.includes("sig-hero-think"));
-check("hero markup ships NO clip sources (the one orb clip attaches in sigHeroSet)", !heroSlice.includes("<source") && appJs.includes('video.innerHTML = `<source src="${SIG_ART}/${SIG_CLIP}" type="video/mp4">`'));
-check("the orb clip loops in every hero state (one living clip, data-clip orb)", appJs.includes('video.setAttribute("data-clip", "orb")') && appJs.includes("video.loop = true"));
-check("think rests on the still: the think state swaps the video out", appJs.includes('if (mode === "think")') && appJs.slice(appJs.indexOf("function sigHeroSet"), appJs.indexOf("function sigCelebMediaHtml")).includes("video.hidden = true"));
-check("the celeb one-shot hides on ended and leaves its still", appJs.includes('addEventListener("ended"') && appJs.includes('hasAttribute("data-sig-celeb-video")'));
-check("reduced motion: stills everywhere, driven by the matchMedia gate", appJs.includes("function sigReducedMotion()") && appJs.includes('matchMedia("(prefers-reduced-motion: reduce)")') && themeCss.includes("prefers-reduced-motion: reduce"));
-check("a failed clip hides itself and leaves its poster (error listener)", appJs.includes('addEventListener("error"') && appJs.includes('hasAttribute("data-sig-hero-video")'));
+check("hero markup is the character hero over the curious tile", heroSlice.includes("maggie-char-hero") && heroSlice.includes('src="${MAGGIE_CHAR}/curious.jpg"'));
+check("hero states swap tiles and key CSS motion by data-mode (think sways)", appJs.includes("MAGGIE_CHAR_STILL") && appJs.slice(appJs.indexOf("function sigHeroSet"), appJs.indexOf("function sigCelebMediaHtml")).includes('host.setAttribute("data-mode", mode)') && theme3Css.includes('.maggie-char-hero[data-mode="think"]'));
+check("the celeb one-shot is the hearts tile", appJs.includes("function sigCelebMediaHtml()") && appJs.includes("maggie-char-celeb") && appJs.includes('src="${MAGGIE_CHAR}/hearts.jpg"'));
+check("reduced motion rests the tiles (media query covers hero, head, celeb, avatars)", appJs.includes("function sigReducedMotion()") && theme3Css.includes("prefers-reduced-motion: reduce") && theme3Css.includes(".sig-ava-char img"));
 check("the queue card still records its one-shot moods for the hero (triggers unchanged)", appJs.includes('sigQueueBeat = "celebrate"') && appJs.includes('sigQueueBeat = "greet"') && appJs.includes("state.sigCelebrate = false"));
-check("the claim win hook renders the celebrate clip component and kicks it once", appJs.includes("function sigCelebMediaHtml()") && appJs.includes("setTimeout(sigCelebKick, 30)"));
-check("hero + celeb media CSS ships (stack, ring, hidden guards beat the layer display rules)", themeCss.includes(".sig-hero-media") && themeCss.includes(".sig-celeb-media") && themeCss.includes("video[hidden]") && themeCss.includes("img[hidden]"));
-check("orb still ships (sane weight)", sizeOf("orb.webp") > 0 && sizeOf("orb.webp") <= 200000, `${sizeOf("orb.webp")} bytes`);
-check("orb clip ships (sane weight)", sizeOf("orb.mp4") > 0 && sizeOf("orb.mp4") <= 3000000, `${sizeOf("orb.mp4")} bytes`);
+check("claim win hook renders the celebrate component and kicks it once", appJs.includes("function sigCelebMediaHtml()") && appJs.includes("setTimeout(sigCelebKick, 30)"));
 check("the retired face folders are gone from the bundle", !fs.existsSync(path.join(ROOT, "public/assets/sig-a")) && !fs.existsSync(path.join(ROOT, "public/assets/sig-v4-legacy")) && !fs.existsSync(path.join(ROOT, "public/assets/sig-axolotl.png")));
+// Maggie Rebuild v1: conversation + motion in the chat itself.
+check("the canned deflection is retired everywhere in the client", !appJs.includes("not in my bag yet") && appJs.includes("I don't know that one yet."));
+check("chat-box heads move in character mode (no is-still on the char head)", !appJs.slice(appJs.indexOf("function sigOrbMedia130"), appJs.indexOf("function sigChatBoxHtml")).includes("is-still"));
+check("the live thread avatar animates by state (bob / think sway / talk chirp)", theme3Css.includes(".sig-turn.sig:last-child .sig-ava-char img") && theme3Css.includes("charSway") && theme3Css.includes("charChirp"));
+check("the server carries the conversational layer and the router wires it", fs.existsSync(path.join(ROOT, "netlify/functions/lib/sigconvo.js")) && fs.readFileSync(path.join(ROOT, "netlify/functions/lib/router.js"), "utf8").includes("sigConverse"));
 
 // ---------- 2. The AI path, against a local stub provider ----------
 let stubMode = "ok";

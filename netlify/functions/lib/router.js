@@ -19,6 +19,7 @@ const square = require("./square");
 const clover = require("./clover");
 const { askSigAI } = require("./sigai");
 const sigdata = require("./sigdata");
+const { sigConverse } = require("./sigconvo");
 const { buildProfilePageHtml, buildClaimPageHtml, buildRosterPageHtml, buildRosterNotFoundHtml } = require("./profile-meta");
 const { videoEmbedFor } = require("./video-embed");
 const intentLib = require("./intent");
@@ -20385,6 +20386,21 @@ async function route(event) {
       const route = " If you still want to go ahead: Settings, then Account, then \"Delete my account\" at the bottom. The screen explains exactly what goes and what happens to anything still in flight, and asks you to type DELETE to confirm, so it cannot happen by accident. I cannot delete it from here; that last step is yours, on that screen.";
       return json(200, { source: "data", text: reminder + warning + route, link });
     }
+    // Maggie Rebuild v1 (Jeff, 2026-11-07): the conversational
+    // layer. Purely conversational whole messages (greetings,
+    // thanks, small talk, "who are you", "what can you do")
+    // are conversation, not data questions: they are answered
+    // here, per role, with at most one true bright spot from
+    // the asker's own fact sheet. Jeff typed "hey" into Admin
+    // and got the fallback deflection; that class of input
+    // never reaches the fallback again. Anything carrying a
+    // real question falls through untouched to the fact
+    // answerer below. Runs even when the fact sheet failed to
+    // build (a greeting needs no numbers), and after the
+    // privacy screen, so a screened question is still refused
+    // first.
+    const convo = sigConverse(user.role, facts, q, history, { firstName: String(user.name || "").trim().split(/\s+/)[0] || "" });
+    if (convo) return json(200, { source: "data", text: convo.text });
     if (facts) {
       const direct = sigdata.answerFactsRaw(user.role, facts, q, history);
       // Build -81: a data answer that shows records carries

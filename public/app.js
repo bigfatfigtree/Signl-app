@@ -4242,10 +4242,13 @@ function sigOrbMedia130(still) {
   if (SIG_MARK_CHAR) {
     // Her head in the sheet, the home heroes and every chat
     // box: Jeff's greet tile (sheet opens and home are her
-    // greet moments), bobbing gently in code. Placements that
-    // ask for a still get the tile at rest; reduced motion
-    // freezes the bob (theme-v3.css media query).
-    return `<span class="sigbox-orb maggie-char-head${still ? " is-still" : ""}"><img src="${MAGGIE_CHAR}/greet.jpg" alt="" decoding="async"></span>`;
+    // greet moments), bobbing gently in code. Maggie Rebuild
+    // v1 (Jeff, 2026-11-07): the "still" placements are
+    // retired in character mode — Jeff found her sitting
+    // frozen in the shipped build, so every chat-box head
+    // moves now; the motion is the same gentle bob everywhere
+    // and reduced motion still freezes it (theme-v3.css).
+    return `<span class="sigbox-orb maggie-char-head"><img src="${MAGGIE_CHAR}/greet.jpg" alt="" decoding="async"></span>`;
   }
   if (SIG_MARK_BIRD) {
     const rest = still || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -4382,7 +4385,11 @@ async function loadSigTopNudges() {
   if (!host2) return;
   const chips = (d && d.chips) || [];
   if (!chips.length) { host2.innerHTML = ""; return; }
-  host2.innerHTML = `<div class="sigtop-nlabel">Maggie noticed</div>` + chips.slice(0, 4).map((c) => {
+  // Maggie Rebuild v1 UX pass: three noticed rows, not four.
+  // The hero already carries her brief; a fourth stacked row is
+  // clutter, and the queue is priority-ordered, so the top
+  // three are the ones that matter today.
+  host2.innerHTML = `<div class="sigtop-nlabel">Maggie noticed</div>` + chips.slice(0, 3).map((c) => {
     const dest = sigChipDest(c);
     return dest ? `<button type="button" class="sigtop-nudge" onclick="return sigLinkGo('${dest}')">${esc(c)}</button>` : `<div class="sigtop-nudge plain">${esc(c)}</div>`;
   }).join("");
@@ -5246,8 +5253,8 @@ function sigBankFor(biz) {
         if (c.founding) return `${head} Your $${c.planCredit} founding credit is banked for your first month, and your founding rate holds while your plan stays active. Nothing is due and nothing is charged while your market is founding. When ${c.market || "your market"} opens, your plan starts: unused visits roll one month, then expire, and the minimum is 3 months.`;
         return `${head} Your founding rate holds while your plan stays active. Unused visits roll one month, then expire, and the minimum is 3 months. Paid bookings and licensing are on every plan.`;
       } },
-    { id: "howitworks", q: "How does Magpie work for a business?", ph: ["how does magpie work", "how it works", "what is magpie", "how does this work"], g: [["magpie", "platform", "this"], ["work", "works", "start", "process"]], s: [],
-      a: (c) => "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post to the terms on the booking — on a comped visit, the goal is one post plus one story within 48 hours of the visit. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count. Bookings that start on Magpie stay on Magpie, where the Visit Guarantee and payment protection apply." + (c.founding ? " While your market is founding, what you build saves as a draft for opening day; nothing is sent to a creator before the market opens." : ""), flow: "Post an offer" },
+    { id: "howitworks", q: "How does Magpie work for a business?", ph: ["how does magpie work", "how it works", "what is magpie", "how does this work", "how does signl work", "what is signl"], g: [["magpie", "platform", "this", "signl"], ["work", "works", "start", "process"]], s: [],
+      a: (c) => "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post to the terms on the booking. On a comped visit, the goal is one post plus one story within 48 hours of the visit. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count. Bookings that start on Magpie stay on Magpie, where the Visit Guarantee and payment protection apply." + (c.founding ? " While your market is founding, what you build saves as a draft for opening day; nothing is sent to a creator before the market opens." : ""), flow: "Post an offer" },
     { id: "campaigns", q: "How do campaigns work?", ph: ["how do campaigns work", "campaign work", "how do offers work", "run a campaign", "how do i campaign"], g: [["campaign", "campaigns", "offer", "offers"], ["work", "run", "start", "post", "send", "make"]], s: ["campaign"],
       a: (c) => {
         let t = "Two ways. Post an open call: you post it to your market, creators who fit can apply, and you pick from the stack. Or invite a creator: pick one by name in Find creators, and the invite goes only to them. Either way the creator visits, posts to the terms on the booking (on a comped visit the goal is within 48 hours), and you see the post and its numbers here.";
@@ -5418,7 +5425,10 @@ function sigTopicReply(topic, ctx) {
 }
 function sigFallbackReply(match) {
   const near = (match.scored || []).filter((s) => s.score >= 4).slice(0, 3).map((s) => s.topic);
-  const reply = { text: "That one is not in my bag yet.", suggest: [] };
+  // Maggie Rebuild v1 (Jeff, 2026-11-07): the canned
+  // deflection is retired. A genuine unknown gets an honest
+  // plain answer and a useful offer, in her voice.
+  const reply = { text: "I don't know that one yet.", suggest: [] };
   if (near.length) {
     reply.text += " The closest things I can answer are right here; tap one and I will tell you straight. For anything else, hello@magpielocal.com reaches a person.";
     reply.suggest = near.map((topic) => topic.q);
@@ -5785,7 +5795,7 @@ function renderSigTab() {
   ${state.user && state.user.role === "creator" ? sigCreatorStartersHtml() : ""}
   <div class="sig-chat">
     <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers and real actions, with the next step attached. Nothing posts, sends, or saves until you confirm a plain summary.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
-    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${state.user && state.user.role === "business" ? "Ask me anything about how Magpie works for your business: what your plan includes, how campaigns run, how your results get counted. Or tell me to do something: draft a campaign, find creators, set your staff PIN. I confirm before anything is saved." : state.user && state.user.role === "creator" ? "Ask me anything about how Magpie works for creators: how visits and points run, what you earn, when your market opens. Or tell me to do something: find offers, finish your profile, show your numbers. I confirm before anything is saved." : "Ask me anything about how Magpie works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved."}</div></div>`}</div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${state.user && state.user.role === "business" ? "Ask me anything about how Magpie works for your business, or tell me to do something: draft a campaign, find creators, set your staff PIN. I confirm before anything is saved." : state.user && state.user.role === "creator" ? "Ask me anything about how Magpie works for creators: how visits and points run, what you earn, when your market opens. Or tell me to do something: find offers, finish your profile, show your numbers. I confirm before anything is saved." : "Ask me anything about how Magpie works, or tell me to do something. I confirm before anything is saved."}</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
       <input id="sig-ask-input" type="text" placeholder="Ask Maggie anything" autocomplete="off" aria-label="Ask Maggie anything">
       <button class="btn" type="submit">Ask</button>
@@ -7413,13 +7423,23 @@ function sigCreatorCardHtml(c, ti, ci) {
   const photos = (Array.isArray(c.photos) && c.photos.length ? c.photos : [c.photoUrl]).filter(Boolean);
   const pct = p.localAudiencePct === null || p.localAudiencePct === undefined ? null : Number(p.localAudiencePct);
   const cats = (p.categories || []).slice(0, 2).join(" · ");
-  const why = c.fit && c.fit.reasons && c.fit.reasons.length ? c.fit.reasons[0] : "";
+  // Match Engine v1 join (Jeff, 2026-11-07): when the card
+  // carries a match for a brief, the card speaks Find
+  // creators' exact language — the same "Match N" score, the
+  // same why-line (the brief's reasons, first two, middot
+  // joined, as the Find card shows them), the same Top match
+  // tag on the leader, and Book as the on-card action (the
+  // pick-first booking flow below, unchanged). The match
+  // why-line replaces the fit line: one why-line per card,
+  // never two stacked.
+  const match = c.match && typeof c.match.score === "number" ? c.match : null;
+  const why = !match && c.fit && c.fit.reasons && c.fit.reasons.length ? c.fit.reasons[0] : "";
   const saved = !!c.isFavorite;
   return `<div class="sig-ccard"${c.userId ? ` data-sigprofile="${esc(c.userId)}"` : ""}>
     <div class="sig-ccard-top">
       ${photos[0] ? `<img class="sig-ccard-photo" src="${esc(photos[0])}" alt="">` : `<span class="sig-ccard-photo sig-ccard-nophoto">${esc(String(c.name || "S").slice(0, 1))}</span>`}
       <div class="sig-ccard-id">
-        <div class="sig-ccard-name">${esc(c.name || "")}${p.tierBand ? ` <span class="sig-ccard-tier">${esc(p.tierBand)}</span>` : ""}</div>
+        <div class="sig-ccard-name">${esc(c.name || "")}${p.tierBand ? ` <span class="sig-ccard-tier">${esc(p.tierBand)}</span>` : ""}${match && c.__topMatch ? ` <span class="sig-ccard-topmatch">${ST("Top match", "Mejor coincidencia")}</span>` : ""}</div>
         <div class="sig-ccard-handle">@${esc(p.handle || "")}${c.neighborhood ? ` · ${esc(c.neighborhood)}` : ""}</div>
       </div>
       ${c.userId ? `<span class="sig-ccard-view">${ST("View profile", "Ver perfil")}</span>` : ""}
@@ -7428,9 +7448,10 @@ function sigCreatorCardHtml(c, ti, ci) {
     ${pct !== null && Number(c.totalAudience) > 0 ? `<div class="sig-ccard-sub">${ST(`about ${fmtFull(Math.round((pct / 100) * Number(c.totalAudience)))} of their followers live in ${marketDisplayName(cardLocalMarket(c) || c.market || "")}`, `unas ${fmtFull(Math.round((pct / 100) * Number(c.totalAudience)))} de sus seguidoras viven en ${marketDisplayName(cardLocalMarket(c) || c.market || "")}`)}</div>` : ""}
     <div class="sig-ccard-meta">${fmtNum(c.totalAudience || 0)} ${ST("total followers", "seguidores en total")}${cats ? ` · ${esc(cats)}` : ""} · ${p.paidRate ? `$${fmtPrice(p.paidRate)} ${ST("paid rate", "tarifa pagada")}` : ST("comp visits", "visitas de cortesía")}</div>
     ${photos.length > 1 ? `<div class="sig-ccard-thumbs">${photos.slice(1, 3).map((src) => `<img src="${esc(src)}" alt="">`).join("")}</div>` : ""}
+    ${match ? `<div class="sig-ccard-match"><span class="sig-ccard-match-score">Match ${match.score}</span>${match.reasons && match.reasons.length ? `<span class="sig-ccard-match-why">${esc(match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
     ${why ? `<div class="sig-ccard-why">${esc(why)}</div>` : ""}
     <div class="sig-ccard-acts">
-      <button type="button" class="btn small-btn" data-sigcard="${ti}:${ci}:invite">${ST("Invite", "Invitar")}</button>
+      <button type="button" class="btn small-btn" data-sigcard="${ti}:${ci}:invite">${match ? ST("Book", "Reservar") : ST("Invite", "Invitar")}</button>
       <button type="button" class="btn small-btn ghost" data-sigcard="${ti}:${ci}:save">${saved ? ST("Saved ✓", "Guardado ✓") : ST("Save", "Guardar")}</button>
     </div>
   </div>`;
@@ -8071,6 +8092,12 @@ function sigB2ParseCrit(norm) {
   if (norm.includes("creat") && norm.includes("music")) crit.musician = "create";
   const pct = /(\d{1,3})\s*%/.exec(norm) || /(\d{1,3})\s*(?:percent|por ciento)/.exec(norm);
   if (pct) crit.minLocalPct = Number(pct[1]);
+  // Match Engine v1 join: a stated budget ("under $200",
+  // "$150 budget", "within 300") rides the criteria; with a
+  // category it forms the brief the discover endpoint scores
+  // (sort=match), exactly as the Find filters do.
+  const bud = /(?:under|below|max|budget(?: of)?|within|up to|<=?)\s*\$?\s*(\d{2,5})/.exec(norm) || /\$\s*(\d{2,5})/.exec(norm) || /(\d{2,5})\s*(?:dollars|bucks|usd)/.exec(norm);
+  if (bud) crit.budget = Number(bud[1]);
   if (norm.includes("paid")) crit.paid = true;
   if (norm.includes("student") || norm.includes("estudiant") || norm.includes("campus")) crit.students = true;
   return crit;
@@ -8087,7 +8114,7 @@ function sigB2Start() {
   ]);
 }
 async function sigB2Step(f, text, norm) {
-  if (f.step !== "criteria") { sigOpAsk(ST("Tap Invite on a creator above to build their offer, start a new search, or say never mind.", "Toca Invitar en un creador para armar su oferta, inicia otra búsqueda, o di cancelar.")); return; }
+  if (f.step !== "criteria") { sigOpAsk(f.data && f.data.matchMode ? ST("Tap Book on a creator above to build their offer, start a new search, or say never mind.", "Toca Reservar en un creador para armar su oferta, inicia otra búsqueda, o di cancelar.") : ST("Tap Invite on a creator above to build their offer, start a new search, or say never mind.", "Toca Invitar en un creador para armar su oferta, inicia otra búsqueda, o di cancelar.")); return; }
   await sigB2Run(sigB2ParseCrit(norm));
 }
 async function sigB2Run(crit) {
@@ -8102,10 +8129,20 @@ async function sigB2Run(crit) {
   if (crit.minLocalPct) params.set("minLocalPct", String(crit.minLocalPct));
   if (crit.paid) params.set("paid", "1");
   if (crit.sort) params.set("sort", crit.sort);
+  // Match Engine v1 join: a category plus a budget is a brief.
+  // Ask the discover endpoint to score it (the same code path
+  // as Find's Best match sort); the cards come back carrying
+  // matchScore + match { score, parts, reasons } and the
+  // response carries the resolved matchBrief. No brief (or a
+  // server without the engine) leaves every card matchless and
+  // the run below ranks by local reach exactly as before.
+  if (crit.category && crit.budget) { params.set("sort", "match"); params.set("budget", String(crit.budget)); }
   let cards = [];
+  let matchBrief = null;
   try {
     const data = await api("GET", `/discover?${params.toString()}`);
     cards = data.creators || [];
+    matchBrief = data.matchBrief || null;
     state.sigOpData = { cards, universities: data.universities || [] };
   } catch (e) {
     sigOpSay(`${e.message}`, sigOpHomeActions());
@@ -8133,14 +8170,29 @@ async function sigB2Run(crit) {
   // bigger audience breaking a tie. The confirmation line
   // states the count and the basis, then the cards carry the
   // people (Build -78).
-  cards.sort((a, b) => (sigLocalPct(b) - sigLocalPct(a)) || ((Number(b.totalAudience) || 0) - (Number(a.totalAudience) || 0)));
+  // Match Engine v1 join: when the brief resolved and the
+  // cards carry scores, the match order and the match line
+  // take over — the same ranking and the same card language
+  // as Find creators, so a creator found here is the creator
+  // Find shows, scored the same way for the same brief.
+  const matchMode = !!(matchBrief && cards.some((c) => c.match && typeof c.match.score === "number"));
+  if (f) f.data.matchMode = matchMode;
+  if (matchMode) {
+    cards.sort((a, b) => (((b.matchScore != null ? b.matchScore : b.match.score) || 0) - ((a.matchScore != null ? a.matchScore : a.match.score) || 0)) || (sigLocalPct(b) - sigLocalPct(a)) || ((Number(b.totalAudience) || 0) - (Number(a.totalAudience) || 0)));
+  } else {
+    cards.sort((a, b) => (sigLocalPct(b) - sigLocalPct(a)) || ((Number(b.totalAudience) || 0) - (Number(a.totalAudience) || 0)));
+  }
   const top = cards.slice(0, 5);
+  if (matchMode && top.length) top[0].__topMatch = true;
   const desc = crit.category ? crit.category + " " + ST("micro-influencers", "microinfluencers")
     : crit.spanish ? ST("Spanish-speaking creators", "Creadores que hablan español")
     : crit.musician ? ST("Musicians", "Músicos")
     : crit.students ? ST("Student creators", "Creadores estudiantes")
     : ST("micro-influencers", "microinfluencers");
-  const line = ST(`Found ${cards.length} ${desc} in ${marketTalkNameClient(u.market)}, ranked by how local their audience is.`, `Encontré ${cards.length} ${desc} en ${marketTalkNameClient(u.market)}, ordenados por qué tan local es su audiencia.`)
+  const line = matchMode
+    ? ST(`Found ${cards.length} ${desc} in ${marketTalkNameClient(u.market)}, ranked by match${matchBrief.category ? ` for ${matchBrief.category}` : ""}${matchBrief.budget ? ` within a $${fmtPrice(Number(matchBrief.budget))} budget` : ""}. The score weighs local reach, category, your budget, reliability, and Momentum.`, `Encontré ${cards.length} ${desc} en ${marketTalkNameClient(u.market)}, ordenados por coincidencia${matchBrief.category ? ` para ${matchBrief.category}` : ""}${matchBrief.budget ? ` dentro de un presupuesto de $${fmtPrice(Number(matchBrief.budget))}` : ""}.`)
+      + (cards.length > top.length ? " " + ST(`Here are the top ${top.length}.`, `Aquí están los ${top.length} mejores.`) : "")
+    : ST(`Found ${cards.length} ${desc} in ${marketTalkNameClient(u.market)}, ranked by how local their audience is.`, `Encontré ${cards.length} ${desc} en ${marketTalkNameClient(u.market)}, ordenados por qué tan local es su audiencia.`)
     + (cards.length > top.length ? " " + ST(`Here are the top ${top.length}.`, `Aquí están los ${top.length} mejores.`) : "");
   const cardActs = top.map((c) => ({
     invite: () => sigOpPick(`${ST("Invite", "Invitar")} @${(c.profile || {}).handle || ""}`, async () => {
@@ -26207,7 +26259,7 @@ function sigAdminRouteAsk(text) {
   const top = scored[0];
   if (top && top.score >= 8) return { text: top.topic.a, flow: null };
   const near = scored.filter((s) => s.score >= 4).slice(0, 3).map((s) => s.topic);
-  const reply = { text: "That one is not in my bag yet.", flow: null, suggest: [] };
+  const reply = { text: "I don't know that one yet.", flow: null, suggest: [] };
   if (near.length) {
     reply.text += " The closest things I can answer are right here; tap one and I will tell you straight.";
     reply.suggest = near.map((topic) => topic.q);

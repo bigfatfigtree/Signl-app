@@ -1519,6 +1519,19 @@ img.maggie-char-img { object-fit: cover; }
 #agent-fab img.maggie-char-img { width: 32px; height: 32px; border-radius: 50%; }
 .sig-ava-char { border-radius: 50%; overflow: hidden; background: none; box-shadow: 0 0 0 2px var(--mint, #A9E8C9); }
 .sig-ava-char img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Maggie Rebuild v1 (Jeff, 2026-11-07): she moves in the
+   conversation itself. Only the LIVE turn's avatar animates —
+   the newest Maggie turn in a thread (and the pending one
+   while she thinks) — so the chat feels alive without every
+   avatar on the page bobbing at once. Think sways (she is
+   working), talk chirps (she is speaking), idle bobs gently.
+   The artwork is Jeff's tile, moved by transform only. */
+.sig-thread .sig-turn.sig:last-child .sig-ava-char img,
+.sigbox-thread .sig-turn.sig:last-child .sig-ava-char img { animation: charBob 4.4s ease-in-out infinite; }
+.sig-thread .sig-turn.sig:last-child .sig-ava-char.sig-mood-think img,
+.sigbox-thread .sig-turn.sig:last-child .sig-ava-char.sig-mood-think img { animation: charSway 3.2s ease-in-out infinite; }
+.sig-thread .sig-turn.sig:last-child .sig-ava-char.sig-mood-talk img,
+.sigbox-thread .sig-turn.sig:last-child .sig-ava-char.sig-mood-talk img { animation: charChirp 1.8s ease-in-out infinite; }
 .sigbox-orb.maggie-char-head { overflow: hidden; }
 .maggie-char-head img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; animation: charBob 4.4s ease-in-out infinite; }
 .maggie-char-head.is-still img { animation: none; }
@@ -1540,7 +1553,7 @@ img.maggie-char-img { object-fit: cover; }
 @keyframes charChirp { 0%, 100% { transform: scale(1.07) translateY(0) rotate(0deg); } 30% { transform: scale(1.07) translateY(-4.5%) rotate(-1.2deg); } 62% { transform: scale(1.07) translateY(0) rotate(0deg); } }
 @keyframes charListen { 0%, 100% { transform: scale(1.09) rotate(-3deg) translateY(0); } 50% { transform: scale(1.09) rotate(-2.2deg) translateY(-1.6%); } }
 @media (prefers-reduced-motion: reduce) {
-  .maggie-char-head img, .maggie-char-hero .maggie-char-poster, .sig-celeb-media.maggie-char-celeb img { animation: none !important; }
+  .maggie-char-head img, .maggie-char-hero .maggie-char-poster, .sig-celeb-media.maggie-char-celeb img, .sig-ava-char img { animation: none !important; }
 }
 
 /* --- Messages: two-pane desktop rebuild (Jeff, 2026-11-07) ---
