@@ -28892,7 +28892,7 @@ async function astOpenSuggestionIdx(i) {
 // The Data view: the audit's datasets, rendered from
 // /admin/stats/data. Event-sourced numbers always carry the
 // day their capture began; nothing here backfills.
-const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "suggestions", "match_impressions", "campaign_prompts", "creator_steps", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "outreach", "outside_prospects", "events"];
+const AST_EXPORT_DATASETS = ["creators", "businesses", "offers", "applications", "bookings", "posts", "snapshots", "pageviews", "cityrequests", "suggestions", "match_impressions", "training_pairs", "campaign_prompts", "creator_steps", "discover_searches", "sig_asks", "deck_actions", "audience_updates", "profile_views", "audience_verifications", "outreach", "outside_prospects", "events"];
 async function astLoadData() {
   const host = document.getElementById("ast-data");
   if (!host) return;
@@ -29015,9 +29015,13 @@ async function astLoadData() {
   </table></div>` : `<p class="small muted">No daily snapshot yet. The first one freezes tonight; trends exist from the day capture starts, never before.</p>`}
   </div>`;
   // Exports.
+  const tr = d.training || null;
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Export the raw data</h3>
   <p class="small muted" style="margin:0 0 8px">The core datasets, straight from the records. Event datasets cover the last 30 days (add &amp;days= up to 90 in the link for more); record datasets are whole. Event export is scoped to the capture types and the full log because those are the datasets the ML training set joins on.</p>
-  ${AST_EXPORT_DATASETS.map((ds) => `<div class="kv"><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=${ds}&format=csv">CSV</a> · <a href="/api/admin/stats/data/export?dataset=${ds}&format=json">JSON</a></span></div>`).join("")}
+  ${tr ? `<p class="small" style="margin:0 0 8px"><strong>Match training pairs</strong> (the training_pairs dataset below): one row for every creator shown in a match list, with the score's ingredients and whether that creator was picked — and, where the visit settled, whether they delivered on time, late, or not at all. Right now the set holds <strong>${astFull(tr.rows || 0)} rows</strong> from <strong>${astFull(tr.impressions || 0)} match lists</strong>, <strong>${astFull(tr.pickedRows || 0)} of them picks</strong> across <strong>${astFull(tr.labeledBriefs || 0)} briefs</strong>. That is the learned ranker's food: it trains only when the offline evaluation harness (scripts/eval-ranker.mjs) says the volume is real, and its weights ship only if it beats the hand-set formula on held-out picks and Jeff approves. The JSONL format is the one the harness reads.</p>` : ""}
+  ${AST_EXPORT_DATASETS.map((ds) => ds === "training_pairs"
+    ? `<div class="kv"><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=training_pairs&format=jsonl">JSONL</a> · <a href="/api/admin/stats/data/export?dataset=training_pairs&format=json">JSON</a> · <a href="/api/admin/stats/data/export?dataset=training_pairs&format=csv">CSV</a></span></div>`
+    : `<div class="kv"><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=${ds}&format=csv">CSV</a> · <a href="/api/admin/stats/data/export?dataset=${ds}&format=json">JSON</a></span></div>`).join("")}
   </div>`;
   host.innerHTML = html;
 }

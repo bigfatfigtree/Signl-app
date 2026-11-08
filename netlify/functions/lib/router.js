@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents, listEventsForSubject } = require("./events");
+const training = require("./training");
 
 // Data captures (Data Audit 2026-11-07, Jeff's doctrine: everything
 // on the platform tells a data story): observations of demand —
@@ -786,6 +787,148 @@ async function suggestionsRaw() {
   return { all, watching: SUGGESTION_WATCHING, dismissed: {} };
 }
 
+// ---------- Suggestion outcome matching (Build -149; spec §5
+// "Outcome logging — the layer trains itself", the -146
+// remainder Phase 3 owned) ----------
+// When Jeff takes a suggestion's door, the act endpoint stamps
+// outcome.actedAt. This sweep closes the loop: within 7 days
+// it looks for the downstream fact the suggestion pointed at
+// and stamps outcome.status — achieved, not_yet (window still
+// open), or window_expired (window closed, fact never came).
+// A terminal stamp logs suggestion_outcome: the record of
+// which suggestions actually moved numbers is Phase 3's
+// suggestion-ranking data, and the reason this build exists.
+//
+// Kinds with a clean, checkable downstream signal:
+//   waiting    the review queue it named got smaller
+//   recruit    the market x category cell gained supply
+//   gate       the market's bookable creator count rose
+//   cooling    the named creator took an own action (E1's own
+//              definition: their asks / profile work / records)
+//   quiet      the starving offer drew an application, or the
+//              dormant business published its first offer
+//   curriculum asks in the role x topic cluster kept coming
+//              (>= 5 in the window) and the unanswered share
+//              fell below the receipt's share
+// Kinds that stay MANUAL — the sweep never stamps them,
+// because no clean 7-day signal exists and a stamped guess
+// would be worse than none: gap, funnel, backlog, pricing,
+// pricing_gap. Their outcomes remain Jeff's read.
+const SUGGESTION_OUTCOME_WINDOW_MS = 7 * 86400000;
+const SUGGESTION_OUTCOME_KINDS = new Set(["waiting", "recruit", "gate", "cooling", "quiet", "curriculum"]);
+
+async function suggestionOutcomeSignal(rec, ctx) {
+  const receipt = rec.receipt || {};
+  const actedMs = Date.parse(rec.outcome && rec.outcome.actedAt) || 0;
+  const after = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) && t > actedMs; };
+  if (rec.kind === "waiting") {
+    const pool = rec.id === "waiting:businesses" ? ctx.agg.businesses : ctx.agg.creators;
+    const pending = pool.filter((u) => u.status === "pending").length;
+    return { achieved: typeof receipt.count === "number" && pending < receipt.count, detail: `queue now ${pending}, was ${receipt.count}` };
+  }
+  if (rec.kind === "recruit") {
+    const cell = (ctx.agg.matrix[rec.market] || {})[rec.category] || { supply: 0 };
+    return { achieved: typeof receipt.supply === "number" && cell.supply > receipt.supply, detail: `${rec.market} ${rec.category} supply now ${cell.supply}, was ${receipt.supply}` };
+  }
+  if (rec.kind === "gate") {
+    let total = 0;
+    for (const u of ctx.agg.creators) {
+      if (u.status !== "approved" || !profileCompleteOf(u) || standingState(u) === "banned") continue;
+      if (normalizeMarketName(u.market) === rec.market) total += 1;
+    }
+    return { achieved: typeof receipt.creators === "number" && total > receipt.creators, detail: `${rec.market} bookable creators now ${total}, was ${receipt.creators}` };
+  }
+  if (rec.kind === "cooling") {
+    const cid = rec.subjectId;
+    if (!cid) return { achieved: false, detail: "no creator on the record" };
+    const ownEvent = ctx.recentEvents.some((e) => e.actorId === cid && Date.parse(e.ts || "") > actedMs
+      && (ctx.creatorActionTypes.has(e.type) || (e.type === "audience_updated" && !(e.data && String(e.data.source || "").startsWith("sync")))));
+    const ownRecord = ctx.applications.some((a) => a.creatorId === cid && after(a.createdAt))
+      || ctx.posts.some((p) => p.creatorId === cid && after(p.submittedAt || p.createdAt))
+      || ctx.bookings.some((b) => b.creatorId === cid && after(b.createdAt));
+    return { achieved: ownEvent || ownRecord, detail: ownEvent || ownRecord ? "the creator acted again inside the window" : "no own action yet" };
+  }
+  if (rec.kind === "quiet") {
+    if (String(rec.id).startsWith("quiet:offer:")) {
+      const n = ctx.applications.filter((a) => a.offerId === rec.subjectId).length;
+      return { achieved: n > 0, detail: `the offer now has ${n} application${n === 1 ? "" : "s"}` };
+    }
+    if (String(rec.id).startsWith("quiet:biz:")) {
+      const n = ctx.offers.filter((o) => o.businessId === rec.subjectId && after(o.createdAt)).length;
+      return { achieved: n > 0, detail: n > 0 ? "the business published an offer inside the window" : "still no offer" };
+    }
+    return { achieved: false, detail: "unrecognized quiet shape" };
+  }
+  if (rec.kind === "curriculum") {
+    // id curriculum:{role}:{topicKey} — topic keys carry no
+    // colons, so the last two segments are the cluster.
+    const segId = String(rec.id).split(":");
+    const role = segId[1] || "";
+    const topicKey = segId[2] || "";
+    const asks = ctx.recentEvents.filter((e) => e.type === "sig_ask" && (e.actorRole || "creator") === role && Date.parse(e.ts || "") > actedMs && (sigAskTopic(e.data && e.data.q) || {}).key === topicKey);
+    if (asks.length < 5) return { achieved: false, detail: `only ${asks.length} asks in the cluster inside the window — not enough evidence either way` };
+    const failed = asks.filter((e) => e.data && (e.data.source === "unavailable" || e.data.source === "convo")).length;
+    const share = failed / asks.length;
+    const baseShare = typeof receipt.asks === "number" && receipt.asks > 0 ? ((receipt.unanswered || 0) + (receipt.fallback || 0)) / receipt.asks : null;
+    return { achieved: baseShare !== null && share < baseShare, detail: `unanswered share ${Math.round(share * 100)}% of ${asks.length} asks, was ${baseShare === null ? "unknown" : Math.round(baseShare * 100) + "%"}` };
+  }
+  return { achieved: false, detail: "no signal defined" };
+}
+
+async function runSuggestionOutcomeSweep(opts = {}) {
+  const nowMs = Date.now();
+  const now = nowIso();
+  const rows = await store.list("suggestion:");
+  const acted = rows.map((r) => r.value).filter((s) => s && s.status === "acted" && s.outcome && s.outcome.actedAt
+    && SUGGESTION_OUTCOME_KINDS.has(s.kind)
+    && s.outcome.status !== "achieved" && s.outcome.status !== "window_expired");
+  const summary = { checked: 0, achieved: 0, expired: 0, notYet: 0, at: now };
+  if (!acted.length) return summary;
+  // One shared context per sweep — the same aggregations and
+  // record reads the candidates themselves compute from.
+  const daysBack = Math.max(8, Math.min(90, Math.ceil((nowMs - Math.min(...acted.map((s) => Date.parse(s.outcome.actedAt) || nowMs))) / 86400000) + 1));
+  const [agg, applications, bookings, posts, offers, recentEvents] = await Promise.all([
+    buildDataAggregates(), allApplications(), allBookings(), allPosts(), allOffers(), eventsInRange(daysBack, 90),
+  ]);
+  const creatorActionTypes = new Set(["sig_ask", "profile_updated", "profile_completed", "profile_photo_uploaded", "profile_photo_cover", "profile_photo_removed", "booking_code_issued"]);
+  const ctx = { agg, applications, bookings, posts, offers, recentEvents, creatorActionTypes };
+  for (const rec of acted) {
+    summary.checked += 1;
+    const actedMs = Date.parse(rec.outcome.actedAt) || nowMs;
+    const sig = await suggestionOutcomeSignal(rec, ctx);
+    const windowOver = nowMs - actedMs > SUGGESTION_OUTCOME_WINDOW_MS;
+    let status = null;
+    if (sig.achieved) status = "achieved";
+    else if (windowOver) status = "window_expired";
+    else status = "not_yet";
+    if (status === rec.outcome.status && !opts.force) { if (status === "not_yet") summary.notYet += 1; continue; }
+    rec.outcome = { ...rec.outcome, status, checkedAt: now, detail: sig.detail || null };
+    if (status === "achieved") { rec.outcome.achievedAt = now; summary.achieved += 1; }
+    if (status === "window_expired") summary.expired += 1;
+    if (status === "not_yet") summary.notYet += 1;
+    rec.updatedAt = now;
+    await store.set(`suggestion:${rec.id}`, rec);
+    if (status === "achieved" || status === "window_expired") {
+      await logEvent({ type: "suggestion_outcome", actorId: null, actorRole: "system", subjectId: rec.subjectId || null, market: rec.market || null, data: { id: rec.id, kind: rec.kind, type: rec.type || null, outcome: status, detail: sig.detail || null, daysToOutcome: Math.round(((nowMs - actedMs) / 86400000) * 10) / 10 } });
+    }
+  }
+  return summary;
+}
+
+// Opportunistic pass, snapshot-sweep discipline: an in-memory
+// memo plus a durable last-run stamp, at most once per 6
+// hours, best-effort — it must never break the request it
+// rides on.
+let suggestionOutcomeMemoAt = 0;
+async function maybeRunSuggestionOutcomeSweep() {
+  if (Date.now() - suggestionOutcomeMemoAt < 10 * 60 * 1000) return;
+  suggestionOutcomeMemoAt = Date.now();
+  const cfg = await store.get("config:suggestionOutcomeSweep");
+  if (cfg && cfg.lastRunAt && Date.now() - Date.parse(cfg.lastRunAt) < 6 * 3600000) return;
+  const summary = await runSuggestionOutcomeSweep();
+  await store.set("config:suggestionOutcomeSweep", { lastRunAt: nowIso(), ...summary });
+}
+
 // ---------- Outside joins (Build -147; decision-layer spec
 // 2026-11-08 §2 + §4 Phase 2) ----------
 // The streams outside the app — the Gmail-lane sent map, the
@@ -1093,6 +1236,31 @@ function formFieldsFromNetlify(formType, data) {
   return { city: pick("city"), email: pick("email").toLowerCase(), businessName: pick("business_name", "name") };
 }
 
+// ---------- Training pairs (Build -149, Phase 3 readiness) ---
+// The learned ranker's food: every match impression's shown
+// creators joined to their picks and deliveries, built by
+// lib/training.js (pure, deterministic, re-runnable). The walk
+// is the captureSince pattern — chunked over the key list,
+// bounded — because impressions are keyed by day and a range
+// read would silently cap the training set at 90 days.
+async function allMatchImpressions() {
+  const keys = await store.listKeys("event:");
+  const out = [];
+  const CHUNK = 400;
+  for (let i = 0; i < keys.length && i < 40000; i += CHUNK) {
+    const rows = await store.getMany(keys.slice(i, i + CHUNK));
+    for (const r of rows) if (r.value && r.value.type === "match_impression") out.push(r.value);
+  }
+  return out;
+}
+
+async function buildTrainingPairs() {
+  const [impressions, applications, bookings, posts, offers] = await Promise.all([
+    allMatchImpressions(), allApplications(), allBookings(), allPosts(), allOffers(),
+  ]);
+  return training.buildTrainingRows({ impressions, applications, bookings, posts, offers });
+}
+
 // Raw export datasets for the Admin Data view. User rows pass
 // through a safe field mapper (never the raw record: no password
 // hashes, no tokens); event rows keep the log's own shape with
@@ -1130,9 +1298,19 @@ async function buildExportDataset(dataset, days) {
   if (dataset === "bookings") return flat((await allBookings()).map((b) => ({ id: b.id, offerId: b.offerId || null, businessId: b.businessId || null, creatorId: b.creatorId || null, market: b.market || null, status: b.status || null, createdAt: b.createdAt || null, redeemedAt: b.redeemedAt || null })));
   if (dataset === "posts") return flat((await allPosts()).map((p) => ({ id: p.id, bookingId: p.bookingId || null, creatorId: p.creatorId || null, url: p.url || null, submittedAt: p.submittedAt || p.createdAt || null, onTime: !!p.onTime })));
   if (dataset === "snapshots") return flat((await store.list("snapshot:")).map((r) => r.value).filter(Boolean));
-  if (dataset === "suggestions") return flat((await store.list("suggestion:")).map((r) => r.value).filter(Boolean).map((s) => ({ id: s.id, type: s.type || null, kind: s.kind || null, headline: s.headline || null, market: s.market || null, category: s.category || null, status: s.status || null, score: s.score != null ? s.score : null, receipt: s.receipt || null, createdAt: s.createdAt || null, shownAt: s.shownAt || null, actedAt: s.actedAt || null, dismissedAt: s.dismissedAt || null, timesSurfaced: s.timesSurfaced || 0 })));
+  if (dataset === "suggestions") return flat((await store.list("suggestion:")).map((r) => r.value).filter(Boolean).map((s) => ({ id: s.id, type: s.type || null, kind: s.kind || null, headline: s.headline || null, market: s.market || null, category: s.category || null, status: s.status || null, score: s.score != null ? s.score : null, receipt: s.receipt || null, createdAt: s.createdAt || null, shownAt: s.shownAt || null, actedAt: s.actedAt || null, dismissedAt: s.dismissedAt || null, timesSurfaced: s.timesSurfaced || 0, outcome: s.outcome || null })));
   if (dataset === "pageviews") return flat((await store.list("pageview:")).map((r) => r.value).filter(Boolean).map((r) => ({ date: r.date, userId: r.userId, views: r.views || 0, claimViews: r.claimViews || 0, firstViewAt: r.firstViewAt || null, lastViewAt: r.lastViewAt || null })));
   if (dataset === "cityrequests") return flat((await store.list("cityrequest:")).map((r) => r.value).filter(Boolean).map((r) => ({ city: r.city || null, region: r.region || r.country || r.state || "", handle: r.handle || null, email: r.email || null, createdAt: r.createdAt || null })));
+  if (dataset === "training_pairs") {
+    // Phase 3 readiness (Build -149): the whole joined training
+    // set, not day-scoped — a ranker trains on all of history,
+    // and the honest row count is the point. Rows are flat
+    // except `features` (the score's ingredient vector), which
+    // CSV renders as JSON in its cell; JSON / JSONL are the
+    // formats the eval harness reads.
+    const built = await buildTrainingPairs();
+    return flat(built.rows);
+  }
   if (dataset === "outside_prospects") return flat((await store.list("outprospect:")).map((r) => r.value).filter(Boolean).map((p) => ({ handle: p.handle || null, name: p.name || null, email: p.email || null, market: p.market || null, markets: (p.markets || []).join("; "), category: p.category || null, followers: p.followers != null ? p.followers : null, verifiedAt: p.verifiedAt || null, contacted: !!p.contacted, firstContactAt: p.firstContactAt || null, contactLane: p.contactLane || null, replyOutcome: p.replyOutcome || null, bounceClass: p.bounceClass || null, joinedUserId: p.joinedUserId || null, joinedOn: p.joinedOn || null, joinedAt: p.joinedAt || null, sources: (p.sources || []).join("; ") })));
   if (Object.prototype.hasOwnProperty.call(EXPORT_EVENT_TYPES, dataset)) {
     const types = EXPORT_EVENT_TYPES[dataset];
@@ -21518,6 +21696,10 @@ async function route(event) {
     // after. The scheduled function + admin endpoint below are
     // the explicit triggers, exactly like the other sweeps.
     (async () => { try { await maybeRunSnapshotSweep(); } catch (e) { /* snapshot is best-effort on the request path */ } })(),
+    // Suggestion outcome matching (Build -149): closes the
+    // loop on acted suggestions, throttled to one pass per 6
+    // hours by its own durable stamp.
+    (async () => { try { await maybeRunSuggestionOutcomeSweep(); } catch (e) { /* outcome matching is best-effort on the request path */ } })(),
   ]);
   const ctx = await getAuthUser(event);
   const user = ctx.user;
@@ -26651,11 +26833,17 @@ async function route(event) {
     // was never captured.
     if (method === "GET" && seg[1] === "stats" && seg[2] === "data" && seg[3] === "export") {
       const dataset = String(query.dataset || "");
-      const format = String(query.format || "csv") === "json" ? "json" : "csv";
+      const formatRaw = String(query.format || "csv");
+      const format = formatRaw === "json" ? "json" : formatRaw === "jsonl" ? "jsonl" : "csv";
       const daysRaw = Number(query.days);
       const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.max(1, Math.min(90, Math.floor(daysRaw))) : 30;
       const built = await buildExportDataset(dataset, days);
       if (!built) return err(404, "Unknown dataset");
+      if (format === "jsonl") {
+        // One JSON object per line — the shape
+        // scripts/eval-ranker.mjs reads directly.
+        return { statusCode: 200, headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Content-Disposition": `attachment; filename="magpie-${dataset}.jsonl"` }, body: built.rows.map((r) => JSON.stringify(r)).join("\n") + (built.rows.length ? "\n" : "") };
+      }
       if (format === "json") {
         return { statusCode: 200, headers: { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": `attachment; filename="magpie-${dataset}.json"` }, body: JSON.stringify(built.rows, null, 2) };
       }
@@ -26693,6 +26881,7 @@ async function route(event) {
         snapshots,
         outside: await buildOutsideAggregates(),
         prompting: await buildPromptingAdmin(rangeDays),
+        training: (await buildTrainingPairs()).summary,
       });
     }
     if (method === "GET" && seg[1] === "suggestions" && seg.length === 2) {
@@ -26765,6 +26954,19 @@ async function route(event) {
       await store.set(`suggestion:${id}`, rec);
       await logEvent({ type: "suggestion_acted", actorId: user.id, actorRole: "admin", subjectId: rec.subjectId || null, market: rec.market || null, data: { id, kind: rec.kind, route: rec.outcome.route } });
       return json(200, { ok: true });
+    }
+    if (method === "POST" && seg[1] === "suggestions" && seg[2] === "outcomes" && seg[3] === "sweep" && seg.length === 4) {
+      // Suggestion outcome sweep trigger (Build -149). Same
+      // auth discipline as the snapshot sweep: the Netlify
+      // scheduled function POSTs with the x-signl-sweep-token
+      // header when SIGNL_SWEEP_TOKEN is set; without a
+      // matching token, only an admin session may trigger it.
+      const token = process.env.SIGNL_SWEEP_TOKEN;
+      const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+      if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+      const summary = await runSuggestionOutcomeSweep();
+      try { await store.set("config:suggestionOutcomeSweep", { lastRunAt: nowIso(), ...summary }); } catch (e) { /* stamp is bookkeeping */ }
+      return json(200, { ok: true, sweep: summary });
     }
 
     if (method === "GET" && seg[1] === "stats") {
