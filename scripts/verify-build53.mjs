@@ -244,8 +244,15 @@ const allLabels = railLabels;
 // Team to the rail (Campaign and Marketing coexist per the
 // spec's approved default), superseding the thirteen-destination
 // pin the same way Build -70 superseded the ten before it.
-check("rail: NINETEEN admin destinations in Jeff's order (Home first by Build -137; six rooms added by Build -138)",
-  JSON.stringify(allLabels) === JSON.stringify(["Home", "Applications", "Requests", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "Event Log", "Compliance", "Campaign", "Marketing", "Learn", "Social", "Automations", "Templates", "Stats", "Team", "Sig"]),
+// Pin updated at Build -152 (2026-11-08): Jeff ordered an
+// Admin Messages room (his own broadcast composer), added
+// after Requests, superseding the nineteen-destination pin
+// the same way. The same edit corrects the pin's last entry:
+// the rail label has read "Maggie" since the Sig rename (the
+// tab id stays 'Sig'), which is why this check failed on the
+// pre-152 tree too.
+check("rail: TWENTY admin destinations in Jeff's order (Home first by Build -137; six rooms added by Build -138; Messages by Build -152)",
+  JSON.stringify(allLabels) === JSON.stringify(["Home", "Applications", "Requests", "Messages", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "Event Log", "Compliance", "Campaign", "Marketing", "Learn", "Social", "Automations", "Templates", "Stats", "Team", "Maggie"]),
   allLabels.join(" | "));
 
 const renderAdminSrc = win("function renderAdmin() {", "function adminSigItems(");

@@ -2658,6 +2658,7 @@ function everythingGroups125() {
       { title: "Review & people", rows: [
         R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
+        R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages"),
         R("building", "Partners", "Media partners and their deals", "Partners"),
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
         R("users", "Outreach", "Campaigns and sends", "Outreach"),
@@ -3663,6 +3664,7 @@ function adminTabsAllowed138() {
     "Social": ["social.view", "social.draft", "social.approve"],
     "Automations": ["connections.view", "automations.manage"],
     "Templates": ["templates.view", "templates.edit"], "Team": ["team.manage"],
+    "Messages": ["messages.send"],
   };
   return (label) => { const need = ROOMS[label]; if (!need) return true; return need.some(has); };
 }
@@ -3689,6 +3691,10 @@ function railItems() {
     add("a", "home", "Home", "return go('dashboard','Home')", t === "Home" || !t);
     add("a", "inbox", "Applications", "return go('dashboard','Applications')", t === "Applications");
     add("a", "requests", "Requests", "return go('dashboard','Requests')", t === "Requests");
+    // Build -152: the Messages room — Jeff's own broadcast
+    // composer (segments or named people, into their in-app
+    // Magpie-team threads), with the sent history and replies.
+    add("a", "chat", "Messages", "return go('dashboard','Messages')", t === "Messages");
     add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
     add("a", "users", "Creators", "return go('dashboard','Creators')", t === "Creators");
     add("a", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
@@ -24948,7 +24954,7 @@ function threadItemsHtml() {
           <div class="thread-main">
             <div class="thread-top"><strong>${esc(t.otherBusinessName || t.otherName)}</strong>${t.platform ? ` <span class="badge ok">Magpie team</span>` : ""} ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}</div>
             ${threadContextFor(t.otherId) ? `<div class="small thread-ctx">${esc(threadContextFor(t.otherId))}</div>` : ""}
-            <div class="small ${t.unread ? "thread-prev-unread" : "muted"}">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
+            <div class="small ${t.unread ? "thread-prev-unread" : "muted"}">${esc((t.lastMessage.title || t.lastMessage.body || "").slice(0, 90))}</div>
           </div>
           <button type="button" class="thread-menu-btn" onclick="return msgThreadMenu(event, '${t.otherId}')" aria-label="Conversation options" title="Options">${bnIcon("more")}</button>
         </div>`).join("")}</div>`;
@@ -25138,6 +25144,7 @@ async function loadConversation(otherId) {
         <div class="msg-system">${esc(m.body)}</div>` : `
         <div class="msg ${m.fromId === state.user.id ? "mine" : ""}${m.platform ? " platform-msg" : ""}">
           <div class="meta">${m.fromId === state.user.id ? "You" : (m.fromId === SIGNL_TEAM_PEER ? "Magpie" : "Them")} &middot; ${fmtDate(m.createdAt)}</div>
+          ${m.title ? `<div class="msg-title">${esc(m.title)}</div>` : ""}
           ${esc(m.body)}
         </div>`).join("") || '<p class="muted">No messages yet. Say hello.</p>'}</div>
       <form onsubmit="return sendMessage(event, '${otherId}')" class="mt msg-composer">
@@ -25460,6 +25467,335 @@ async function adminMsgSendReply(e) {
   return false;
 }
 
+// ---------- admin: Messages room (Build -152) ----------
+// Jeff's own broadcast composer: pick who gets it (everyone,
+// creators, businesses — narrowed by market and creator tier —
+// or specific people picked by name), see the real count before
+// sending, confirm once more, and it lands in each person's
+// Magpie-team thread. Sent messages and their replies live
+// below the composer. The server resolves the audience the
+// same way for the count, the confirmation and the send, so
+// the number confirmed is the number that sends.
+let adminBc152 = {
+  meta: null, mode: "all", markets: [], tiers: [], people: [], peopleResults: [],
+  title: "", body: "", preview: null, confirming: false, sending: false,
+  sendError: "", result: "", broadcasts: null, openId: null, detail: null,
+};
+let bc152PreviewTimer = null;
+
+function bc152Spec() {
+  return { mode: adminBc152.mode, markets: adminBc152.markets.slice(), tiers: adminBc152.tiers.slice(), userIds: adminBc152.people.map((p) => p.id) };
+}
+
+async function loadAdminMessages152() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `
+    <h3 style="margin-top:0">Messages</h3>
+    <p class="muted small" style="max-width:640px">Send a message to people in the app. It lands in their Messages inbox, from the Magpie team — never from a person. They can reply right in the thread, and their replies show under the message below.</p>
+    <div id="bc152-compose"><p class="muted">Loading...</p></div>
+    <div id="bc152-history" class="mt"></div>`;
+  try {
+    if (!adminBc152.meta) adminBc152.meta = await api("GET", "/admin/broadcasts/meta");
+    renderBc152Compose();
+    bc152RefreshPreview();
+    await loadBc152History();
+  } catch (err) {
+    const host = document.getElementById("bc152-compose");
+    if (host) host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+function bc152ComposeHtml() {
+  const meta = adminBc152.meta || { markets: [], tiers: [] };
+  const modeChip = (v, label) => `<button type="button" class="chip${adminBc152.mode === v ? " on" : ""}" onclick="return bc152SetMode('${v}')">${label}</button>`;
+  const marketChip = (m) => `<button type="button" class="chip${adminBc152.markets.includes(m) ? " on" : ""}" onclick="return bc152ToggleMarket('${esc(m)}')">${esc(m)}</button>`;
+  const tierChip = (t) => `<button type="button" class="chip${adminBc152.tiers.includes(t) ? " on" : ""}" onclick="return bc152ToggleTier('${t}')">${t}</button>`;
+  const pv = adminBc152.preview;
+  const countLine = pv
+    ? `<strong>${fmtNum(pv.count)} ${pv.count === 1 ? "person" : "people"}</strong> will get this message. <span class="muted">${esc(pv.audienceLabel)}${pv.names && pv.names.length ? ` — ${pv.names.map(esc).join(", ")}${pv.more ? ` and ${pv.more} more` : ""}` : ""}</span>`
+    : `<span class="muted">Counting who matches...</span>`;
+  let audience = "";
+  if (adminBc152.mode === "people") {
+    audience = `
+    <div class="field"><label>Find people by name or handle</label>
+      <input id="bc152-q" type="search" placeholder="Start typing a name or @handle..." oninput="bc152PeopleInput(this.value)" autocomplete="off">
+      <div id="bc152-people-results"></div>
+    </div>
+    <div id="bc152-people-picked">${bc152PickedHtml()}</div>`;
+  } else {
+    audience = `
+    <div class="field"><label>Markets <span class="muted">(optional — leave empty for everywhere)</span></label>
+      <div class="bc152-markets">${meta.markets.map(marketChip).join("")}</div>
+      <p class="small muted" style="margin:4px 0 0">Creators count in every market where their audience is listed, not just their home market.</p>
+    </div>
+    ${adminBc152.mode !== "businesses" ? `<div class="field"><label>Creator tiers <span class="muted">(optional — only narrows creators)</span></label><div class="chip-row">${meta.tiers.map(tierChip).join("")}</div></div>` : ""}`;
+  }
+  const confirmBlock = adminBc152.confirming ? `
+    <div class="bc152-confirm">
+      <p style="margin:0 0 6px"><strong>Send this message?</strong></p>
+      <p class="small" style="margin:0 0 6px">To: <strong>${pv ? esc(pv.audienceLabel) : ""}</strong> — ${pv ? fmtNum(pv.count) : 0} ${pv && pv.count === 1 ? "person" : "people"}. It lands in their Messages inbox in the app. There is no undo.</p>
+      <p class="small" style="margin:0 0 10px"><strong>${esc(adminBc152.title)}</strong><br>${esc(adminBc152.body).replaceAll("\n", "<br>")}</p>
+      ${adminBc152.sendError ? `<div class="error-box" style="margin-bottom:10px">${esc(adminBc152.sendError)}</div>` : ""}
+      <button type="button" class="btn" ${adminBc152.sending ? "disabled" : ""} onclick="return bc152Send(this)">${adminBc152.sending ? "Sending..." : `Send to ${pv ? fmtNum(pv.count) : 0} ${pv && pv.count === 1 ? "person" : "people"}`}</button>
+      <button type="button" class="btn ghost" onclick="return bc152CancelConfirm()">Go back</button>
+    </div>` : "";
+  return `
+  <div class="panel">
+    <h4 style="margin-top:0">Send a message</h4>
+    <div class="field"><label>Who gets it?</label>
+      <div class="chip-row">${modeChip("all", "Everyone")}${modeChip("creators", "Creators")}${modeChip("businesses", "Businesses")}${modeChip("people", "Specific people")}</div>
+    </div>
+    ${audience}
+    <p id="bc152-count" class="small" style="margin:10px 0">${countLine}</p>
+    <div class="field"><label>Title <span class="muted">(the heading they see on the message)</span></label>
+      <input id="bc152-title" type="text" maxlength="120" placeholder="e.g. Nashville opens soon" value="${esc(adminBc152.title)}" oninput="adminBc152.title = this.value">
+    </div>
+    <div class="field"><label>Message</label>
+      <textarea id="bc152-body" rows="5" placeholder="Write it the way you would say it..." oninput="adminBc152.body = this.value">${esc(adminBc152.body)}</textarea>
+    </div>
+    ${adminBc152.result ? `<p class="small" style="color:var(--ok, #1d7a3a)"><strong>${esc(adminBc152.result)}</strong></p>` : ""}
+    ${confirmBlock}
+    ${adminBc152.confirming ? "" : `<button type="button" class="btn" onclick="return bc152Review()">Review and send</button>`}
+  </div>`;
+}
+
+function bc152PickedHtml() {
+  if (!adminBc152.people.length) return `<p class="small muted">Nobody picked yet. Search above and tap a name to add them.</p>`;
+  return `<div class="chip-row">${adminBc152.people.map((p) => `<span class="chip on">${esc(p.label)}${p.tester ? " (test account)" : ""} <button type="button" class="bc152-x" onclick="return bc152UnpickPerson('${p.id}')" aria-label="Remove">×</button></span>`).join("")}</div>`;
+}
+
+function renderBc152Compose() {
+  const host = document.getElementById("bc152-compose");
+  if (host) host.innerHTML = bc152ComposeHtml();
+}
+
+function bc152SetMode(v) {
+  adminBc152.mode = v;
+  adminBc152.confirming = false;
+  adminBc152.sendError = "";
+  renderBc152Compose();
+  bc152RefreshPreview();
+  return false;
+}
+function bc152ToggleMarket(m) {
+  const i = adminBc152.markets.indexOf(m);
+  if (i >= 0) adminBc152.markets.splice(i, 1); else adminBc152.markets.push(m);
+  adminBc152.confirming = false;
+  renderBc152Compose();
+  bc152RefreshPreview();
+  return false;
+}
+function bc152ToggleTier(t) {
+  const i = adminBc152.tiers.indexOf(t);
+  if (i >= 0) adminBc152.tiers.splice(i, 1); else adminBc152.tiers.push(t);
+  adminBc152.confirming = false;
+  renderBc152Compose();
+  bc152RefreshPreview();
+  return false;
+}
+
+let bc152SearchTimer = null;
+function bc152PeopleInput(v) {
+  clearTimeout(bc152SearchTimer);
+  const q = String(v || "").trim();
+  const host = document.getElementById("bc152-people-results");
+  if (q.length < 2) { if (host) host.innerHTML = ""; return; }
+  bc152SearchTimer = setTimeout(async () => {
+    try {
+      const data = await api("GET", "/admin/broadcasts/people?q=" + encodeURIComponent(q));
+      adminBc152.peopleResults = data.people || [];
+      const h = document.getElementById("bc152-people-results");
+      if (!h) return;
+      h.innerHTML = adminBc152.peopleResults.length ? adminBc152.peopleResults.map((p) => `
+        <div class="admin-msg-item" onclick="bc152PickPerson('${p.id}')">
+          <strong>${esc(p.label)}</strong> <span class="muted small">${p.role === "creator" ? "Creator" : "Business"}${p.market ? ` &middot; ${esc(p.market)}` : ""}${p.tier ? ` &middot; ${esc(p.tier)}` : ""}${p.tester ? ` &middot; test account` : ""}</span>
+        </div>`).join("") : `<p class="small muted">Nobody with an active account matches that. Only people with active accounts can be messaged.</p>`;
+    } catch (err) {
+      const h = document.getElementById("bc152-people-results");
+      if (h) h.innerHTML = `<p class="small" style="color:#b3261e">${esc(err.message)}</p>`;
+    }
+  }, 250);
+  return;
+}
+function bc152PickPerson(id) {
+  const p = (adminBc152.peopleResults || []).find((x) => x.id === id);
+  if (p && !adminBc152.people.some((x) => x.id === id)) adminBc152.people.push(p);
+  const picked = document.getElementById("bc152-people-picked");
+  if (picked) picked.innerHTML = bc152PickedHtml();
+  bc152RefreshPreview();
+  return false;
+}
+function bc152UnpickPerson(id) {
+  adminBc152.people = adminBc152.people.filter((x) => x.id !== id);
+  const picked = document.getElementById("bc152-people-picked");
+  if (picked) picked.innerHTML = bc152PickedHtml();
+  bc152RefreshPreview();
+  return false;
+}
+
+async function bc152FetchPreview() {
+  const data = await api("POST", "/admin/broadcasts/preview", { spec: bc152Spec() });
+  adminBc152.preview = data;
+  return data;
+}
+function bc152RefreshPreview() {
+  clearTimeout(bc152PreviewTimer);
+  bc152PreviewTimer = setTimeout(async () => {
+    try {
+      await bc152FetchPreview();
+      const line = document.getElementById("bc152-count");
+      if (line && adminBc152.preview) {
+        const pv = adminBc152.preview;
+        line.innerHTML = `<strong>${fmtNum(pv.count)} ${pv.count === 1 ? "person" : "people"}</strong> will get this message. <span class="muted">${esc(pv.audienceLabel)}${pv.names && pv.names.length ? ` — ${pv.names.map(esc).join(", ")}${pv.more ? ` and ${pv.more} more` : ""}` : ""}</span>`;
+      }
+      if (adminBc152.confirming) renderBc152Compose();
+    } catch (err) {
+      const line = document.getElementById("bc152-count");
+      if (line) line.innerHTML = `<span style="color:#b3261e">${esc(err.message)}</span>`;
+    }
+  }, 300);
+}
+
+async function bc152Review() {
+  adminBc152.result = "";
+  if (!adminBc152.title.trim()) { alert("Give the message a title first."); return false; }
+  if (!adminBc152.body.trim()) { alert("Write the message first."); return false; }
+  try {
+    const pv = await bc152FetchPreview();
+    if (!pv.count) { alert("Nobody matches that audience. Widen it and try again."); return false; }
+    adminBc152.confirming = true;
+    adminBc152.sendError = "";
+    renderBc152Compose();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+function bc152CancelConfirm() {
+  adminBc152.confirming = false;
+  adminBc152.sendError = "";
+  renderBc152Compose();
+  return false;
+}
+async function bc152Send(btn) {
+  if (adminBc152.sending) return false;
+  adminBc152.sending = true;
+  adminBc152.sendError = "";
+  renderBc152Compose();
+  try {
+    const data = await api("POST", "/admin/broadcasts", { title: adminBc152.title.trim(), body: adminBc152.body.trim(), spec: bc152Spec() });
+    const b = data.broadcast || {};
+    adminBc152.result = `Sent "${b.title || adminBc152.title}" to ${fmtNum(b.recipientCount || 0)} ${(b.recipientCount || 0) === 1 ? "person" : "people"}.`;
+    adminBc152.title = "";
+    adminBc152.body = "";
+    adminBc152.confirming = false;
+    adminBc152.sending = false;
+    renderBc152Compose();
+    bc152RefreshPreview();
+    await loadBc152History();
+  } catch (err) {
+    adminBc152.sending = false;
+    adminBc152.sendError = err.message;
+    renderBc152Compose();
+  }
+  return false;
+}
+
+async function loadBc152History() {
+  const host = document.getElementById("bc152-history");
+  if (!host) return;
+  try {
+    getCache.delete("/admin/broadcasts");
+    const data = await api("GET", "/admin/broadcasts");
+    adminBc152.broadcasts = data.broadcasts || [];
+    renderBc152History();
+  } catch (err) {
+    host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+function renderBc152History() {
+  const host = document.getElementById("bc152-history");
+  if (!host) return;
+  if (adminBc152.openId && adminBc152.detail) { host.innerHTML = bc152DetailHtml(); return; }
+  const rows = adminBc152.broadcasts || [];
+  host.innerHTML = `
+  <div class="panel">
+    <h4 style="margin-top:0">Sent messages</h4>
+    ${rows.length ? rows.map((b) => `
+      <div class="admin-msg-item" onclick="bc152OpenBroadcast('${b.id}')">
+        <strong>${esc(b.title)}</strong> <span class="muted small">${fmtDate(b.createdAt)} &middot; sent by ${esc(b.senderName)}</span>
+        <div class="small muted">${esc(b.audienceLabel)} &middot; ${fmtNum(b.recipientCount)} ${b.recipientCount === 1 ? "person" : "people"} &middot; ${fmtNum(b.replyCount)} ${b.replyCount === 1 ? "reply" : "replies"}</div>
+      </div>`).join("") : `<p class="muted small">Nothing sent yet. The first message you send shows up here, with its replies.</p>`}
+  </div>`;
+}
+
+function bc152DetailHtml() {
+  const d = adminBc152.detail;
+  const b = d.broadcast;
+  const threads = (d.threads || []).map((t) => `
+    <div class="bc152-thread">
+      <p style="margin:0 0 6px"><strong>${esc(t.user.label)}</strong> <span class="muted small">${t.user.role === "creator" ? "Creator" : t.user.role === "business" ? "Business" : ""}${t.user.market ? ` &middot; ${esc(t.user.market)}` : ""}</span></p>
+      ${(t.messages || []).map((m) => `
+        <div class="msg ${m.fromId === SIGNL_TEAM_PEER ? "platform-msg" : ""}">
+          <div class="meta">${m.fromId === SIGNL_TEAM_PEER ? "Magpie" : esc(t.user.label)} &middot; ${fmtDate(m.createdAt)}</div>
+          ${m.title ? `<div class="msg-title">${esc(m.title)}</div>` : ""}
+          ${esc(m.body)}
+        </div>`).join("") || '<p class="muted small">No messages in this thread yet.</p>'}
+      <form onsubmit="return bc152SendThreadReply(event, '${b.id}', '${t.user.id}')" class="mt">
+        <div class="field"><textarea id="bc152-reply-${t.user.id}" rows="2" placeholder="Reply as Magpie..."></textarea></div>
+        <button class="btn small-btn" type="submit">Send reply</button>
+      </form>
+    </div>`).join("");
+  return `
+  <div class="panel">
+    <button type="button" class="btn small-btn ghost" onclick="return bc152CloseBroadcast()">← All sent messages</button>
+    <h4 style="margin:10px 0 4px">${esc(b.title)}</h4>
+    <p class="small muted" style="margin:0 0 8px">${fmtDate(b.createdAt)} &middot; sent by ${esc(b.senderName)} &middot; ${esc(b.audienceLabel)} &middot; ${fmtNum(b.recipientCount)} ${b.recipientCount === 1 ? "person" : "people"} &middot; ${fmtNum(b.replyCount)} ${b.replyCount === 1 ? "reply" : "replies"}</p>
+    <div class="msg platform-msg"><div class="meta">Magpie</div><div class="msg-title">${esc(b.title)}</div>${esc(b.body)}</div>
+    <h4 class="mt">Replies, person by person</h4>
+    ${threads || '<p class="muted small">No recipients on file.</p>'}
+  </div>`;
+}
+
+async function bc152OpenBroadcast(id) {
+  adminBc152.openId = id;
+  try {
+    getCache.delete("/admin/broadcasts/" + id);
+    adminBc152.detail = await api("GET", "/admin/broadcasts/" + encodeURIComponent(id));
+    renderBc152History();
+    const host = document.getElementById("bc152-history");
+    if (host) host.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (err) { alert(err.message); adminBc152.openId = null; }
+  return false;
+}
+function bc152CloseBroadcast() {
+  adminBc152.openId = null;
+  adminBc152.detail = null;
+  loadBc152History();
+  return false;
+}
+async function bc152SendThreadReply(e, broadcastId, userId) {
+  e.preventDefault();
+  const ta = document.getElementById("bc152-reply-" + userId);
+  const body = ta ? ta.value.trim() : "";
+  if (!body) return false;
+  try {
+    await api("POST", "/admin/broadcasts/" + encodeURIComponent(broadcastId) + "/reply", { userId, body });
+    await bc152OpenBroadcast(broadcastId);
+    await loadBc152HistoryCountsOnly152();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+// After a reply inside the detail view, refresh the history
+// counts quietly in the background (the detail stays open).
+async function loadBc152HistoryCountsOnly152() {
+  try {
+    getCache.delete("/admin/broadcasts");
+    const data = await api("GET", "/admin/broadcasts");
+    adminBc152.broadcasts = data.broadcasts || [];
+  } catch (err) { /* counts refresh is best-effort */ }
+}
+
 // ---------- admin ----------
 
 // Build -137: the Admin Home — Sig hero (her attention
@@ -25625,6 +25961,8 @@ function renderAdmin() {
   if (tab === "Automations") loadAdminAutomations138();
   if (tab === "Templates") loadAdminTemplates138();
   if (tab === "Team") loadAdminTeam138();
+  // Build -152 room.
+  if (tab === "Messages") loadAdminMessages152();
 }
 
 // Admin "Your account" (Build -126): Jeff had no Settings

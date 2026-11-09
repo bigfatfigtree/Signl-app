@@ -1653,3 +1653,13 @@ img.maggie-char-img { object-fit: cover; }
   .kv.kv-wrap { flex-wrap: wrap; }
   .kv.kv-wrap > b { flex-basis: 100%; text-align: left; }
 }
+
+/* Build -152: Admin Messages room + titled team messages.
+   A broadcast's title rides as the heading inside the message
+   bubble; the composer's market picker is a scrollable chip
+   box (45 markets never fit one row of chips). */
+.msg-title { font-weight: 700; margin-bottom: 2px; }
+.bc152-markets { display: flex; flex-wrap: wrap; gap: 6px; max-height: 132px; overflow-y: auto; padding: 2px; }
+.bc152-confirm { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 12px 0; background: var(--panel-2); }
+.bc152-thread { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.bc152-x { border: 0; background: transparent; color: inherit; font-size: 1rem; line-height: 1; cursor: pointer; padding: 0 0 0 4px; }

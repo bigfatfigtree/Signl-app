@@ -6704,6 +6704,161 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   return { message: msg, email: emailResult };
 }
 
+// ---------- admin broadcasts (Build -152) ----------
+// The Admin Messages room: an admin writes ONE message — a
+// title plus a body — and it lands in every recipient's own
+// Magpie-team thread, the same thread the Requests room and the
+// Finish Engine already use. Creators AND businesses can be
+// reached (the Build -40 rail was creators only), by segment —
+// everyone, creators, businesses, narrowed by market and by
+// creator tier — or by naming specific people. Recipients reply
+// in the thread like any other message; a reply is stamped with
+// the newest broadcast in its thread so the room can group
+// replies under the message that prompted them.
+//
+// Deliberately NOT the marketing machine: no draft/approve
+// pipeline, no email lane (the hello@ suspension of 2026-11-08
+// is the lesson — in-app only), and no tester exclusion. This
+// is the founder's own direct line, the audience count is
+// computed live and confirmed before the send, and tester
+// accounts are tagged in the people picker rather than silently
+// dropped, so a test send to test accounts is possible without
+// ever touching a real person's inbox by accident.
+const BROADCAST_TITLE_MAX = 120;
+const BROADCAST_TIERS = ["Neighbors", "Locals", "Headliners"];
+
+function broadcastSpecClean152(raw) {
+  const b = raw && typeof raw === "object" ? raw : {};
+  const mode = ["all", "creators", "businesses", "people"].includes(b.mode) ? b.mode : null;
+  if (!mode) return null;
+  const marketNames = new Set(MARKETS.map((m) => m.name));
+  const markets = [...new Set((Array.isArray(b.markets) ? b.markets : []).map((m) => normalizeMarketName(String(m || ""))).filter((m) => marketNames.has(m)))];
+  const tiers = [...new Set((Array.isArray(b.tiers) ? b.tiers : []).map((t) => normalizeTierBand(String(t || ""))).filter((t) => BROADCAST_TIERS.includes(t)))];
+  const userIds = [...new Set((Array.isArray(b.userIds) ? b.userIds : []).map((x) => String(x || "")).filter(Boolean))].slice(0, 500);
+  return { mode, markets, tiers, userIds };
+}
+
+function broadcastPersonLabel152(u) {
+  if (!u) return "Someone";
+  if (u.role === "business") return (u.business && u.business.businessName) || u.name || "A business";
+  if (u.role === "creator" && u.creator && u.creator.handle) return `${u.name || "Creator"} (@${u.creator.handle})`;
+  return u.name || "Someone";
+}
+
+// Segment matching only (status and market scope are applied by
+// the resolver, so the count the admin confirms is the count
+// that sends). A creator matches a market when they are LISTED
+// in it — home market or any market where their audience share
+// clears the listing floor (platform canon, isListedInMarket).
+// A business matches its own market. Tiers narrow creators
+// only; businesses have no tier.
+function broadcastMatches152(u, spec) {
+  if (u.role !== "creator" && u.role !== "business") return false;
+  if (spec.mode === "creators" && u.role !== "creator") return false;
+  if (spec.mode === "businesses" && u.role !== "business") return false;
+  if (spec.markets.length) {
+    const inMarket = u.role === "creator"
+      ? spec.markets.some((m) => isListedInMarket(u, m))
+      : spec.markets.includes(normalizeMarketName(u.market));
+    if (!inMarket) return false;
+  }
+  if (spec.tiers.length && u.role === "creator") {
+    if (!spec.tiers.includes(normalizeTierBand(u.creator ? u.creator.tierBand : ""))) return false;
+  }
+  return true;
+}
+
+// Resolve a cleaned spec to the exact recipient list. Segment
+// modes: approved accounts inside the sender's market scope.
+// People mode: the named accounts, each validated — a pick that
+// cannot be messaged (gone, an admin, not active yet, outside
+// the sender's markets) refuses the whole send in plain words
+// rather than silently shrinking the list.
+async function broadcastResolve152(adminUser, spec) {
+  const users = await allUsers();
+  if (spec.mode === "people") {
+    if (!spec.userIds.length) return { error: "Pick at least one person first.", status: 400 };
+    const byId = new Map(users.map((u) => [u.id, u]));
+    const recipients = [];
+    for (const id of spec.userIds) {
+      const u = byId.get(id);
+      if (!u || u.role === "admin") return { error: "One of the people you picked is no longer on Magpie. Remove them and try again.", status: 400 };
+      if (u.status !== "approved") return { error: `${broadcastPersonLabel152(u)} does not have an active account yet, so they cannot be messaged.`, status: 400 };
+      if (!perms138.inMarketScope(adminUser, u.market)) return { error: `${broadcastPersonLabel152(u)} is outside the markets on your role.`, status: 403 };
+      recipients.push(u);
+    }
+    return { recipients };
+  }
+  const recipients = users.filter((u) => u.status === "approved" && broadcastMatches152(u, spec) && perms138.inMarketScope(adminUser, u.market));
+  recipients.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  return { recipients };
+}
+
+// The audience in plain words — the same sentence is what the
+// admin confirms before sending and what the history shows
+// after, so a send can never be described two ways.
+function broadcastAudienceLabel152(spec, count) {
+  if (spec.mode === "people") return `${count} ${count === 1 ? "person" : "people"} picked by name`;
+  let who;
+  if (spec.mode === "creators") who = spec.tiers.length ? `${spec.tiers.join(" and ")} creators` : "All creators";
+  else if (spec.mode === "businesses") who = "All businesses";
+  else who = spec.tiers.length ? `${spec.tiers.join(" and ")} creators, and all businesses` : "Everyone — all creators and businesses";
+  if (spec.markets.length === 1) who += ` in ${spec.markets[0]}`;
+  else if (spec.markets.length === 2) who += ` in ${spec.markets[0]} and ${spec.markets[1]}`;
+  else if (spec.markets.length > 2) who += ` in ${spec.markets.length} markets`;
+  return who;
+}
+
+// One team message in one person's Magpie thread: the broadcast
+// delivery itself, and an admin's follow-up reply inside a
+// broadcast thread. Same badge signal as every other team
+// message (one live message_received note per thread while
+// unread). No email rides behind it — in-app only, on purpose.
+async function deliverTeamMessage152(recipient, { title = null, body, broadcastId = null }) {
+  const threadId = platformThreadId(recipient.id);
+  const msg = {
+    id: crypto.randomUUID(),
+    threadId,
+    fromId: PLATFORM_PEER_ID,
+    toId: recipient.id,
+    body,
+    platform: true,
+    createdAt: nowIso(),
+  };
+  if (title) msg.title = title;
+  if (broadcastId) msg.broadcastId = broadcastId;
+  await store.set(`message:${msg.id}`, msg);
+  const priorNotes = await store.list(`note:${recipient.id}:`);
+  const alreadySignaled = priorNotes.some((r) => r.value && r.value.kind === "message_received" && !r.value.readAt && r.value.data && r.value.data.threadId === threadId);
+  if (!alreadySignaled) {
+    await notifyUser(recipient.id, "message_received", "Magpie sent you a message.", { threadId, messageId: msg.id, fromId: PLATFORM_PEER_ID, platform: true });
+  }
+  return msg;
+}
+
+function broadcastSummary152(b, replyCounts) {
+  return {
+    id: b.id,
+    title: b.title,
+    body: b.body,
+    audienceLabel: b.audienceLabel,
+    recipientCount: (b.recipientIds || []).length,
+    replyCount: replyCounts ? (replyCounts.get(b.id) || 0) : 0,
+    senderName: b.senderName || "Magpie admin",
+    createdAt: b.createdAt,
+  };
+}
+
+async function broadcastReplyCounts152() {
+  const rows = await store.list("message:");
+  const counts = new Map();
+  for (const r of rows) {
+    const m = r.value;
+    if (m && m.broadcastId && m.fromId !== PLATFORM_PEER_ID) counts.set(m.broadcastId, (counts.get(m.broadcastId) || 0) + 1);
+  }
+  return counts;
+}
+
 function greetingName(user) {
   const first = ((user && user.name) || "").trim().split(/\s+/)[0] || "";
   if (!first || first.includes("@") || (user.email && first.toLowerCase() === String(user.email).toLowerCase())) return "there";
@@ -21423,6 +21578,7 @@ function adminGate138(user, seg, method, query) {
     case "search": return need("creators.view");
     case "preview": case "preview-targets": return deny("Previewing accounts is Jeff's tool in this version.");
     case "platform-messages": case "finish-engine": return need("requests");
+    case "broadcasts": return need("messages.send");
     case "recruiters": case "leaderboard": return need("outreach");
     case "campaign": return need("campaign");
     case "partners":
@@ -26212,6 +26368,145 @@ async function route(event) {
         await logEvent({ type: "platform_message_segment", actorId: user.id, actorRole: "admin", subjectId: null, market: segmentMarket, data: { market: segmentMarket, recipients: recipients.length, emailSent, emailFailed, templateId } });
       }
       return json(201, { sent: recipients.length, recipients: recipients.map((u) => u.id), emailSent, emailFailed, scope, market: segmentMarket });
+    }
+    // Admin Messages room (Build -152): broadcasts to segments
+    // or named people, delivered into each person's own
+    // Magpie-team thread. Every route here is gated on the
+    // messages.send flag in adminGate138 (super-admin passes).
+    // The resolver runs identically for the live count, the
+    // confirmation, and the send itself — the number the admin
+    // confirms is the number that sends, recomputed at send
+    // time, never a count the client carried in.
+    if (method === "GET" && seg[1] === "broadcasts" && seg[2] === "meta" && seg.length === 3) {
+      return json(200, { markets: MARKETS.map((m) => m.name), tiers: BROADCAST_TIERS.slice() });
+    }
+    if (method === "GET" && seg[1] === "broadcasts" && seg[2] === "people" && seg.length === 3) {
+      const q = String(query.q || "").trim().toLowerCase();
+      if (q.length < 2) return json(200, { people: [] });
+      const users = await allUsers();
+      const people = [];
+      for (const u of users) {
+        if (u.role !== "creator" && u.role !== "business") continue;
+        if (u.status !== "approved") continue;
+        if (!perms138.inMarketScope(user, u.market)) continue;
+        const hay = [u.name || "", u.email || "", u.creator && u.creator.handle ? u.creator.handle : "", u.business && u.business.businessName ? u.business.businessName : ""].join(" ").toLowerCase();
+        if (!hay.includes(q)) continue;
+        people.push({
+          id: u.id, name: u.name || "", role: u.role,
+          handle: u.creator && u.creator.handle ? u.creator.handle : null,
+          businessName: u.business && u.business.businessName ? u.business.businessName : null,
+          market: normalizeMarketName(u.market) || u.market || null,
+          tier: u.role === "creator" ? (normalizeTierBand(u.creator ? u.creator.tierBand : "") || null) : null,
+          tester: isTester(u),
+          label: broadcastPersonLabel152(u),
+        });
+        if (people.length >= 20) break;
+      }
+      return json(200, { people });
+    }
+    if (method === "POST" && seg[1] === "broadcasts" && seg[2] === "preview" && seg.length === 3) {
+      const b = parseBody(event);
+      const spec = broadcastSpecClean152(b.spec);
+      if (!spec) return err(400, "That audience does not look right. Pick who should get the message and try again.");
+      const resolved = await broadcastResolve152(user, spec);
+      if (resolved.error) return err(resolved.status || 400, resolved.error);
+      const recipients = resolved.recipients;
+      return json(200, {
+        count: recipients.length,
+        audienceLabel: broadcastAudienceLabel152(spec, recipients.length),
+        names: recipients.slice(0, 6).map((u) => broadcastPersonLabel152(u)),
+        more: Math.max(0, recipients.length - 6),
+      });
+    }
+    if (method === "GET" && seg[1] === "broadcasts" && seg.length === 2) {
+      const rows = await store.list("broadcast:");
+      const replyCounts = await broadcastReplyCounts152();
+      const broadcasts = rows.map((r) => r.value).filter(Boolean)
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+        .slice(0, 100)
+        .map((b) => broadcastSummary152(b, replyCounts));
+      return json(200, { broadcasts });
+    }
+    if (method === "POST" && seg[1] === "broadcasts" && seg.length === 2) {
+      const b = parseBody(event);
+      const title = String(b.title || "").trim();
+      const body = String(b.body || "").trim();
+      if (!title) return err(400, "Give the message a title first.");
+      if (title.length > BROADCAST_TITLE_MAX) return err(400, `Title is too long (max ${BROADCAST_TITLE_MAX} characters).`);
+      if (!body) return err(400, "Write the message first.");
+      if (body.length > PLATFORM_MESSAGE_MAX) return err(400, `Message is too long (max ${PLATFORM_MESSAGE_MAX} characters).`);
+      const spec = broadcastSpecClean152(b.spec);
+      if (!spec) return err(400, "That audience does not look right. Pick who should get the message and try again.");
+      const resolved = await broadcastResolve152(user, spec);
+      if (resolved.error) return err(resolved.status || 400, resolved.error);
+      const recipients = resolved.recipients;
+      if (!recipients.length) return err(400, "Nobody matches that audience. Widen it and try again.");
+      const broadcast = {
+        id: crypto.randomUUID(),
+        title, body, spec,
+        audienceLabel: broadcastAudienceLabel152(spec, recipients.length),
+        recipientIds: recipients.map((u) => u.id),
+        senderId: user.id,
+        senderName: user.name || "Magpie admin",
+        createdAt: nowIso(),
+      };
+      await store.set(`broadcast:${broadcast.id}`, broadcast);
+      for (const recipient of recipients) {
+        await deliverTeamMessage152(recipient, { title, body, broadcastId: broadcast.id });
+      }
+      await logEvent({
+        type: "broadcast_sent",
+        actorId: user.id, actorRole: "admin", subjectId: broadcast.id,
+        market: spec.markets.length === 1 ? spec.markets[0] : null,
+        data: { audienceLabel: broadcast.audienceLabel, recipientCount: recipients.length, mode: spec.mode, markets: spec.markets, tiers: spec.tiers, pickedPeople: spec.mode === "people" ? recipients.length : 0, title },
+      });
+      const replyCounts = await broadcastReplyCounts152();
+      return json(201, { broadcast: broadcastSummary152(broadcast, replyCounts) });
+    }
+    if (method === "GET" && seg[1] === "broadcasts" && seg.length === 3) {
+      const broadcast = await store.get(`broadcast:${seg[2]}`);
+      if (!broadcast) return err(404, "That message is not on file.");
+      const users = await allUsers();
+      const byId = new Map(users.map((u) => [u.id, u]));
+      const rows = await store.list("message:");
+      const mine = rows.map((r) => r.value).filter((m) => m && m.broadcastId === broadcast.id)
+        .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+      const byRecipient = new Map();
+      for (const m of mine) {
+        const rid = m.fromId === PLATFORM_PEER_ID ? m.toId : m.fromId;
+        if (!byRecipient.has(rid)) byRecipient.set(rid, []);
+        byRecipient.get(rid).push(m);
+      }
+      const threads = (broadcast.recipientIds || []).map((rid) => {
+        const u = byId.get(rid);
+        return {
+          user: u ? {
+            id: u.id, name: u.name || "", role: u.role,
+            handle: u.creator && u.creator.handle ? u.creator.handle : null,
+            businessName: u.business && u.business.businessName ? u.business.businessName : null,
+            market: normalizeMarketName(u.market) || u.market || null,
+            label: broadcastPersonLabel152(u),
+          } : { id: rid, name: "Account no longer here", role: null, handle: null, businessName: null, market: null, label: "Account no longer here" },
+          messages: byRecipient.get(rid) || [],
+        };
+      });
+      const replyCounts = await broadcastReplyCounts152();
+      return json(200, { broadcast: broadcastSummary152(broadcast, replyCounts), threads });
+    }
+    if (method === "POST" && seg[1] === "broadcasts" && seg.length === 4 && seg[3] === "reply") {
+      const broadcast = await store.get(`broadcast:${seg[2]}`);
+      if (!broadcast) return err(404, "That message is not on file.");
+      const b = parseBody(event);
+      const body = String(b.body || "").trim();
+      if (!body) return err(400, "Write the reply first.");
+      if (body.length > PLATFORM_MESSAGE_MAX) return err(400, `Reply is too long (max ${PLATFORM_MESSAGE_MAX} characters).`);
+      const targetId = String(b.userId || "");
+      if (!(broadcast.recipientIds || []).includes(targetId)) return err(400, "That person was not one of this message's recipients.");
+      const target = await store.get(`user:${targetId}`);
+      if (!target) return err(404, "That account is no longer here.");
+      const msg = await deliverTeamMessage152(target, { body, broadcastId: broadcast.id });
+      await logEvent({ type: "broadcast_reply_sent", actorId: user.id, actorRole: "admin", subjectId: msg.id, market: target.market || null, data: { broadcastId: broadcast.id, toId: target.id } });
+      return json(201, { message: msg });
     }
     // Finish Engine (BUILD -50): config, roster, the global
     // on/off, template edits (prefill-and-edit, like the message
@@ -32480,7 +32775,12 @@ async function route(event) {
       // the Magpie team. The reply lands in Admin's platform
       // messages view and the Event Log; it sends no email.
       if (String(b.toUserId || "") === PLATFORM_PEER_ID) {
-        if (user.role !== "creator") return err(403, "Platform messages are for creators");
+        // Build -152: businesses (and partners) hold Magpie-team
+        // threads too — an admin broadcast lands in their inbox
+        // exactly like a creator's — so the reply door is open
+        // to every role that can hold the thread. The Finish
+        // Engine stays creator-only: it reads creator replies.
+        if (!["creator", "business", "partner"].includes(user.role)) return err(403, "Platform messages are for people with a Magpie account");
         const replyBody = String(b.body || "").trim();
         if (!replyBody) return err(400, "Message cannot be empty");
         if (replyBody.length > PLATFORM_MESSAGE_MAX) return err(400, `Message is too long (max ${PLATFORM_MESSAGE_MAX} characters)`);
@@ -32494,13 +32794,29 @@ async function route(event) {
           platform: true,
           createdAt: nowIso(),
         };
+        // Broadcast grouping (Build -152): a reply belongs to
+        // the newest broadcast the team sent in this thread, so
+        // the Admin Messages room can show the reply under the
+        // message that prompted it. No broadcast in the thread,
+        // no stamp — the reply is a plain team-thread reply,
+        // exactly as before.
+        const threadRows = await store.list("message:");
+        let stampId = null;
+        let stampAt = "";
+        for (const r of threadRows) {
+          const m = r.value;
+          if (m && m.threadId === threadId && m.broadcastId && m.fromId === PLATFORM_PEER_ID && m.createdAt > stampAt) { stampId = m.broadcastId; stampAt = m.createdAt; }
+        }
+        if (stampId) msg.broadcastId = stampId;
         await store.set(`message:${msg.id}`, msg);
         await msgStatePut(user.id, PLATFORM_PEER_ID, { readCursor: msg.createdAt, forceUnread: false });
-        await logEvent({ type: "platform_message_reply", actorId: user.id, actorRole: "creator", subjectId: msg.id, market: user.market, data: { threadId, bodyLength: replyBody.length } });
+        await logEvent({ type: "platform_message_reply", actorId: user.id, actorRole: user.role, subjectId: msg.id, market: user.market, data: { threadId, bodyLength: replyBody.length, broadcastId: stampId || undefined } });
         // Finish Engine (BUILD -50): the reply may be an opt-out,
         // a pause, or a Sig Concierge answer. Engine failures must
         // never break the reply itself.
-        try { await handleFinishEngineReply(user, replyBody); } catch (e) { console.error("finish engine reply failed", e && e.message); }
+        if (user.role === "creator") {
+          try { await handleFinishEngineReply(user, replyBody); } catch (e) { console.error("finish engine reply failed", e && e.message); }
+        }
         return json(201, { message: msg });
       }
       const other = await store.get(`user:${b.toUserId}`);
