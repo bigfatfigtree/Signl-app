@@ -2561,6 +2561,7 @@ function moreRowsFor() {
       { icon: "pin", label: "Markets", sub: "Each market's funnel, end to end.", tab: "Markets" },
       { icon: "person", label: "Creators", sub: "The bench your links brought in.", tab: "Creators" },
       { icon: "deck", label: "Businesses", sub: "Businesses your links brought in.", tab: "Businesses" },
+      { icon: "bubble", label: "Messages", sub: "Messages from the Magpie team.", tab: "Messages", badge: b.messages || 0 },
       { icon: "bars", label: "Reports", sub: "Visits, posts, and what they earned.", tab: "Performance" },
       { icon: "play", label: "Links & assets", sub: "Your tracked links, QR codes, and the one-pager.", tab: "Links" },
       { icon: "sliders", label: "Account", sub: "Your partner profile and agreement.", tab: "Account" },
@@ -2880,6 +2881,7 @@ function hamburgerGroups137() {
         R("pin", "Markets", "Each market's funnel, end to end", "Markets"),
         R("person", "Creators", "The bench your links brought in", "Creators"),
         R("deck", "Businesses", "Businesses your links brought in", "Businesses"),
+        R("bubble", "Messages", "Messages from the Magpie team", "Messages"),
       ] },
       { title: "Money", rows: [
         R("banknote", "Wallet", "Money & packs: fund terms and the payout schedule live inside", "Earnings"),
@@ -18324,7 +18326,7 @@ function renderBusinessDash() {
 // (GET /partner/summary) computed from the records stamped with
 // the partner's own signup source. A partner with no activity
 // yet gets the fills-in voice, never a grid of zeros.
-const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "Help", "Sig", "Team"];
+const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Messages", "Performance", "Earnings", "Links", "Account", "Help", "Sig", "Team"];
 
 // Co-brand (Build -105): when Admin has set a partner brand,
 // the partner's name and logo lead their shell and "Powered by
@@ -18390,6 +18392,7 @@ function renderPartnerTab(tab) {
   if (tab === "Markets") el.innerHTML = partnerMarketsHtml(d);
   if (tab === "Creators") el.innerHTML = partnerCreatorsHtml(d);
   if (tab === "Businesses") el.innerHTML = partnerBusinessesHtml(d);
+  if (tab === "Messages") loadThreads();
   if (tab === "Performance") { el.innerHTML = `<div id="pt-stats"></div>` + partnerPerformanceHtml(d); loadPartnerStats(); }
   if (tab === "Earnings") el.innerHTML = partnerEarningsHtml(d);
   if (tab === "Links") el.innerHTML = partnerLinksHtml(d);
@@ -25467,24 +25470,56 @@ async function adminMsgSendReply(e) {
   return false;
 }
 
-// ---------- admin: Messages room (Build -152) ----------
-// Jeff's own broadcast composer: pick who gets it (everyone,
-// creators, businesses — narrowed by market and creator tier —
-// or specific people picked by name), see the real count before
-// sending, confirm once more, and it lands in each person's
-// Magpie-team thread. Sent messages and their replies live
-// below the composer. The server resolves the audience the
-// same way for the count, the confirmation and the send, so
-// the number confirmed is the number that sends.
-let adminBc152 = {
-  meta: null, mode: "all", markets: [], tiers: [], people: [], peopleResults: [],
-  title: "", body: "", preview: null, confirming: false, sending: false,
-  sendError: "", result: "", broadcasts: null, openId: null, detail: null,
+// ---------- admin: Messages room (Build -152, portal rework -153) ----------
+// Jeff's own messaging room. Build -153 replaced the audience
+// buttons with the Find creators pattern: a search box, a
+// filter rail, and a live results list of people — each person
+// pickable, or "Select all N matching". Creators, businesses
+// and partners are all first-class audiences. Picking exactly
+// one person is a 1:1 send: the message lands in that person's
+// own Magpie-team thread, theirs alone, and the confirmation
+// names them. The room is organized like an email client:
+// Inbox (the replies), Drafts, Sent, and the admin's own
+// folders that sent messages and reply conversations file
+// into. The server resolves the audience the same way for the
+// search, the count, the confirmation and the send, so the
+// number confirmed is the number that sends.
+let adminBc153 = {
+  meta: null, view: "inbox", folderId: null,
+  broadcasts: null, inbox: null, folders: null, drafts: null,
+  openId: null, detail: null, focusUserId: null,
+  draftId: null, title: "", body: "",
+  q: "", roles: { creator: true, business: true, partner: true },
+  market: "", tier: "", status: "",
+  results: [], resultsTotal: null,
+  picks: [], selectAll: false,
+  preview: null, confirming: false, sending: false, sendError: "", result: "", draftNote: "",
+  pendingPickId: null,
 };
-let bc152PreviewTimer = null;
+let bc153SearchTimer = null;
+let bc153PreviewTimer = null;
 
-function bc152Spec() {
-  return { mode: adminBc152.mode, markets: adminBc152.markets.slice(), tiers: adminBc152.tiers.slice(), userIds: adminBc152.people.map((p) => p.id) };
+function bc153Spec() {
+  return {
+    mode: "search",
+    roles: Object.keys(adminBc153.roles).filter((r) => adminBc153.roles[r]),
+    markets: adminBc153.market ? [adminBc153.market] : [],
+    tiers: adminBc153.tier ? [adminBc153.tier] : [],
+    q: adminBc153.q.trim(),
+    status: adminBc153.status,
+    userIds: adminBc153.picks.map((p) => p.id),
+    selectAll: adminBc153.selectAll,
+  };
+}
+function bc153AnyRole() { return Object.values(adminBc153.roles).some(Boolean); }
+function bc153RoleWord(role) { return role === "creator" ? "Creator" : role === "business" ? "Business" : role === "partner" ? "Partner" : ""; }
+function bc153PersonMeta(p) {
+  return `${bc153RoleWord(p.role)}${p.market ? ` &middot; ${esc(p.market)}` : ""}${p.tier ? ` &middot; ${esc(p.tier)}` : ""}${p.tester ? ` &middot; test account` : ""}`;
+}
+function bc153AvatarHtml(p) {
+  if (p.photoUrl) return `<img class="bc153-av" src="${esc(p.photoUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">`;
+  const init = (p.label || p.name || "?").trim().charAt(0).toUpperCase() || "?";
+  return `<span class="bc153-av bc153-av-init">${esc(init)}</span>`;
 }
 
 async function loadAdminMessages152() {
@@ -25492,308 +25527,708 @@ async function loadAdminMessages152() {
   if (!el) return;
   el.innerHTML = `
     <h3 style="margin-top:0">Messages</h3>
-    <p class="muted small" style="max-width:640px">Send a message to people in the app. It lands in their Messages inbox, from the Magpie team — never from a person. They can reply right in the thread, and their replies show under the message below.</p>
-    <div id="bc152-compose"><p class="muted">Loading...</p></div>
-    <div id="bc152-history" class="mt"></div>`;
+    <p class="muted small" style="max-width:640px">Send a message to people in the app. It lands in their Messages inbox, from the Magpie team — never from a person. They can reply right in the thread, and their replies land in your Inbox here.</p>
+    <div id="bc153-room"><p class="muted">Loading...</p></div>`;
   try {
-    if (!adminBc152.meta) adminBc152.meta = await api("GET", "/admin/broadcasts/meta");
-    renderBc152Compose();
-    bc152RefreshPreview();
-    await loadBc152History();
+    if (!adminBc153.meta) adminBc153.meta = await api("GET", "/admin/broadcasts/meta");
+    await bc153LoadAll();
+    if (adminBc153.pendingPickId) {
+      const id = adminBc153.pendingPickId;
+      adminBc153.pendingPickId = null;
+      await bc153OpenComposerWithPerson(id);
+      return;
+    }
+    bc153RenderRoom();
   } catch (err) {
-    const host = document.getElementById("bc152-compose");
+    const host = document.getElementById("bc153-room");
     if (host) host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 
-function bc152ComposeHtml() {
-  const meta = adminBc152.meta || { markets: [], tiers: [] };
-  const modeChip = (v, label) => `<button type="button" class="chip${adminBc152.mode === v ? " on" : ""}" onclick="return bc152SetMode('${v}')">${label}</button>`;
-  const marketChip = (m) => `<button type="button" class="chip${adminBc152.markets.includes(m) ? " on" : ""}" onclick="return bc152ToggleMarket('${esc(m)}')">${esc(m)}</button>`;
-  const tierChip = (t) => `<button type="button" class="chip${adminBc152.tiers.includes(t) ? " on" : ""}" onclick="return bc152ToggleTier('${t}')">${t}</button>`;
-  const pv = adminBc152.preview;
-  const countLine = pv
-    ? `<strong>${fmtNum(pv.count)} ${pv.count === 1 ? "person" : "people"}</strong> will get this message. <span class="muted">${esc(pv.audienceLabel)}${pv.names && pv.names.length ? ` — ${pv.names.map(esc).join(", ")}${pv.more ? ` and ${pv.more} more` : ""}` : ""}</span>`
-    : `<span class="muted">Counting who matches...</span>`;
-  let audience = "";
-  if (adminBc152.mode === "people") {
-    audience = `
-    <div class="field"><label>Find people by name or handle</label>
-      <input id="bc152-q" type="search" placeholder="Start typing a name or @handle..." oninput="bc152PeopleInput(this.value)" autocomplete="off">
-      <div id="bc152-people-results"></div>
-    </div>
-    <div id="bc152-people-picked">${bc152PickedHtml()}</div>`;
-  } else {
-    audience = `
-    <div class="field"><label>Markets <span class="muted">(optional — leave empty for everywhere)</span></label>
-      <div class="bc152-markets">${meta.markets.map(marketChip).join("")}</div>
-      <p class="small muted" style="margin:4px 0 0">Creators count in every market where their audience is listed, not just their home market.</p>
-    </div>
-    ${adminBc152.mode !== "businesses" ? `<div class="field"><label>Creator tiers <span class="muted">(optional — only narrows creators)</span></label><div class="chip-row">${meta.tiers.map(tierChip).join("")}</div></div>` : ""}`;
-  }
-  const confirmBlock = adminBc152.confirming ? `
-    <div class="bc152-confirm">
-      <p style="margin:0 0 6px"><strong>Send this message?</strong></p>
-      <p class="small" style="margin:0 0 6px">To: <strong>${pv ? esc(pv.audienceLabel) : ""}</strong> — ${pv ? fmtNum(pv.count) : 0} ${pv && pv.count === 1 ? "person" : "people"}. It lands in their Messages inbox in the app. There is no undo.</p>
-      <p class="small" style="margin:0 0 10px"><strong>${esc(adminBc152.title)}</strong><br>${esc(adminBc152.body).replaceAll("\n", "<br>")}</p>
-      ${adminBc152.sendError ? `<div class="error-box" style="margin-bottom:10px">${esc(adminBc152.sendError)}</div>` : ""}
-      <button type="button" class="btn" ${adminBc152.sending ? "disabled" : ""} onclick="return bc152Send(this)">${adminBc152.sending ? "Sending..." : `Send to ${pv ? fmtNum(pv.count) : 0} ${pv && pv.count === 1 ? "person" : "people"}`}</button>
-      <button type="button" class="btn ghost" onclick="return bc152CancelConfirm()">Go back</button>
-    </div>` : "";
+async function bc153LoadAll() {
+  getCache.delete("/admin/broadcasts");
+  const data = await api("GET", "/admin/broadcasts");
+  adminBc153.broadcasts = data.broadcasts || [];
+  adminBc153.inbox = data.inbox || [];
+  adminBc153.folders = data.folders || [];
+  try {
+    const dd = await api("GET", "/admin/broadcasts/drafts");
+    adminBc153.drafts = dd.drafts || [];
+  } catch (e) { adminBc153.drafts = adminBc153.drafts || []; }
+}
+
+function bc153Counts() {
+  const inbox = (adminBc153.inbox || []).filter((c) => !c.folderId).length;
+  const sent = (adminBc153.broadcasts || []).filter((b) => !b.folderId).length;
+  return { inbox, sent, drafts: (adminBc153.drafts || []).length };
+}
+
+function bc153RenderRoom() {
+  const host = document.getElementById("bc153-room");
+  if (!host) return;
+  host.innerHTML = `
+    <div class="shop-layout bc153-layout">
+      <aside class="shop-rail" id="bc153-folders-rail">
+        <div class="rail-head"><strong>Folders</strong><span><button type="button" class="rail-x" aria-label="Close folders" onclick="return shopRailToggle('bc153-folders-rail')">×</button></span></div>
+        <div id="bc153-folders">${bc153FoldersHtml()}</div>
+      </aside>
+      <div class="shop-main">
+        <div class="bc153-toolbar">
+          <button type="button" class="btn small-btn sr-filters" onclick="return shopRailToggle('bc153-folders-rail')">Folders</button>
+          <button type="button" class="btn" onclick="return bc153NewMessage()">Write a message</button>
+        </div>
+        <div id="bc153-main"></div>
+      </div>
+    </div>`;
+  bc153RenderMain();
+}
+
+function bc153FoldersHtml() {
+  const c = bc153Counts();
+  const row = (view, label, count, folderId) => {
+    const on = adminBc153.view === view && (view !== "folder" || adminBc153.folderId === folderId);
+    return `<button type="button" class="bc153-frow${on ? " on" : ""}" onclick="return bc153OpenView('${view}'${folderId ? `, '${folderId}'` : ""})"><span class="bc153-frow-tx">${esc(label)}</span><span class="rr-count">${fmtNum(count)}</span></button>`;
+  };
+  return `
+    ${row("inbox", "Inbox", c.inbox)}
+    ${row("drafts", "Drafts", c.drafts)}
+    ${row("sent", "Sent", c.sent)}
+    ${(adminBc153.folders || []).map((f) => row("folder", f.name, f.count || 0, f.id)).join("")}
+    <div class="bc153-newfolder">
+      <input id="bc153-newfolder-name" type="text" maxlength="40" placeholder="New folder name">
+      <button type="button" class="btn small-btn ghost" onclick="return bc153CreateFolder()">Add folder</button>
+    </div>`;
+}
+
+function bc153RenderFolders() {
+  const host = document.getElementById("bc153-folders");
+  if (host) host.innerHTML = bc153FoldersHtml();
+}
+
+function bc153OpenView(view, folderId) {
+  adminBc153.view = view;
+  adminBc153.folderId = folderId || null;
+  adminBc153.openId = null;
+  adminBc153.detail = null;
+  adminBc153.focusUserId = null;
+  bc153RenderFolders();
+  bc153RenderMain();
+  return false;
+}
+
+function bc153RenderMain() {
+  const host = document.getElementById("bc153-main");
+  if (!host) return;
+  if (adminBc153.view === "compose") { host.innerHTML = bc153ComposeHtml(); bc153RunSearch(); bc153RefreshPreview(); return; }
+  if (adminBc153.view === "detail" && adminBc153.detail) { host.innerHTML = bc153DetailHtml(); bc153FocusThread(); return; }
+  if (adminBc153.view === "inbox") { host.innerHTML = bc153InboxHtml(); return; }
+  if (adminBc153.view === "drafts") { host.innerHTML = bc153DraftsHtml(); return; }
+  if (adminBc153.view === "folder") { host.innerHTML = bc153FolderHtml(); return; }
+  host.innerHTML = bc153SentHtml();
+}
+
+function bc153FileSelectHtml(kind, id, userId, current) {
+  const opts = [`<option value="">${kind === "thread" ? "Inbox" : "Sent"}</option>`]
+    .concat((adminBc153.folders || []).map((f) => `<option value="${f.id}"${current === f.id ? " selected" : ""}>${esc(f.name)}</option>`)).join("");
+  const call = kind === "thread"
+    ? `bc153FileThread('${id}', '${userId}', this.value)`
+    : `bc153FileBroadcast('${id}', this.value)`;
+  return `<label class="bc153-file">File in <select onchange="${call}">${opts}</select></label>`;
+}
+
+function bc153InboxHtml() {
+  const rows = (adminBc153.inbox || []).filter((c) => !c.folderId);
   return `
   <div class="panel">
-    <h4 style="margin-top:0">Send a message</h4>
-    <div class="field"><label>Who gets it?</label>
-      <div class="chip-row">${modeChip("all", "Everyone")}${modeChip("creators", "Creators")}${modeChip("businesses", "Businesses")}${modeChip("people", "Specific people")}</div>
-    </div>
-    ${audience}
-    <p id="bc152-count" class="small" style="margin:10px 0">${countLine}</p>
-    <div class="field"><label>Title <span class="muted">(the heading they see on the message)</span></label>
-      <input id="bc152-title" type="text" maxlength="120" placeholder="e.g. Nashville opens soon" value="${esc(adminBc152.title)}" oninput="adminBc152.title = this.value">
-    </div>
-    <div class="field"><label>Message</label>
-      <textarea id="bc152-body" rows="5" placeholder="Write it the way you would say it..." oninput="adminBc152.body = this.value">${esc(adminBc152.body)}</textarea>
-    </div>
-    ${adminBc152.result ? `<p class="small" style="color:var(--ok, #1d7a3a)"><strong>${esc(adminBc152.result)}</strong></p>` : ""}
-    ${confirmBlock}
-    ${adminBc152.confirming ? "" : `<button type="button" class="btn" onclick="return bc152Review()">Review and send</button>`}
+    <h4 style="margin-top:0">Inbox — replies to your messages</h4>
+    ${rows.length ? rows.map((c) => `
+      <div class="admin-msg-item" onclick="bc152OpenBroadcast('${c.broadcastId}', '${c.userId}')">
+        <strong>${esc(c.label)}</strong> <span class="muted small">${esc(bc153RoleWord(c.role))}${c.market ? ` &middot; ${esc(c.market)}` : ""} &middot; ${fmtDate(c.lastReplyAt)}</span>
+        <div class="small muted">Re: ${esc(c.broadcastTitle)} &middot; ${fmtNum(c.replyCount)} ${c.replyCount === 1 ? "reply" : "replies"}</div>
+        <div class="small">${esc(String(c.lastReplyBody || "").slice(0, 140))}</div>
+      </div>`).join("") : `<p class="muted small">No replies yet. When someone answers one of your messages, the conversation shows up here.</p>`}
   </div>`;
 }
 
-function bc152PickedHtml() {
-  if (!adminBc152.people.length) return `<p class="small muted">Nobody picked yet. Search above and tap a name to add them.</p>`;
-  return `<div class="chip-row">${adminBc152.people.map((p) => `<span class="chip on">${esc(p.label)}${p.tester ? " (test account)" : ""} <button type="button" class="bc152-x" onclick="return bc152UnpickPerson('${p.id}')" aria-label="Remove">×</button></span>`).join("")}</div>`;
-}
-
-function renderBc152Compose() {
-  const host = document.getElementById("bc152-compose");
-  if (host) host.innerHTML = bc152ComposeHtml();
-}
-
-function bc152SetMode(v) {
-  adminBc152.mode = v;
-  adminBc152.confirming = false;
-  adminBc152.sendError = "";
-  renderBc152Compose();
-  bc152RefreshPreview();
-  return false;
-}
-function bc152ToggleMarket(m) {
-  const i = adminBc152.markets.indexOf(m);
-  if (i >= 0) adminBc152.markets.splice(i, 1); else adminBc152.markets.push(m);
-  adminBc152.confirming = false;
-  renderBc152Compose();
-  bc152RefreshPreview();
-  return false;
-}
-function bc152ToggleTier(t) {
-  const i = adminBc152.tiers.indexOf(t);
-  if (i >= 0) adminBc152.tiers.splice(i, 1); else adminBc152.tiers.push(t);
-  adminBc152.confirming = false;
-  renderBc152Compose();
-  bc152RefreshPreview();
-  return false;
-}
-
-let bc152SearchTimer = null;
-function bc152PeopleInput(v) {
-  clearTimeout(bc152SearchTimer);
-  const q = String(v || "").trim();
-  const host = document.getElementById("bc152-people-results");
-  if (q.length < 2) { if (host) host.innerHTML = ""; return; }
-  bc152SearchTimer = setTimeout(async () => {
-    try {
-      const data = await api("GET", "/admin/broadcasts/people?q=" + encodeURIComponent(q));
-      adminBc152.peopleResults = data.people || [];
-      const h = document.getElementById("bc152-people-results");
-      if (!h) return;
-      h.innerHTML = adminBc152.peopleResults.length ? adminBc152.peopleResults.map((p) => `
-        <div class="admin-msg-item" onclick="bc152PickPerson('${p.id}')">
-          <strong>${esc(p.label)}</strong> <span class="muted small">${p.role === "creator" ? "Creator" : "Business"}${p.market ? ` &middot; ${esc(p.market)}` : ""}${p.tier ? ` &middot; ${esc(p.tier)}` : ""}${p.tester ? ` &middot; test account` : ""}</span>
-        </div>`).join("") : `<p class="small muted">Nobody with an active account matches that. Only people with active accounts can be messaged.</p>`;
-    } catch (err) {
-      const h = document.getElementById("bc152-people-results");
-      if (h) h.innerHTML = `<p class="small" style="color:#b3261e">${esc(err.message)}</p>`;
-    }
-  }, 250);
-  return;
-}
-function bc152PickPerson(id) {
-  const p = (adminBc152.peopleResults || []).find((x) => x.id === id);
-  if (p && !adminBc152.people.some((x) => x.id === id)) adminBc152.people.push(p);
-  const picked = document.getElementById("bc152-people-picked");
-  if (picked) picked.innerHTML = bc152PickedHtml();
-  bc152RefreshPreview();
-  return false;
-}
-function bc152UnpickPerson(id) {
-  adminBc152.people = adminBc152.people.filter((x) => x.id !== id);
-  const picked = document.getElementById("bc152-people-picked");
-  if (picked) picked.innerHTML = bc152PickedHtml();
-  bc152RefreshPreview();
-  return false;
-}
-
-async function bc152FetchPreview() {
-  const data = await api("POST", "/admin/broadcasts/preview", { spec: bc152Spec() });
-  adminBc152.preview = data;
-  return data;
-}
-function bc152RefreshPreview() {
-  clearTimeout(bc152PreviewTimer);
-  bc152PreviewTimer = setTimeout(async () => {
-    try {
-      await bc152FetchPreview();
-      const line = document.getElementById("bc152-count");
-      if (line && adminBc152.preview) {
-        const pv = adminBc152.preview;
-        line.innerHTML = `<strong>${fmtNum(pv.count)} ${pv.count === 1 ? "person" : "people"}</strong> will get this message. <span class="muted">${esc(pv.audienceLabel)}${pv.names && pv.names.length ? ` — ${pv.names.map(esc).join(", ")}${pv.more ? ` and ${pv.more} more` : ""}` : ""}</span>`;
-      }
-      if (adminBc152.confirming) renderBc152Compose();
-    } catch (err) {
-      const line = document.getElementById("bc152-count");
-      if (line) line.innerHTML = `<span style="color:#b3261e">${esc(err.message)}</span>`;
-    }
-  }, 300);
-}
-
-async function bc152Review() {
-  adminBc152.result = "";
-  if (!adminBc152.title.trim()) { alert("Give the message a title first."); return false; }
-  if (!adminBc152.body.trim()) { alert("Write the message first."); return false; }
-  try {
-    const pv = await bc152FetchPreview();
-    if (!pv.count) { alert("Nobody matches that audience. Widen it and try again."); return false; }
-    adminBc152.confirming = true;
-    adminBc152.sendError = "";
-    renderBc152Compose();
-  } catch (err) { alert(err.message); }
-  return false;
-}
-function bc152CancelConfirm() {
-  adminBc152.confirming = false;
-  adminBc152.sendError = "";
-  renderBc152Compose();
-  return false;
-}
-async function bc152Send(btn) {
-  if (adminBc152.sending) return false;
-  adminBc152.sending = true;
-  adminBc152.sendError = "";
-  renderBc152Compose();
-  try {
-    const data = await api("POST", "/admin/broadcasts", { title: adminBc152.title.trim(), body: adminBc152.body.trim(), spec: bc152Spec() });
-    const b = data.broadcast || {};
-    adminBc152.result = `Sent "${b.title || adminBc152.title}" to ${fmtNum(b.recipientCount || 0)} ${(b.recipientCount || 0) === 1 ? "person" : "people"}.`;
-    adminBc152.title = "";
-    adminBc152.body = "";
-    adminBc152.confirming = false;
-    adminBc152.sending = false;
-    renderBc152Compose();
-    bc152RefreshPreview();
-    await loadBc152History();
-  } catch (err) {
-    adminBc152.sending = false;
-    adminBc152.sendError = err.message;
-    renderBc152Compose();
-  }
-  return false;
-}
-
-async function loadBc152History() {
-  const host = document.getElementById("bc152-history");
-  if (!host) return;
-  try {
-    getCache.delete("/admin/broadcasts");
-    const data = await api("GET", "/admin/broadcasts");
-    adminBc152.broadcasts = data.broadcasts || [];
-    renderBc152History();
-  } catch (err) {
-    host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-  }
-}
-
-function renderBc152History() {
-  const host = document.getElementById("bc152-history");
-  if (!host) return;
-  if (adminBc152.openId && adminBc152.detail) { host.innerHTML = bc152DetailHtml(); return; }
-  const rows = adminBc152.broadcasts || [];
-  host.innerHTML = `
+function bc153SentHtml() {
+  const rows = (adminBc153.broadcasts || []).filter((b) => !b.folderId);
+  return `
   <div class="panel">
     <h4 style="margin-top:0">Sent messages</h4>
+    ${adminBc153.result ? `<p class="small" style="color:var(--ok, #1d7a3a)"><strong>${esc(adminBc153.result)}</strong></p>` : ""}
     ${rows.length ? rows.map((b) => `
       <div class="admin-msg-item" onclick="bc152OpenBroadcast('${b.id}')">
         <strong>${esc(b.title)}</strong> <span class="muted small">${fmtDate(b.createdAt)} &middot; sent by ${esc(b.senderName)}</span>
         <div class="small muted">${esc(b.audienceLabel)} &middot; ${fmtNum(b.recipientCount)} ${b.recipientCount === 1 ? "person" : "people"} &middot; ${fmtNum(b.replyCount)} ${b.replyCount === 1 ? "reply" : "replies"}</div>
+        <div onclick="event.stopPropagation()">${bc153FileSelectHtml("broadcast", b.id, null, b.folderId)}</div>
       </div>`).join("") : `<p class="muted small">Nothing sent yet. The first message you send shows up here, with its replies.</p>`}
   </div>`;
 }
 
-function bc152DetailHtml() {
-  const d = adminBc152.detail;
-  const b = d.broadcast;
-  const threads = (d.threads || []).map((t) => `
-    <div class="bc152-thread">
-      <p style="margin:0 0 6px"><strong>${esc(t.user.label)}</strong> <span class="muted small">${t.user.role === "creator" ? "Creator" : t.user.role === "business" ? "Business" : ""}${t.user.market ? ` &middot; ${esc(t.user.market)}` : ""}</span></p>
-      ${(t.messages || []).map((m) => `
-        <div class="msg ${m.fromId === SIGNL_TEAM_PEER ? "platform-msg" : ""}">
-          <div class="meta">${m.fromId === SIGNL_TEAM_PEER ? "Magpie" : esc(t.user.label)} &middot; ${fmtDate(m.createdAt)}</div>
-          ${m.title ? `<div class="msg-title">${esc(m.title)}</div>` : ""}
-          ${esc(m.body)}
-        </div>`).join("") || '<p class="muted small">No messages in this thread yet.</p>'}
-      <form onsubmit="return bc152SendThreadReply(event, '${b.id}', '${t.user.id}')" class="mt">
-        <div class="field"><textarea id="bc152-reply-${t.user.id}" rows="2" placeholder="Reply as Magpie..."></textarea></div>
-        <button class="btn small-btn" type="submit">Send reply</button>
-      </form>
-    </div>`).join("");
+function bc153DraftsHtml() {
+  const rows = adminBc153.drafts || [];
   return `
   <div class="panel">
-    <button type="button" class="btn small-btn ghost" onclick="return bc152CloseBroadcast()">← All sent messages</button>
-    <h4 style="margin:10px 0 4px">${esc(b.title)}</h4>
-    <p class="small muted" style="margin:0 0 8px">${fmtDate(b.createdAt)} &middot; sent by ${esc(b.senderName)} &middot; ${esc(b.audienceLabel)} &middot; ${fmtNum(b.recipientCount)} ${b.recipientCount === 1 ? "person" : "people"} &middot; ${fmtNum(b.replyCount)} ${b.replyCount === 1 ? "reply" : "replies"}</p>
-    <div class="msg platform-msg"><div class="meta">Magpie</div><div class="msg-title">${esc(b.title)}</div>${esc(b.body)}</div>
-    <h4 class="mt">Replies, person by person</h4>
-    ${threads || '<p class="muted small">No recipients on file.</p>'}
+    <h4 style="margin-top:0">Drafts</h4>
+    ${rows.length ? rows.map((d) => `
+      <div class="admin-msg-item" onclick="bc153OpenDraft('${d.id}')">
+        <strong>${esc(d.title || "Untitled draft")}</strong> <span class="muted small">last edited ${fmtDate(d.updatedAt)}</span>
+        ${d.audienceLabel ? `<div class="small muted">${esc(d.audienceLabel)}</div>` : ""}
+        ${d.body ? `<div class="small">${esc(String(d.body).slice(0, 140))}</div>` : ""}
+        <div onclick="event.stopPropagation()"><button type="button" class="btn small-btn ghost" onclick="return bc153DeleteDraft('${d.id}')">Delete draft</button></div>
+      </div>`).join("") : `<p class="muted small">No drafts. While you write a message, "Save draft" keeps it here so you can finish it later.</p>`}
   </div>`;
 }
 
-async function bc152OpenBroadcast(id) {
-  adminBc152.openId = id;
-  try {
-    getCache.delete("/admin/broadcasts/" + id);
-    adminBc152.detail = await api("GET", "/admin/broadcasts/" + encodeURIComponent(id));
-    renderBc152History();
-    const host = document.getElementById("bc152-history");
-    if (host) host.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (err) { alert(err.message); adminBc152.openId = null; }
-  return false;
+function bc153FolderHtml() {
+  const f = (adminBc153.folders || []).find((x) => x.id === adminBc153.folderId);
+  if (!f) return `<div class="panel"><p class="muted small">That folder is not here anymore.</p></div>`;
+  const sends = (adminBc153.broadcasts || []).filter((b) => b.folderId === f.id);
+  const convos = (adminBc153.inbox || []).filter((c) => c.folderId === f.id);
+  return `
+  <div class="panel">
+    <h4 style="margin-top:0">${esc(f.name)}</h4>
+    <div class="bc153-folder-admin">
+      <input id="bc153-rename-${f.id}" type="text" maxlength="40" value="${esc(f.name)}" aria-label="Folder name">
+      <button type="button" class="btn small-btn ghost" onclick="return bc153RenameFolder('${f.id}')">Rename</button>
+      <button type="button" class="btn small-btn ghost" onclick="return bc153DeleteFolder('${f.id}')">Delete folder</button>
+    </div>
+    <p class="small muted">Deleting the folder only unfiles what is in it — nothing is deleted.</p>
+    ${sends.length ? `<h4 class="mt">Sent messages filed here</h4>` + sends.map((b) => `
+      <div class="admin-msg-item" onclick="bc152OpenBroadcast('${b.id}')">
+        <strong>${esc(b.title)}</strong> <span class="muted small">${fmtDate(b.createdAt)} &middot; ${esc(b.audienceLabel)} &middot; ${fmtNum(b.recipientCount)} ${b.recipientCount === 1 ? "person" : "people"} &middot; ${fmtNum(b.replyCount)} ${b.replyCount === 1 ? "reply" : "replies"}</span>
+        <div onclick="event.stopPropagation()">${bc153FileSelectHtml("broadcast", b.id, null, b.folderId)}</div>
+      </div>`).join("") : ""}
+    ${convos.length ? `<h4 class="mt">Conversations filed here</h4>` + convos.map((c) => `
+      <div class="admin-msg-item" onclick="bc152OpenBroadcast('${c.broadcastId}', '${c.userId}')">
+        <strong>${esc(c.label)}</strong> <span class="muted small">Re: ${esc(c.broadcastTitle)} &middot; ${fmtNum(c.replyCount)} ${c.replyCount === 1 ? "reply" : "replies"} &middot; ${fmtDate(c.lastReplyAt)}</span>
+        <div class="small">${esc(String(c.lastReplyBody || "").slice(0, 140))}</div>
+      </div>`).join("") : ""}
+    ${!sends.length && !convos.length ? `<p class="muted small">Nothing filed here yet. Open a sent message or a conversation and use "File in" to put it here.</p>` : ""}
+  </div>`;
 }
-function bc152CloseBroadcast() {
-  adminBc152.openId = null;
-  adminBc152.detail = null;
-  loadBc152History();
-  return false;
-}
-async function bc152SendThreadReply(e, broadcastId, userId) {
-  e.preventDefault();
-  const ta = document.getElementById("bc152-reply-" + userId);
-  const body = ta ? ta.value.trim() : "";
-  if (!body) return false;
+
+async function bc153CreateFolder() {
+  const input = document.getElementById("bc153-newfolder-name");
+  const name = input ? input.value.trim() : "";
+  if (!name) { alert("Give the folder a name first."); return false; }
   try {
-    await api("POST", "/admin/broadcasts/" + encodeURIComponent(broadcastId) + "/reply", { userId, body });
-    await bc152OpenBroadcast(broadcastId);
-    await loadBc152HistoryCountsOnly152();
+    await api("POST", "/admin/broadcasts/folders", { name });
+    await bc153LoadAll();
+    bc153RenderFolders();
+    bc153RenderMain();
   } catch (err) { alert(err.message); }
   return false;
 }
-// After a reply inside the detail view, refresh the history
-// counts quietly in the background (the detail stays open).
-async function loadBc152HistoryCountsOnly152() {
+async function bc153RenameFolder(id) {
+  const input = document.getElementById("bc153-rename-" + id);
+  const name = input ? input.value.trim() : "";
+  if (!name) { alert("Give the folder a name first."); return false; }
   try {
-    getCache.delete("/admin/broadcasts");
-    const data = await api("GET", "/admin/broadcasts");
-    adminBc152.broadcasts = data.broadcasts || [];
-  } catch (err) { /* counts refresh is best-effort */ }
+    await api("PATCH", "/admin/broadcasts/folders/" + encodeURIComponent(id), { name });
+    await bc153LoadAll();
+    bc153RenderFolders();
+    bc153RenderMain();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+async function bc153DeleteFolder(id) {
+  const f = (adminBc153.folders || []).find((x) => x.id === id);
+  if (!confirm(`Delete the folder "${f ? f.name : ""}"? Everything in it goes back to Sent or the Inbox — nothing is deleted.`)) return false;
+  try {
+    await api("DELETE", "/admin/broadcasts/folders/" + encodeURIComponent(id));
+    adminBc153.view = "sent";
+    adminBc153.folderId = null;
+    await bc153LoadAll();
+    bc153RenderRoom();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+async function bc153FileBroadcast(id, folderId) {
+  try {
+    await api("POST", "/admin/broadcasts/" + encodeURIComponent(id) + "/file", { folderId: folderId || null });
+    await bc153LoadAll();
+    bc153RenderFolders();
+    if (adminBc153.view === "detail" && adminBc153.openId === id) {
+      const b = (adminBc153.broadcasts || []).find((x) => x.id === id);
+      if (b && adminBc153.detail) adminBc153.detail.broadcast.folderId = b.folderId;
+    }
+    bc153RenderMain();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+async function bc153FileThread(broadcastId, userId, folderId) {
+  try {
+    await api("POST", "/admin/broadcasts/" + encodeURIComponent(broadcastId) + "/file-thread", { userId, folderId: folderId || null });
+    await bc153LoadAll();
+    bc153RenderFolders();
+    if (adminBc153.detail) adminBc153.detail.threadFolders = adminBc153.detail.threadFolders || {};
+    if (adminBc153.detail) {
+      if (folderId) adminBc153.detail.threadFolders[userId] = folderId;
+      else delete adminBc153.detail.threadFolders[userId];
+    }
+    bc153RenderMain();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+// ---------- the composer: search portal ----------
+function bc153ResetComposer() {
+  adminBc153.draftId = null;
+  adminBc153.title = "";
+  adminBc153.body = "";
+  adminBc153.q = "";
+  adminBc153.roles = { creator: true, business: true, partner: true };
+  adminBc153.market = "";
+  adminBc153.tier = "";
+  adminBc153.status = "";
+  adminBc153.results = [];
+  adminBc153.resultsTotal = null;
+  adminBc153.picks = [];
+  adminBc153.selectAll = false;
+  adminBc153.preview = null;
+  adminBc153.confirming = false;
+  adminBc153.sending = false;
+  adminBc153.sendError = "";
+  adminBc153.draftNote = "";
+}
+function bc153NewMessage() {
+  bc153ResetComposer();
+  adminBc153.view = "compose";
+  adminBc153.result = "";
+  bc153RenderFolders();
+  bc153RenderMain();
+  return false;
+}
+// The Message buttons on admin records land here (or stash the
+// person until the room loads): the composer opens already
+// addressed to that one person — a 1:1 send.
+function adminMessagePerson153(userId) {
+  if (document.getElementById("bc153-main") && adminBc153.broadcasts !== null) {
+    bc153OpenComposerWithPerson(userId);
+    return false;
+  }
+  adminBc153.pendingPickId = userId;
+  return go("dashboard", "Messages");
+}
+async function bc153OpenComposerWithPerson(userId) {
+  bc153ResetComposer();
+  adminBc153.view = "compose";
+  adminBc153.result = "";
+  // Arriving from another tab (a Message button on a record),
+  // the room shell is not on the page yet — build it first or
+  // there is nowhere for the composer to render.
+  if (!document.getElementById("bc153-main")) bc153RenderRoom();
+  bc153RenderFolders();
+  bc153RenderMain();
+  try {
+    const data = await api("GET", "/admin/broadcasts/search?ids=" + encodeURIComponent(userId));
+    const p = (data.people || [])[0];
+    if (!p) { alert("That person does not have an active account, so they cannot be messaged."); return; }
+    adminBc153.picks = [p];
+    bc153RenderSelection();
+    bc153RefreshPreview();
+  } catch (err) { alert(err.message); }
+}
+
+function bc153ApplySpecToComposer(spec) {
+  if (!spec || typeof spec !== "object") return;
+  const roles = { creator: false, business: false, partner: false };
+  if (spec.mode === "all") { roles.creator = roles.business = roles.partner = true; }
+  else if (spec.mode === "creators") roles.creator = true;
+  else if (spec.mode === "businesses") roles.business = true;
+  else if (spec.mode === "partners") roles.partner = true;
+  else if (Array.isArray(spec.roles) && spec.roles.length) for (const r of spec.roles) if (r in roles) roles[r] = true;
+  else { roles.creator = roles.business = roles.partner = true; }
+  adminBc153.roles = roles;
+  adminBc153.market = (spec.markets || [])[0] || "";
+  adminBc153.tier = (spec.tiers || [])[0] || "";
+  adminBc153.q = spec.q || "";
+  adminBc153.status = spec.status || "";
+  adminBc153.selectAll = spec.mode === "search" ? !!spec.useFilters : spec.mode !== "people";
+}
+async function bc153OpenDraft(id) {
+  try {
+    const data = await api("GET", "/admin/broadcasts/drafts/" + encodeURIComponent(id));
+    const d = data.draft;
+    bc153ResetComposer();
+    adminBc153.draftId = d.id;
+    adminBc153.title = d.title || "";
+    adminBc153.body = d.body || "";
+    bc153ApplySpecToComposer(d.spec);
+    const ids = d.spec && Array.isArray(d.spec.userIds) ? d.spec.userIds : [];
+    if (ids.length) {
+      const res = await api("GET", "/admin/broadcasts/search?ids=" + encodeURIComponent(ids.join(",")));
+      adminBc153.picks = res.people || [];
+    }
+    adminBc153.view = "compose";
+    bc153RenderFolders();
+    bc153RenderMain();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+async function bc153DeleteDraft(id) {
+  if (!confirm("Delete this draft? It has not been sent — deleting it throws the draft away.")) return false;
+  try {
+    await api("DELETE", "/admin/broadcasts/drafts/" + encodeURIComponent(id));
+    await bc153LoadAll();
+    bc153RenderFolders();
+    bc153RenderMain();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+async function bc153SaveDraft() {
+  try {
+    const data = await api("POST", "/admin/broadcasts/drafts", {
+      id: adminBc153.draftId || undefined,
+      title: adminBc153.title,
+      body: adminBc153.body,
+      spec: bc153Spec(),
+      audienceLabel: adminBc153.preview ? adminBc153.preview.audienceLabel : "",
+    });
+    adminBc153.draftId = data.draft.id;
+    adminBc153.draftNote = "Draft saved — find it under Drafts.";
+    await bc153LoadAll();
+    bc153RenderFolders();
+    const note = document.getElementById("bc153-draftnote");
+    if (note) note.textContent = adminBc153.draftNote;
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+function bc153ComposeHtml() {
+  const meta = adminBc153.meta || { markets: [], tiers: [] };
+  const solo = adminBc153.picks.length === 1 && !adminBc153.selectAll;
+  return `
+  <div class="panel bc153-compose">
+    <button type="button" class="btn small-btn ghost" onclick="return bc153OpenView('inbox')">&larr; All messages</button>
+    <h4 style="margin:8px 0 2px">${adminBc153.draftId ? "Finish your draft" : "Write a message"}</h4>
+    <p class="small muted" style="margin-top:0">Search for people, or filter by who they are — then pick from the list, or select everyone who matches. Pick exactly one person and the message goes to just them.</p>
+    <div class="shop-layout bc153-portal">
+      <aside class="shop-rail" id="bc153-rail">
+        <div class="rail-head"><strong>Filters</strong><span><button type="button" class="sr-clear" onclick="return bc153ClearFilters()">Clear all</button><button type="button" class="rail-x" aria-label="Close filters" onclick="return shopRailToggle('bc153-rail')">×</button></span></div>
+        <div class="df-group">
+          <div class="df-label">Who</div>
+          <label class="rail-row"><span class="rr-tx">Creators</span><input type="checkbox" ${adminBc153.roles.creator ? "checked" : ""} onchange="bc153RoleToggle('creator', this.checked)"></label>
+          <label class="rail-row"><span class="rr-tx">Businesses</span><input type="checkbox" ${adminBc153.roles.business ? "checked" : ""} onchange="bc153RoleToggle('business', this.checked)"></label>
+          <label class="rail-row"><span class="rr-tx">Partners</span><input type="checkbox" ${adminBc153.roles.partner ? "checked" : ""} onchange="bc153RoleToggle('partner', this.checked)"></label>
+        </div>
+        <div class="df-group">
+          <div class="df-label">Market</div>
+          <select class="rail-select" onchange="bc153FilterChange('market', this.value)">
+            <option value="">All markets</option>
+            ${meta.markets.map((m) => `<option value="${esc(m)}"${adminBc153.market === m ? " selected" : ""}>${esc(m)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="df-group">
+          <div class="df-label">Creator tier</div>
+          <select class="rail-select" onchange="bc153FilterChange('tier', this.value)">
+            <option value="">All tiers</option>
+            ${meta.tiers.map((t) => `<option value="${esc(t)}"${adminBc153.tier === t ? " selected" : ""}>${esc(t)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="df-group">
+          <div class="df-label">Only show</div>
+          <select class="rail-select" onchange="bc153FilterChange('status', this.value)">
+            <option value=""${adminBc153.status === "" ? " selected" : ""}>Everyone with an active account</option>
+            <option value="new"${adminBc153.status === "new" ? " selected" : ""}>Joined in the last 30 days</option>
+            <option value="activated"${adminBc153.status === "activated" ? " selected" : ""}>Businesses that are activated</option>
+          </select>
+        </div>
+        <div class="rail-foot"><button type="button" class="btn" onclick="return shopRailToggle('bc153-rail')">Show results</button></div>
+      </aside>
+      <div class="shop-main">
+        <div class="shop-searchrow">
+          <div class="sr-q"><input id="bc153-q" type="search" placeholder="Search by name, @handle, or business" value="${esc(adminBc153.q)}" oninput="bc153QInput(this.value)"></div>
+          <button type="button" class="btn small-btn sr-filters" onclick="return shopRailToggle('bc153-rail')">Filters</button>
+        </div>
+        <div id="bc153-count" class="disc-count"></div>
+        <div id="bc153-selectbar"></div>
+        <div id="bc153-results"><p class="muted small">Loading people...</p></div>
+        <div id="bc153-selection"></div>
+        <div id="bc153-pvcount" class="small muted" style="margin-top:10px"></div>
+        <div class="field mt"><label>Title <span class="muted">(recipients see this at the top of the message)</span></label>
+          <input id="bc153-title" type="text" maxlength="120" placeholder="e.g. Nashville launches soon" value="${esc(adminBc153.title)}" oninput="adminBc153.title=this.value; bc153MaybeHideConfirm()"></div>
+        <div class="field"><label>Message</label>
+          <textarea id="bc153-body" rows="5" maxlength="4000" placeholder="Write like you would talk to them." oninput="adminBc153.body=this.value; bc153MaybeHideConfirm()">${esc(adminBc153.body)}</textarea></div>
+        <div class="bc153-actions">
+          <button type="button" class="btn ghost" onclick="return bc153SaveDraft()">Save draft</button>
+          <button type="button" class="btn" onclick="return bc153Review()">Review and send</button>
+          <span id="bc153-draftnote" class="small muted">${esc(adminBc153.draftNote)}</span>
+        </div>
+        <div id="bc153-confirm"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function bc153MaybeHideConfirm() {
+  if (adminBc153.confirming) { adminBc153.confirming = false; bc153RenderConfirm(); }
+}
+function bc153QInput(v) {
+  adminBc153.q = v;
+  clearTimeout(bc153SearchTimer);
+  bc153SearchTimer = setTimeout(() => { bc153RunSearch(); bc153RefreshPreview(); }, 250);
+}
+function bc153RoleToggle(role, on) {
+  adminBc153.roles[role] = on;
+  bc153MaybeHideConfirm();
+  bc153RunSearch();
+  bc153RefreshPreview();
+}
+function bc153FilterChange(kind, value) {
+  adminBc153[kind] = value;
+  bc153MaybeHideConfirm();
+  bc153RunSearch();
+  bc153RefreshPreview();
+}
+function bc153ClearFilters() {
+  adminBc153.q = "";
+  adminBc153.roles = { creator: true, business: true, partner: true };
+  adminBc153.market = "";
+  adminBc153.tier = "";
+  adminBc153.status = "";
+  bc153RenderMain();
+  return false;
+}
+
+async function bc153RunSearch() {
+  const host = document.getElementById("bc153-results");
+  if (!host) return;
+  if (!bc153AnyRole()) {
+    adminBc153.results = [];
+    adminBc153.resultsTotal = 0;
+    bc153RenderResults();
+    return;
+  }
+  const spec = bc153Spec();
+  const qs = new URLSearchParams({
+    roles: spec.roles.join(","), markets: spec.markets.join(","), tiers: spec.tiers.join(","),
+    q: spec.q, status: spec.status,
+  }).toString();
+  try {
+    const data = await api("GET", "/admin/broadcasts/search?" + qs);
+    adminBc153.results = data.people || [];
+    adminBc153.resultsTotal = data.total || 0;
+  } catch (err) {
+    adminBc153.results = [];
+    adminBc153.resultsTotal = 0;
+    host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    return;
+  }
+  bc153RenderResults();
+}
+
+function bc153RenderResults() {
+  const countHost = document.getElementById("bc153-count");
+  const barHost = document.getElementById("bc153-selectbar");
+  const host = document.getElementById("bc153-results");
+  if (!host) return;
+  const total = adminBc153.resultsTotal || 0;
+  if (countHost) countHost.textContent = !bc153AnyRole()
+    ? "Pick at least one of Creators, Businesses or Partners in the filters."
+    : `${fmtNum(total)} ${total === 1 ? "person matches" : "people match"} these filters${total > adminBc153.results.length ? ` — showing the first ${adminBc153.results.length}` : ""}.`;
+  if (barHost) {
+    barHost.innerHTML = adminBc153.selectAll
+      ? `<div class="bc153-allbar"><strong>All ${fmtNum(total)} matching ${total === 1 ? "person is" : "people are"} in.</strong> Anyone who matches these filters gets the message — the list updates itself if you change the filters. <button type="button" class="btn small-btn ghost" onclick="return bc153SetSelectAll(false)">Turn off</button></div>`
+      : (total > 0 ? `<button type="button" class="btn ghost" onclick="return bc153SetSelectAll(true)">Select all ${fmtNum(total)} matching</button>` : "");
+  }
+  host.innerHTML = adminBc153.results.length ? adminBc153.results.map((p) => {
+    const picked = adminBc153.selectAll || adminBc153.picks.some((x) => x.id === p.id);
+    return `<div class="bc153-person${picked ? " on" : ""}" onclick="bc153TogglePick('${p.id}')">
+      ${bc153AvatarHtml(p)}
+      <span class="bc153-ptx"><strong>${esc(p.label)}</strong><span class="small muted">${bc153PersonMeta(p)}</span></span>
+      <input type="checkbox" ${picked ? "checked" : ""} ${adminBc153.selectAll ? "disabled" : ""} onclick="event.stopPropagation(); bc153TogglePick('${p.id}')" aria-label="Pick ${esc(p.label)}">
+    </div>`;
+  }).join("") : `<p class="muted small">Nobody matches. Loosen the filters or clear the search.</p>`;
+  bc153RenderSelection();
+}
+
+function bc153RenderSelection() {
+  const host = document.getElementById("bc153-selection");
+  if (!host) return;
+  const picks = adminBc153.picks;
+  host.innerHTML = `
+    <div class="bc153-selhead"><strong>Who's getting it</strong></div>
+    ${adminBc153.selectAll ? `<p class="small" style="margin:4px 0">Everyone matching the filters above${picks.length ? `, plus ${fmtNum(picks.length)} picked by name below` : ""}.</p>` : ""}
+    ${picks.length ? picks.map((p) => `
+      <div class="bc153-selrow">${bc153AvatarHtml(p)}<span class="bc153-ptx"><strong>${esc(p.label)}</strong><span class="small muted">${bc153PersonMeta(p)}</span></span><button type="button" class="bc152-x" aria-label="Remove ${esc(p.label)}" onclick="bc153TogglePick('${p.id}')">&times;</button></div>`).join("")
+      : (adminBc153.selectAll ? "" : `<p class="small muted" style="margin:4px 0">Nobody yet — pick people from the list, or select all matching.</p>`)}
+    ${picks.length === 1 && !adminBc153.selectAll ? `<p class="small muted">This is a one-to-one message: it goes to ${esc(picks[0].label)} alone, in their own thread.</p>` : ""}`;
+}
+
+function bc153TogglePick(id) {
+  if (adminBc153.selectAll) return;
+  const i = adminBc153.picks.findIndex((p) => p.id === id);
+  if (i >= 0) adminBc153.picks.splice(i, 1);
+  else {
+    const p = adminBc153.results.find((x) => x.id === id);
+    if (p) adminBc153.picks.push(p);
+  }
+  bc153MaybeHideConfirm();
+  bc153RenderResults();
+  bc153RefreshPreview();
+}
+function bc153SetSelectAll(on) {
+  adminBc153.selectAll = on;
+  bc153MaybeHideConfirm();
+  bc153RenderResults();
+  bc153RefreshPreview();
+  return false;
+}
+
+async function bc153RefreshPreview() {
+  clearTimeout(bc153PreviewTimer);
+  bc153PreviewTimer = setTimeout(async () => {
+    const host = document.getElementById("bc153-pvcount");
+    if (!host) return;
+    if (!bc153AnyRole()) { adminBc153.preview = null; host.textContent = ""; return; }
+    try {
+      const data = await api("POST", "/admin/broadcasts/preview", { spec: bc153Spec() });
+      adminBc153.preview = data;
+      host.innerHTML = `<strong>${fmtNum(data.count)}</strong> ${data.count === 1 ? "person" : "people"} will get this — ${esc(data.audienceLabel)}.`;
+      if (adminBc153.confirming) bc153RenderConfirm();
+    } catch (err) {
+      adminBc153.preview = null;
+      host.innerHTML = `<span style="color:var(--err, #b3261e)">${esc(err.message)}</span>`;
+    }
+  }, 300);
+}
+
+function bc153Review() {
+  if (!bc153AnyRole()) { alert("Pick at least one of Creators, Businesses or Partners in the filters."); return false; }
+  if (!adminBc153.preview || !adminBc153.preview.count) { alert("Nobody is set to get this yet. Pick people from the list, or select all matching."); return false; }
+  if (!adminBc153.title.trim()) { alert("Give the message a title first — recipients see it at the top."); return false; }
+  if (!adminBc153.body.trim()) { alert("Write the message first."); return false; }
+  adminBc153.confirming = true;
+  adminBc153.sendError = "";
+  bc153RenderConfirm();
+  return false;
+}
+
+function bc153RenderConfirm() {
+  const host = document.getElementById("bc153-confirm");
+  if (!host) return;
+  if (!adminBc153.confirming || !adminBc153.preview) { host.innerHTML = ""; return; }
+  const p = adminBc153.preview;
+  const solo = p.solo;
+  host.innerHTML = `
+    <div class="bc152-confirm">
+      ${solo ? `<p style="margin:0 0 6px"><strong>Send this to ${esc(solo.label)}?</strong></p>
+      <p class="small" style="margin:0 0 6px">This is a private message to ${esc(solo.label)} alone — nobody else gets it, and only they can reply. There is no undo.</p>`
+      : `<p style="margin:0 0 6px"><strong>Send this to ${fmtNum(p.count)} ${p.count === 1 ? "person" : "people"}?</strong></p>
+      <p class="small" style="margin:0 0 6px">${esc(p.audienceLabel)}. Each person gets it in their own thread and can reply. There is no undo.</p>
+      ${p.names && p.names.length ? `<p class="small muted" style="margin:0 0 6px">${p.names.map(esc).join(", ")}${p.more ? `, and ${fmtNum(p.more)} more` : ""}</p>` : ""}`}
+      <div class="bc152-sendrow">
+        <button type="button" class="btn" ${adminBc153.sending ? "disabled" : ""} onclick="return bc153Send()">${adminBc153.sending ? "Sending..." : solo ? `Send to ${esc(solo.label)}` : `Send to ${fmtNum(p.count)}`}</button>
+        <button type="button" class="btn ghost" onclick="adminBc153.confirming=false; bc153RenderConfirm(); return false;">Keep editing</button>
+      </div>
+      ${adminBc153.sendError ? `<div class="error-box" style="margin-top:8px">${esc(adminBc153.sendError)}</div>` : ""}
+    </div>`;
+}
+
+async function bc153Send() {
+  if (adminBc153.sending) return false;
+  adminBc153.sending = true;
+  adminBc153.sendError = "";
+  bc153RenderConfirm();
+  try {
+    const data = await api("POST", "/admin/broadcasts", {
+      title: adminBc153.title.trim(),
+      body: adminBc153.body.trim(),
+      spec: bc153Spec(),
+      draftId: adminBc153.draftId || undefined,
+    });
+    adminBc153.sending = false;
+    adminBc153.confirming = false;
+    adminBc153.result = `Sent — ${data.broadcast.audienceLabel} (${fmtNum(data.broadcast.recipientCount)} ${data.broadcast.recipientCount === 1 ? "person" : "people"}).`;
+    bc153ResetComposer();
+    adminBc153.view = "sent";
+    adminBc153.openId = null;
+    adminBc153.detail = null;
+    await bc153LoadAll();
+    bc153RenderRoom();
+  } catch (err) {
+    adminBc153.sending = false;
+    adminBc153.sendError = err.message;
+    bc153RenderConfirm();
+  }
+  return false;
+}
+
+// ---------- a sent message, opened ----------
+async function bc152OpenBroadcast(id, focusUserId) {
+  adminBc153.openId = id;
+  adminBc153.focusUserId = focusUserId || null;
+  if (adminBc153.view !== "detail") adminBc153.view = "detail";
+  const host = document.getElementById("bc153-main");
+  if (host) host.innerHTML = `<p class="muted">Loading...</p>`;
+  try {
+    getCache.delete("/admin/broadcasts/" + id);
+    adminBc153.detail = await api("GET", "/admin/broadcasts/" + encodeURIComponent(id));
+    bc153RenderMain();
+  } catch (err) {
+    if (host) host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
+}
+function bc152CloseBroadcast() {
+  adminBc153.openId = null;
+  adminBc153.detail = null;
+  adminBc153.focusUserId = null;
+  adminBc153.view = adminBc153.folderId ? "folder" : "sent";
+  bc153RenderMain();
+  return false;
+}
+function bc153FocusThread() {
+  if (!adminBc153.focusUserId) return;
+  const t = document.getElementById("bc153-thread-" + adminBc153.focusUserId);
+  if (t) { t.classList.add("bc152-thread-focus"); t.scrollIntoView({ block: "center" }); }
+}
+function bc153DetailHtml() {
+  const d = adminBc153.detail;
+  const b = d.broadcast;
+  const backView = adminBc153.folderId ? "folder" : "sent";
+  return `
+  <div class="panel">
+    <button type="button" class="btn small-btn ghost" onclick="return bc153OpenView('${backView}'${adminBc153.folderId ? `, '${adminBc153.folderId}'` : ""})">&larr; Back</button>
+    <h4 style="margin:8px 0 2px">${esc(b.title)}</h4>
+    <p class="small muted" style="margin-top:0">${esc(b.audienceLabel)} &middot; sent by ${esc(b.senderName)} &middot; ${fmtDate(b.createdAt)}</p>
+    <div>${bc153FileSelectHtml("broadcast", b.id, null, b.folderId)}</div>
+    <div class="msg platform-msg"><div class="meta">Magpie team &middot; the message as sent</div><div class="msg-title">${esc(b.title)}</div><div>${esc(b.body)}</div></div>
+    <h4 class="mt">Conversations <span class="muted small">(${fmtNum(d.threads.length)} of ${fmtNum(b.recipientCount)} answered or listed)</span></h4>
+    ${d.threads.length ? d.threads.map((t) => `
+      <div class="bc152-thread" id="bc153-thread-${t.user.id}">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+          <strong>${esc(t.user.label)}</strong>
+          <span class="muted small">${esc(bc153RoleWord(t.user.role))}${t.user.market ? ` &middot; ${esc(t.user.market)}` : ""}${t.user.tester ? " &middot; test account" : ""}</span>
+        </div>
+        <div>${bc153FileSelectHtml("thread", b.id, t.user.id, (d.threadFolders || {})[t.user.id] || null)}</div>
+        ${t.messages.map((m) => `
+          <div class="msg ${m.fromId === SIGNL_TEAM_PEER ? "platform-msg" : ""}">
+            <div class="meta">${m.fromId === SIGNL_TEAM_PEER ? "Magpie team" : esc(t.user.label)} &middot; ${fmtDate(m.createdAt)}</div>
+            ${m.title ? `<div class="msg-title">${esc(m.title)}</div>` : ""}
+            <div>${esc(m.body)}</div>
+          </div>`).join("")}
+        <form onsubmit="return bc152SendThreadReply(event, '${b.id}', '${t.user.id}')" style="display:flex;gap:8px;margin-top:8px">
+          <input type="text" maxlength="2000" placeholder="Reply to ${esc(t.user.label)}" style="flex:1" required>
+          <button type="submit" class="btn small-btn">Reply</button>
+        </form>
+      </div>`).join("") : `<p class="muted small">No replies yet.</p>`}
+  </div>`;
+}
+async function bc152SendThreadReply(e, broadcastId, userId) {
+  e.preventDefault();
+  const input = e.target.querySelector("input");
+  const body = (input.value || "").trim();
+  if (!body) return false;
+  try {
+    await api("POST", "/admin/broadcasts/" + encodeURIComponent(broadcastId) + "/reply", { userId, body });
+    await bc152OpenBroadcast(broadcastId, userId);
+    await bc153LoadAll();
+    bc153RenderFolders();
+  } catch (err) { alert(err.message); }
+  return false;
 }
 
 // ---------- admin ----------
@@ -26986,7 +27421,7 @@ async function loadAdminPartners() {
       <p class="small muted" style="margin:0 0 6px">${p.teamSeatCount || 0} live seat${(p.teamSeatCount || 0) === 1 ? "" : "s"} on this org. A team admin seats people into the org's own markets and pilots; seats never carry deal terms.</p>
       ${p.teamOf ? `<p class="small muted" style="margin:0 0 6px">This login is itself a team seat of another org; team admin is set on the org's lead login.</p>` : `<label class="small" style="display:block;margin:0 0 6px"><input type="checkbox" id="pt-teamadmin-${p.id}" ${p.teamAdmin ? "checked" : ""}> This login is the org's team admin</label>`}
       <div id="pt-team-${p.id}"><p class="small muted">Loading seats…</p></div>
-      <button class="btn small-btn" onclick="saveAdminPartner('${p.id}')">Save partner</button> <span id="pt-ok-${p.id}" class="saved"></span>
+      <button class="btn small-btn" onclick="saveAdminPartner('${p.id}')">Save partner</button> <button type="button" class="btn small-btn ghost" onclick="return adminMessagePerson153('${p.id}')">Message</button> <span id="pt-ok-${p.id}" class="saved"></span>
       <div id="pt-deals-${p.id}" style="margin-top:12px"><p class="small muted">Loading deals…</p></div>
     </div>`).join("");
     el.innerHTML = `
@@ -28748,7 +29183,7 @@ function adminCreators130RowsHtml(rows) {
         <td data-label="Followers">${astFull(astCreatorTotal(u))}</td>
         <td data-label="% local">${pct}</td>
         <td data-label="Profile">${u.status === "approved" && u.profileComplete ? "Complete" : "Not finished"}</td>
-        <td><button type="button" class="btn small-btn ghost" onclick="adminViewCreator('${u.id}')">View</button></td>
+        <td><button type="button" class="btn small-btn ghost" onclick="adminViewCreator('${u.id}')">View</button>${u.status === "approved" ? ` <button type="button" class="btn small-btn ghost" onclick="return adminMessagePerson153('${u.id}')">Message</button>` : ""}</td>
       </tr>`;
     }).join("")}
   </table></div>`;
@@ -29696,7 +30131,7 @@ function ccBusinessesHtml(d) {
       <td data-label="Minimum">${minCell}</td>
       <td data-label="Billing">${billingWords(r)}</td>
       <td data-label="Rollover">${rollCell}</td>
-      <td data-label="Lifetime">${lifeCell}<div style="margin-top:8px"><button class="btn small-btn" onclick="adminViewBusiness('${r.id}')">View account</button> <button class="btn small-btn ghost" onclick="adminSendSigninLink('${r.id}')">Send sign-in link</button></div></td>
+      <td data-label="Lifetime">${lifeCell}<div style="margin-top:8px"><button class="btn small-btn" onclick="adminViewBusiness('${r.id}')">View account</button> <button class="btn small-btn ghost" onclick="return adminMessagePerson153('${r.id}')">Message</button> <button class="btn small-btn ghost" onclick="adminSendSigninLink('${r.id}')">Send sign-in link</button></div></td>
     </tr>`;
   };
   if (!rows.length) return `<div class="panel cc-waiting"><strong>No businesses yet.</strong> When the first business signs up, its agreement — plan, founding terms, credit, minimum, billing state and rollover — lands here.</div>`;

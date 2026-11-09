@@ -1663,3 +1663,29 @@ img.maggie-char-img { object-fit: cover; }
 .bc152-confirm { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 12px 0; background: var(--panel-2); }
 .bc152-thread { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
 .bc152-x { border: 0; background: transparent; color: inherit; font-size: 1rem; line-height: 1; cursor: pointer; padding: 0 0 0 4px; }
+/* Build -153: the Messages room — folder rail, the search
+   portal's people list, the selection list, filing controls. */
+.bc153-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.bc153-frow { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; border-radius: 8px; cursor: pointer; }
+.bc153-frow:hover { background: var(--panel-2); }
+.bc153-frow.on { background: var(--panel-2); font-weight: 700; }
+.bc153-frow-tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc153-newfolder { margin-top: 10px; display: grid; gap: 6px; }
+.bc153-newfolder input { width: 100%; }
+.bc153-person { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; margin: 0 0 8px; cursor: pointer; background: var(--panel); }
+.bc153-person:hover { border-color: var(--ink-3, #999); }
+.bc153-person.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.bc153-person input[type="checkbox"] { width: 18px; height: 18px; flex: none; }
+.bc153-av { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex: none; background: var(--panel-2); }
+.bc153-av-init { display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
+.bc153-ptx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bc153-ptx strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc153-allbar { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; background: var(--panel-2); }
+.bc153-selhead { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.bc153-selrow { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; margin: 0 0 6px; }
+.bc153-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.bc153-file { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--ink-2); margin-top: 6px; }
+.bc153-file select { max-width: 200px; }
+.bc153-folder-admin { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.bc153-folder-admin input { flex: 1; min-width: 160px; }
+.bc152-thread-focus { outline: 2px solid var(--ink); border-radius: 10px; padding: 10px; }

@@ -6704,17 +6704,30 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   return { message: msg, email: emailResult };
 }
 
-// ---------- admin broadcasts (Build -152) ----------
+// ---------- admin broadcasts (Build -152, reworked -153) ----------
 // The Admin Messages room: an admin writes ONE message — a
 // title plus a body — and it lands in every recipient's own
 // Magpie-team thread, the same thread the Requests room and the
-// Finish Engine already use. Creators AND businesses can be
-// reached (the Build -40 rail was creators only), by segment —
-// everyone, creators, businesses, narrowed by market and by
-// creator tier — or by naming specific people. Recipients reply
-// in the thread like any other message; a reply is stamped with
-// the newest broadcast in its thread so the room can group
-// replies under the message that prompted them.
+// Finish Engine already use. Creators, businesses AND partners
+// can be reached (the Build -40 rail was creators only), by
+// segment — everyone, creators, businesses, partners, narrowed
+// by market and by creator tier — or by naming specific people.
+// Recipients reply in the thread like any other message; a
+// reply is stamped with the newest broadcast in its thread so
+// the room can group replies under the message that prompted
+// them.
+//
+// Build -153: the composer is a search portal (search + filters
+// + a results list, modeled on Find creators), not a row of
+// audience buttons. The spec gained a "search" mode — roles x
+// market x tier x status x search text, with hand-picked people
+// and/or "select all matching" — and a "partners" segment.
+// Picking exactly one person is a first-class 1:1 path: the
+// message still lands in that person's own team thread, theirs
+// alone, and the confirmation names them. The room also gained
+// email-client organization: drafts an admin can save and
+// reopen, and folders (Inbox / Drafts / Sent plus the admin's
+// own) that sent messages and reply conversations file into.
 //
 // Deliberately NOT the marketing machine: no draft/approve
 // pipeline, no email lane (the hello@ suspension of 2026-11-08
@@ -6726,70 +6739,134 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
 // ever touching a real person's inbox by accident.
 const BROADCAST_TITLE_MAX = 120;
 const BROADCAST_TIERS = ["Neighbors", "Locals", "Headliners"];
+const BROADCAST_ROLES = ["creator", "business", "partner"];
+const BROADCAST_STATUSES = ["new", "activated"];
 
 function broadcastSpecClean152(raw) {
   const b = raw && typeof raw === "object" ? raw : {};
-  const mode = ["all", "creators", "businesses", "people"].includes(b.mode) ? b.mode : null;
+  const mode = ["all", "creators", "businesses", "partners", "people", "search"].includes(b.mode) ? b.mode : null;
   if (!mode) return null;
   const marketNames = new Set(MARKETS.map((m) => m.name));
   const markets = [...new Set((Array.isArray(b.markets) ? b.markets : []).map((m) => normalizeMarketName(String(m || ""))).filter((m) => marketNames.has(m)))];
   const tiers = [...new Set((Array.isArray(b.tiers) ? b.tiers : []).map((t) => normalizeTierBand(String(t || ""))).filter((t) => BROADCAST_TIERS.includes(t)))];
   const userIds = [...new Set((Array.isArray(b.userIds) ? b.userIds : []).map((x) => String(x || "")).filter(Boolean))].slice(0, 500);
-  return { mode, markets, tiers, userIds };
+  const q = String(b.q || "").trim().slice(0, 80);
+  const status = BROADCAST_STATUSES.includes(b.status) ? b.status : "";
+  const cleanRoles = (dflt) => {
+    const r = [...new Set((Array.isArray(b.roles) ? b.roles : []).filter((x) => BROADCAST_ROLES.includes(x)))];
+    return r.length ? r : dflt;
+  };
+  // Every mode normalizes to one shape the resolver reads:
+  // roles + filters (useFilters) and/or named people (userIds).
+  if (mode === "all") return { mode, roles: BROADCAST_ROLES.slice(), markets, tiers, userIds: [], q: "", status: "", useFilters: true };
+  if (mode === "creators") return { mode, roles: ["creator"], markets, tiers, userIds: [], q: "", status: "", useFilters: true };
+  if (mode === "businesses") return { mode, roles: ["business"], markets, tiers, userIds: [], q: "", status: "", useFilters: true };
+  if (mode === "partners") return { mode, roles: ["partner"], markets, tiers, userIds: [], q: "", status: "", useFilters: true };
+  if (mode === "people") return { mode, roles: [], markets: [], tiers: [], userIds, q: "", status: "", useFilters: false };
+  return { mode, roles: cleanRoles(BROADCAST_ROLES.slice()), markets, tiers, userIds, q, status, useFilters: b.selectAll === true };
 }
 
 function broadcastPersonLabel152(u) {
   if (!u) return "Someone";
   if (u.role === "business") return (u.business && u.business.businessName) || u.name || "A business";
+  if (u.role === "partner") return (u.partner && u.partner.name) || u.name || "A partner";
   if (u.role === "creator" && u.creator && u.creator.handle) return `${u.name || "Creator"} (@${u.creator.handle})`;
   return u.name || "Someone";
 }
 
-// Segment matching only (status and market scope are applied by
-// the resolver, so the count the admin confirms is the count
-// that sends). A creator matches a market when they are LISTED
-// in it — home market or any market where their audience share
-// clears the listing floor (platform canon, isListedInMarket).
-// A business matches its own market. Tiers narrow creators
-// only; businesses have no tier.
+// The portal row for one person: everything the search results
+// list and the picked list render, shared by /people and
+// /search so both doors describe a person the same way.
+function broadcastPersonView152(u) {
+  const photoUrl = (u.creator && u.creator.hasPhoto) || (u.business && u.business.hasPhoto)
+    ? `/api/users/${u.id}/photo`
+    : u.business && u.business.assetPacket && u.business.assetPacket.logoUrl ? u.business.assetPacket.logoUrl
+    : u.partner && u.partner.brand && u.partner.brand.logoUrl ? u.partner.brand.logoUrl
+    : null;
+  return {
+    id: u.id, name: u.name || "", role: u.role,
+    handle: u.creator && u.creator.handle ? u.creator.handle : null,
+    businessName: u.business && u.business.businessName ? u.business.businessName : null,
+    partnerName: u.partner && u.partner.name ? u.partner.name : null,
+    market: normalizeMarketName(u.market) || u.market || null,
+    tier: u.role === "creator" ? (normalizeTierBand(u.creator ? u.creator.tierBand : "") || null) : null,
+    tester: isTester(u),
+    label: broadcastPersonLabel152(u),
+    photoUrl,
+  };
+}
+
+// Segment matching only (account status and market scope are
+// applied by the resolver, so the count the admin confirms is
+// the count that sends). A creator matches a market when they
+// are LISTED in it — home market or any market where their
+// audience share clears the listing floor (platform canon,
+// isListedInMarket). A business matches its own market. A
+// partner matches their home market or any market on their
+// partner record. Tiers narrow creators only. The portal's
+// extra filters ride the spec too: search text matches the same
+// haystack the people search reads, and the status filter is
+// "new" (joined in the last 30 days) or "activated" (a business
+// must be activated — the account state that can actually open
+// Messages today; creators and partners pass as they are).
 function broadcastMatches152(u, spec) {
-  if (u.role !== "creator" && u.role !== "business") return false;
-  if (spec.mode === "creators" && u.role !== "creator") return false;
-  if (spec.mode === "businesses" && u.role !== "business") return false;
+  if (!BROADCAST_ROLES.includes(u.role)) return false;
+  const roles = spec.roles && spec.roles.length ? spec.roles : BROADCAST_ROLES;
+  if (!roles.includes(u.role)) return false;
   if (spec.markets.length) {
     const inMarket = u.role === "creator"
       ? spec.markets.some((m) => isListedInMarket(u, m))
-      : spec.markets.includes(normalizeMarketName(u.market));
+      : u.role === "partner"
+        ? spec.markets.includes(normalizeMarketName(u.market)) || ((u.partner && u.partner.markets) || []).some((m) => spec.markets.includes(normalizeMarketName(m)))
+        : spec.markets.includes(normalizeMarketName(u.market));
     if (!inMarket) return false;
   }
   if (spec.tiers.length && u.role === "creator") {
     if (!spec.tiers.includes(normalizeTierBand(u.creator ? u.creator.tierBand : ""))) return false;
+  }
+  if (spec.q) {
+    const hay = [u.name || "", u.email || "", u.creator && u.creator.handle ? u.creator.handle : "", u.business && u.business.businessName ? u.business.businessName : "", u.partner && u.partner.name ? u.partner.name : ""].join(" ").toLowerCase();
+    if (!hay.includes(String(spec.q).toLowerCase())) return false;
+  }
+  if (spec.status === "new") {
+    const joined = Date.parse(u.createdAt || "");
+    if (!joined || Date.now() - joined > 30 * 24 * 60 * 60 * 1000) return false;
+  }
+  if (spec.status === "activated" && u.role === "business") {
+    if (businessAccessState(u) !== "active") return false;
   }
   return true;
 }
 
 // Resolve a cleaned spec to the exact recipient list. Segment
 // modes: approved accounts inside the sender's market scope.
-// People mode: the named accounts, each validated — a pick that
-// cannot be messaged (gone, an admin, not active yet, outside
-// the sender's markets) refuses the whole send in plain words
-// rather than silently shrinking the list.
+// Named people (people mode, or the picks riding a search
+// spec): each validated — a pick that cannot be messaged
+// (gone, an admin, not active yet, outside the sender's
+// markets) refuses the whole send in plain words rather than
+// silently shrinking the list. A search spec unions its filter
+// matches (when "select all matching" is on) with its picks.
 async function broadcastResolve152(adminUser, spec) {
   const users = await allUsers();
-  if (spec.mode === "people") {
-    if (!spec.userIds.length) return { error: "Pick at least one person first.", status: 400 };
-    const byId = new Map(users.map((u) => [u.id, u]));
-    const recipients = [];
-    for (const id of spec.userIds) {
-      const u = byId.get(id);
-      if (!u || u.role === "admin") return { error: "One of the people you picked is no longer on Magpie. Remove them and try again.", status: 400 };
-      if (u.status !== "approved") return { error: `${broadcastPersonLabel152(u)} does not have an active account yet, so they cannot be messaged.`, status: 400 };
-      if (!perms138.inMarketScope(adminUser, u.market)) return { error: `${broadcastPersonLabel152(u)} is outside the markets on your role.`, status: 403 };
-      recipients.push(u);
-    }
-    return { recipients };
+  const byId = new Map(users.map((u) => [u.id, u]));
+  const picked = [];
+  for (const id of spec.userIds || []) {
+    const u = byId.get(id);
+    if (!u || u.role === "admin") return { error: "One of the people you picked is no longer on Magpie. Remove them and try again.", status: 400 };
+    if (u.status !== "approved") return { error: `${broadcastPersonLabel152(u)} does not have an active account yet, so they cannot be messaged.`, status: 400 };
+    if (!perms138.inMarketScope(adminUser, u.market)) return { error: `${broadcastPersonLabel152(u)} is outside the markets on your role.`, status: 403 };
+    picked.push(u);
   }
-  const recipients = users.filter((u) => u.status === "approved" && broadcastMatches152(u, spec) && perms138.inMarketScope(adminUser, u.market));
+  if (spec.mode === "people") {
+    if (!picked.length) return { error: "Pick at least one person first.", status: 400 };
+    return { recipients: picked };
+  }
+  let recipients = [];
+  if (spec.useFilters) {
+    recipients = users.filter((u) => u.status === "approved" && broadcastMatches152(u, spec) && perms138.inMarketScope(adminUser, u.market));
+  }
+  const seen = new Set(recipients.map((u) => u.id));
+  for (const u of picked) if (!seen.has(u.id)) { recipients.push(u); seen.add(u.id); }
   recipients.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
   return { recipients };
 }
@@ -6797,16 +6874,42 @@ async function broadcastResolve152(adminUser, spec) {
 // The audience in plain words — the same sentence is what the
 // admin confirms before sending and what the history shows
 // after, so a send can never be described two ways.
-function broadcastAudienceLabel152(spec, count) {
-  if (spec.mode === "people") return `${count} ${count === 1 ? "person" : "people"} picked by name`;
+function broadcastAudienceLabel152(spec, count, names) {
+  // A 1:1 send — the audience was defined by naming people,
+  // not by a filter — is labelled with the person, so the
+  // record (and anyone reading it later) says who it was for.
+  // A filter audience that happens to match one person keeps
+  // its filter label.
+  if (count === 1 && names && names[0] && (spec.mode === "people" || (spec.mode === "search" && !spec.useFilters))) return `One person picked by name: ${names[0]}`;
+  if (spec.mode === "people") {
+    return `${count} ${count === 1 ? "person" : "people"} picked by name`;
+  }
+  const marketSuffix = (who) => {
+    if (spec.markets.length === 1) return `${who} in ${spec.markets[0]}`;
+    if (spec.markets.length === 2) return `${who} in ${spec.markets[0]} and ${spec.markets[1]}`;
+    if (spec.markets.length > 2) return `${who} in ${spec.markets.length} markets`;
+    return who;
+  };
+  if (spec.mode === "search") {
+    const parts = [];
+    if (spec.useFilters) {
+      const words = { creator: "creators", business: "businesses", partner: "partners" };
+      const roles = spec.roles && spec.roles.length ? spec.roles : BROADCAST_ROLES;
+      let who = roles.length === 3 ? "Everyone" : `All ${roles.map((r) => words[r]).join(" and ")}`;
+      if (spec.tiers.length && roles.includes("creator")) who += ` (${spec.tiers.join(" and ")} creators)`;
+      if (spec.status === "new") who += " who joined in the last 30 days";
+      if (spec.q) who += ` matching "${spec.q}"`;
+      parts.push(marketSuffix(who));
+    }
+    if ((spec.userIds || []).length) parts.push(`${spec.userIds.length} picked by name`);
+    return parts.join(", plus ") || "Nobody";
+  }
   let who;
   if (spec.mode === "creators") who = spec.tiers.length ? `${spec.tiers.join(" and ")} creators` : "All creators";
   else if (spec.mode === "businesses") who = "All businesses";
-  else who = spec.tiers.length ? `${spec.tiers.join(" and ")} creators, and all businesses` : "Everyone — all creators and businesses";
-  if (spec.markets.length === 1) who += ` in ${spec.markets[0]}`;
-  else if (spec.markets.length === 2) who += ` in ${spec.markets[0]} and ${spec.markets[1]}`;
-  else if (spec.markets.length > 2) who += ` in ${spec.markets.length} markets`;
-  return who;
+  else if (spec.mode === "partners") who = "All partners";
+  else who = spec.tiers.length ? `${spec.tiers.join(" and ")} creators, and all businesses and partners` : "Everyone — all creators, businesses and partners";
+  return marketSuffix(who);
 }
 
 // One team message in one person's Magpie thread: the broadcast
@@ -6846,6 +6949,7 @@ function broadcastSummary152(b, replyCounts) {
     replyCount: replyCounts ? (replyCounts.get(b.id) || 0) : 0,
     senderName: b.senderName || "Magpie admin",
     createdAt: b.createdAt,
+    folderId: b.folderId || null,
   };
 }
 
@@ -6857,6 +6961,82 @@ async function broadcastReplyCounts152() {
     if (m && m.broadcastId && m.fromId !== PLATFORM_PEER_ID) counts.set(m.broadcastId, (counts.get(m.broadcastId) || 0) + 1);
   }
   return counts;
+}
+
+// Build -153: the room's Inbox — one row per reply conversation
+// (a broadcast x a recipient who wrote back), newest reply
+// first. Filing state rides along: a conversation filed into a
+// custom folder carries that folder's id, everything else is
+// in the Inbox. Computed from the same message pass the reply
+// counts use.
+async function broadcastInbox153(broadcasts) {
+  const byId = new Map((broadcasts || []).map((b) => [b.id, b]));
+  const users = await allUsers();
+  const byUser = new Map(users.map((u) => [u.id, u]));
+  const rows = await store.list("message:");
+  const convos = new Map();
+  for (const r of rows) {
+    const m = r.value;
+    if (!m || !m.broadcastId || m.fromId === PLATFORM_PEER_ID) continue;
+    const b = byId.get(m.broadcastId);
+    if (!b) continue;
+    const key = `${m.broadcastId}:${m.fromId}`;
+    const cur = convos.get(key) || { broadcastId: m.broadcastId, broadcastTitle: b.title, userId: m.fromId, replyCount: 0, lastReplyAt: "", lastReplyBody: "" };
+    cur.replyCount += 1;
+    if (m.createdAt > cur.lastReplyAt) { cur.lastReplyAt = m.createdAt; cur.lastReplyBody = m.body; }
+    convos.set(key, cur);
+  }
+  return [...convos.values()].map((c) => {
+    const b = byId.get(c.broadcastId);
+    const u = byUser.get(c.userId);
+    return {
+      ...c,
+      label: u ? broadcastPersonLabel152(u) : "Account no longer here",
+      role: u ? u.role : null,
+      market: u ? (normalizeMarketName(u.market) || u.market || null) : null,
+      folderId: (b.threadFolders && b.threadFolders[c.userId]) || null,
+    };
+  }).sort((a, b) => (a.lastReplyAt < b.lastReplyAt ? 1 : -1));
+}
+
+// Build -153: the admin's own folders for the Messages room.
+// Defaults (Inbox, Drafts, Sent) are views, never records; a
+// custom folder is a record owned by one admin. Filing state
+// lives on the broadcast itself (folderId for the send, a
+// threadFolders map for individual reply conversations), so a
+// folder's contents are a read over the broadcast pool and
+// deleting a folder is just unfiling everything that named it.
+async function broadcastFolders153(adminUser) {
+  const rows = await store.list(`broadcastfolder:${adminUser.id}:`);
+  return rows.map((r) => r.value).filter((f) => f && f.ownerId === adminUser.id)
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+}
+
+async function broadcastFolderCounts153(adminUser, broadcasts) {
+  const counts = new Map();
+  for (const b of broadcasts || []) {
+    if (b.folderId) counts.set(b.folderId, (counts.get(b.folderId) || 0) + 1);
+    for (const fid of Object.values(b.threadFolders || {})) {
+      if (fid) counts.set(fid, (counts.get(fid) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
+function broadcastFolderView153(f, counts) {
+  return { id: f.id, name: f.name, createdAt: f.createdAt, count: counts ? (counts.get(f.id) || 0) : 0 };
+}
+
+function broadcastDraftSummary153(d) {
+  return {
+    id: d.id,
+    title: d.title || "",
+    body: d.body || "",
+    spec: d.spec || null,
+    audienceLabel: d.audienceLabel || "",
+    createdAt: d.createdAt,
+    updatedAt: d.updatedAt,
+  };
 }
 
 function greetingName(user) {
@@ -26386,23 +26566,48 @@ async function route(event) {
       const users = await allUsers();
       const people = [];
       for (const u of users) {
-        if (u.role !== "creator" && u.role !== "business") continue;
+        if (!BROADCAST_ROLES.includes(u.role)) continue;
         if (u.status !== "approved") continue;
         if (!perms138.inMarketScope(user, u.market)) continue;
-        const hay = [u.name || "", u.email || "", u.creator && u.creator.handle ? u.creator.handle : "", u.business && u.business.businessName ? u.business.businessName : ""].join(" ").toLowerCase();
+        const hay = [u.name || "", u.email || "", u.creator && u.creator.handle ? u.creator.handle : "", u.business && u.business.businessName ? u.business.businessName : "", u.partner && u.partner.name ? u.partner.name : ""].join(" ").toLowerCase();
         if (!hay.includes(q)) continue;
-        people.push({
-          id: u.id, name: u.name || "", role: u.role,
-          handle: u.creator && u.creator.handle ? u.creator.handle : null,
-          businessName: u.business && u.business.businessName ? u.business.businessName : null,
-          market: normalizeMarketName(u.market) || u.market || null,
-          tier: u.role === "creator" ? (normalizeTierBand(u.creator ? u.creator.tierBand : "") || null) : null,
-          tester: isTester(u),
-          label: broadcastPersonLabel152(u),
-        });
+        people.push(broadcastPersonView152(u));
         if (people.length >= 20) break;
       }
       return json(200, { people });
+    }
+    // Build -153: the composer portal's search. Same matching
+    // the resolver runs (broadcastMatches152 over a search
+    // spec), so the list on screen and the count at confirm can
+    // never disagree: "select all matching" sends exactly the
+    // people this search describes. ?ids= resolves named people
+    // directly (the Message buttons on admin records use it).
+    if (method === "GET" && seg[1] === "broadcasts" && seg[2] === "search" && seg.length === 3) {
+      const users = await allUsers();
+      const byId = new Map(users.map((u) => [u.id, u]));
+      if (query.ids) {
+        const people = [];
+        for (const id of String(query.ids).split(",").map((x) => x.trim()).filter(Boolean).slice(0, 50)) {
+          const u = byId.get(id);
+          if (!u || !BROADCAST_ROLES.includes(u.role) || u.status !== "approved") continue;
+          if (!perms138.inMarketScope(user, u.market)) continue;
+          people.push(broadcastPersonView152(u));
+        }
+        return json(200, { people, total: people.length });
+      }
+      const spec = broadcastSpecClean152({
+        mode: "search",
+        roles: String(query.roles || "").split(",").map((x) => x.trim()).filter(Boolean),
+        markets: String(query.markets || "").split(",").map((x) => x.trim()).filter(Boolean),
+        tiers: String(query.tiers || "").split(",").map((x) => x.trim()).filter(Boolean),
+        q: String(query.q || ""),
+        status: String(query.status || ""),
+        selectAll: true,
+      });
+      if (!spec) return err(400, "Those filters do not look right. Clear them and try again.");
+      const matched = users.filter((u) => u.status === "approved" && broadcastMatches152(u, spec) && perms138.inMarketScope(user, u.market));
+      matched.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+      return json(200, { people: matched.slice(0, 100).map((u) => broadcastPersonView152(u)), total: matched.length });
     }
     if (method === "POST" && seg[1] === "broadcasts" && seg[2] === "preview" && seg.length === 3) {
       const b = parseBody(event);
@@ -26411,21 +26616,28 @@ async function route(event) {
       const resolved = await broadcastResolve152(user, spec);
       if (resolved.error) return err(resolved.status || 400, resolved.error);
       const recipients = resolved.recipients;
+      const names = recipients.map((u) => broadcastPersonLabel152(u));
       return json(200, {
         count: recipients.length,
-        audienceLabel: broadcastAudienceLabel152(spec, recipients.length),
-        names: recipients.slice(0, 6).map((u) => broadcastPersonLabel152(u)),
+        audienceLabel: broadcastAudienceLabel152(spec, recipients.length, names),
+        names: names.slice(0, 6),
         more: Math.max(0, recipients.length - 6),
+        solo: recipients.length === 1 ? broadcastPersonView152(recipients[0]) : null,
       });
     }
     if (method === "GET" && seg[1] === "broadcasts" && seg.length === 2) {
       const rows = await store.list("broadcast:");
+      const allBroadcasts = rows.map((r) => r.value).filter(Boolean);
       const replyCounts = await broadcastReplyCounts152();
-      const broadcasts = rows.map((r) => r.value).filter(Boolean)
+      const broadcasts = allBroadcasts
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
         .slice(0, 100)
         .map((b) => broadcastSummary152(b, replyCounts));
-      return json(200, { broadcasts });
+      const inbox = await broadcastInbox153(allBroadcasts);
+      const folderRows = await broadcastFolders153(user);
+      const folderCounts = await broadcastFolderCounts153(user, allBroadcasts);
+      const folders = folderRows.map((f) => broadcastFolderView153(f, folderCounts));
+      return json(200, { broadcasts, inbox, folders });
     }
     if (method === "POST" && seg[1] === "broadcasts" && seg.length === 2) {
       const b = parseBody(event);
@@ -26444,7 +26656,7 @@ async function route(event) {
       const broadcast = {
         id: crypto.randomUUID(),
         title, body, spec,
-        audienceLabel: broadcastAudienceLabel152(spec, recipients.length),
+        audienceLabel: broadcastAudienceLabel152(spec, recipients.length, recipients.map((u) => broadcastPersonLabel152(u))),
         recipientIds: recipients.map((u) => u.id),
         senderId: user.id,
         senderName: user.name || "Magpie admin",
@@ -26454,14 +26666,150 @@ async function route(event) {
       for (const recipient of recipients) {
         await deliverTeamMessage152(recipient, { title, body, broadcastId: broadcast.id });
       }
+      // Sending a draft sends it for real: the draft is spent.
+      if (b.draftId) {
+        const draft = await store.get(`broadcastdraft:${String(b.draftId)}`);
+        if (draft && draft.ownerId === user.id) await store.del(`broadcastdraft:${draft.id}`);
+      }
       await logEvent({
         type: "broadcast_sent",
         actorId: user.id, actorRole: "admin", subjectId: broadcast.id,
         market: spec.markets.length === 1 ? spec.markets[0] : null,
-        data: { audienceLabel: broadcast.audienceLabel, recipientCount: recipients.length, mode: spec.mode, markets: spec.markets, tiers: spec.tiers, pickedPeople: spec.mode === "people" ? recipients.length : 0, title },
+        data: { audienceLabel: broadcast.audienceLabel, recipientCount: recipients.length, mode: spec.mode, roles: spec.roles || [], markets: spec.markets, tiers: spec.tiers, pickedPeople: spec.mode === "people" ? recipients.length : (spec.userIds || []).length, title },
       });
       const replyCounts = await broadcastReplyCounts152();
       return json(201, { broadcast: broadcastSummary152(broadcast, replyCounts) });
+    }
+    // Build -153: folders — the admin's own, for filing sent
+    // messages and reply conversations. The defaults (Inbox,
+    // Drafts, Sent) are views over the records, never folders
+    // themselves, so they cannot be renamed or deleted.
+    if (method === "GET" && seg[1] === "broadcasts" && seg[2] === "folders" && seg.length === 3) {
+      const rows = await store.list("broadcast:");
+      const allBroadcasts = rows.map((r) => r.value).filter(Boolean);
+      const counts = await broadcastFolderCounts153(user, allBroadcasts);
+      const folders = (await broadcastFolders153(user)).map((f) => broadcastFolderView153(f, counts));
+      return json(200, { folders });
+    }
+    if (method === "POST" && seg[1] === "broadcasts" && seg[2] === "folders" && seg.length === 3) {
+      const b = parseBody(event);
+      const name = String(b.name || "").trim().slice(0, 40);
+      if (!name) return err(400, "Give the folder a name first.");
+      if (["inbox", "drafts", "sent"].includes(name.toLowerCase())) return err(400, "Inbox, Drafts and Sent already exist — pick a different name.");
+      const folder = { id: crypto.randomUUID(), ownerId: user.id, name, createdAt: nowIso() };
+      await store.set(`broadcastfolder:${user.id}:${folder.id}`, folder);
+      return json(201, { folder: broadcastFolderView153(folder, null) });
+    }
+    if (method === "PATCH" && seg[1] === "broadcasts" && seg[2] === "folders" && seg.length === 4) {
+      const folder = await store.get(`broadcastfolder:${user.id}:${seg[3]}`);
+      if (!folder || folder.ownerId !== user.id) return err(404, "That folder is not on file.");
+      const b = parseBody(event);
+      const name = String(b.name || "").trim().slice(0, 40);
+      if (!name) return err(400, "Give the folder a name first.");
+      folder.name = name;
+      await store.set(`broadcastfolder:${user.id}:${folder.id}`, folder);
+      const rows = await store.list("broadcast:");
+      const counts = await broadcastFolderCounts153(user, rows.map((r) => r.value).filter(Boolean));
+      return json(200, { folder: broadcastFolderView153(folder, counts) });
+    }
+    if (method === "DELETE" && seg[1] === "broadcasts" && seg[2] === "folders" && seg.length === 4) {
+      const folder = await store.get(`broadcastfolder:${user.id}:${seg[3]}`);
+      if (!folder || folder.ownerId !== user.id) return err(404, "That folder is not on file.");
+      await store.del(`broadcastfolder:${user.id}:${folder.id}`);
+      // Deleting a folder unfiles everything in it — the
+      // messages and conversations themselves are never deleted.
+      const rows = await store.list("broadcast:");
+      for (const r of rows) {
+        const b = r.value;
+        if (!b) continue;
+        let touched = false;
+        if (b.folderId === folder.id) { b.folderId = null; touched = true; }
+        if (b.threadFolders) {
+          for (const [uid, fid] of Object.entries(b.threadFolders)) {
+            if (fid === folder.id) { delete b.threadFolders[uid]; touched = true; }
+          }
+        }
+        if (touched) await store.set(`broadcast:${b.id}`, b);
+      }
+      return json(200, { ok: true });
+    }
+    // Build -153: drafts — a half-written message (audience,
+    // title, body) saved to come back to. A draft is the
+    // admin's own working state; sending it goes through the
+    // same resolver and confirmation as any send, and a sent
+    // draft is deleted by the send route above.
+    if (method === "GET" && seg[1] === "broadcasts" && seg[2] === "drafts" && seg.length === 3) {
+      const rows = await store.list("broadcastdraft:");
+      const drafts = rows.map((r) => r.value).filter((d) => d && d.ownerId === user.id)
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+        .map((d) => broadcastDraftSummary153(d));
+      return json(200, { drafts });
+    }
+    if (method === "POST" && seg[1] === "broadcasts" && seg[2] === "drafts" && seg.length === 3) {
+      const b = parseBody(event);
+      const title = String(b.title || "").trim().slice(0, BROADCAST_TITLE_MAX);
+      const body = String(b.body || "").trim().slice(0, PLATFORM_MESSAGE_MAX);
+      const spec = broadcastSpecClean152(b.spec) || (b.spec && typeof b.spec === "object" ? b.spec : null);
+      const audienceLabel = String(b.audienceLabel || "").slice(0, 300);
+      const now = nowIso();
+      if (b.id) {
+        const draft = await store.get(`broadcastdraft:${String(b.id)}`);
+        if (!draft || draft.ownerId !== user.id) return err(404, "That draft is not on file.");
+        draft.title = title; draft.body = body; draft.spec = spec; draft.audienceLabel = audienceLabel; draft.updatedAt = now;
+        await store.set(`broadcastdraft:${draft.id}`, draft);
+        return json(200, { draft: broadcastDraftSummary153(draft) });
+      }
+      const draft = { id: crypto.randomUUID(), ownerId: user.id, title, body, spec, audienceLabel, createdAt: now, updatedAt: now };
+      await store.set(`broadcastdraft:${draft.id}`, draft);
+      await logEvent({ type: "broadcast_draft_saved", actorId: user.id, actorRole: "admin", subjectId: draft.id, market: null, data: { title: title || null } });
+      return json(201, { draft: broadcastDraftSummary153(draft) });
+    }
+    if (method === "GET" && seg[1] === "broadcasts" && seg[2] === "drafts" && seg.length === 4) {
+      const draft = await store.get(`broadcastdraft:${seg[3]}`);
+      if (!draft || draft.ownerId !== user.id) return err(404, "That draft is not on file.");
+      return json(200, { draft: broadcastDraftSummary153(draft) });
+    }
+    if (method === "DELETE" && seg[1] === "broadcasts" && seg[2] === "drafts" && seg.length === 4) {
+      const draft = await store.get(`broadcastdraft:${seg[3]}`);
+      if (!draft || draft.ownerId !== user.id) return err(404, "That draft is not on file.");
+      await store.del(`broadcastdraft:${draft.id}`);
+      return json(200, { ok: true });
+    }
+    // Build -153: filing — a sent message, or one reply
+    // conversation under it, moves into a custom folder (or
+    // back out: folderId null returns it to Sent / the Inbox).
+    if (method === "POST" && seg[1] === "broadcasts" && seg.length === 4 && seg[3] === "file") {
+      const broadcast = await store.get(`broadcast:${seg[2]}`);
+      if (!broadcast) return err(404, "That message is not on file.");
+      const b = parseBody(event);
+      const folderId = b.folderId ? String(b.folderId) : null;
+      if (folderId) {
+        const folder = await store.get(`broadcastfolder:${user.id}:${folderId}`);
+        if (!folder || folder.ownerId !== user.id) return err(404, "That folder is not on file.");
+      }
+      broadcast.folderId = folderId;
+      await store.set(`broadcast:${broadcast.id}`, broadcast);
+      await logEvent({ type: "broadcast_filed", actorId: user.id, actorRole: "admin", subjectId: broadcast.id, market: null, data: { folderId, threadUserId: null } });
+      const replyCounts = await broadcastReplyCounts152();
+      return json(200, { broadcast: broadcastSummary152(broadcast, replyCounts) });
+    }
+    if (method === "POST" && seg[1] === "broadcasts" && seg.length === 4 && seg[3] === "file-thread") {
+      const broadcast = await store.get(`broadcast:${seg[2]}`);
+      if (!broadcast) return err(404, "That message is not on file.");
+      const b = parseBody(event);
+      const targetId = String(b.userId || "");
+      if (!(broadcast.recipientIds || []).includes(targetId)) return err(400, "That person was not one of this message's recipients.");
+      const folderId = b.folderId ? String(b.folderId) : null;
+      if (folderId) {
+        const folder = await store.get(`broadcastfolder:${user.id}:${folderId}`);
+        if (!folder || folder.ownerId !== user.id) return err(404, "That folder is not on file.");
+      }
+      broadcast.threadFolders = broadcast.threadFolders || {};
+      if (folderId) broadcast.threadFolders[targetId] = folderId;
+      else delete broadcast.threadFolders[targetId];
+      await store.set(`broadcast:${broadcast.id}`, broadcast);
+      await logEvent({ type: "broadcast_filed", actorId: user.id, actorRole: "admin", subjectId: broadcast.id, market: null, data: { folderId, threadUserId: targetId } });
+      return json(200, { ok: true, threadFolders: broadcast.threadFolders });
     }
     if (method === "GET" && seg[1] === "broadcasts" && seg.length === 3) {
       const broadcast = await store.get(`broadcast:${seg[2]}`);
@@ -26491,7 +26839,7 @@ async function route(event) {
         };
       });
       const replyCounts = await broadcastReplyCounts152();
-      return json(200, { broadcast: broadcastSummary152(broadcast, replyCounts), threads });
+      return json(200, { broadcast: broadcastSummary152(broadcast, replyCounts), threads, threadFolders: broadcast.threadFolders || {} });
     }
     if (method === "POST" && seg[1] === "broadcasts" && seg.length === 4 && seg[3] === "reply") {
       const broadcast = await store.get(`broadcast:${seg[2]}`);
@@ -28892,6 +29240,20 @@ async function route(event) {
           creatorPlatformMsgOk = String(gateBody.toUserId || "") === PLATFORM_PEER_ID;
         }
       }
+      // Partner platform thread (Build -153): partners hold a
+      // Magpie-team thread exactly like creators — an admin
+      // broadcast lands there and the partner replies in it —
+      // so the team thread is open to them before their markets
+      // launch too. Person-to-person stays behind the gate;
+      // partners have no such surface.
+      let partnerPlatformMsgOk = false;
+      if (user.role === "partner" && seg[0] === "messages") {
+        if (method === "GET") partnerPlatformMsgOk = !query.with || query.with === PLATFORM_PEER_ID;
+        else if (method === "POST") {
+          const gateBody = parseBody(event);
+          partnerPlatformMsgOk = String(gateBody.toUserId || "") === PLATFORM_PEER_ID;
+        }
+      }
       // Founding creator READS (Build -47, audit C10): the
       // founding tabs (Offers, Visits, Earnings) read the
       // creator's OWN records, which are necessarily empty
@@ -28919,7 +29281,7 @@ async function route(event) {
         (method === "POST" && seg.length === 2 && ["read", "unread", "delete", "move"].includes(seg[1])) ||
         (seg[1] === "folders" && ["GET", "POST", "PATCH", "DELETE"].includes(method))
       );
-      if (!businessPrelaunchOk && !foundingPrelaunchOk && !creatorPlatformMsgOk && !creatorPrelaunchReadOk && !msgStateOk) {
+      if (!businessPrelaunchOk && !foundingPrelaunchOk && !creatorPlatformMsgOk && !partnerPlatformMsgOk && !creatorPrelaunchReadOk && !msgStateOk) {
         return err(403, `The ${marketTalkName(user.market)} market has not launched yet. Founding creators keep priority in the order they signed up, and we email them the moment it opens to businesses.`);
       }
     }
