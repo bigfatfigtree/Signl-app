@@ -307,6 +307,43 @@ console.log("== G: sweep ==");
   check("a Monday re-run never doubles a scoreboard", (sw3.data.sweep.scoreboardsWritten || 0) === 0, JSON.stringify(sw3.data.sweep || {}));
 }
 
+// --- I: the Business Explainer Kit lives in the Seller Kit ---------
+console.log("== I: explainer kit ==");
+{
+  const kitRes = await TONY.client("GET", "/api/bdev/kit");
+  const k = kitRes.data.kit || {};
+  check("print kit carries both PDFs with Tony's plain labels", Array.isArray(k.printKit) && k.printKit.length === 2
+    && k.printKit[0].label === "Your leave-behind cards — print these"
+    && k.printKit[1].label === "The business one-pager — leave this behind"
+    && k.printKit[0].url.endsWith("magpie-leavebehind-tony-v6-2026-11-09-print.pdf")
+    && k.printKit[1].url.endsWith("magpie-business-onepager-tony-v2-2026-11-09-print.pdf"), JSON.stringify(k.printKit).slice(0, 200));
+  check("the 30-second opener now leads with the anchor phrase", (k.openers[0].text || "").includes("Magpie is local influencer marketing: real creators right here in Hampton Roads")
+    && !(k.openers[0].text || "").includes("founding list of Hampton Roads creators"), (k.openers[0].text || "").slice(0, 120));
+  check("the 2-minute version is in the kit, anchor up front", !!k.twoMinute && (k.twoMinute.paras || []).length === 4
+    && (k.twoMinute.paras[1] || "").startsWith("Magpie is local influencer marketing."), "");
+  const faq = k.faq || [];
+  const norm = (s) => String(s || "").toLowerCase().replace(/[“”".,?—-]/g, "").replace(/\s+/g, " ").trim();
+  const objQs = new Set((k.objections || []).map((o) => norm(o.q)));
+  check("the business FAQ joined the kit (10 questions)", faq.length === 10, `faq=${faq.length}`);
+  check("no FAQ question duplicates an objection question", faq.every((f) => !objQs.has(norm(f.q))), faq.map((f) => f.q).join(" | "));
+  const cost = faq.find((f) => f.q === "What does it cost?");
+  check("the FAQ cost answer prints no prices (canon: numbers are spoken, never printed)", !!cost && !/[$\d]/.test(cost.a), cost ? cost.a.slice(0, 80) : "missing");
+  const behind = faq.find((f) => /behind Magpie/.test(f.q));
+  check("the who's-behind answer carries Jeff's locked bio line", !!behind && behind.a.includes("two decades in local media and startups"), "");
+  const fsx = await import("node:fs");
+  const pathx = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const rootx = pathx.dirname(pathx.dirname(fileURLToPath(import.meta.url)));
+  for (const [file, min] of [["magpie-leavebehind-tony-v6-2026-11-09-print.pdf", 100000], ["magpie-business-onepager-tony-v2-2026-11-09-print.pdf", 500000]]) {
+    const p = pathx.join(rootx, "public", "assets", file);
+    const okFile = fsx.existsSync(p) && fsx.statSync(p).size > min && fsx.readFileSync(p).subarray(0, 4).toString() === "%PDF";
+    check(`print asset ships as a real PDF: ${file}`, okFile, "");
+  }
+  const pv = await admin("GET", `/api/admin/bdev/preview?repId=${TONY.id}`);
+  const pk = (pv.data.kit && pv.data.kit.kit) || {};
+  check("Jeff's preview of the kit shows the print kit + FAQ too", Array.isArray(pk.printKit) && pk.printKit.length === 2 && Array.isArray(pk.faq) && pk.faq.length === 10, "");
+}
+
 // --- H: filters + payments off ---------------------------------------
 console.log("== H: filters + payments ==");
 {

@@ -526,10 +526,10 @@ async function liability() {
 // ---------------- Seller Kit (verbatim, spec §6) ----------------
 
 const KIT = {
-  version: "2026-11-08",
+  version: "2026-11-09",
   deck: { label: "Seller deck", version: "v4 — Nov 8", url: "/assets/bizdev-deck-v4.pdf" },
   openers: [
-    { title: "30-second opener", text: "Hey, I'm Tony — I'm local, I'm with Magpie. We're putting together the founding list of Hampton Roads creators — people whose followers actually live here — and when we open, local shops will use them to get neighbors in the door. Shops in your kind of business are claiming founding spots now, before we open. Can I show you the creators for two minutes? That's it." },
+    { title: "30-second opener", text: "Hey, I'm Tony — I'm local, I'm with Magpie. Magpie is local influencer marketing: real creators right here in Hampton Roads, whose followers actually live here. We're putting together the founding creator list now, and when we open, local shops will use those creators to get neighbors in the door. Shops like yours are claiming founding spots before we open. Can I show you the creators for two minutes? That's it." },
     { title: "How the founding list works", text: "We don't open a city until the creator side is full — about fifty to sixty local creators, across food, beauty, fitness, going out, all of it, so any shop here has somebody worth picking. While that list fills, shops claim founding spots. First pick of creators, founding pricing locked. We open when the roster's full — I won't give you a date I can't keep, but founding shops hear first." },
   ],
   priceAnswers: [
@@ -548,6 +548,37 @@ const KIT = {
   ],
   closing: [
     { title: "Leave-it-with-me close", text: "No pressure either way. Two options: I can put your name down for a founding spot right now — takes thirty seconds, nothing to pay — or I'll leave you this card. It's got a code on it; if you claim through it later, it comes back to me and I'll look after you personally." },
+  ],
+  // Build -157 (Jeff, 2026-11-09): the Business Explainer Kit
+  // lives in the Seller Kit. One canonical set of words: the
+  // talk tracks and FAQ below are the explainer's own text
+  // (magpie-business-explainer-2026-11-09.md, sections B + D);
+  // the objection answers above stay the single objection set —
+  // the explainer carries those word for word, never a copy here.
+  printKit: [
+    { label: "Your leave-behind cards — print these", note: "The card you hand over at the door. Print a stack and keep them in the car.", url: "/assets/magpie-leavebehind-tony-v6-2026-11-09-print.pdf" },
+    { label: "The business one-pager — leave this behind", note: "The whole story on one page, front and back. Leave it when they want to think it over.", url: "/assets/magpie-business-onepager-tony-v2-2026-11-09-print.pdf" },
+  ],
+  twoMinute: {
+    title: "The 2-minute version",
+    paras: [
+      "Quick version of what this is. Most advertising a local shop buys can't be counted — you spend the money and hope. And most 'influencers' are no help either: a big following usually means people three states away who will never walk into your shop.",
+      "Magpie is local influencer marketing. It's a list of real creators right here in Hampton Roads, and every one of them is ranked by how many of their followers actually live here — neighbors, not follower counts. When a creator has a hundred followers and eighty-two of them live here, that's who you want: eight out of ten of her people are your neighbors.",
+      "Here's how a visit works. You pick a creator — you approve every single one, nothing ever posts without you. You can treat them to a visit — a meal, a service, an experience — and they post about it. Or you can book them at their own listed rate for bigger work. Either way, every visit carries that creator's own code, redeemed at your register. So afterwards you don't get a guess or a good feeling — you get a count: exactly how many people came in because of that creator.",
+      "Hampton Roads hasn't opened yet. We're filling the founding creator list first — about fifty to sixty local creators across food, fitness, beauty, going out, all of it — and shops that claim a founding spot now get first pick of those creators when we open, with founding pricing locked. Claiming takes about a minute and there's nothing to pay today. Want me to put your name down, or leave you the card so you can look it over?",
+    ],
+  },
+  faq: [
+    { q: "What does it cost?", a: "There's nothing to pay today, and founding pricing is locked for founding shops. The plan choice — and the first payment — only happen when we open here. If you'd like the actual numbers now, just ask Tony and he'll show you the founding plans privately, in person. They are never printed and never quoted unasked." },
+    { q: "What exactly do I get when it opens?", a: "A page for your business on Magpie, your matched creators with their local numbers shown up front, the ability to invite creators for visits or book them at their listed rates, and a counted record of every customer who comes in on a creator's code." },
+    { q: "Do I have to be on Instagram or post anything myself?", a: "No. The creators post to their followers. Your job in a visit is the part you already do — run your shop. Your Magpie page is built with our team." },
+    { q: "How much of my time does this take?", a: "About a minute to claim your spot. When we open: you look at your matched creators, say yes or no, and approve a visit when one's proposed. Maggie handles lining people up; Magpie handles the codes and the counting." },
+    { q: "How will I know it worked?", a: "You'll see the count — customers who redeemed a creator's code at your register, per creator. No impressions report, no guesswork. If a creator's people came in, it's a number on your screen." },
+    { q: "What if nobody comes in from a visit?", a: "Then the count says so, plainly, and you'll know that creator isn't right for your shop — and the system learns it too. With a treated visit, what you put in was the experience itself, which you chose and approved ahead of time. We never promise a count in advance; we show you the real one after." },
+    { q: "Can a creator post something I don't like?", a: "Nothing posts without a visit you approved, and every creator works to Magpie's visit terms — a treated visit is 1 post + 1 story about the experience. A creator who misses or mishandles a visit is counted down by the system, not argued with by you." },
+    { q: "Why do creators do this?", a: "Because it's their neighborhood too. Local creators build their name by being the person who knows the spots here — and treated visits and paid bookings at their own rate are how Magpie lets a shop thank them properly." },
+    { q: "Why “founding”? Why not just wait until you open?", a: "Because when we open, the founding creator list gets picked over — and founding shops pick first, at founding pricing, with their pages already built. Waiting costs you your place in that line and nothing else changes." },
+    { q: "Who's behind Magpie?", a: "Magpie is built by Jeff Rimmer, a founder who's spent two decades in local media and startups. Tony is local — he's the neighbor who'll hand you this card, and the person who looks after Hampton Roads founding shops day to day." },
   ],
   foundingTerms: [
     "Founding plans: $199 / $349 / $699 a month",

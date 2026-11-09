@@ -34037,17 +34037,20 @@ async function bdLoadKit(el) {
   <div id="bd-kit-results"></div>
   <h3 class="bd-h">Openers</h3>
   ${k.openers.map((o) => card(o.title, o.text)).join("")}
+  ${k.twoMinute ? `<div class="card bd-kit-card"><strong>${esc(k.twoMinute.title)}</strong>${(k.twoMinute.paras || []).map((p) => `<p>${esc(p)}</p>`).join("")}</div>` : ""}
   <h3 class="bd-h">The founding list</h3>
   ${card(k.openers[1].title, k.openers[1].text)}
   <h3 class="bd-h">Price answers <span class="muted small">(only when they ask)</span></h3>
   ${k.priceAnswers.map((o) => card(o.title, o.text)).join("")}
   <div class="card bd-kit-card"><strong>Founding terms — exactly what you may quote</strong><ul class="bd-terms">${k.foundingTerms.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
   <p style="margin:10px 0 0"><a class="btn ghost small-btn" href="${esc(k.deck.url)}" target="_blank" rel="noopener">Open the seller deck (${esc(k.deck.version)})</a></p></div>
+  ${(k.printKit && k.printKit.length) ? `<h3 class="bd-h">Your print kit</h3>${k.printKit.map((p) => `<div class="card bd-kit-card"><strong>${esc(p.label)}</strong><p>${esc(p.note || "")}</p><p style="margin:10px 0 0"><a class="btn ghost small-btn" href="${esc(p.url)}" download>Download the PDF</a></p></div>`).join("")}` : ""}
   <h3 class="bd-h">Objections</h3>
   ${k.objections.map((o) => card(o.q, o.a)).join("")}
   <div id="bd-practice"></div>
   <h3 class="bd-h">Closing</h3>
   ${k.closing.map((o) => card(o.title, o.text)).join("")}
+  ${(k.faq && k.faq.length) ? `<h3 class="bd-h">Questions businesses ask</h3>${k.faq.map((f) => card(f.q, f.a)).join("")}` : ""}
   <div class="card bd-kit-danger">
     <strong>Rules — never say these</strong>
     <ul class="bd-terms">${k.doNotSay.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
@@ -34341,10 +34344,13 @@ function abdPvKit() {
   const practice = wrap.practice || k.practice || pv.practice || [];
   return `<h3 class="bd-h" style="margin-top:6px">Seller Kit</h3>
   <h4 class="bd-h">Openers</h4>${(k.openers || []).map((o) => card(o.title, o.text)).join("")}
+  ${k.twoMinute ? `<div class="card bd-kit-card"><strong>${esc(k.twoMinute.title)}</strong>${(k.twoMinute.paras || []).map((p) => `<p>${esc(p)}</p>`).join("")}</div>` : ""}
   <h4 class="bd-h">Price answers</h4>${(k.priceAnswers || []).map((o) => card(o.title, o.text)).join("")}
+  ${(k.printKit && k.printKit.length) ? `<h4 class="bd-h">Your print kit</h4>${k.printKit.map((p) => `<div class="card bd-kit-card"><strong>${esc(p.label)}</strong><p>${esc(p.note || "")}</p><p style="margin:10px 0 0"><a class="btn ghost small-btn" href="${esc(p.url)}" download>Download the PDF</a></p></div>`).join("")}` : ""}
   <h4 class="bd-h">Objections</h4>${(k.objections || []).map((o) => card(o.q, o.a)).join("")}
   ${practice.length ? `<h4 class="bd-h">Practice with Maggie</h4><p class="muted small">Maggie plays the owner. Pick what you'd say — she'll tell you straight.</p>${practice.map((item) => `<div class="card bd-kit-card"><p class="muted small" style="margin:0">The owner says:</p><p style="margin:6px 0"><em>“${esc(item.label || "")}”</em></p><p class="muted small" style="margin:0">Answer they'd hear: ${esc(item.answer || "")}</p></div>`).join("")}` : ""}
-  <h4 class="bd-h">Closing</h4>${(k.closing || []).map((o) => card(o.title, o.text)).join("")}`;
+  <h4 class="bd-h">Closing</h4>${(k.closing || []).map((o) => card(o.title, o.text)).join("")}
+  ${(k.faq && k.faq.length) ? `<h4 class="bd-h">Questions businesses ask</h4>${k.faq.map((f) => card(f.q, f.a)).join("")}` : ""}`;
 }
 function abdPvMoney() {
   const pv = abd.preview; const wrap = (pv && pv.money) || {}; const m = wrap.money || wrap;
