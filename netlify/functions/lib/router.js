@@ -22809,6 +22809,7 @@ async function route(event) {
     // the 32 Hampton Roads founding targets as his book,
     // claimed-flag guarded; waits quietly until his account exists.
     (async () => { try { await bizdev.maybeSeedBizdev(); } catch (e) { /* biz dev seed is best-effort */ } })(),
+    (async () => { try { await bizdev.maybeEnrich157(); } catch (e) { /* biz dev enrichment is best-effort */ } })(),
     // One-time profileComplete backfill, claimed-flag guarded.
     (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
     // One-time Build -61 public-page backfill, claimed-flag guarded.
@@ -22891,6 +22892,32 @@ async function route(event) {
   // scoping server-side on every route.
   if (seg[0] === "bdev") {
     return bizdev.handleBizdevApi({ user, seg, method, event, query });
+  }
+
+  // Biz Dev sweep trigger (Build -157). Placement note: this
+  // explicit route MUST sit before the generic admin/bdev
+  // dispatch directly below, or that dispatch would swallow
+  // seg admin/bdev/sweep first (the other sweep routes sit later
+  // in the handler only because their segments never collide
+  // with an earlier dispatch). Auth mirrors the campaign /
+  // snapshot sweep blocks exactly: the Netlify scheduled
+  // function (netlify/functions/bizdev-sweep.mjs) POSTs with no
+  // session, carrying the x-signl-sweep-token header when
+  // SIGNL_SWEEP_TOKEN is set; without a matching token, only an
+  // admin session may trigger it. A `now` in the body is honored
+  // ONLY in TEST_MODE.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "bdev" && seg[2] === "sweep") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    const opts = {};
+    if (TEST_MODE && b.now) {
+      const d = new Date(b.now);
+      if (!Number.isNaN(d.getTime())) opts.now = d;
+    }
+    const summary = await bizdev.runBizdevSweep(opts);
+    return json(200, { ok: true, sweep: summary });
   }
 
   // Biz Dev HQ (Build -155): Jeff's side of the seller system.

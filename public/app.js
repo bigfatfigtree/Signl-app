@@ -2675,6 +2675,7 @@ function everythingGroups125() {
         R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
         R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages"),
+        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev"),
         R("building", "Partners", "Media partners and their deals", "Partners"),
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
         R("users", "Outreach", "Campaigns and sends", "Outreach"),
@@ -2922,6 +2923,8 @@ function hamburgerGroups137() {
       { title: "Review & people", rows: [
         R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
+        R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages", { badge: b.messages || 0 }),
+        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev"),
         R("users", "Creators", "Every creator, with the local numbers", "Creators"),
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
         R("building", "Partners", "Media partners and their deals", "Partners"),
@@ -33246,8 +33249,15 @@ async function saveAdvertiserPermit(userId, status) {
 // cannot edit a word of it.
 
 const BD_TABS = ["BD Home", "BD Leads", "BD Kit", "BD Money", "BD Menu"];
+const BD_STATUSES = ["Not contacted", "Contacted", "Meeting set", "Follow up", "Declined", "Closed"];
+// Build -157: true only while Jeff is looking at a rep's Show
+// Mode through the admin preview — every mutating Show path
+// checks this first (see bdShowClaim / bdPinVerify guards).
+let BD_PREVIEW = false;
+const bdPractice = {};
 const bd = {
   tab: "BD Home", home: null, leads: null, filter: "all", q: "",
+  city: "", neighborhood: "", facets: null, practiceItems: [],
   leadId: null, lead: null, logs: [],
   logDraft: null, show: null, kit: null, money: null,
   addOpen: false, nearNote: "",
@@ -33307,6 +33317,67 @@ function bdStageBadge(stage) {
   const kind = stage === "Founding spot claimed" ? "ok" : stage === "Said no" || stage === "Not a fit" ? "" : "info";
   return `<span class="badge ${kind}">${esc(stage)}</span>`;
 }
+function bdStatusBadge(status) {
+  if (!status) return "";
+  const kind = status === "Closed" ? "ok" : status === "Declined" ? "bd-status-muted" : "";
+  return `<span class="badge ${kind} bd-status-badge">${esc(status)}</span>`;
+}
+function bdQueueBadge(label) {
+  const kind = label === "Start here" ? "bd-qbadge-start" : label === "Next up" ? "bd-qbadge-next" : "bd-qbadge-later";
+  return `<span class="badge ${kind}">${esc(label || "Later")}</span>`;
+}
+function bdQueueCard(item) {
+  const l = item.lead || item;
+  if (!l) return "";
+  return `<div class="card bd-lead-card">
+    ${bdFlagBanners(l)}
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdQueueBadge(item.label)}${l.status ? bdStatusBadge(l.status) : ""}${l.stage ? bdStageBadge(l.stage) : ""}</span></div>
+    <div class="muted small">${esc(l.category || "")}${l.neighborhood ? ` · ${esc(l.neighborhood)}` : ""}</div>
+    ${item.why ? `<p style="margin:8px 0 0">${esc(item.why)}</p>` : ""}
+    ${bdNextLine(l)}
+    <div class="bd-card-btns"><button type="button" class="btn" onclick="return bdOpenLead('${l.id}')">Open</button></div>
+  </div>`;
+}
+async function bdShowTrips() {
+  const slot = document.getElementById("bd-trips-slot");
+  if (!slot) return false;
+  slot.innerHTML = `<p class="muted small">Finding good clusters near you...</p>`;
+  try {
+    const d = await api("GET", "/bdev/trips");
+    const trips = d.trips || [];
+    if (!trips.length) { slot.innerHTML = `<div class="panel"><p class="muted" style="margin:0">No clusters right now — your book is worked through. Add a lead or check back tomorrow.</p></div>`; return false; }
+    slot.innerHTML = trips.map((t) => `
+    <div class="panel" style="margin-top:10px">
+      <strong>${esc(t.zone || "")}${t.city ? ` · ${esc(t.city)}` : ""}</strong>
+      <p class="muted small" style="margin:4px 0 8px">${t.count} shop${t.count === 1 ? "" : "s"} · ${t.dueCount || 0} follow-ups due · ${t.warmCount || 0} warm intros</p>
+      ${t.first ? `<p style="margin:0 0 8px">First stop: <strong>${esc(t.first.shortName || t.first.name)}</strong></p>` : ""}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${(t.leads || []).map((l) => `<button type="button" class="btn ghost small-btn" onclick="return bdOpenLead('${l.id}')">${esc(l.shortName || l.name)}</button>`).join("")}</div>
+    </div>`).join("");
+  } catch (e) { slot.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; }
+  return false;
+}
+async function bdSetStatus(status) {
+  if (!bd.leadId) return false;
+  try {
+    const d = await api("POST", `/bdev/leads/${bd.leadId}/status`, { status });
+    if (d.lead) bd.lead = Object.assign({}, bd.lead, d.lead);
+    showToast("Saved — where things stand is updated.");
+    const el = document.getElementById("tab-body");
+    if (el) bdRenderLead(el);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+function bdCopyText(text, doneMsg) {
+  const done = () => showToast(doneMsg || "Copied");
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text || "").then(done).catch(done);
+  else done();
+  return false;
+}
+function bdToggleCallMode() {
+  const block = document.getElementById("bd-callblock");
+  if (block) block.classList.toggle("bd-call-large");
+  return false;
+}
 function bdNextLine(l) {
   if (!l.nextAction) return "";
   const na = l.nextAction;
@@ -33321,7 +33392,7 @@ function bdLeadCard(l, opts) {
   const o = opts || {};
   return `<div class="card bd-lead-card" ${o.big ? 'style="padding:18px"' : ""}>
     ${bdFlagBanners(l)}
-    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong>${bdStageBadge(l.stage)}</div>
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${bdStageBadge(l.stage)}</span></div>
     <div class="muted small">${esc(l.category)}${l.subType ? ` · ${esc(l.subType)}` : ""} · ${esc(l.neighborhood || "")}</div>
     ${l.pendingApproval ? `<div class="bd-pending">Waiting for Jeff to check — you can work it now; it counts once he approves it.</div>` : ""}
     ${bdNextLine(l)}
@@ -33372,6 +33443,9 @@ async function bdLoadHome(el) {
     ${(d.plan.clusters || []).length ? `<p class="muted small">Neighborhoods with unvisited shops: ${d.plan.clusters.map((c) => `${esc(c.zone)} (${c.count})`).join(" · ")}</p>` : ""}
   </section>
   ${(d.followUps || []).length ? `<section><h3 class="bd-h">Follow-ups due <span class="badge info">${d.followUps.length}</span></h3>${d.followUps.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
+  ${(d.alarms && d.alarms.length) ? `<section class="panel bd-alarm-panel"><h3 style="margin-top:0">Maggie noticed</h3><p class="muted small" style="margin:0 0 8px">A few doors are still waiting on you. No rush — here's what Maggie spotted.</p>${d.alarms.map((a) => `<div class="bd-logrow"><strong>${esc(a.name)}</strong><br><span>${esc(a.line || "")}</span> <button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return bdOpenLead('${a.leadId}')">Open</button></div>`).join("")}</section>` : ""}
+  ${(d.queue && d.queue.length) ? `<section><h3 class="bd-h">Your next best doors</h3>${d.queue.map((item) => bdQueueCard(item)).join("")}<button type="button" class="btn ghost" onclick="return bdShowTrips()">I've got some time — where should I go?</button><div id="bd-trips-slot"></div></section>` : `<div id="bd-trips-slot"></div>`}
+  ${d.scoreboard ? `<section class="panel"><h3 style="margin-top:0">Your last week, in one look</h3>${(d.scoreboard.lines || []).map((line) => `<p style="margin:6px 0">${esc(line)}</p>`).join("")}<p class="muted small" style="margin:8px 0 0">Week of ${esc(d.scoreboard.weekOf || "")}</p></section>` : ""}
   ${(d.newLeads || []).length ? `<section><h3 class="bd-h">New leads for you</h3>${d.newLeads.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
   <section class="panel">
     <h3 style="margin-top:0">${esc(d.rep.marketName)} founding progress</h3>
@@ -33427,8 +33501,13 @@ async function bdLoadLeads(el) {
   if (!el) return;
   bd.leadId = null;
   let d = null;
-  try { d = await api("GET", `/bdev/leads?filter=${encodeURIComponent(bd.filter === "near" ? "all" : bd.filter)}&q=${encodeURIComponent(bd.q)}`); bdCacheSet("leads", d); }
+  const cityQ = bd.city ? `&city=${encodeURIComponent(bd.city)}` : "";
+  const nbQ = bd.neighborhood ? `&neighborhood=${encodeURIComponent(bd.neighborhood)}` : "";
+  try { d = await api("GET", `/bdev/leads?filter=${encodeURIComponent(bd.filter === "near" ? "all" : bd.filter)}&q=${encodeURIComponent(bd.q)}${cityQ}${nbQ}`); bdCacheSet("leads", d); }
   catch (e) { d = bdCacheGet("leads"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
+  if (d.facets) bd.facets = d.facets;
+  const facets = d.facets || bd.facets || { cities: [], neighborhoods: [] };
+  const nbOptions = (facets.neighborhoods || []).filter((n) => !bd.city || n.city === bd.city);
   let leads = d.leads || [];
   el.innerHTML = `
   <h2>My Leads</h2>
@@ -33437,12 +33516,18 @@ async function bdLoadLeads(el) {
     <input id="bd-q" type="search" placeholder="Find a business in my book" value="${esc(bd.q)}" oninput="bdSearchInput(this.value)">
     <button type="button" class="btn" onclick="return bdToggleAdd()">Add a Lead</button>
   </div>
+  <div class="bd-searchrow">
+    <select id="bd-city" onchange="bdSetCity(this.value)" aria-label="City"><option value="">All cities</option>${(facets.cities || []).map((c) => `<option value="${esc(c)}" ${bd.city === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+    <select id="bd-neighborhood" onchange="bdSetNeighborhood(this.value)" aria-label="Neighborhood"><option value="">All neighborhoods</option>${nbOptions.map((n) => `<option value="${esc(n.name)}" ${bd.neighborhood === n.name ? "selected" : ""}>${esc(n.name)}</option>`).join("")}</select>
+  </div>
   <div class="chip-row">${BD_FILTERS.map(([k, label]) => `<button type="button" class="chip ${bd.filter === k ? "on" : ""}" onclick="return bdSetFilter('${k}')">${esc(label)}</button>`).join("")}</div>
   ${bd.nearNote ? `<p class="muted small">${esc(bd.nearNote)}</p>` : ""}
   <div id="bd-add-slot">${bd.addOpen ? bdAddFormHtml() : ""}</div>
   <div id="bd-lead-list">${leads.length ? leads.map((l) => bdLeadCard(l)).join("") : `<div class="panel"><p class="muted" style="margin:0">Nothing in this view. Pick another filter, or add a lead you walked past.</p></div>`}</div>`;
 }
 let bdSearchTimer = null;
+function bdSetCity(v) { bd.city = v || ""; bd.neighborhood = ""; bdLoadLeads(); return false; }
+function bdSetNeighborhood(v) { bd.neighborhood = v || ""; bdLoadLeads(); return false; }
 function bdSearchInput(v) { bd.q = v; clearTimeout(bdSearchTimer); bdSearchTimer = setTimeout(() => bdLoadLeads(), 350); return false; }
 function bdSetFilter(k) {
   bd.filter = k;
@@ -33504,6 +33589,38 @@ async function bdOpenLead(id) {
   return false;
 }
 
+function bdMailtoHref(email, mail) {
+  if (!email || !mail) return "";
+  return `mailto:${email}?subject=${encodeURIComponent(mail.subject || "")}&body=${encodeURIComponent(mail.body || "")}`;
+}
+function bdCopyDmOpener() {
+  const t = bd.lead && bd.lead.playbook ? bd.lead.playbook.dmOpener : "";
+  return bdCopyText(t || "", "Copied");
+}
+function bdPlaybookHtml(l) {
+  const p = l.playbook;
+  if (!p) return "";
+  const phone = p.phone || {};
+  const emailNote = !l.email ? `<p class="muted small">No email on file — this one's a visit or a call.</p>` : "";
+  const emailCard = (title, mail) => mail ? `<div class="card bd-kit-card"><strong>${esc(title)}</strong><p style="margin:8px 0 4px"><strong>${esc(mail.subject || "")}</strong></p><pre class="bd-email-body">${esc(mail.body || "")}</pre>${l.email ? `<a class="btn ghost small-btn" href="${esc(bdMailtoHref(l.email, mail))}">Send with your mail app</a>` : ""}</div>` : "";
+  return `<div class="panel bd-playbook">
+    <h3 style="margin-top:0">Your playbook for this visit</h3>
+    ${p.beforeYouGo ? `<h4 class="bd-h" style="margin-top:10px">Before you go</h4><p style="white-space:pre-wrap;line-height:1.55;margin:6px 0">${esc(p.beforeYouGo)}</p>` : ""}
+    ${p.opener ? `<h4 class="bd-h" style="margin-top:14px">When you walk in, say</h4><p class="bd-opener">${esc(p.opener)}</p>${p.preVisitLine ? `<p class="muted"><strong>If you called first:</strong> ${esc(p.preVisitLine)}</p>` : ""}` : (p.preVisitLine ? `<p class="muted"><strong>If you called first:</strong> ${esc(p.preVisitLine)}</p>` : "")}
+    <h4 class="bd-h" style="margin-top:14px">If you call first</h4>
+    <div id="bd-callblock" class="bd-callblock">
+      <div class="card bd-kit-card"><strong>You get the owner</strong><p class="bd-callscript">${esc(phone.owner || "")}</p></div>
+      <div class="card bd-kit-card"><strong>You get staff</strong><p class="bd-callscript">${esc(phone.staff || "")}</p></div>
+      <div class="card bd-kit-card"><strong>It goes to voicemail</strong><p class="bd-callscript">${esc(phone.voicemail || "")}</p></div>
+    </div>
+    <button type="button" class="btn ghost small-btn" onclick="return bdToggleCallMode()">Call mode — make the words bigger</button>
+    ${emailNote}
+    ${emailCard("Intro email", p.introEmail)}
+    ${emailCard("Follow-up email", p.followupEmail)}
+    ${p.dmOpener ? `<div class="card bd-kit-card"><strong>Instagram opener</strong><p style="white-space:pre-wrap;line-height:1.55">${esc(p.dmOpener)}</p><button type="button" class="btn ghost small-btn" onclick="return bdCopyDmOpener()">Copy</button></div>` : ""}
+    ${(p.runsheet && p.runsheet.length) ? `<h4 class="bd-h" style="margin-top:14px">At the counter — the run-sheet</h4><ol class="bd-runsheet">${p.runsheet.map((s) => `<li><strong>${esc(s.screen || "")}</strong>${s.show ? ` — ${esc(s.show)}` : ""}${s.say ? `<br><em>“${esc(s.say)}”</em>` : ""}</li>`).join("")}</ol>` : ""}
+  </div>`;
+}
 function bdRenderLead(el) {
   const l = bd.lead;
   if (!l) return;
@@ -33518,15 +33635,17 @@ function bdRenderLead(el) {
   <button type="button" class="linklike" onclick="return go('dashboard','BD Leads')">← My Leads</button>
   <div class="card" style="margin-top:8px">
     ${bdFlagBanners(l)}
-    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.name)}</strong>${bdStageBadge(l.stage)}</div>
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${bdStageBadge(l.stage)}</span></div>
     <p class="muted" style="margin:4px 0">${esc(l.category)}${l.subType ? ` · ${esc(l.subType)}` : ""} · ${esc(l.neighborhood || "")}${l.address ? `<br>${esc(l.address)}` : ""}</p>
     ${l.pendingApproval ? `<div class="bd-pending">Waiting for Jeff to check — you can work it now; it counts once he approves it.</div>` : ""}
     ${l.championName ? `<p class="small">Introduced by Champion — ${esc(l.championName)}</p>` : ""}
     <p style="margin:8px 0"><strong>Who runs it:</strong> ${l.dmName ? `${esc(l.dmName)}${l.dmRoleLabel ? ` — ${esc(l.dmRoleLabel)}` : ""}` : "Owner — name not on file, ask on your first visit"}${l.secondContact ? `<br><span class="muted small">Also: ${esc(l.secondContact.name)} — ${esc(l.secondContact.roleLabel || "")}</span>` : ""}${l.usuallyHere ? `<br><span class="muted small">Usually here: ${esc(l.usuallyHere)}</span>` : ""}</p>
     <div id="bd-oneliner" class="bd-oneliner"><span class="muted small">Maggie's one-liner is loading...</span></div>
+    ${bdPlaybookHtml(l)}
     <div class="bd-routes">${routes.join("")}</div>
     ${l.flags.noEmail && !l.email ? `<p class="muted small">No email on file — visit or phone only.</p>` : ""}
     <p style="margin:10px 0 4px"><strong>Founding spot:</strong> ${l.founding.status === "Confirmed" ? "Claimed — confirmed ✓" : l.founding.status === "Claimed" ? "Claimed — waiting for HQ to confirm" : "Not claimed yet"}${l.founding.planInterest ? ` · They're thinking about the $${l.founding.planInterest} plan` : ""}</p>
+    <div style="margin:10px 0"><p style="margin:0 0 6px"><strong>Where things stand</strong></p><div class="chip-row">${BD_STATUSES.map((s) => `<button type="button" class="chip ${l.status === s ? "on" : ""}" onclick="return bdSetStatus('${esc(s)}')">${esc(s)}</button>`).join("")}</div></div>
     ${bdNextLine(l)}
     <div class="bd-actions">
       <a class="btn" href="${bdMapsUrl(l)}" target="_blank" rel="noopener">Go</a>
@@ -33541,7 +33660,8 @@ function bdRenderLead(el) {
   </div>
   <div class="panel">
     <h3 style="margin-top:0">What's happened here</h3>
-    ${(bd.logs || []).length ? [...bd.logs].reverse().map((v) => `<div class="bd-logrow"><span class="muted small">${esc(String(v.visitAt || v.createdAt || "").slice(0, 10))}</span> ${v.type === "price_shown" ? "Price was shown" : v.type === "show_session" ? `Show Mode was used (${v.pages || 0} screens)` : `<strong>${esc(v.outcome || "")}</strong>${v.spokeName ? ` — talked to ${esc(v.spokeName)}` : ""}${v.objections && v.objections.length ? `<br><span class="muted small">Pushed back on: ${esc(v.objections.join(", "))}</span>` : ""}`}</div>`).join("") : `<p class="muted" style="margin:0">Nothing yet. The first visit starts the story.</p>`}
+    ${(l.statusHistory && l.statusHistory.length) ? [...l.statusHistory].reverse().map((h) => `<div class="bd-logrow"><span class="muted small">${esc(String(h.at || "").slice(0, 10))}</span> Status set to ${esc(h.status || "")}${h.by ? ` <span class="muted small">· ${esc(h.by)}</span>` : ""}</div>`).join("") : ""}
+    ${(bd.logs || []).length ? [...bd.logs].reverse().map((v) => `<div class="bd-logrow"><span class="muted small">${esc(String(v.visitAt || v.createdAt || "").slice(0, 10))}</span> ${v.type === "price_shown" ? "Price was shown" : v.type === "show_session" ? `Show Mode was used (${v.pages || 0} screens)` : `<strong>${esc(v.outcome || "")}</strong>${v.spokeName ? ` — talked to ${esc(v.spokeName)}` : ""}${v.objections && v.objections.length ? `<br><span class="muted small">Pushed back on: ${esc(v.objections.join(", "))}</span>` : ""}`}</div>`).join("") : ((l.statusHistory && l.statusHistory.length) ? "" : `<p class="muted" style="margin:0">Nothing yet. The first visit starts the story.</p>`)}
   </div>`;
   api("GET", `/bdev/leads/${l.id}/oneliner`).then((d) => {
     const s = document.getElementById("bd-oneliner");
@@ -33764,7 +33884,19 @@ function bdShowScreens() {
     { title: "You pick. You approve. Nothing posts without you.", body: `<ol class="bd-show-steps"><li>Invite a creator to come in. Treat them to a visit — a meal, a service, an experience — and they post 1 post + 1 story.</li><li>Or book them at their own listed price for bigger work. They set their rate. (Creators keep 97% of their rate — the 3% is card processing.)</li><li>Every visit is counted at your register with their own code — you'll see exactly who came in because of them.</li></ol><p><strong>You choose every creator. You approve every visit. You see the count.</strong></p>` },
     { title: "We don't guess. We count.", body: `<p>Magpie's match system ranks creators by how many of their followers actually live here — not by who's most famous. When you want an idea, Maggie, our in-app helper, suggests a campaign and names the creators she'd pick for your shop, and why. After a visit, you don't get “good vibes” — you get a count: how many of their people came in and used the code.</p>` },
     { title: "Hampton Roads founding spots are open now.", body: `<p>We're building the founding creator list for Hampton Roads right now. Shops that claim a founding spot are first in line when we open — first pick of creators, founding pricing locked, and we'll set your page up with you. There's nothing to pay today — paying starts when we open here, and we open when the founding creator roster is full. You're being invited in early.</p>` },
-    { title: "Claim your founding spot.", body: `
+    { title: "Claim your founding spot.", body: BD_PREVIEW ? `
+      <form id="bd-show-claim" onsubmit="return bdShowClaim(event)">
+        <fieldset disabled>
+        <div class="field"><label>Your name</label><input id="bsc-name" autocomplete="name" disabled></div>
+        <div class="field"><label>Business name</label><input id="bsc-biz" value="${esc(d.lead.name)}" autocomplete="organization" disabled></div>
+        <div class="field"><label>Best phone or Instagram to reach you</label><input id="bsc-contact" disabled></div>
+        <label class="bd-show-check"><input type="checkbox" id="bsc-yes" disabled> <span>Yes — put us on the Hampton Roads founding list.</span></label>
+        <button type="submit" class="btn bd-show-next" disabled>Claim your founding spot</button>
+        </fieldset>
+        <p class="muted small">Claims are off while Jeff is looking.</p>
+        <p class="muted small">Or scan the code on the card ${esc(d.repFirstName || "your rep")} leaves you and do it on your own phone. No payment today.</p>
+        <p id="bsc-msg" class="small"></p>
+      </form>` : `
       <form id="bd-show-claim" onsubmit="return bdShowClaim(event)">
         <div class="field"><label>Your name</label><input id="bsc-name" autocomplete="name"></div>
         <div class="field"><label>Business name</label><input id="bsc-biz" value="${esc(d.lead.name)}" autocomplete="organization"></div>
@@ -33799,12 +33931,14 @@ function bdShowRender() {
     </div>
     ${idx === 6 || s.pricing ? "" : `<button type="button" class="btn bd-show-next" onclick="return bdShowNext()">Next</button>`}
     ${!s.pricing && idx > 1 && idx < 6 ? `<button type="button" class="linklike bd-show-back" onclick="return bdShowBack()">Back</button>` : ""}
-    <p class="muted small bd-show-hint">Hold the Magpie mark to hand the phone back.</p>
+    ${BD_PREVIEW ? `<button type="button" class="btn ghost bd-show-next" onclick="return abdPvShowExit()">Done looking</button><p class="muted small bd-show-hint">Preview only — nothing here saves, sends, or counts.</p>` : `<p class="muted small bd-show-hint">Hold the Magpie mark to hand the phone back.</p>`}
   </div>`;
   const mark = document.getElementById("bd-show-mark");
   let timer = null;
-  mark.addEventListener("pointerdown", () => { timer = setTimeout(bdShowPinPad, 2000); });
-  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => mark.addEventListener(ev, () => clearTimeout(timer)));
+  if (!BD_PREVIEW && mark) {
+    mark.addEventListener("pointerdown", () => { timer = setTimeout(bdShowPinPad, 2000); });
+    ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => mark.addEventListener(ev, () => clearTimeout(timer)));
+  }
   let tx = null;
   host.ontouchstart = (e) => { tx = e.touches[0].clientX; };
   host.ontouchend = (e) => {
@@ -33817,6 +33951,7 @@ function bdShowRender() {
 function bdShowNext() { if (bd.show && bd.show.screen < 6) { bd.show.screen += 1; bd.show.maxSeen = Math.max(bd.show.maxSeen, bd.show.screen); bdShowRender(); } return false; }
 function bdShowBack() { if (bd.show && bd.show.screen > 1) { bd.show.screen -= 1; bdShowRender(); } return false; }
 async function bdShowClaim(ev) {
+  if (BD_PREVIEW) return false;
   ev.preventDefault();
   const msg = document.getElementById("bsc-msg");
   const body = {
@@ -33835,6 +33970,7 @@ async function bdShowClaim(ev) {
   return false;
 }
 function bdShowPinPad() {
+  if (BD_PREVIEW) return;
   const host = document.getElementById("bd-show-overlay");
   if (!host || !bd.show) return;
   host.innerHTML = `<div class="bd-show-wrap bd-pin-wrap">
@@ -33857,6 +33993,7 @@ function bdPinKey(k) {
   return false;
 }
 async function bdPinVerify() {
+  if (BD_PREVIEW) return false;
   const s = bd.show;
   try {
     const d = await api("POST", "/bdev/pin/verify", { pin: s.pinEntry });
@@ -33891,6 +34028,7 @@ async function bdLoadKit(el) {
   try { d = await api("GET", "/bdev/kit"); bd.kit = d.kit; bdCacheSet("kit", d); }
   catch (e) { d = bdCacheGet("kit"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
   const k = d.kit;
+  bd.practiceItems = d.practice || k.practice || bd.practiceItems || [];
   const card = (title, text) => `<div class="card bd-kit-card"><strong>${esc(title)}</strong><p>${esc(text)}</p></div>`;
   el.innerHTML = `
   <h2>Seller Kit</h2>
@@ -33907,6 +34045,7 @@ async function bdLoadKit(el) {
   <p style="margin:10px 0 0"><a class="btn ghost small-btn" href="${esc(k.deck.url)}" target="_blank" rel="noopener">Open the seller deck (${esc(k.deck.version)})</a></p></div>
   <h3 class="bd-h">Objections</h3>
   ${k.objections.map((o) => card(o.q, o.a)).join("")}
+  <div id="bd-practice"></div>
   <h3 class="bd-h">Closing</h3>
   ${k.closing.map((o) => card(o.title, o.text)).join("")}
   <div class="card bd-kit-danger">
@@ -33919,6 +34058,29 @@ async function bdLoadKit(el) {
     <p><em>“${esc(k.holdingLine)}”</em></p>
     <p class="muted small">Send it from the lead's page with <strong>Ask Jeff</strong> — one tap, before you leave the shop.</p>
   </div>`;
+  bdRenderPractice();
+}
+function bdRenderPractice() {
+  const host = document.getElementById("bd-practice");
+  if (!host) return;
+  const items = bd.practiceItems || [];
+  if (!items.length) { host.innerHTML = ""; return; }
+  host.innerHTML = `<h3 class="bd-h">Practice with Maggie</h3>
+  <p class="muted small" style="margin:4px 0 10px">Maggie plays the owner. Pick what you'd say — she'll tell you straight.</p>
+  ${items.map((item) => {
+    const n = item.n;
+    const picked = bdPractice[n];
+    const base = [{ kind: "answer", text: item.answer }, { kind: "trap", text: item.trap }, { kind: "weak", text: item.weak }];
+    const shift = ((Number(n) || 0) % 3 + 3) % 3;
+    const options = base.slice(shift).concat(base.slice(0, shift));
+    const result = picked ? `<div class="bd-practice-result"><strong>${picked === "answer" ? "That's the one." : "Not that one."}</strong>${item.why ? `<p style="margin:6px 0">${esc(item.why)}</p>` : ""}<div class="bd-practice-answer"><span class="muted small">Say it like this:</span><p style="margin:4px 0 0;white-space:pre-wrap;line-height:1.55">${esc(item.answer || "")}</p></div></div>` : `<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${options.map((o) => `<button type="button" class="btn ghost" style="text-align:left;justify-content:flex-start" onclick="return bdPracticePick(${Number(n) || 0},'${o.kind}')">${esc(o.text || "")}</button>`).join("")}</div>`;
+    return `<div class="card bd-kit-card"><p class="muted small" style="margin:0">The owner says:</p><p style="font-size:17px;line-height:1.5;margin:6px 0 0"><em>“${esc(item.label || "")}”</em></p>${result}</div>`;
+  }).join("")}`;
+}
+function bdPracticePick(n, kind) {
+  bdPractice[n] = kind;
+  bdRenderPractice();
+  return false;
 }
 function bdKitSearch(q) {
   const host = document.getElementById("bd-kit-results");
@@ -34017,7 +34179,7 @@ async function bdSetPin() {
 
 // ---------- Admin: Biz Dev room (Build -155) ----------
 
-const abd = { data: null, leads: [] };
+const abd = { data: null, leads: [], preview: null, previewTab: "Home", previewLead: null, leadFilter: { city: "", neighborhood: "", status: "" } };
 async function loadAdminBizdev155() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -34028,6 +34190,242 @@ async function loadAdminBizdev155() {
     abd.leads = leadsRes.leads || [];
     abdRender(el);
   } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+}
+function abdCountsChips(counts) {
+  return BD_STATUSES.map((s) => `<span class="badge ${s === "Closed" ? "ok" : ""}" style="margin:0 4px 4px 0">${esc(s)}: ${Number((counts || {})[s] || 0)}</span>`).join("");
+}
+function abdCountsCell(counts) {
+  return BD_STATUSES.map((s) => { const n = Number((counts || {})[s] || 0); return n ? String(n) : "—"; }).join(" · ");
+}
+function abdRollupHtml(d) {
+  // The overview ships statusRollup as a map keyed by marketId
+  // (values carry marketId/byStatus/byCity/byNeighborhood);
+  // accept a plain array of the same rows too.
+  const raw = d.statusRollup;
+  const roll = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.values(raw) : [];
+  if (!roll.length) return "";
+  const marketName = (id) => { const m = (d.markets || []).find((x) => x.marketId === id); return m ? (m.marketName || m.marketId) : id; };
+  return roll.map((r) => `<div class="panel abd-rollup">
+    <strong>Where things stand — ${esc(marketName(r.marketId) || r.marketId || "")}</strong>
+    <div style="margin:8px 0">${abdCountsChips(r.byStatus)}</div>
+    ${(r.byCity || []).length ? `<table class="abd-rollup-table"><thead><tr><th>City</th>${BD_STATUSES.map((s) => `<th>${esc(s)}</th>`).join("")}</tr></thead><tbody>${r.byCity.map((c) => `<tr><td>${esc(c.city || "")}</td>${BD_STATUSES.map((s) => `<td>${Number((c.counts || {})[s] || 0) || "—"}</td>`).join("")}</tr>`).join("")}</tbody></table>` : ""}
+    ${(r.byNeighborhood || []).length ? `<div style="margin-top:8px">${r.byNeighborhood.map((n) => { const total = BD_STATUSES.reduce((a, s) => a + Number((n.counts || {})[s] || 0), 0); return `<div class="bd-logrow" style="font-size:13.5px"><strong>${esc(n.neighborhood || "")}</strong> <span class="muted">· ${esc(n.city || "")}</span> · ${total} total · ${esc(abdCountsCell(n.counts))}</div>`; }).join("")}</div>` : ""}
+  </div>`).join("");
+}
+function abdPrewarmText(item) {
+  if (!item) return "";
+  const dr = item.draft;
+  if (!dr) return "";
+  if (typeof dr === "string") return dr;
+  return [dr.subject ? `Subject: ${dr.subject}` : "", dr.body || dr.text || ""].filter(Boolean).join("\n\n");
+}
+function abdCopyPrewarm(i) {
+  const item = (abd.data && abd.data.prewarm || [])[i];
+  return bdCopyText(abdPrewarmText(item), "Copied — paste it into your own email when you're ready.");
+}
+async function abdSetStatus(leadId) {
+  const sel = document.getElementById(`abd-status-${leadId}`);
+  if (!sel) return false;
+  try { await api("POST", `/admin/bdev/leads/${leadId}/status`, { status: sel.value }); showToast("Status saved."); abdRefresh(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+function abdFilteredLeads() {
+  const f = abd.leadFilter || { city: "", neighborhood: "", status: "" };
+  return (abd.leads || []).filter((l) => (!f.city || l.city === f.city) && (!f.neighborhood || l.neighborhood === f.neighborhood) && (!f.status || l.status === f.status));
+}
+function abdLeadRowsHtml() {
+  const d = abd.data;
+  if (!d) return "";
+  const repName = (id) => { const r = (d.reps || []).find((x) => x.userId === id); return r ? `${r.name} (${r.repCode})` : id; };
+  const rows = abdFilteredLeads();
+  if (!rows.length) return `<p class="muted small" style="margin:0">No leads match those filters.</p>`;
+  return rows.map((l) => `
+      <div class="bd-logrow">
+        <strong>${esc(l.name)}</strong> · ${esc(l.category)} · ${esc(l.neighborhood || "")}${l.city ? ` · ${esc(l.city)}` : ""} · ${esc(l.stage)} ${bdStatusBadge(l.status)} · ${esc(repName(l.assignedRepId))}${l.pendingApproval ? " · ⏳ waiting your check" : ""}${l.founding && l.founding.status === "Claimed" ? " · claimed, unconfirmed" : ""}${l.founding && l.founding.status === "Confirmed" ? " · claimed ✓" : ""}${l.hasPlaybook ? " · has playbook" : ""}
+        <span style="display:block;margin-top:6px">
+          <select id="abd-status-${l.id}" aria-label="Status for ${esc(l.name)}">${BD_STATUSES.map((s) => `<option value="${esc(s)}" ${l.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+          <button type="button" class="btn ghost small-btn" onclick="return abdSetStatus('${l.id}')">Set</button>
+          <button type="button" class="btn ghost small-btn" onclick="return abdLeadAction('${l.id}','confirm-claim')">Confirm claim</button>
+          <button type="button" class="btn ghost small-btn" onclick="return abdFlag('${l.id}','doNotContact',${!(l.flags && l.flags.doNotContact)})">${l.flags && l.flags.doNotContact ? "Clear do-not-contact" : "Set do-not-contact"}</button>
+          <button type="button" class="btn ghost small-btn" onclick="return abdFlag('${l.id}','jeffHandles',${!(l.flags && l.flags.jeffHandles)})">${l.flags && l.flags.jeffHandles ? "Clear “Jeff handles”" : "Jeff handles this one"}</button>
+          <select id="abd-reassign-${l.id}">${(d.reps || []).map((r) => `<option value="${r.userId}" ${r.userId === l.assignedRepId ? "selected" : ""}>${esc(r.repCode)}</option>`).join("")}</select>
+          <button type="button" class="btn ghost small-btn" onclick="return abdReassign('${l.id}')">Reassign</button>
+        </span>
+      </div>`).join("");
+}
+function abdSetLeadFilter(key, val) {
+  abd.leadFilter[key] = val || "";
+  const host = document.getElementById("abd-lead-list");
+  if (host) host.innerHTML = abdLeadRowsHtml();
+  else { const el = document.getElementById("tab-body"); if (el) abdRender(el); }
+  return false;
+}
+// ---------- Admin preview (Build -157): Jeff looks through a rep's eyes, read-only ----------
+async function abdPreviewOpen(repId) {
+  try {
+    const d = await api("GET", `/admin/bdev/preview?repId=${encodeURIComponent(repId)}`);
+    abd.preview = d; abd.previewTab = "Home"; abd.previewLead = null;
+    abdPreviewRender();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+function abdPreviewClose() {
+  if (BD_PREVIEW) { const sh = document.getElementById("bd-show-overlay"); if (sh) sh.remove(); BD_PREVIEW = false; bd.show = null; }
+  const el = document.getElementById("abd-preview");
+  if (el) el.remove();
+  abd.previewLead = null;
+  return false;
+}
+function abdPreviewRender() {
+  const pv = abd.preview;
+  if (!pv) return;
+  let host = document.getElementById("abd-preview");
+  if (!host) { host = document.createElement("div"); host.id = "abd-preview"; document.body.appendChild(host); }
+  const seat = pv.seat || {};
+  const tabs = ["Home", "My Leads", "Seller Kit", "My Money"];
+  host.innerHTML = `
+  <div class="abd-pv-banner"><span>You're seeing <strong>${esc(seat.repName || "the rep")}'s</strong> view — looking only. Nothing you tap here saves, sends, or counts.</span><button type="button" class="btn small-btn" onclick="return abdPreviewClose()">Back to your view</button></div>
+  <div class="abd-pv-frame">
+    <div class="abd-pv-tabs">${tabs.map((t) => `<button type="button" class="chip ${abd.previewTab === t ? "on" : ""}" onclick="return abdPvSetTab('${t}')">${esc(t)}</button>`).join("")}</div>
+    <div id="abd-pv-body"></div>
+  </div>`;
+  abdPvRenderBody();
+}
+function abdPvSetTab(t) { abd.previewTab = t; abd.previewLead = null; abdPreviewRender(); return false; }
+function abdPvLeadsList() {
+  const pv = abd.preview;
+  if (!pv) return [];
+  if (Array.isArray(pv.leads)) return pv.leads;
+  return (pv.leads && pv.leads.leads) || [];
+}
+function abdPvLeadCard(l) {
+  return `<div class="card bd-lead-card">
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${l.stage ? bdStageBadge(l.stage) : ""}</span></div>
+    <div class="muted small">${esc(l.category || "")}${l.neighborhood ? ` · ${esc(l.neighborhood)}` : ""}</div>
+    ${bdNextLine(l)}
+    <div class="bd-card-btns"><button type="button" class="btn" onclick="return abdPvOpenLead('${l.id}')">Open</button></div>
+  </div>`;
+}
+function abdPvQueueCard(item) {
+  const l = item.lead || item;
+  if (!l) return "";
+  return `<div class="card bd-lead-card">
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdQueueBadge(item.label)}${bdStatusBadge(l.status)}${l.stage ? bdStageBadge(l.stage) : ""}</span></div>
+    <div class="muted small">${esc(l.category || "")}${l.neighborhood ? ` · ${esc(l.neighborhood)}` : ""}</div>
+    ${item.why ? `<p style="margin:8px 0 0">${esc(item.why)}</p>` : ""}
+    <div class="bd-card-btns"><button type="button" class="btn" onclick="return abdPvOpenLead('${l.id}')">Open</button></div>
+  </div>`;
+}
+function abdPvHome() {
+  const pv = abd.preview; const h = (pv && pv.home) || {};
+  const stops = (h.plan && h.plan.stops) || [];
+  return `
+  ${h.brief ? `<section class="panel"><strong>Maggie — morning brief</strong>${h.brief.map((line) => `<p style="margin:6px 0">${esc(line)}</p>`).join("")}</section>` : ""}
+  ${stops.length ? `<h3 class="bd-h">Today's visits</h3>${stops.map((l) => abdPvLeadCard(l)).join("")}` : ""}
+  ${(h.followUps || []).length ? `<h3 class="bd-h">Follow-ups due</h3>${h.followUps.map((l) => abdPvLeadCard(l)).join("")}` : ""}
+  ${(h.alarms && h.alarms.length) ? `<section class="panel bd-alarm-panel"><h3 style="margin-top:0">Maggie noticed</h3>${h.alarms.map((a) => `<div class="bd-logrow"><strong>${esc(a.name)}</strong><br><span>${esc(a.line || "")}</span> <button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return abdPvOpenLead('${a.leadId}')">Open</button></div>`).join("")}</section>` : ""}
+  ${((pv.queue && pv.queue.length) || (h.queue && h.queue.length)) ? `<h3 class="bd-h">Your next best doors</h3>${(pv.queue && pv.queue.length ? pv.queue : h.queue).map((item) => abdPvQueueCard(item)).join("")}` : ""}
+  ${h.scoreboard ? `<section class="panel"><h3 style="margin-top:0">Your last week, in one look</h3>${(h.scoreboard.lines || []).map((line) => `<p style="margin:6px 0">${esc(line)}</p>`).join("")}<p class="muted small" style="margin:8px 0 0">Week of ${esc(h.scoreboard.weekOf || "")}</p></section>` : ""}
+  ${h.progress ? `<section class="panel"><h3 style="margin-top:0">Founding progress</h3><p style="margin:0">Creators: ${h.progress.creators} of ${h.progress.gateLow}–${h.progress.gateHigh}</p><p class="muted small">Businesses on the founding list: ${h.progress.foundingClaimed}</p></section>` : ""}
+  ${h.numbers ? `<section class="panel"><h3 style="margin-top:0">My numbers</h3><p style="margin:0">${h.numbers.claimedThisMonth} founding spots claimed this month · ${h.numbers.visitsThisWeek} visits this week · $${Number(h.numbers.moneyBuilding || 0).toLocaleString()} building up</p></section>` : ""}`;
+}
+function abdPvLeads() {
+  const leads = abdPvLeadsList();
+  return `<h3 class="bd-h" style="margin-top:6px">My Leads</h3>${leads.length ? leads.map((l) => abdPvLeadCard(l)).join("") : `<div class="panel"><p class="muted" style="margin:0">No leads in this book yet.</p></div>`}`;
+}
+function abdPvKit() {
+  const pv = abd.preview; const wrap = (pv && pv.kit) || {}; const k = wrap.kit || wrap;
+  if (!k || !k.openers) return `<div class="panel"><p class="muted" style="margin:0">Seller Kit isn't available in this preview.</p></div>`;
+  const card = (title, text) => `<div class="card bd-kit-card"><strong>${esc(title)}</strong><p>${esc(text)}</p></div>`;
+  const practice = wrap.practice || k.practice || pv.practice || [];
+  return `<h3 class="bd-h" style="margin-top:6px">Seller Kit</h3>
+  <h4 class="bd-h">Openers</h4>${(k.openers || []).map((o) => card(o.title, o.text)).join("")}
+  <h4 class="bd-h">Price answers</h4>${(k.priceAnswers || []).map((o) => card(o.title, o.text)).join("")}
+  <h4 class="bd-h">Objections</h4>${(k.objections || []).map((o) => card(o.q, o.a)).join("")}
+  ${practice.length ? `<h4 class="bd-h">Practice with Maggie</h4><p class="muted small">Maggie plays the owner. Pick what you'd say — she'll tell you straight.</p>${practice.map((item) => `<div class="card bd-kit-card"><p class="muted small" style="margin:0">The owner says:</p><p style="margin:6px 0"><em>“${esc(item.label || "")}”</em></p><p class="muted small" style="margin:0">Answer they'd hear: ${esc(item.answer || "")}</p></div>`).join("")}` : ""}
+  <h4 class="bd-h">Closing</h4>${(k.closing || []).map((o) => card(o.title, o.text)).join("")}`;
+}
+function abdPvMoney() {
+  const pv = abd.preview; const wrap = (pv && pv.money) || {}; const m = wrap.money || wrap;
+  const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `<h3 class="bd-h" style="margin-top:6px">My Money</h3>
+  <section class="panel"><p class="bd-money-big">Money building up: ${money(m.accrued)}</p><p class="muted" style="margin:0">Rate this month: <strong>${m.ratePct != null ? `${m.ratePct}%` : "—"}</strong> · Kept book: ${m.kept != null ? m.kept : "—"}</p></section>
+  ${(wrap.pipeline || []).length ? `<section class="panel"><h3 style="margin-top:0">Founding pipeline — not earned yet</h3>${wrap.pipeline.map((p) => `<div class="bd-logrow"><strong>${esc(p.name)}</strong> · ${esc(p.status || "")}${p.plan ? ` · thinking about $${p.plan}/mo` : ""}</div>`).join("")}</section>` : ""}
+  ${(m.perBusiness || []).length ? `<section class="panel"><h3 style="margin-top:0">My book</h3>${m.perBusiness.map((b) => `<div class="bd-logrow"><strong>${esc(b.businessName)}</strong> · ${esc(b.lane || "")} · Building up: ${money(b.accrued)}</div>`).join("")}</section>` : ""}`;
+}
+function abdPvRenderBody() {
+  const host = document.getElementById("abd-pv-body");
+  if (!host || !abd.preview) return;
+  if (abd.previewLead) { host.innerHTML = abdPvLeadDetailHtml(); return; }
+  if (abd.previewTab === "My Leads") host.innerHTML = abdPvLeads();
+  else if (abd.previewTab === "Seller Kit") host.innerHTML = abdPvKit();
+  else if (abd.previewTab === "My Money") host.innerHTML = abdPvMoney();
+  else host.innerHTML = abdPvHome();
+}
+function abdPvPlaybookHtml(p) {
+  if (!p) return "";
+  const phone = p.phone || {};
+  const emailCard = (title, mail) => mail ? `<div class="card bd-kit-card"><strong>${esc(title)}</strong><p style="margin:8px 0 4px"><strong>${esc(mail.subject || "")}</strong></p><pre class="bd-email-body">${esc(mail.body || "")}</pre></div>` : "";
+  return `<div class="panel bd-playbook"><h3 style="margin-top:0">Your playbook for this visit</h3>
+  ${p.beforeYouGo ? `<h4 class="bd-h" style="margin-top:10px">Before you go</h4><p style="white-space:pre-wrap;line-height:1.55;margin:6px 0">${esc(p.beforeYouGo)}</p>` : ""}
+  ${p.opener ? `<h4 class="bd-h" style="margin-top:14px">When you walk in, say</h4><p class="bd-opener">${esc(p.opener)}</p>` : ""}
+  ${p.preVisitLine ? `<p class="muted"><strong>If you called first:</strong> ${esc(p.preVisitLine)}</p>` : ""}
+  <h4 class="bd-h" style="margin-top:14px">If you call first</h4>
+  <div class="card bd-kit-card"><strong>You get the owner</strong><p class="bd-callscript">${esc(phone.owner || "")}</p></div>
+  <div class="card bd-kit-card"><strong>You get staff</strong><p class="bd-callscript">${esc(phone.staff || "")}</p></div>
+  <div class="card bd-kit-card"><strong>It goes to voicemail</strong><p class="bd-callscript">${esc(phone.voicemail || "")}</p></div>
+  ${emailCard("Intro email", p.introEmail)}${emailCard("Follow-up email", p.followupEmail)}
+  ${p.dmOpener ? `<div class="card bd-kit-card"><strong>Instagram opener</strong><p style="white-space:pre-wrap;line-height:1.55">${esc(p.dmOpener)}</p></div>` : ""}
+  ${(p.runsheet && p.runsheet.length) ? `<h4 class="bd-h" style="margin-top:14px">At the counter — the run-sheet</h4><ol class="bd-runsheet">${p.runsheet.map((s) => `<li><strong>${esc(s.screen || "")}</strong>${s.show ? ` — ${esc(s.show)}` : ""}${s.say ? `<br><em>“${esc(s.say)}”</em>` : ""}</li>`).join("")}</ol>` : ""}
+  </div>`;
+}
+function abdPvLeadDetailHtml() {
+  const wrap = abd.previewLead || {};
+  const l = wrap.lead || {};
+  const logs = wrap.logs || [];
+  return `<button type="button" class="linklike" onclick="return abdPvBackToList()">← Back</button>
+  <div class="card" style="margin-top:8px">
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.name || "")}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${l.stage ? bdStageBadge(l.stage) : ""}</span></div>
+    <p class="muted" style="margin:4px 0">${esc(l.category || "")}${l.subType ? ` · ${esc(l.subType)}` : ""} · ${esc(l.neighborhood || "")}${l.address ? `<br>${esc(l.address)}` : ""}</p>
+    ${l.dmName ? `<p style="margin:8px 0"><strong>Who runs it:</strong> ${esc(l.dmName)}${l.dmRoleLabel ? ` — ${esc(l.dmRoleLabel)}` : ""}</p>` : ""}
+    ${l.founding ? `<p style="margin:8px 0"><strong>Founding spot:</strong> ${esc(l.founding.status || "Not claimed yet")}</p>` : ""}
+    <button type="button" class="btn" onclick="return abdPvShow()">Show</button>
+    <p class="muted small" style="margin:8px 0 0">Looking only — status and history here can't be changed from preview.</p>
+  </div>
+  ${abdPvPlaybookHtml(l.playbook)}
+  <div class="panel"><h3 style="margin-top:0">What's happened here</h3>
+  ${(l.statusHistory && l.statusHistory.length) ? [...l.statusHistory].reverse().map((h) => `<div class="bd-logrow"><span class="muted small">${esc(String(h.at || "").slice(0, 10))}</span> Status set to ${esc(h.status || "")}</div>`).join("") : ""}
+  ${logs.length ? logs.slice().reverse().map((v) => `<div class="bd-logrow"><span class="muted small">${esc(String(v.visitAt || v.createdAt || "").slice(0, 10))}</span> ${v.type === "price_shown" ? "Price was shown" : v.type === "show_session" ? `Show Mode was used (${v.pages || 0} screens)` : `<strong>${esc(v.outcome || "")}</strong>${v.spokeName ? ` — talked to ${esc(v.spokeName)}` : ""}`}</div>`).join("") : ((l.statusHistory && l.statusHistory.length) ? "" : `<p class="muted" style="margin:0">Nothing yet.</p>`)}
+  </div>`;
+}
+function abdPvBackToList() { abd.previewLead = null; abdPvRenderBody(); return false; }
+async function abdPvOpenLead(leadId) {
+  const pv = abd.preview;
+  if (!pv || !pv.seat) return false;
+  try {
+    const d = await api("GET", `/admin/bdev/preview/lead?repId=${encodeURIComponent(pv.seat.userId)}&lead=${encodeURIComponent(leadId)}`);
+    abd.previewLead = d;
+    abdPvRenderBody();
+    const frame = document.querySelector(".abd-pv-frame");
+    if (frame) frame.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { alert(e.message); }
+  return false;
+}
+function abdPvShow() {
+  const wrap = abd.previewLead;
+  if (!wrap || !wrap.show) { alert("No show is ready for this lead in preview."); return false; }
+  BD_PREVIEW = true;
+  bd.show = { data: wrap.show, screen: 1, maxSeen: 1, startedAt: Date.now(), pricing: false, preview: true };
+  bdShowRender();
+  return false;
+}
+function abdPvShowExit() {
+  const host = document.getElementById("bd-show-overlay");
+  if (host) host.remove();
+  BD_PREVIEW = false;
+  bd.show = null;
+  return false;
 }
 function abdRender(el) {
   const d = abd.data;
@@ -34047,6 +34445,8 @@ function abdRender(el) {
     <p class="small" style="margin:8px 0">Gate: <strong>${m.progress.creators} creators</strong> of ${m.progress.gateLow}–${m.progress.gateHigh} · weakest: ${Object.entries(m.progress.byBucket).sort((a, b) => a[1].count - b[1].count).map(([k, v]) => `${esc(k)} ${v.count}`).join(" · ")}</p>
     <p class="small muted" style="margin:0">Leads ${m.loaded} · touched ${m.touched} · visited ${m.visited} · interested ${m.interested} · claimed ${m.claimed} (confirmed ${m.confirmed}) · active ${m.active}</p>
   </div>`).join("")}
+  ${abdRollupHtml(d)}
+  ${(d.prewarm && d.prewarm.length) ? `<div class="panel"><strong>Your pre-warm drafts — yours to send</strong><p class="muted small" style="margin:6px 0 10px">Drafts only. Tony never sees these and nothing sends from here — copy one into your own email when you're ready.</p>${d.prewarm.map((item, i) => { const dr = item.draft; const subj = dr && typeof dr === "object" ? (dr.subject || "") : ""; const body = dr && typeof dr === "object" ? (dr.body || dr.text || "") : (dr || ""); return `<div class="bd-logrow"><strong>${esc(item.business || "")}</strong>${item.toName ? ` · for ${esc(item.toName)}` : ""}${subj ? `<p style="margin:6px 0 4px"><strong>${esc(subj)}</strong></p>` : ""}<pre class="abd-prewarm-body">${esc(body)}</pre><button type="button" class="btn ghost small-btn" onclick="return abdCopyPrewarm(${i})">Copy</button></div>`; }).join("")}</div>` : ""}
   <div class="panel">
     <strong>Commission liability</strong>
     <p class="small" style="margin:8px 0">Accrued total unpaid: <strong>$${Number(d.liability.totalAccrued || 0).toLocaleString()}</strong> across ${d.liability.activations} activations. Locked math: 25% direct (30% at 25+ kept no-shrink, 35% at 75+), +3 kicker in 5+-activation months, 38% cap, 5% same-market residual post-vesting only, months 1–12 per business, clawback only on refunds inside the 3-month minimum. Blended planning value $326.50/business/mo.</p>
@@ -34054,7 +34454,7 @@ function abdRender(el) {
   </div>
   <div class="panel">
     <strong>Reps</strong>
-    ${(d.reps || []).map((r) => `<div class="bd-logrow"><strong>${esc(r.name)}</strong> · ${esc(r.email)} · ${esc(r.marketName)} · code ${esc(r.repCode)} · ${esc(r.seatState)}${r.warningMonth ? ` · ⚠ warning month ${esc(r.warningMonth)}` : ""}${r.atRisk ? ` · ⚠ ${esc(r.atRisk)}` : ""}</div>`).join("") || `<p class="muted small">No seats yet.</p>`}
+    ${(d.reps || []).map((r) => { const first = String(r.name || "").trim().split(/\s+/)[0] || "rep"; const sb = (d.scoreboards || []).find((x) => x.repId === r.userId); const al = (d.alarmSummary || []).find((x) => x.repId === r.userId); return `<div class="bd-logrow"><strong>${esc(r.name)}</strong> · ${esc(r.email)} · ${esc(r.marketName)} · code ${esc(r.repCode)} · ${esc(r.seatState)}${r.warningMonth ? ` · ⚠ warning month ${esc(r.warningMonth)}` : ""}${r.atRisk ? ` · ⚠ ${esc(r.atRisk)}` : ""} <button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return abdPreviewOpen('${r.userId}')">See ${esc(first)}'s view</button>${sb ? `<div class="muted small" style="margin-top:4px">Last week: ${(sb.lines || []).map((line) => esc(line)).join(" ")}</div>` : ""}${al ? `<div class="muted small" style="margin-top:2px">Follow-up pings: ${Number(al.count || 0)} waiting (${esc(al.date || "")})</div>` : ""}</div>`; }).join("") || `<p class="muted small">No seats yet.</p>`}
     <div class="form-2col" style="margin-top:10px">
       <div class="field"><label>Account email</label><input id="abd-seat-email" placeholder="rep@example.com"></div>
       <div class="field"><label>Rep code</label><input id="abd-seat-code" placeholder="HR-TONY"></div>
@@ -34090,17 +34490,12 @@ function abdRender(el) {
   </div>
   <div class="panel">
     <strong>All leads</strong>
-    <div style="margin-top:8px">${abd.leads.map((l) => `
-      <div class="bd-logrow">
-        <strong>${esc(l.name)}</strong> · ${esc(l.category)} · ${esc(l.neighborhood || "")} · ${esc(l.stage)} · ${esc(repName(l.assignedRepId))}${l.pendingApproval ? " · ⏳ waiting your check" : ""}${l.founding && l.founding.status === "Claimed" ? " · claimed, unconfirmed" : ""}${l.founding && l.founding.status === "Confirmed" ? " · claimed ✓" : ""}
-        <span style="display:block;margin-top:6px">
-          <button type="button" class="btn ghost small-btn" onclick="return abdLeadAction('${l.id}','confirm-claim')">Confirm claim</button>
-          <button type="button" class="btn ghost small-btn" onclick="return abdFlag('${l.id}','doNotContact',${!(l.flags && l.flags.doNotContact)})">${l.flags && l.flags.doNotContact ? "Clear do-not-contact" : "Set do-not-contact"}</button>
-          <button type="button" class="btn ghost small-btn" onclick="return abdFlag('${l.id}','jeffHandles',${!(l.flags && l.flags.jeffHandles)})">${l.flags && l.flags.jeffHandles ? "Clear “Jeff handles”" : "Jeff handles this one"}</button>
-          <select id="abd-reassign-${l.id}">${(d.reps || []).map((r) => `<option value="${r.userId}" ${r.userId === l.assignedRepId ? "selected" : ""}>${esc(r.repCode)}</option>`).join("")}</select>
-          <button type="button" class="btn ghost small-btn" onclick="return abdReassign('${l.id}')">Reassign</button>
-        </span>
-      </div>`).join("")}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <select onchange="abdSetLeadFilter('city',this.value)" aria-label="City filter"><option value="">All cities</option>${[...new Set(abd.leads.map((l) => l.city).filter(Boolean))].map((c) => `<option value="${esc(c)}" ${abd.leadFilter.city === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      <select onchange="abdSetLeadFilter('neighborhood',this.value)" aria-label="Neighborhood filter"><option value="">All neighborhoods</option>${[...new Set(abd.leads.map((l) => l.neighborhood).filter(Boolean))].map((n) => `<option value="${esc(n)}" ${abd.leadFilter.neighborhood === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+      <select onchange="abdSetLeadFilter('status',this.value)" aria-label="Status filter"><option value="">All statuses</option>${BD_STATUSES.map((s) => `<option value="${esc(s)}" ${abd.leadFilter.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+    </div>
+    <div id="abd-lead-list" style="margin-top:8px">${abdLeadRowsHtml()}
     </div>
   </div>`;
 }

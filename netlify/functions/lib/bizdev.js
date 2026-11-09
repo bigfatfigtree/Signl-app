@@ -40,6 +40,13 @@ const uuid = () => crypto.randomUUID();
 function logEvent(e) { try { return logEventRaw(e); } catch (err) { return null; } }
 function logCapture(e) { try { if (deps.logCapture) return deps.logCapture(e); } catch (err) { /* best-effort */ } return null; }
 
+// Build -157 Phase B: the Phase A enrichment pack (playbooks,
+// pre-warm drafts, practice set) ships beside this module. Loaded
+// once at module load; a missing file degrades to no enrichment
+// and no practice set, never a crash.
+let ENRICH157 = null;
+try { ENRICH157 = require("./bizdev-enrich-hr-157.json"); } catch (e) { ENRICH157 = null; }
+
 function json(statusCode, obj) {
   return { statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) };
 }
@@ -64,6 +71,26 @@ const OBJECTIONS = ["Price", "No time", "Tried influencers before", "Doesn't get
 const WANT_CATS = ["Food", "Fitness", "Beauty", "Lifestyle", "Going Out", "Other"];
 const COMPETITORS = ["Instagram direct", "An agency", "Another platform", "Radio", "None"];
 const NOT_FIT_REASONS = ["Closed permanently", "Wrong category", "Chain — HQ decision", "Duplicate", "Other"];
+// Build -157: the official STATUS control — one short list every
+// surface (rep book, HQ rollup, filters) reads. A lead with no
+// stored status derives one from its stage, so the -155 book
+// reads correctly before anyone sets a status by hand.
+const STATUSES = ["Not contacted", "Contacted", "Meeting set", "Follow up", "Declined", "Closed"];
+function statusOf(lead) {
+  if (lead && STATUSES.includes(lead.status)) return lead.status;
+  const stage = (lead && lead.stage) || "";
+  if (stage === "Not visited yet") return "Not contacted";
+  if (stage === STAGE_CLAIMED) return "Closed";
+  if (stage === "Said no" || stage === "Not a fit") return "Declined";
+  return "Contacted";
+}
+async function setLeadStatus(lead, status, by) {
+  lead.status = status;
+  lead.statusHistory = [...(lead.statusHistory || []), { status, at: nowIso(), by }];
+  await saveLead(lead);
+  return lead;
+}
+
 const GATE = { low: 50, high: 60 };
 const GATE_BUCKETS = ["Food", "Fitness", "Beauty", "Lifestyle", "Going Out"];
 const BLENDED_MONTHLY = 326.50;
@@ -198,6 +225,7 @@ function repLeadPayload(lead, opts) {
     instagram: lead.instagram || null,
     priority: priorityWords(lead),
     stage: lead.stage,
+    status: statusOf(lead),
     source: lead.source,
     pendingApproval: !!lead.pendingApproval,
     championName: lead.attribution && lead.attribution.championName ? lead.attribution.championName : null,
@@ -220,6 +248,8 @@ function repLeadPayload(lead, opts) {
   };
   if (full) {
     out.stageHistory = lead.stageHistory || [];
+    out.statusHistory = lead.statusHistory || [];
+    out.playbook = lead.playbook || null;
     out.claimLink = lead.attribution && lead.attribution.repCode ? claimPath(lead) : null;
   }
   return out;
@@ -545,6 +575,27 @@ const KIT = {
   escalationReasons: ["Wants a discount or free months", "Partner, sponsorship, or media talk", "Chain or multi-location deal", "Wants to invest", "Complaint about Magpie", "Press", "Other"],
 };
 
+// Build -157 practice set: Phase A's doorstep scenarios, each
+// answered with the LIVE kit's own words (never a second copy of
+// the approved text — if the kit changes, practice changes).
+function practiceAnswer157(n) {
+  const obj = (key) => { const o = KIT.objections.find((x) => x.key === key); return o ? o.a : null; };
+  switch (Number(n)) {
+    case 1: return KIT.priceAnswers[0].text;
+    case 2: return obj("Asked when it launches");
+    case 3: return obj("Tried influencers before");
+    case 4: return obj("No time");
+    case 5: return obj("Worried about no-shows");
+    case 6: return obj("Wants to know who else is on it");
+    case 7: return KIT.closing[0].text;
+    case 8: return KIT.holdingLine;
+    default: return null;
+  }
+}
+const PRACTICE157 = ENRICH157 && Array.isArray(ENRICH157.practice)
+  ? ENRICH157.practice.map((p) => ({ ...p, answer: practiceAnswer157(p.n) }))
+  : [];
+
 // ---------------- Show Mode bench ----------------
 
 const LEAD_CAT_TO_CREATOR_CATS = {
@@ -689,6 +740,345 @@ async function maybeSeedBizdev() {
   return true;
 }
 
+// ---------------- Build -157 Phase B: enrichment loader ----------------
+// One-time merge of the Phase A pack into the seeded HR book,
+// mirroring maybeSeedBizdev's claimed-flag guard. Merges ONLY the
+// fields present per lead; stage / stageHistory / logs / founding
+// and the contact flags are never touched (the one exception is
+// the phone-verify rule: an enrichment phone1Verify/phone2Verify
+// of true raises the lead's Verify Before Use flag). Research and
+// evidence notes collect into lead.hqResearch — internal-only,
+// never on a rep payload.
+const ENRICH_FLAG = "config:bdevEnrich157";
+let enrich157Done = false;
+async function maybeEnrich157() {
+  if (enrich157Done) return true;
+  const flag = await store().get(ENRICH_FLAG);
+  if (flag && flag.done) { enrich157Done = true; return true; }
+  const seedFlag = await store().get(SEED_FLAG);
+  if (!seedFlag || !seedFlag.done) return false; // the -155 seed must land first; retry later
+  if (!ENRICH157 || !Array.isArray(ENRICH157.leads)) return false;
+  const leads = await leadsOfMarket("hampton-roads");
+  const byName = new Map();
+  for (const l of leads) { const k = normName(l.name); if (!byName.has(k)) byName.set(k, l); }
+  let leadsUpdated = 0;
+  for (const entry of ENRICH157.leads) {
+    const lead = byName.get(normName(entry.matchName));
+    if (!lead) continue;
+    const e = entry.enrichment || {};
+    for (const f of ["email", "instagram", "address", "phone1", "phone2", "dmName", "dmRole", "dmRoleLabel"]) {
+      if (typeof e[f] === "string" && e[f].length) lead[f] = e[f];
+    }
+    if (e.secondContact && typeof e.secondContact === "object") lead.secondContact = e.secondContact;
+    if (e.phone1Verify === true) lead.phone1Verify = true;
+    if (e.phone2Verify === true) lead.phone2Verify = true;
+    if (e.phone1Note !== undefined) lead.phone1Note = e.phone1Note;
+    if (e.phone2Note !== undefined) lead.phone2Note = e.phone2Note;
+    const research = {};
+    for (const k of ["note", "emailEvidence", "emailNote", "instagramSource", "instagramNote", "emailVerify"]) {
+      if (e[k] !== undefined) research[k] = e[k];
+    }
+    if (Object.keys(research).length) lead.hqResearch = { ...(lead.hqResearch || {}), ...research };
+    if (entry.playbook) lead.playbook = entry.playbook;
+    await saveLead(lead);
+    leadsUpdated += 1;
+  }
+  // Pre-warm drafts are Jeff's lane only — stored for HQ, never
+  // sent by the app and never on a rep payload.
+  let prewarmStored = 0;
+  for (const pw of ENRICH157.prewarmDrafts || []) {
+    const lead = byName.get(normName(pw.business));
+    if (!lead) continue;
+    await store().set(`bdevprewarm:${lead.id}`, { leadId: lead.id, business: pw.business, toName: pw.toName, draft: pw.draft, createdAt: nowIso() });
+    prewarmStored += 1;
+  }
+  const at = nowIso();
+  await store().set(ENRICH_FLAG, { done: true, at, leadsUpdated, prewarmStored });
+  enrich157Done = true;
+  await logEvent({ type: "bdev_enrich_157", actorId: null, actorRole: "system", subjectId: null, market: "Hampton Roads", data: { leadsUpdated, prewarmStored } });
+  return true;
+}
+
+// ---------------- Build -157: queue, trips, alarms, scoreboard ----------------
+
+async function benchCreators157(marketId) {
+  const creators = deps.marketCreators ? await deps.marketCreators(marketId) : { bench: [] };
+  return creators.bench || [];
+}
+
+// The creators a rep can honestly show this business: the bench
+// filtered to the creator categories this lead's category maps
+// to (same map Show Mode uses).
+function creatorsToShow(lead, bench) {
+  const want = LEAD_CAT_TO_CREATOR_CATS[lead.category] || [];
+  return (bench || []).filter((c) => (c.categories || []).some((cat) => want.includes(cat)));
+}
+
+const QUEUE_CLOSED_STAGES = ["Said no", "Not a fit", "Founding spot claimed"];
+function queueCandidates(leads) {
+  return (leads || []).filter((l) => {
+    if (QUEUE_CLOSED_STAGES.includes(l.stage)) return false;
+    const st = statusOf(l);
+    if (st === "Declined" || st === "Closed") return false;
+    if (l.flags && (l.flags.doNotContact || l.flags.jeffHandles)) return false;
+    return true;
+  });
+}
+
+function queueScore157(lead, bench, today) {
+  let score = 0;
+  const why = [];
+  if (lead.source === "Champion intro" || lead.warmIntro) { score += 100; why.push("Warm intro — these go first"); }
+  const overdue = !!(lead.nextAction && lead.nextAction.date && lead.nextAction.date < today);
+  if (overdue) { score += 40; why.push("Their follow-up is late"); }
+  if (lead.dmName) { score += 25; why.push("Owner's name is on file"); }
+  if (lead.phone1 || lead.phone2 || lead.email || lead.instagram) { score += 15; why.push("Easy to reach"); }
+  if (creatorsToShow(lead, bench).length) { score += 15; why.push("Creators to show them"); }
+  if (lead.hqTier === "A") { score += 12; why.push("Top of Jeff's list"); }
+  else if (lead.hqTier === "B") { score += 6; }
+  if (lead.stage === "Not visited yet") { score += 4; }
+  return { score, why: why.length ? why.join(", ") : "In your book, ready when you are" };
+}
+
+function buildQueue157(leads, bench) {
+  const today = todayStr();
+  const scored = queueCandidates(leads).map((l) => {
+    const s = queueScore157(l, bench, today);
+    return { lead: l, score: s.score, why: s.why };
+  });
+  scored.sort((a, b) => b.score - a.score || String(a.lead.name).localeCompare(String(b.lead.name)));
+  return scored.map((it, i) => ({
+    lead: repLeadPayload(it.lead),
+    label: i <= 2 ? "Start here" : i <= 9 ? "Next up" : "Later",
+    why: it.why,
+  }));
+}
+
+const WORKING_STAGES157 = ["Not visited yet", "Visited — owner not in", "Talked — needs to think", "Talked — wants a follow-up"];
+function buildTrips157(leads, bench) {
+  const today = todayStr();
+  const cand = queueCandidates(leads);
+  const candIds = new Set(cand.map((l) => l.id));
+  const extra = (leads || []).filter((l) => !candIds.has(l.id)
+    && l.nextAction && l.nextAction.date && l.nextAction.date <= today
+    && WORKING_STAGES157.includes(l.stage));
+  const actionable = [...cand, ...extra];
+  const byZone = new Map();
+  for (const l of actionable) {
+    const z = l.neighborhood || "Other area";
+    if (!byZone.has(z)) byZone.set(z, []);
+    byZone.get(z).push(l);
+  }
+  const groups = [...byZone.entries()].map(([zone, items]) => {
+    const scored = items.map((l) => ({ l, s: queueScore157(l, bench, today).score }))
+      .sort((a, b) => b.s - a.s || String(a.l.name).localeCompare(String(b.l.name)));
+    const first = scored[0].l;
+    return {
+      zone,
+      city: first.city || "",
+      count: items.length,
+      dueCount: items.filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today).length,
+      warmCount: items.filter((l) => l.source === "Champion intro" || l.warmIntro).length,
+      first: repLeadPayload(first),
+      leads: scored.map((x) => repLeadPayload(x.l)),
+    };
+  });
+  groups.sort((a, b) => b.dueCount - a.dueCount || b.warmCount - a.warmCount || b.count - a.count
+    || zoneRank(a.zone) - zoneRank(b.zone) || a.zone.localeCompare(b.zone));
+  return groups;
+}
+
+function alarmsFor157(leads) {
+  const today = todayStr();
+  return (leads || [])
+    .filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date < today
+      && !QUEUE_CLOSED_STAGES.includes(l.stage)
+      && !(l.flags && (l.flags.doNotContact || l.flags.jeffHandles)))
+    .sort((a, b) => String(a.nextAction.date).localeCompare(String(b.nextAction.date)))
+    .slice(0, 5)
+    .map((l) => {
+      const date = l.nextAction.date;
+      const late = daysLateWords(date);
+      return {
+        leadId: l.id, name: l.name, dueDate: date, late,
+        line: `${l.name} is still waiting — the follow-up was due ${date} (${late}). A quick call or visit keeps it warm.`,
+      };
+    });
+}
+
+// The last completed Mon–Sun week (UTC), as date strings.
+function weekWindow(now) {
+  const d = now ? new Date(now) : new Date();
+  const base = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const dow = new Date(base).getUTCDay();
+  const thisMonday = base - ((dow + 6) % 7) * 86400000;
+  return {
+    monday: new Date(thisMonday - 7 * 86400000).toISOString().slice(0, 10),
+    sunday: new Date(thisMonday - 86400000).toISOString().slice(0, 10),
+  };
+}
+
+const SCOREBOARD_FOLLOWUP_OUTCOMES = ["Very interested — set a follow-up", "Talked — needs to think", "Talked to staff — need the owner"];
+async function computeScoreboard(seat, now) {
+  const nowDate = now ? new Date(now) : new Date();
+  const { monday, sunday } = weekWindow(nowDate);
+  const key = `bdevscore:${seat.userId}:${monday}`;
+  const existing = await store().get(key);
+  if (existing) return existing;
+  const inWindow = (iso) => { const d = String(iso || "").slice(0, 10); return d >= monday && d <= sunday; };
+  const logs = (await store().list("bdevlog:")).map((r) => r.value)
+    .filter((v) => v && v.repId === seat.userId && v.outcome && inWindow(v.visitAt || v.createdAt));
+  const visits = logs.length;
+  const followUpsSet = logs.filter((v) => SCOREBOARD_FOLLOWUP_OUTCOMES.includes(v.outcome)).length;
+  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+  const claims = leads.filter((l) => l.founding && l.founding.claimedAt && inWindow(l.founding.claimedAt)).length;
+  const today = nowDate.toISOString().slice(0, 10);
+  const overdueNow = leads.filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date < today
+    && !QUEUE_CLOSED_STAGES.includes(l.stage)).length;
+  const objCounts = {};
+  for (const v of logs) for (const o of v.objections || []) objCounts[o] = (objCounts[o] || 0) + 1;
+  let topObjection = null, topN = 0;
+  for (const [o, n] of Object.entries(objCounts)) { if (n > topN) { topN = n; topObjection = o; } }
+  const lines = [];
+  if (!visits && !claims && !topObjection && !overdueNow) {
+    lines.push("A quiet week — the book is still there, in order, whenever you've got time.");
+  } else {
+    lines.push(`Last week: ${visits} visit${visits === 1 ? "" : "s"} logged, ${claims} founding spot${claims === 1 ? "" : "s"} claimed.`);
+    if (topObjection) lines.push(`The pushback heard most: ${topObjection}.`);
+    if (overdueNow) lines.push(overdueNow === 1 ? "1 follow-up is overdue right now." : `${overdueNow} follow-ups are overdue right now.`);
+  }
+  const rec = {
+    id: uuid(), repId: seat.userId, marketId: seat.marketId, weekOf: monday,
+    createdAt: nowDate.toISOString(),
+    stats: { visits, claims, followUpsSet, overdueNow, topObjection },
+    lines,
+  };
+  await store().set(key, rec);
+  return rec;
+}
+
+async function latestScoreboard157(repId) {
+  const rows = (await store().list("bdevscore:")).map((r) => r.value)
+    .filter((v) => v && v.repId === repId)
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const latest = rows[0] || null;
+  if (!latest) return null;
+  const age = Date.now() - Date.parse(latest.createdAt);
+  return Number.isFinite(age) && age <= 8 * 86400000 ? latest : null;
+}
+
+// The daily sweep (POST /admin/bdev/sweep): one alarm record per
+// rep per day while follow-ups sit overdue (same-day overwrite =
+// idempotent), plus Monday scoreboards for the week just ended.
+async function runBizdevSweep(opts) {
+  const now = opts && opts.now ? new Date(opts.now) : new Date();
+  const today = now.toISOString().slice(0, 10);
+  const seats = (await store().list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active);
+  let alarmsWritten = 0, scoreboardsWritten = 0;
+  for (const seat of seats) {
+    const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const overdue = leads
+      .filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date < today
+        && !QUEUE_CLOSED_STAGES.includes(l.stage)
+        && !(l.flags && (l.flags.doNotContact || l.flags.jeffHandles)))
+      .sort((a, b) => String(a.nextAction.date).localeCompare(String(b.nextAction.date)));
+    if (overdue.length) {
+      await store().set(`bdevalarm:${seat.userId}:${today}`, {
+        repId: seat.userId, marketId: seat.marketId, date: today,
+        items: overdue.map((l) => ({ leadId: l.id, name: l.name, dueDate: l.nextAction.date })),
+        createdAt: now.toISOString(),
+      });
+      alarmsWritten += 1;
+    }
+    if (now.getUTCDay() === 1) {
+      const { monday } = weekWindow(now);
+      const existed = await store().get(`bdevscore:${seat.userId}:${monday}`);
+      await computeScoreboard(seat, now);
+      if (!existed) scoreboardsWritten += 1;
+    }
+  }
+  return { seats: seats.length, alarmsWritten, scoreboardsWritten };
+}
+
+// The rep Home payload, factored out of the route so HQ's
+// read-only preview (Build -157) renders EXACTLY what the rep
+// sees. opts.lazyScoreboard === false (the preview) suppresses
+// the one write this builder can make — the Monday scoreboard
+// generation — keeping preview paths write-free.
+async function buildRepHome157(seat, user, opts) {
+  const plan = await dayPlan(seat);
+  const progress = await marketProgress(seat.marketId);
+  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+  const today = todayStr();
+  const followUps = leads
+    .filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today && !["Said no", "Not a fit"].includes(l.stage))
+    .sort((a, b) => String(a.nextAction.date).localeCompare(String(b.nextAction.date)))
+    .map((l) => repLeadPayload(l));
+  const newLeads = leads.filter((l) => l.isNewForRep).map((l) => repLeadPayload(l));
+  const logs = (await store().list("bdevlog:")).map((r) => r.value).filter((v) => v && v.repId === seat.userId);
+  const weekAgo = addDaysStr(today, -6);
+  const visitsThisWeek = logs.filter((v) => v.visitAt && v.visitAt.slice(0, 10) >= weekAgo && v.outcome).length;
+  const money = await moneyFor(seat.userId, seat.marketId);
+  const unfinished = logs.filter((v) => v.open).map((v) => ({ logId: v.id, leadId: v.leadId, visitAt: v.visitAt }));
+  const firstStop = plan.stops.find((s) => !logs.some((v) => v.leadId === s.id && v.visitAt && v.visitAt.slice(0, 10) === today && v.outcome));
+  const brief = [];
+  brief.push(plan.zoneLabel ? `Today: ${plan.zoneLabel}. ${plan.totalCount} stop${plan.totalCount === 1 ? "" : "s"}.` : "No visits planned today — pick a neighborhood or check new leads.");
+  if (firstStop) brief.push(`First: ${firstStop.shortName || firstStop.name}${firstStop.dmName ? ` — ask for ${firstStop.dmName}` : ""}.`);
+  brief.push(followUps.length ? `${followUps.length} follow-up${followUps.length === 1 ? "" : "s"} due.` : "No follow-ups due.");
+  const bench = await benchCreators157(seat.marketId);
+  const queue = buildQueue157(leads, bench).slice(0, 8);
+  const alarms = alarmsFor157(leads);
+  if (!opts || opts.lazyScoreboard !== false) {
+    if (new Date().getUTCDay() === 1) await computeScoreboard(seat, new Date());
+  }
+  const scoreboard = await latestScoreboard157(seat.userId);
+  return {
+    rep: { firstName: String(user.name || "").split(" ")[0] || "Rep", marketName: seat.marketName, repCode: seat.repCode, seatState: seat.seatState, pinSet: !!seat.pinHash },
+    date: today, brief,
+    plan: { zoneLabel: plan.zoneLabel, stops: plan.stops, doneCount: plan.doneCount, totalCount: plan.totalCount, clusters: plan.clusters },
+    followUps, newLeads, progress,
+    numbers: { claimedThisMonth: leads.filter((l) => l.founding && l.founding.claimedAt && monthOf(l.founding.claimedAt) === monthOf(nowIso())).length, visitsThisWeek, moneyBuilding: money.accrued },
+    unfinished,
+    alarms, queue, scoreboard,
+  };
+}
+
+// The My Money payload, factored out of the route for the same
+// preview-reuse reason as buildRepHome157. Read-only.
+async function moneyPayload157(seat) {
+  const money = await moneyFor(seat.userId, seat.marketId);
+  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+  const pipeline = leads.filter((l) => (l.founding && (l.founding.status === "Claimed" || l.founding.status === "Confirmed")) || (l.stage || "").startsWith("Very interested"))
+    .map((l) => ({ name: l.name, status: l.founding && l.founding.status !== "Not claimed" ? l.founding.status : "Interested", plan: (l.founding && l.founding.planInterest) || null, claimedAt: (l.founding && l.founding.claimedAt) || null }));
+  const pipelineValue = pipeline.reduce((n, p) => n + (p.plan || BLENDED_MONTHLY) * 0.25, 0);
+  const nextTier = money.rateNow.kept < 25
+    ? { at: 25, rate: 30, have: money.rateNow.kept }
+    : money.rateNow.kept < 75 ? { at: 75, rate: 35, have: money.rateNow.kept } : null;
+  return {
+    money: {
+      accrued: money.accrued, ratePct: Math.round(money.rateNow.rate * 100), kept: money.rateNow.kept,
+      shrank: money.rateNow.shrank, kicked: money.rateNow.kicked,
+      newThisMonth: newActivationsIn((await activationsOf(seat.userId, seat.marketId)).filter((a) => a.direct), monthOf(nowIso())).length,
+      vesting: money.vesting, perBusiness: money.perBusiness, residualCount: money.residualCount,
+    },
+    pipeline, pipelineMonthlyIfActive: Math.round(pipelineValue * 100) / 100,
+    nextTier, seatState: seat.seatState, warningMonth: seat.warningMonth || null, atRisk: seat.atRisk || null,
+  };
+}
+
+async function previewSeat157(repId) {
+  const seat = repId ? await store().get(`bdevrep:${repId}`) : null;
+  return seat && seat.active ? seat : null;
+}
+async function userRecord157(userId) {
+  if (deps.allUsers) {
+    const users = await deps.allUsers();
+    const u = (users || []).find((x) => x && x.id === userId);
+    if (u) return u;
+  }
+  return (await store().get(`user:${userId}`)) || { id: userId, name: "" };
+}
+
 // ---------------- rep API ----------------
 
 async function repSeatOrErr(user) {
@@ -713,40 +1103,43 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
   if (error) return error;
   const b = method === "POST" ? parseBody(event) : {};
 
-  // GET /bdev/home
+  // GET /bdev/home — the payload builder is shared with HQ's
+  // read-only preview (buildRepHome157); behavior is unchanged
+  // apart from the Build -157 additions (alarms, queue, scoreboard).
   if (method === "GET" && seg[1] === "home" && seg.length === 2) {
-    const plan = await dayPlan(seat);
-    const progress = await marketProgress(seat.marketId);
-    const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
-    const today = todayStr();
-    const followUps = leads
-      .filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today && !["Said no", "Not a fit"].includes(l.stage))
-      .sort((a, b) => String(a.nextAction.date).localeCompare(String(b.nextAction.date)))
-      .map((l) => repLeadPayload(l));
-    const newLeads = leads.filter((l) => l.isNewForRep).map((l) => repLeadPayload(l));
-    const logs = (await store().list("bdevlog:")).map((r) => r.value).filter((v) => v && v.repId === seat.userId);
-    const weekAgo = addDaysStr(today, -6);
-    const visitsThisWeek = logs.filter((v) => v.visitAt && v.visitAt.slice(0, 10) >= weekAgo && v.outcome).length;
-    const money = await moneyFor(seat.userId, seat.marketId);
-    const unfinished = logs.filter((v) => v.open).map((v) => ({ logId: v.id, leadId: v.leadId, visitAt: v.visitAt }));
-    const firstStop = plan.stops.find((s) => !logs.some((v) => v.leadId === s.id && v.visitAt && v.visitAt.slice(0, 10) === today && v.outcome));
-    const brief = [];
-    brief.push(plan.zoneLabel ? `Today: ${plan.zoneLabel}. ${plan.totalCount} stop${plan.totalCount === 1 ? "" : "s"}.` : "No visits planned today — pick a neighborhood or check new leads.");
-    if (firstStop) brief.push(`First: ${firstStop.shortName || firstStop.name}${firstStop.dmName ? ` — ask for ${firstStop.dmName}` : ""}.`);
-    brief.push(followUps.length ? `${followUps.length} follow-up${followUps.length === 1 ? "" : "s"} due.` : "No follow-ups due.");
-    return json(200, {
-      rep: { firstName: String(user.name || "").split(" ")[0] || "Rep", marketName: seat.marketName, repCode: seat.repCode, seatState: seat.seatState, pinSet: !!seat.pinHash },
-      date: today, brief,
-      plan: { zoneLabel: plan.zoneLabel, stops: plan.stops, doneCount: plan.doneCount, totalCount: plan.totalCount, clusters: plan.clusters },
-      followUps, newLeads, progress,
-      numbers: { claimedThisMonth: leads.filter((l) => l.founding && l.founding.claimedAt && monthOf(l.founding.claimedAt) === monthOf(nowIso())).length, visitsThisWeek, moneyBuilding: money.accrued },
-      unfinished,
-    });
+    return json(200, await buildRepHome157(seat, user));
   }
 
-  // GET /bdev/leads?q=&filter=
+  // GET /bdev/queue — the priority queue over the rep's own book.
+  if (method === "GET" && seg[1] === "queue" && seg.length === 2) {
+    const book = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const bench = await benchCreators157(seat.marketId);
+    return json(200, { queue: buildQueue157(book, bench) });
+  }
+
+  // GET /bdev/trips — the same actionable book, grouped into
+  // drive areas (neighborhoods) so a trip never crisscrosses.
+  if (method === "GET" && seg[1] === "trips" && seg.length === 2) {
+    const book = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const bench = await benchCreators157(seat.marketId);
+    return json(200, { trips: buildTrips157(book, bench) });
+  }
+
+  // GET /bdev/leads?q=&filter=&city=&neighborhood=
   if (method === "GET" && seg[1] === "leads" && seg.length === 2) {
     let leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    // Build -157: filter facets come from the rep's whole book
+    // (before any filter), so the pickers never narrow themselves
+    // away. City + neighborhood are plain equality filters.
+    const facets = {
+      cities: [...new Set(leads.map((l) => l.city || "").filter(Boolean))].sort(),
+      neighborhoods: [...new Map(leads.filter((l) => l.neighborhood).map((l) => [`${l.neighborhood}|${l.city || ""}`, { name: l.neighborhood, city: l.city || "" }])).values()]
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
+    const cityF = String((query && query.city) || "");
+    const nbF = String((query && query.neighborhood) || "");
+    if (cityF) leads = leads.filter((l) => (l.city || "") === cityF);
+    if (nbF) leads = leads.filter((l) => (l.neighborhood || "") === nbF);
     const q = String((query && query.q) || "").toLowerCase();
     const filter = String((query && query.filter) || "all");
     const today = todayStr();
@@ -759,7 +1152,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     leads.sort((a, b) => String((a.nextAction && a.nextAction.date) || "9999").localeCompare(String((b.nextAction && b.nextAction.date) || "9999")));
     // Viewing the list clears the "new" badge.
     for (const l of leads) if (l.isNewForRep) { l.isNewForRep = false; await saveLead(l); }
-    return json(200, { leads: leads.map((l) => repLeadPayload(l)) });
+    return json(200, { leads: leads.map((l) => repLeadPayload(l)), facets });
   }
 
   // POST /bdev/leads — rep adds a lead (work now, counts after Jeff approves)
@@ -814,6 +1207,17 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     if (method === "GET" && seg.length === 3) {
       const logs = await allLogs(lead.id);
       return json(200, { lead: repLeadPayload(lead, { full: true }), logs: logs.filter((v) => v.outcome || v.type === "price_shown" || v.type === "show_session").slice(-20) });
+    }
+
+    // POST /bdev/leads/:id/status — the official status control
+    // (Build -157). Distinct from the stage machine: the stage
+    // still moves only by logging outcomes; this is the short
+    // status list HQ rolls up.
+    if (method === "POST" && seg[3] === "status") {
+      const status = String(b.status || "");
+      if (!STATUSES.includes(status)) return err(400, "Pick a status from the list.");
+      await setLeadStatus(lead, status, seat.userId);
+      return json(200, { ok: true, lead: repLeadPayload(lead, { full: true }) });
     }
 
     if (method === "POST" && seg[3] === "checkin") {
@@ -958,8 +1362,9 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     }
   }
 
-  // GET /bdev/kit
-  if (method === "GET" && seg[1] === "kit" && seg.length === 2) return json(200, { kit: KIT });
+  // GET /bdev/kit — Build -157 adds the practice set (its answers
+  // are the live kit's own words, joined at module load).
+  if (method === "GET" && seg[1] === "kit" && seg.length === 2) return json(200, { kit: KIT, practice: PRACTICE157 });
 
   // POST /bdev/maggie/coach — kit answers only, word for word.
   // Money/terms questions NEVER get a kit-text match: they route
@@ -981,26 +1386,10 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     return json(200, { answer: `That one isn't in the Seller Kit — don't guess at it. Use the Ask Jeff line: “${KIT.holdingLine}”`, title: "Ask Jeff" });
   }
 
-  // GET /bdev/money
+  // GET /bdev/money — the payload builder is shared with HQ's
+  // read-only preview (moneyPayload157); behavior is unchanged.
   if (method === "GET" && seg[1] === "money" && seg.length === 2) {
-    const money = await moneyFor(seat.userId, seat.marketId);
-    const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
-    const pipeline = leads.filter((l) => (l.founding && (l.founding.status === "Claimed" || l.founding.status === "Confirmed")) || (l.stage || "").startsWith("Very interested"))
-      .map((l) => ({ name: l.name, status: l.founding && l.founding.status !== "Not claimed" ? l.founding.status : "Interested", plan: (l.founding && l.founding.planInterest) || null, claimedAt: (l.founding && l.founding.claimedAt) || null }));
-    const pipelineValue = pipeline.reduce((n, p) => n + (p.plan || BLENDED_MONTHLY) * 0.25, 0);
-    const nextTier = money.rateNow.kept < 25
-      ? { at: 25, rate: 30, have: money.rateNow.kept }
-      : money.rateNow.kept < 75 ? { at: 75, rate: 35, have: money.rateNow.kept } : null;
-    return json(200, {
-      money: {
-        accrued: money.accrued, ratePct: Math.round(money.rateNow.rate * 100), kept: money.rateNow.kept,
-        shrank: money.rateNow.shrank, kicked: money.rateNow.kicked,
-        newThisMonth: newActivationsIn((await activationsOf(seat.userId, seat.marketId)).filter((a) => a.direct), monthOf(nowIso())).length,
-        vesting: money.vesting, perBusiness: money.perBusiness, residualCount: money.residualCount,
-      },
-      pipeline, pipelineMonthlyIfActive: Math.round(pipelineValue * 100) / 100,
-      nextTier, seatState: seat.seatState, warningMonth: seat.warningMonth || null, atRisk: seat.atRisk || null,
-    });
+    return json(200, await moneyPayload157(seat));
   }
 
   // POST /bdev/pin {pin} set · POST /bdev/pin/verify {pin}
@@ -1143,6 +1532,10 @@ function adminLeadPayload(lead) {
     ...repLeadPayload(lead, { full: true }),
     marketId: lead.marketId, assignedRepId: lead.assignedRepId,
     hqTier: lead.hqTier, dmNameRaw: lead.dmName || null,
+    status: statusOf(lead),
+    statusHistory: lead.statusHistory || [],
+    hqResearch: lead.hqResearch || null,
+    hasPlaybook: !!lead.playbook,
     attribution: lead.attribution || null, hqDecision: lead.hqDecision || null,
     notFitReason: lead.notFitReason || null, updatedAt: lead.updatedAt,
   };
@@ -1152,6 +1545,57 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
   if (!user || user.role !== "admin") return err(403, "Admins only.");
   const b = method === "POST" ? parseBody(event) : {};
   const sub = seg[2];
+
+  // Build -157 PREVIEW ("See Tony's view") — GET-only and strictly
+  // read-only: no store.set, no logEvent, no logCapture anywhere
+  // in these paths (the home builder runs with its Monday
+  // scoreboard generation suppressed, and lead payloads are built
+  // directly — the rep list route's isNewForRep clearing write is
+  // never reused here).
+  if (method === "GET" && sub === "preview" && seg.length === 3) {
+    const qp = event.queryStringParameters || {};
+    const seat = await previewSeat157(String(qp.repId || ""));
+    if (!seat) return err(404, "That rep seat isn't active.");
+    const targetUser = await userRecord157(seat.userId);
+    const home = await buildRepHome157(seat, targetUser, { lazyScoreboard: false });
+    const book = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const bench = await benchCreators157(seat.marketId);
+    return json(200, {
+      preview: true,
+      seat: { userId: seat.userId, repName: targetUser.name || "", repCode: seat.repCode, marketName: seat.marketName, marketId: seat.marketId },
+      home,
+      leads: book.map((l) => repLeadPayload(l)),
+      kit: { kit: KIT, practice: PRACTICE157 },
+      money: await moneyPayload157(seat),
+      queue: buildQueue157(book, bench),
+      trips: buildTrips157(book, bench),
+    });
+  }
+
+  if (method === "GET" && sub === "preview" && seg.length === 4 && seg[3] === "lead") {
+    const qp = event.queryStringParameters || {};
+    const repId = String(qp.repId || "");
+    const seat = await previewSeat157(repId);
+    if (!seat) return err(404, "That rep seat isn't active.");
+    const lead = await getLead(String(qp.lead || ""));
+    if (!lead || lead.marketId !== seat.marketId || lead.assignedRepId !== repId) return err(404, "That lead isn't in this rep's book.");
+    const targetUser = await userRecord157(seat.userId);
+    const logs = await allLogs(lead.id);
+    const show = await showBench(seat.marketId, lead.category, { neighborhood: lead.neighborhood || "", city: lead.city || "" });
+    return json(200, {
+      preview: true,
+      lead: repLeadPayload(lead, { full: true }),
+      logs: logs.filter((v) => v.outcome || v.type === "price_shown" || v.type === "show_session").slice(-20),
+      show: {
+        lead: { id: lead.id, name: lead.name, category: lead.category },
+        marketName: seat.marketName,
+        bench: show.cards,
+        areaFraming: show.areaFraming,
+        claimUrl: claimPath(lead),
+        repFirstName: String(targetUser.name || "").split(" ")[0] || "",
+      },
+    });
+  }
 
   if (method === "GET" && sub === "overview" && seg.length === 3) {
     const leads = await allLeads();
@@ -1182,8 +1626,47 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     const liabilityCalc = await liability();
     // Disputes: unmatched claims + soft-duplicate holds + double-source.
     const disputes = claims.filter((c) => !c.leadId).map((c) => ({ kind: "unmatched-claim", id: c.id, businessName: c.businessName, contact: c.contact, createdAt: c.createdAt }));
+    // Build -157: status rollup per market / city / neighborhood,
+    // over every lead, read through the official status control.
+    const emptyStatusCounts = () => Object.fromEntries(STATUSES.map((s) => [s, 0]));
+    const statusRollup = {};
+    for (const l of leads) {
+      const m = statusRollup[l.marketId] || (statusRollup[l.marketId] = { marketId: l.marketId, byStatus: emptyStatusCounts(), _city: new Map(), _nb: new Map() });
+      const st = statusOf(l);
+      m.byStatus[st] += 1;
+      const city = l.city || "";
+      if (!m._city.has(city)) m._city.set(city, emptyStatusCounts());
+      m._city.get(city)[st] += 1;
+      const nb = l.neighborhood || "";
+      const nbKey = `${nb}||${city}`;
+      if (!m._nb.has(nbKey)) m._nb.set(nbKey, { neighborhood: nb, city, counts: emptyStatusCounts() });
+      m._nb.get(nbKey).counts[st] += 1;
+    }
+    for (const m of Object.values(statusRollup)) {
+      m.byCity = [...m._city.entries()].map(([city, counts]) => ({ city, counts })).sort((a, b) => a.city.localeCompare(b.city));
+      m.byNeighborhood = [...m._nb.values()].sort((a, b) => a.neighborhood.localeCompare(b.neighborhood) || a.city.localeCompare(b.city));
+      delete m._city; delete m._nb;
+    }
+    const prewarm = (await store().list("bdevprewarm:")).map((r) => r.value).filter(Boolean)
+      .map((r) => ({ leadId: r.leadId, business: r.business, toName: r.toName, draft: r.draft }))
+      .sort((a, b) => String(a.business).localeCompare(String(b.business)));
+    const latestByRep = (rows) => {
+      const map = new Map();
+      for (const r of rows) {
+        const cur = map.get(r.repId);
+        if (!cur || String(r.createdAt || r.date || "") > String(cur.createdAt || cur.date || "")) map.set(r.repId, r);
+      }
+      return [...map.values()];
+    };
+    const scoreboards = latestByRep((await store().list("bdevscore:")).map((r) => r.value).filter(Boolean))
+      .map((r) => ({ repId: r.repId, weekOf: r.weekOf, lines: r.lines, stats: r.stats, createdAt: r.createdAt }))
+      .sort((a, b) => String(a.repId).localeCompare(String(b.repId)));
+    const alarmSummary = latestByRep((await store().list("bdevalarm:")).map((r) => r.value).filter(Boolean))
+      .map((r) => ({ repId: r.repId, date: r.date, count: Array.isArray(r.items) ? r.items.length : 0 }))
+      .sort((a, b) => String(a.repId).localeCompare(String(b.repId)));
     return json(200, {
       markets: Object.values(markets),
+      statusRollup, prewarm, scoreboards, alarmSummary,
       reps: seats.map((s) => { const u = byId.get(s.userId); return { userId: s.userId, name: u ? u.name : "", email: u ? u.email : "", marketId: s.marketId, marketName: s.marketName, repCode: s.repCode, seatState: s.seatState, vestedAt: s.vestedAt || null, warningMonth: s.warningMonth || null, atRisk: s.atRisk || null }; }),
       unconfirmedClaims: claims.filter((c) => c.status === "waiting HQ confirm"),
       escalations, pendingLeads: pendingLeads.map(adminLeadPayload), pendingReferrals,
@@ -1193,11 +1676,27 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
   }
 
   if (method === "GET" && sub === "leads" && seg.length === 3) {
-    const marketId = (event.queryStringParameters || {}).market || null;
+    const qp = event.queryStringParameters || {};
+    const marketId = qp.market || null;
     let leads = await allLeads();
     if (marketId) leads = leads.filter((l) => l.marketId === marketId);
+    // Build -157: facets come from the set BEFORE the new
+    // city/neighborhood/status filters apply (the market filter
+    // above still scopes them, as it always has).
+    const cities = [...new Set(leads.map((l) => l.city || "").filter(Boolean))].sort();
+    const nbSeen = new Map();
+    for (const l of leads) {
+      const name = l.neighborhood || "";
+      if (!name) continue;
+      const k = `${name}||${l.city || ""}`;
+      if (!nbSeen.has(k)) nbSeen.set(k, { name, city: l.city || "" });
+    }
+    const facets = { cities, neighborhoods: [...nbSeen.values()].sort((a, b) => a.name.localeCompare(b.name) || a.city.localeCompare(b.city)) };
+    if (qp.city) leads = leads.filter((l) => (l.city || "") === qp.city);
+    if (qp.neighborhood) leads = leads.filter((l) => (l.neighborhood || "") === qp.neighborhood);
+    if (qp.status) leads = leads.filter((l) => statusOf(l) === qp.status);
     leads.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    return json(200, { leads: leads.map(adminLeadPayload) });
+    return json(200, { leads: leads.map(adminLeadPayload), facets });
   }
 
   if (method === "POST" && sub === "reps" && seg[3] === "assign") {
@@ -1228,6 +1727,12 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     const lead = await getLead(seg[3]);
     if (!lead) return err(404, "Lead not found.");
     const action = seg[4];
+    if (action === "status") {
+      const status = String(b.status || "");
+      if (!STATUSES.includes(status)) return err(400, "Pick a status from the list.");
+      await setLeadStatus(lead, status, "Jeff (HQ)");
+      return json(200, { ok: true });
+    }
     if (action === "approve") {
       lead.pendingApproval = false; lead.hqDecision = { decision: "approved", at: nowIso(), by: user.id };
       await saveLead(lead);
@@ -1328,7 +1833,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
 }
 
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, runBizdevSweep,
   claimPageHtml, seatOf, KIT,
-  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE },
+  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow },
 };

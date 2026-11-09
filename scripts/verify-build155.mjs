@@ -147,7 +147,8 @@ console.log("== B: seat + seed book ==");
   check("tony's role itself is unchanged (still creator)", me.data.user.role === "creator", me.data.user.role);
   const leads = await TONY.client("GET", "/api/bdev/leads");
   check("the book holds exactly the 32 stored HR targets", leads.data.leads.length === 32, `got ${leads.data.leads.length}`);
-  check("15 carry an email, 17 honestly don't", leads.data.leads.filter((l) => l.email).length === 15, "");
+  // Build -157: enrichment added an email to 9 of the 17 (Blue Seafood & Spirits, Casa Contour Medspa and Wellness, Hidration IV and Wellness Spa, Chesapeake Vein Center and MedSpa, Dupre's Salon and Day Spa, The Adventure Park at Virginia Aquarium, Pixelated Boutique, Jody G, The Parlor Room) — post-enrichment truth is 24 with, 8 honestly without.
+  check("24 carry an email, 8 honestly don't (15 seed + 9 added by Build -157 enrichment)", leads.data.leads.filter((l) => l.email).length === 24, "");
   const crudo = leads.data.leads.find((l) => l.name === "crudo nudo");
   check("crudo nudo arrives with Verify Before Use + both numbers", !!crudo && crudo.phoneVerify === true && crudo.phone1 === "(757) 904-0987" && crudo.phone2 === "(757) 351-6080", JSON.stringify(crudo || {}));
   const still = leads.data.leads.find((l) => (l.shortName || "") === "Still");

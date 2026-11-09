@@ -58,6 +58,11 @@ const railItemsSrc = fnWindow("railItems");
 const railAdminRaw = roleBlock(railItemsSrc, "admin", ["admin", "creator", "business", "partner"]);
 const railAdmin = railAdminRaw.slice(0, railAdminRaw.indexOf("return items;") + 13);
 const railLabels = [...railAdmin.matchAll(/add\("[abc]",\s*"[^"]+",\s*"([^"]+)"/g)].map((m) => m[1]);
+// The app's own Sig≡Maggie alias: public/app.js maps tab "Sig" to
+// the rail label "Maggie" (tabItemsFor display mapping), so the
+// rail's "Maggie" IS the Sig destination — normalize it to "Sig"
+// before every set comparison below.
+for (let i = 0; i < railLabels.length; i++) { if (railLabels[i] === "Maggie") railLabels[i] = "Sig"; }
 check("admin rail source found", railLabels.length >= 10, railLabels.join(","));
 
 const primariesMatch = app.match(/ADMIN_RAIL_PRIMARY_125 = \[([^\]]+)\]/);

@@ -1776,6 +1776,27 @@ img.maggie-char-img { object-fit: cover; }
 .bd-pin-pad { display: grid; grid-template-columns: repeat(3, 76px); gap: 12px; justify-content: center; margin: 16px 0; }
 .bd-pin-key { height: 64px; font-size: 22px; border-radius: 50%; border: 1px solid var(--line); background: #fff; cursor: pointer; }
 .bd-pin-key:active { background: var(--line); }
+/* ===== Build -157: status, queue, playbook, practice, admin preview ===== */
+.bd-status-badge { font-weight: 600; }
+.bd-status-muted { opacity: .65; }
+.bd-qbadge-start { background: var(--ink); color: #fff; }
+.bd-qbadge-next { background: var(--mint, #BFE9D2); color: var(--ink); }
+.bd-qbadge-later { background: #F1EFE9; color: var(--ink); }
+.bd-alarm-panel { background: #F7F8F6; border: 1px solid var(--line); }
+.bd-opener { font-size: 20px; line-height: 1.5; margin: 6px 0; }
+.bd-callscript { font-size: 18px; line-height: 1.55; white-space: pre-wrap; margin: 6px 0 0; }
+.bd-callblock { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.bd-callblock.bd-call-large .bd-callscript { font-size: 26px; line-height: 1.5; }
+.bd-email-body { white-space: pre-wrap; line-height: 1.55; font: inherit; font-size: 14.5px; margin: 6px 0 10px; }
+.bd-runsheet { padding-left: 20px; line-height: 1.6; display: flex; flex-direction: column; gap: 10px; }
+.bd-practice-answer { background: #F7F8F6; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-top: 8px; }
+.abd-prewarm-body { white-space: pre-wrap; line-height: 1.55; font: inherit; font-size: 14px; margin: 6px 0 10px; }
+.abd-rollup-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.abd-rollup-table th, .abd-rollup-table td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); }
+#abd-preview { position: fixed; inset: 0; z-index: 3000; background: #fff; overflow-y: auto; }
+.abd-pv-banner { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--accent-soft, #FFF4E8); border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 14.5px; }
+.abd-pv-frame { max-width: 430px; margin: 0 auto; padding: 16px 14px 48px; box-sizing: border-box; }
+.abd-pv-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 @media (max-width: 480px) {
   .bd-numbers strong { font-size: 20px; }
   .bd-show-title { font-size: 26px; }
