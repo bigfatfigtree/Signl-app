@@ -27,6 +27,8 @@ const state = {
   claimStep: 1, // Build -85 claim flow: 1 welcome, 2 facts, 3 account, 4 done
   claimDraft: null, // Build -85: the in-progress claim (memory only until Finish)
   claimDone: null, // Build -85: the done-state readout ({firstName, total, complete, under})
+  claimHook: null, // Build -156: the Neighbor Number hook payload for this claim landing ({variant:"personal"|"generic", ...})
+  neighbor: null, // Build -156: my live Neighbor Number view (GET /neighbor/me or claim-complete)
   bizPrefill: null, // business-wave prefill: sanitized ?biz=&market=&category=
   publicHandle: null, // set when the URL is /c/<handle>
   resetToken: "", // password reset token from a /?reset= email link
@@ -9757,11 +9759,71 @@ function igAssistBlank(uid) {
 }
 
 function renderQuickClaim() {
-  const step = state.claimStep || 1;
+  const step = state.claimStep === 0 ? 0 : (state.claimStep || 1);
+  if (step === 0) return renderClaimHook();
   if (step === 2) return renderClaimFacts();
   if (step === 3) return renderClaimAccount();
   if (step === 4) return renderClaimDone();
   return renderClaimWelcome();
+}
+
+// ---------- Screen 0: the Neighbor Number (Build -156) ----------
+// Shown BEFORE any form when a checked record carries this
+// creator's own numbers: her counted neighbors, her local % in
+// plain words, her founding rank with its honest scope, and —
+// only when a real checked creator in her market has more
+// followers but fewer neighbors — that inversion, naming the
+// real account. The server computes all of it; nothing here is
+// estimated or invented.
+function renderClaimHook() {
+  const h = state.claimHook;
+  const d = claimDraftInit();
+  if (!h || h.variant !== "personal") { state.claimStep = 1; return renderClaimWelcome(); }
+  const marketLabel = marketDisplayName(h.market || d.market);
+  const photo = claimPhotoFor(h.market || d.market);
+  const first = h.firstName || claimFirstName(d);
+  const initial = (first || h.handle || "S").charAt(0).toUpperCase();
+  app.innerHTML = `
+  <section class="c85-wrap">
+    <div class="c85-photo" style="background-image:url('${esc(photo)}')">
+      <div class="c85-photo-inner">
+        ${claimDots(1)}
+        <h1 class="c85-h">${first ? `${esc(first)},` : ""} <span class="c85-accent">${claimFmtCount(h.neighborCount)} ${h.extrapolated ? T("of your followers are potential neighbors here.", "de tus seguidores son vecinos potenciales aquí.") : T("of your followers live here.", "de tus seguidores viven aquí.")}</span></h1>
+        <div class="c85-idrow">
+          ${h.photoUrl ? `<img class="c85-avatar" src="${esc(h.photoUrl)}" alt="" onerror="this.style.display='none'">` : `<span class="c85-avatar c85-avatar-init">${esc(initial)}</span>`}
+          <div>
+            ${h.name ? `<div class="c85-idname">${esc(h.name)}</div>` : ""}
+            <div class="c85-idline">@${esc(h.handle)} · ${esc(marketLabel)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="c85-card">
+      <p style="font-size:34px;font-weight:800;margin:0 0 2px" id="nb-hook-count">${claimFmtCount(h.neighborCount)}</p>
+      <p class="muted" style="margin:0 0 12px">${h.extrapolated ? T(`total potential neighbors in ${marketLabel}`, `vecinos potenciales en total en ${marketLabel}`) : T(`neighbors in ${marketLabel}`, `vecinos en ${marketLabel}`)}</p>
+      ${h.localWords ? `<p style="margin:0 0 8px"><strong>${esc(h.localWords)}.</strong></p>` : ""}
+      <p style="margin:0 0 8px">${T("Your founding spot:", "Tu lugar de fundadora:")} <strong>#${h.rank}</strong> ${T(`of the ${h.checkedCount} ${h.market} creators we've checked so far`, `de los ${h.checkedCount} creadores de ${h.market} que hemos revisado hasta ahora`)}.</p>
+      ${h.inversion ? `<p class="small" style="margin:0 0 12px">@${esc(h.inversion.handle)} ${T(`has more followers than you (${claimFmtCount(h.inversion.followers)} in total), but fewer neighbors in ${marketLabel}. Local beats famous here.`, `tiene más seguidores que tú (${claimFmtCount(h.inversion.followers)} en total), pero menos vecinos en ${marketLabel}. Aquí lo local le gana a lo famoso.`)}</p>` : ""}
+      <div class="c85-lanes">
+        <p><span class="c85-check">✓</span> ${T("Hosted visits: a local business treats you, you post honestly.", "Visitas en cortesía: un negocio local te invita y tú publicas con honestidad.")}</p>
+        <p><span class="c85-check">✓</span> ${T("Paid bookings at your rate. You keep 97%.", "Reservas pagadas a tu tarifa. Te quedas con el 97%.")}</p>
+      </div>
+      <button class="btn" type="button" style="width:100%" onclick="return claimHookGo()">${T(`Claim my #${h.rank} spot`, `Reclamar mi lugar #${h.rank}`)}</button>
+      <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Free for creators. Takes a minute.", "Gratis para creadores. Toma un minuto.")}</p>
+    </div>
+  </section>`;
+  loadTicketBanner();
+}
+function claimHookGo() {
+  const h = state.claimHook;
+  const d = claimDraftInit();
+  // Her checked local % prefills the facts screen's slider; she
+  // can move it — what she leaves is what her record carries.
+  if (h && typeof h.localPct === "number") d.localPct = Math.max(0, Math.min(100, Math.round(h.localPct)));
+  state.claimStep = 2;
+  render();
+  window.scrollTo(0, 0);
+  return false;
 }
 
 // ---------- Screen 1: the invitation ----------
@@ -9802,6 +9864,7 @@ function renderClaimWelcome() {
     </div>
     <div class="c85-card">
       <div id="qc-ticket"></div>
+      ${(!state.claimHook || state.claimHook.variant === "generic") ? `<p style="margin:0 0 12px"><strong>${T("On Magpie, 800 followers who live here beats 90,000 followers who don't.", "En Magpie, 800 seguidores que viven aquí valen más que 90.000 que no.")}</strong> ${T("Add your platforms in the next step and we count your neighbors.", "Agrega tus plataformas en el siguiente paso y contamos a tus vecinos.")}</p>` : ""}
       ${lanes}
       ${resolved ? `<p class="small muted" style="margin:0 0 12px">${T("Your invite picked the market shown with your name above. If your audience is really somewhere else, you pick your real home market on the next screen, and you can change it any time later in your profile.", "Tu invitación eligió el mercado que aparece junto a tu nombre. Si tu audiencia está en otro lugar, eliges tu mercado real en la siguiente pantalla, y puedes cambiarlo cuando quieras en tu perfil.")}</p>` : ""}
       ${handleBlock}
@@ -10088,6 +10151,13 @@ async function doQuickClaim(e) {
       const saved = await api("PATCH", "/me/profile", patch);
       if (saved && saved.user) state.user = saved.user;
     } catch (err2) { /* the checklist carries anything missing */ }
+    // Build -156: the facts are in — lock her founding rank and
+    // log the hook conversion (server-side, exactly once), then
+    // carry the live Neighbor view onto the done screen.
+    try {
+      const nb = await api("POST", "/neighbor/claim-complete", { variant: (state.claimHook && state.claimHook.variant) || "generic" });
+      if (nb && nb.neighbor) state.neighbor = nb.neighbor;
+    } catch (err3) { /* the done screen still renders; the lock retries on her next claim-complete */ }
     const total = claimStackTotal(d);
     state.claimDone = {
       firstName: claimFirstName(d),
@@ -10152,11 +10222,108 @@ function renderClaimDone() {
         <p class="small" style="margin:0 0 6px">${T("Your rates are public on your page, so businesses see what you charge before they book.", "Tus tarifas son públicas en tu página, así los negocios ven lo que cobras antes de reservar.")}</p>
         <p class="small" style="margin:0">${T("Founding creators are recorded in founding order, and founding creators see offers first.", "Los creadores fundadores quedan registrados en orden de llegada, y ven las ofertas primero.")}</p>
       </div>
+      ${neighborPanelHtml()}
       <button class="btn" type="button" style="width:100%" onclick="return claimGoProfile()">${T("Add your rates and best work", "Agrega tus tarifas y tu mejor trabajo")}</button>
       <p class="small muted" style="margin:12px 0 0">${T("or just close this. We'll email you.", "o cierra esto. Te escribiremos por correo.")} <a href="#" onclick="return claimGoDashboard()">${T("Open my dashboard", "Abrir mi panel")}</a></p>
       ${signlInstallBannerHtml()}
     </div>
   </section>`;
+}
+
+// ---------- Build -156: the live stack moment + Neighbor Card ----------
+// On the done screen Maggie prompts the stack ("Want to climb?
+// Add your TikTok"). Every added platform saves through the same
+// profile write as always, then the number and the LIVE rank
+// recompute on screen. The FOUNDING rank locked at claim never
+// moves; the two are labelled so they can never read as a
+// contradiction.
+function neighborMissingPlatforms() {
+  const stack = (state.user && state.user.creator && state.user.creator.audienceStack) || {};
+  return CLAIM_STACK_PLATFORMS.filter((p) => !(Number(stack[p.id]) > 0));
+}
+function neighborPanelHtml() {
+  const nb = state.neighbor;
+  if (!nb || !(nb.neighborCount > 0)) return "";
+  const marketLabel = marketDisplayName(nb.market || (state.user && state.user.market) || "");
+  const missing = neighborMissingPlatforms();
+  const nextPlat = missing.length ? missing[0] : null;
+  const f = nb.founding;
+  return `<div style="text-align:left;border-top:1px solid var(--hairline,#DFE7DF);padding-top:14px;margin:0 0 18px" id="nb-panel">
+    <p style="margin:0 0 4px"><strong>${T("Your Neighbor Number", "Tu Número de Vecinos")}</strong></p>
+    <p style="font-size:32px;font-weight:800;margin:0" id="nb-big">${claimFmtCount(nb.neighborCount)}</p>
+    <p class="muted" style="margin:0 0 8px" id="nb-big-label">${nb.extrapolated ? T(`total potential neighbors in ${marketLabel}`, `vecinos potenciales en total en ${marketLabel}`) : T(`neighbors in ${marketLabel}`, `vecinos en ${marketLabel}`)}${nb.localWords ? ` · ${esc(nb.localWords)}` : ""}</p>
+    ${f ? `<p class="small" style="margin:0 0 4px"><strong>${T("Founding rank", "Rango fundador")} #${f.rank}</strong> ${T(`of the ${f.checkedCount} ${nb.market} creators checked when you claimed. This one is locked in; it never changes.`, `de los ${f.checkedCount} creadores de ${nb.market} revisados cuando reclamaste. Este queda fijo; nunca cambia.`)}</p>` : ""}
+    ${nb.liveRank ? `<p class="small" style="margin:0 0 10px"><strong>${T("Live rank today", "Rango en vivo hoy")} #${nb.liveRank}</strong> ${T(`of the ${nb.liveCheckedCount} ${nb.market} creators we've checked so far. This one moves as more creators are checked.`, `de los ${nb.liveCheckedCount} creadores de ${nb.market} que hemos revisado hasta ahora. Este se mueve cuando revisamos a más creadores.`)}</p>` : ""}
+    ${nextPlat ? `<div class="notice blue" style="text-align:left">
+      <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Want to climb? Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Every platform you add recounts your neighbors and your live rank, right here.`, `¿Quieres subir? Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Cada plataforma que agregas vuelve a contar tus vecinos y tu rango en vivo, aquí mismo.`)}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+        <div class="field" style="margin:0"><label>${T("Platform", "Plataforma")}</label><select id="nb-plat">${missing.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join("")}</select></div>
+        <div class="field" style="margin:0"><label>${T("Followers", "Seguidores")}</label><input type="number" id="nb-plat-count" min="1" inputmode="numeric" placeholder="0" style="width:130px"></div>
+        <button type="button" class="btn" onclick="return neighborStackAdd()">${T("Add it", "Agregarla")}</button>
+      </div>
+      <p class="small" id="nb-stack-msg" style="margin:8px 0 0"></p>
+    </div>` : `<p class="small muted" style="margin:0 0 10px">${T("Every platform you post on is counted.", "Todas las plataformas donde publicas están contadas.")}</p>`}
+    <p style="margin:10px 0 0"><button type="button" class="btn small-btn ghost" onclick="return neighborCardSave()">${T("Save my Neighbor Card", "Guardar mi Tarjeta de Vecinos")}</button></p>
+  </div>`;
+}
+function neighborAnimateCount(el, from, to) {
+  if (!el) return;
+  const start = performance.now();
+  const dur = 650;
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / dur);
+    el.textContent = claimFmtCount(Math.round(from + (to - from) * k));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+async function neighborStackAdd() {
+  const platEl = document.getElementById("nb-plat");
+  const countEl = document.getElementById("nb-plat-count");
+  const msg = document.getElementById("nb-stack-msg");
+  const plat = platEl ? platEl.value : "";
+  const n = countEl ? Math.max(0, parseInt(countEl.value, 10) || 0) : 0;
+  if (!plat || !(n > 0)) { if (msg) msg.textContent = T("Type the follower count first.", "Primero escribe el número de seguidores."); return false; }
+  const oldCount = state.neighbor ? state.neighbor.neighborCount : 0;
+  try {
+    const stack = Object.assign({}, (state.user.creator && state.user.creator.audienceStack) || {});
+    stack[plat] = n;
+    const saved = await api("PATCH", "/me/profile", { audienceStack: stack });
+    if (saved && saved.user) state.user = saved.user;
+    const nb = await api("GET", "/neighbor/me");
+    if (nb && nb.neighbor) state.neighbor = nb.neighbor;
+    render();
+    neighborAnimateCount(document.getElementById("nb-big"), oldCount, state.neighbor ? state.neighbor.neighborCount : oldCount);
+    showToast(T("Counted. Your Neighbor Number just moved.", "Contado. Tu Número de Vecinos acaba de moverse."));
+  } catch (e) { if (msg) msg.textContent = e.message; }
+  return false;
+}
+function neighborCardSave() {
+  const nb = state.neighbor;
+  const u = state.user;
+  if (!nb || !u || !u.creator) return false;
+  const f = nb.founding || {};
+  const marketLabel = marketDisplayName(nb.market || u.market || "");
+  const name = u.name || "";
+  const handle = (u.creator && u.creator.handle) || "";
+  const photoAbs = u.creator.hasPhoto ? `${location.origin}/api/users/${u.id}/photo` : "";
+  const rankLine = f.rank ? `Founding #${f.rank} of ${f.checkedCount} ${marketLabel} creators checked` : (nb.liveRank ? `#${nb.liveRank} of ${nb.liveCheckedCount} ${marketLabel} creators checked` : marketLabel);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><circle cx="540" cy="215" r="85" fill="#E3F5EA"/><text x="540" y="245" font-family="Arial, sans-serif" font-size="72" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc((name || handle || "M").trim().charAt(0).toUpperCase())}</text>${photoAbs ? `<image href="${esc(photoAbs)}" x="455" y="130" width="170" height="170" preserveAspectRatio="xMidYMid slice"/>` : ""}<text x="540" y="380" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(name)}</text><text x="540" y="435" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">@${esc(handle)} · ${esc(marketLabel)}</text><text x="540" y="620" font-family="Arial, sans-serif" font-size="130" font-weight="800" fill="#0B0D0C" text-anchor="middle">${claimFmtCount(nb.neighborCount)}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">${nb.extrapolated ? "total potential neighbors" : "neighbors"}</text>${nb.localWords ? `<text x="540" y="745" font-family="Arial, sans-serif" font-size="34" fill="#5F7265" text-anchor="middle">${esc(nb.localWords)}</text>` : ""}<text x="540" y="830" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(rankLine)}</text><text x="540" y="950" font-family="Arial, sans-serif" font-size="32" fill="#5F7265" text-anchor="middle">Magpie · Local beats famous</text></svg>`;
+  const blob = new Blob([svg], { type: "image/svg+xml" });
+  api("POST", "/neighbor/card-event", { action: "generated" }).catch(() => {});
+  const file = new File([blob], "magpie-neighbor-card.svg", { type: "image/svg+xml" });
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: "My Neighbor Card" }).then(() => { api("POST", "/neighbor/card-event", { action: "shared" }).catch(() => {}); }).catch(() => {});
+  } else {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "magpie-neighbor-card.svg";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  showToast(T("Your Neighbor Card is saved.", "Tu Tarjeta de Vecinos está guardada."));
+  return false;
 }
 
 function claimGoProfile() {
@@ -32000,6 +32167,19 @@ function previewDashboardHtml(d) {
       // visitor lands on the sign-up, pre-filled. Signed-in visitors
       // keep their normal landing, and nothing ever auto-submits.
       if (!state.user) state.view = "join-creator";
+      // Build -156: the Neighbor Number hook resolves BEFORE the
+      // first paint, so a creator with checked numbers lands on
+      // her own count (claimStep 0), never on a form first. Any
+      // failure leaves the plain flow exactly as it was.
+      if (!state.user && (claim.handle || claim.market)) {
+        try {
+          const hr = await api("GET", `/claim-hook?handle=${encodeURIComponent(claim.handle || "")}&market=${encodeURIComponent(claim.market || "")}`);
+          if (hr && hr.hook) {
+            state.claimHook = hr.hook;
+            if (hr.hook.variant === "personal") state.claimStep = 0;
+          }
+        } catch (e) { /* the generic flow is the fallback */ }
+      }
     }
     // A prebuilt business-wave link lands a logged-out business
     // on the founding registration with its fields already
@@ -33574,11 +33754,13 @@ function bdShowScreens() {
         <div class="bd-show-cname">${esc(c.firstName || c.name)} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}</div>
         <div class="muted small">${esc(c.categoryLine)}${c.alsoLine ? " · Also in Hampton Roads" : ""}</div>
         ${c.reachLine ? `<div class="bd-show-reach">${esc(c.reachLine)}</div>` : ""}
+        ${c.areaLine ? `<div class="bd-show-reach">${esc(c.areaLine)}</div>` : ""}
       </div>
     </div>`).join("");
+  const af = d.areaFraming;
   return [
     { title: "Your next regulars are already following people right here in Hampton Roads.", body: `<p>Magpie is a local list of creators — neighbors with local followings. Local shops use them to get local people in the door. You're being invited in early, before we open here.</p>` },
-    { title: "These are founding creators in Hampton Roads.", body: bench.length ? `${cards}<p class="muted">The founding list is growing every week. Shops that claim a spot now get first pick when we open.</p>` : `<p>The founding list is growing every week — the first creators in this category are being added now. Shops that claim a spot now get first pick when we open.</p>` },
+    { title: "These are founding creators in Hampton Roads.", body: bench.length ? `${cards}${af ? `<p class="bd-show-reach">Based in ${esc(af.label)}: ${af.count} of these creators — together they reach about ${fmtNum(af.combinedNeighbors)} ${af.anyExtrapolated ? "potential neighbors" : "neighbors"}.</p>` : ""}<p class="muted">The founding list is growing every week. Shops that claim a spot now get first pick when we open.</p>` : `<p>The founding list is growing every week — the first creators in this category are being added now. Shops that claim a spot now get first pick when we open.</p>` },
     { title: "You pick. You approve. Nothing posts without you.", body: `<ol class="bd-show-steps"><li>Invite a creator to come in. Treat them to a visit — a meal, a service, an experience — and they post 1 post + 1 story.</li><li>Or book them at their own listed price for bigger work. They set their rate. (Creators keep 97% of their rate — the 3% is card processing.)</li><li>Every visit is counted at your register with their own code — you'll see exactly who came in because of them.</li></ol><p><strong>You choose every creator. You approve every visit. You see the count.</strong></p>` },
     { title: "We don't guess. We count.", body: `<p>Magpie's match system ranks creators by how many of their followers actually live here — not by who's most famous. When you want an idea, Maggie, our in-app helper, suggests a campaign and names the creators she'd pick for your shop, and why. After a visit, you don't get “good vibes” — you get a count: how many of their people came in and used the code.</p>` },
     { title: "Hampton Roads founding spots are open now.", body: `<p>We're building the founding creator list for Hampton Roads right now. Shops that claim a founding spot are first in line when we open — first pick of creators, founding pricing locked, and we'll set your page up with you. There's nothing to pay today — paying starts when we open here, and we open when the founding creator roster is full. You're being invited in early.</p>` },

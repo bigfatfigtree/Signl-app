@@ -292,6 +292,10 @@ function normalizeProspectInput(raw, marketName, recruiterId, source) {
     creatorMarketUrl: String(raw.creatorMarketUrl || "").trim().slice(0, 300),
     category: String(raw.category || "").trim().slice(0, 60),
     followers: Number.isFinite(followersRaw) ? followersRaw : null,
+    // Build -156: a prospect that was actually CHECKED may carry
+    // its numeric local % (never derived from written evidence);
+    // it feeds the Neighbor Number checked set. Absent stays null.
+    localPct: (() => { const v = raw.localPct !== undefined ? raw.localPct : (raw.localAudiencePct !== undefined ? raw.localAudiencePct : raw.local_pct); const n = v === null || v === undefined || v === "" ? NaN : Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null; })(),
     followersPlatform: String(raw.followersPlatform || raw.followers_platform || "").trim().slice(0, 30),
     city: String(raw.city || raw.city_base || "").trim().slice(0, 60),
     source: source || String(raw.source || "manual").slice(0, 60),

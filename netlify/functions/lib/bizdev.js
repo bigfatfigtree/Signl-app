@@ -564,7 +564,7 @@ function reachLine(pct) {
   return `${tenths} out of 10 of their followers live here`;
 }
 
-async function showBench(marketId, leadCategory) {
+async function showBench(marketId, leadCategory, leadArea) {
   const creators = deps.marketCreators ? await deps.marketCreators(marketId) : { bench: [] };
   const bench = creators.bench || [];
   const want = LEAD_CAT_TO_CREATOR_CATS[leadCategory] || [];
@@ -576,17 +576,52 @@ async function showBench(marketId, leadCategory) {
   const byPct = (a, b) => (Number(b.localPct) || 0) - (Number(a.localPct) || 0);
   matched.sort(byPct); rest.sort(byPct);
   const tagged = [...matched.slice(0, 4).map((c) => ({ c, inCategory: true })), ...rest.slice(0, Math.max(0, 6 - Math.min(4, matched.length))).map((c) => ({ c, inCategory: false }))].slice(0, 6);
-  return tagged.map(({ c, inCategory }) => ({
+  // Build -156 (honest subset): area framing ONLY from stored
+  // facts — a bench creator whose own stored area equals the
+  // business's neighborhood, or whose stored city equals the
+  // business's city, is "based in" that area. No stored match,
+  // no framing: the screen stays exactly as Build -155 shipped,
+  // and no distance or proximity is ever claimed.
+  const leadNb = String((leadArea && leadArea.neighborhood) || "").trim().toLowerCase();
+  const leadCity = String((leadArea && leadArea.city) || "").trim().toLowerCase();
+  const areaOf = (c) => {
+    const a = String(c.area || "").trim().toLowerCase();
+    const city = String(c.city || "").trim().toLowerCase();
+    if (leadNb && a && a === leadNb) return String((leadArea && leadArea.neighborhood) || "").trim();
+    if (leadCity && city && city === leadCity) return String((leadArea && leadArea.city) || "").trim();
+    if (leadNb && city && city === leadNb) return String((leadArea && leadArea.neighborhood) || "").trim();
+    return null;
+  };
+  const cards = tagged.map(({ c, inCategory }) => ({
     firstName: c.firstName || c.name || "",
     name: c.name || "",
     handle: c.handle || "",
     categoryLine: c.community ? `A Hampton Roads ${String((c.categories || [])[0] || "local").toLowerCase()} community` : ((c.categories || [])[0] || "Local creator"),
     reachLine: reachLine(c.localPct),
     reachPct: c.localPct == null ? null : Math.round(Number(c.localPct)),
+    neighborCount: typeof c.neighborCount === "number" ? c.neighborCount : null,
+    neighborExtrapolated: !!c.neighborExtrapolated,
     photoUrl: c.photoUrl || null,
     inCategory,
     alsoLine: !inCategory && matched.length > 0,
+    areaLine: areaOf(c) ? `Based in ${areaOf(c)}` : null,
   }));
+  const inArea = cards.filter((c) => c.areaLine && typeof c.neighborCount === "number" && c.neighborCount > 0);
+  let areaFraming = null;
+  if (inArea.length) {
+    const label = inArea[0].areaLine.replace(/^Based in /, "");
+    const combined = inArea.reduce((s, c) => s + c.neighborCount, 0);
+    if (combined > 0) {
+      areaFraming = {
+        label,
+        count: inArea.length,
+        combinedNeighbors: combined,
+        anyExtrapolated: inArea.some((c) => c.neighborExtrapolated),
+        names: inArea.map((c) => c.firstName || c.name),
+      };
+    }
+  }
+  return { cards, areaFraming };
 }
 
 // ---------------- one-time seed: Tony's seat + the HR book ----------------
@@ -897,13 +932,14 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
 
     if (method === "GET" && seg[3] === "show") {
       if (lead.flags && (lead.flags.doNotContact || lead.flags.jeffHandles)) return err(403, "This lead can't be shown.");
-      const bench = await showBench(seat.marketId, lead.category);
+      const show = await showBench(seat.marketId, lead.category, { neighborhood: lead.neighborhood || "", city: lead.city || "" });
       const progress = await marketProgress(seat.marketId);
       void progress;
       return json(200, {
         lead: { id: lead.id, name: lead.name, category: lead.category },
         marketName: seat.marketName,
-        bench,
+        bench: show.cards,
+        areaFraming: show.areaFraming,
         claimUrl: claimPath(lead),
         repFirstName: String(user.name || "").split(" ")[0] || "",
       });

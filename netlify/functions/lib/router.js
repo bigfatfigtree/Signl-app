@@ -76,6 +76,18 @@ async function logAudienceUpdated(userRec, before, source) {
     type: "audience_updated", actorId: userRec.id, actorRole: userRec.role || "creator", subjectId: userRec.id, market: userRec.market,
     data: { source, stack: after.stack, platformLocalPct: after.platformLocalPct, localAudiencePct: after.localAudiencePct, totalAudience: after.totalAudience, changes },
   });
+  // Build -156: a platform stacked AFTER the claim (the founding
+  // lock exists only once a claim completed) is its own capture,
+  // so the stack moment can be measured on its own. The claim's
+  // own first facts never count: no lock exists yet at that save.
+  if (userRec.creator.foundingNeighbor) {
+    const nb = neighborCountFor(userRec.creator);
+    for (const p of Object.keys(after.stack)) {
+      if (!(before.stack[p] > 0) && after.stack[p] > 0) {
+        await logCapture({ type: "neighbor_stack_added", actorId: userRec.id, actorRole: "creator", subjectId: userRec.id, market: userRec.market, data: { platform: p, source, neighborCount: nb.count, extrapolated: nb.extrapolated } });
+      }
+    }
+  }
 }
 
 // Public creator-page views (audit loss #7): one counter record
@@ -298,7 +310,7 @@ async function captureSince(type) {
 // sweep's backfill. One small config read replaces the full-log
 // scan above; captureSince itself now runs only inside the
 // daily backfill, never on a page load.
-const CAPTURE_SINCE_TYPES = ["match_impression", "discover_search", "sig_ask", "audience_updated", "profile_view", "deck_later", "outreach_sent", "form_received"];
+const CAPTURE_SINCE_TYPES = ["match_impression", "discover_search", "sig_ask", "audience_updated", "profile_view", "deck_later", "outreach_sent", "form_received", "claim_hook_view", "claim_hook_converted", "neighbor_stack_added", "neighbor_card_generated", "neighbor_card_shared"];
 async function captureSinceMap() {
   return (await store.get("config:captureSince")) || {};
 }
@@ -431,6 +443,11 @@ async function dataSectionPayload(section, rangeDays) {
       { type: "sig_ask", label: "Maggie asks" },
       { type: "audience_updated", label: "Audience updates" },
       { type: "profile_view", label: "In-app profile views" },
+      { type: "claim_hook_view", label: "Neighbor hook views" },
+      { type: "claim_hook_converted", label: "Claims from the Neighbor hook" },
+      { type: "neighbor_stack_added", label: "Neighbor stack adds" },
+      { type: "neighbor_card_generated", label: "Neighbor Cards made" },
+      { type: "neighbor_card_shared", label: "Neighbor Cards shared" },
     ];
     const captures = captureKinds.map((k) => ({ ...k, inRange: rollupCount(rollups, k.type), since: sinceMap[k.type] || null }));
     captures.push({ type: "deck_actions", label: "Deck passes / Laters", inRange: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"].reduce((s, t) => s + rollupCount(rollups, t), 0), since: sinceMap["deck_later"] || null });
@@ -2213,6 +2230,11 @@ async function bdevMarketCreators(marketId) {
     const pct = audienceShareInMarket(u, canonName);
     if (pct === null || (!isHome && pct < 5)) continue;
     const handle = (u.creator && u.creator.handle) || "";
+    // Build -156: the bench also carries each creator's counted
+    // neighbors and their own city/area, so Show Mode can frame
+    // the creators who are based in the business's own area —
+    // only from these stored facts, never from a distance guess.
+    const nb156 = neighborCountFor(u.creator || {});
     bench.push({
       id: u.id,
       name: u.name || "",
@@ -2220,6 +2242,10 @@ async function bdevMarketCreators(marketId) {
       handle,
       categories: (u.creator && u.creator.categories) || [],
       localPct: pct,
+      neighborCount: nb156.count,
+      neighborExtrapolated: nb156.extrapolated,
+      city: u.city || "",
+      area: creatorAreaOf(u.creator || {}),
       photoUrl: photoSet.has(u.id) ? `/api/users/${u.id}/photo` : null,
       community: /hub|community|collective/i.test(`${u.name || ""} ${handle}`),
     });
@@ -17289,6 +17315,150 @@ function neighborCountFor(creatorRec) {
   if (total > 0 && Number.isFinite(pct) && pct > 0) return { count: Math.round((total * pct) / 100), extrapolated: false };
   return { count: 0, extrapolated: false };
 }
+
+// ---------- Build -156: The Neighbor Number ----------
+// The checked set for one market: every creator Magpie has real
+// numbers for in that market — app creator records with a
+// computable neighbor count, plus recruiter / outside prospect
+// records that carry BOTH a follower count and a numeric local
+// %. A written local-evidence note is never turned into a
+// percentage: a record without a numeric rate is not in the set,
+// and a prospect without one gets the generic hook, never a
+// made-up number. Ranking is by neighbor count only, never by
+// follower count.
+function neighborLocalWords(pct) {
+  const p = Number(pct);
+  if (!Number.isFinite(p)) return null;
+  const tenths = Math.round(p / 10);
+  if (tenths >= 10) return "10 out of 10 of your followers live here";
+  if (tenths <= 0) return "Fewer than 1 in 10 of your followers live here";
+  return `${tenths} out of 10 of your followers live here`;
+}
+function neighborPctOf(creatorRec) {
+  const c = creatorRec || {};
+  const m = localRateModel(c);
+  if (m && m.R !== null && m.R !== undefined) return m.R;
+  const pct = Number(c.localAudiencePct);
+  return Number.isFinite(pct) ? pct : null;
+}
+function neighborEntry(key, fields) {
+  return Object.assign({ key }, fields);
+}
+function addProspectToCheckedSet(rec, source, byKey) {
+  if (!rec) return;
+  const handles = [rec.handle, rec.instagramHandle, rec.tiktokHandle].map((h) => normalizeHandle(h || "")).filter(Boolean);
+  if (!handles.length) return;
+  if (handles.some((h) => byKey.has(h.toLowerCase()))) return;
+  let stack = {};
+  if (rec.audienceStack && typeof rec.audienceStack === "object") stack = rec.audienceStack;
+  else if (rec.followersDetail && typeof rec.followersDetail === "object") stack = rec.followersDetail;
+  else if (Number(rec.followers) > 0) {
+    const plat = String(rec.followersPlatform || "instagram").toLowerCase();
+    stack[COUNT_PLATFORM_KEYS.includes(plat) ? plat : "instagram"] = Number(rec.followers);
+  }
+  const cleanStack = {};
+  for (const [k, v] of Object.entries(stack || {})) { const n = Number(v); if (COUNT_PLATFORM_KEYS.includes(k) && Number.isFinite(n) && n > 0) cleanStack[k] = n; }
+  if (!Object.keys(cleanStack).length) return;
+  const pctRaw = rec.localPct !== undefined ? rec.localPct : (rec.localAudiencePct !== undefined ? rec.localAudiencePct : rec.local_pct);
+  const synth = { audienceStack: cleanStack, platformLocalPct: rec.platformLocalPct || undefined };
+  if (pctRaw !== undefined && pctRaw !== null && Number.isFinite(Number(pctRaw))) synth.localAudiencePct = Number(pctRaw);
+  const nb = neighborCountFor(synth);
+  if (!(nb.count > 0)) return;
+  const pct = neighborPctOf(synth);
+  if (pct === null) return;
+  const followers = Object.values(cleanStack).reduce((s, n) => s + n, 0);
+  const handle = rec.handle || rec.instagramHandle || rec.tiktokHandle || "";
+  const name = String(rec.name || "").trim();
+  byKey.set(handles[0].toLowerCase(), neighborEntry(handles[0].toLowerCase(), {
+    handle, name, firstName: name ? name.split(/\s+/)[0] : "",
+    photoUrl: rec.photoUrl || null, followers, neighborCount: nb.count,
+    extrapolated: nb.extrapolated, localPct: pct, source, userId: null,
+  }));
+}
+async function checkedNeighborSet(marketName) {
+  const byKey = new Map();
+  const users = await allUsers();
+  for (const u of users) {
+    if (!u || u.role !== "creator" || isTester(u) || u.status === "banned") continue;
+    if (normalizeMarketName(u.market || "") !== marketName) continue;
+    const c = u.creator || {};
+    const handle = normalizeHandle(c.handle || "");
+    if (!handle) continue;
+    const nb = neighborCountFor(c);
+    if (!(nb.count > 0)) continue;
+    const pct = neighborPctOf(c);
+    if (pct === null) continue;
+    const name = String(u.name || "").trim();
+    byKey.set(handle.toLowerCase(), neighborEntry(handle.toLowerCase(), {
+      handle: c.handle, name, firstName: name ? name.split(/\s+/)[0] : "",
+      photoUrl: c.hasPhoto ? `/api/users/${u.id}/photo` : null,
+      followers: creatorTotalAudience(c), neighborCount: nb.count,
+      extrapolated: nb.extrapolated, localPct: pct, source: "creator", userId: u.id,
+    }));
+  }
+  let prospects = [];
+  try { prospects = await recruiters._test.allProspects(); } catch (e) { prospects = []; }
+  for (const p of prospects || []) {
+    if (!p || p.status === "do_not_contact" || p.status === "not_interested") continue;
+    if (normalizeMarketName(p.marketName || "") !== marketName) continue;
+    addProspectToCheckedSet(p, "prospect", byKey);
+  }
+  const outside = (await store.list("outprospect:")).map((r) => r.value).filter(Boolean);
+  for (const p of outside) {
+    const mkts = (Array.isArray(p.markets) && p.markets.length ? p.markets : [p.market]).map((m) => normalizeMarketName(m || ""));
+    if (!mkts.includes(marketName)) continue;
+    addProspectToCheckedSet(p, "outside", byKey);
+  }
+  return [...byKey.values()].sort((a, b) => (b.neighborCount - a.neighborCount) || (a.key < b.key ? -1 : 1));
+}
+function neighborRankOf(entries, entry) {
+  if (!entry) return null;
+  const greater = entries.filter((e) => e.neighborCount > entry.neighborCount).length;
+  return { rank: greater + 1, checkedCount: entries.length };
+}
+function neighborInversionFor(entries, entry) {
+  if (!entry) return null;
+  const cands = entries.filter((e) => e.key !== entry.key && e.followers > entry.followers && e.neighborCount < entry.neighborCount);
+  if (!cands.length) return null;
+  cands.sort((a, b) => b.followers - a.followers);
+  const top = cands[0];
+  return { name: top.name || "", handle: top.handle || "", followers: top.followers, neighborCount: top.neighborCount };
+}
+async function claimHookFor(handleRaw, marketRaw) {
+  const generic = { variant: "generic", genericLine: "On Magpie, 800 followers who live here beats 90,000 followers who don't." };
+  const handle = normalizeHandle(handleRaw || "");
+  const marketName = normalizeMarketName(String(marketRaw || "").trim());
+  if (!handle || !marketName || !MARKETS.some((m) => m.name === marketName)) return { ...generic, handle: handle || null, market: marketName || null };
+  const entries = await checkedNeighborSet(marketName);
+  const entry = entries.find((e) => e.key === handle.toLowerCase());
+  if (!entry || !(entry.neighborCount > 0) || entry.localPct === null) return { ...generic, handle, market: marketName };
+  const r = neighborRankOf(entries, entry);
+  return {
+    variant: "personal",
+    handle: entry.handle, name: entry.name, firstName: entry.firstName,
+    photoUrl: entry.photoUrl, market: marketName,
+    neighborCount: entry.neighborCount, extrapolated: entry.extrapolated,
+    localPct: Math.round(entry.localPct * 10) / 10, localWords: neighborLocalWords(entry.localPct),
+    followers: entry.followers,
+    rank: r.rank, checkedCount: r.checkedCount,
+    rankLine: `#${r.rank} of the ${r.checkedCount} ${marketName} creators we've checked so far`,
+    inversion: neighborInversionFor(entries, entry),
+  };
+}
+function neighborViewForUser(user, entries, entry) {
+  const c = (user && user.creator) || {};
+  const nb = neighborCountFor(c);
+  const pct = neighborPctOf(c);
+  const r = entry ? neighborRankOf(entries, entry) : null;
+  return {
+    market: normalizeMarketName(user.market || ""),
+    neighborCount: nb.count, extrapolated: nb.extrapolated,
+    localPct: pct === null ? null : Math.round(pct * 10) / 10,
+    localWords: pct === null ? null : neighborLocalWords(pct),
+    liveRank: r ? r.rank : null, liveCheckedCount: r ? r.checkedCount : null,
+    founding: c.foundingNeighbor || null,
+  };
+}
 // Regulars: the counted customers ONE creator brought through
 // the door, all time — firsts plus came-backs, derived ONLY
 // from the counted chokepoint (bookingMoneyFrom: real register
@@ -22947,6 +23117,19 @@ async function route(event) {
     return json(200, { draft, cached: !!res.cached });
   }
 
+  // The Neighbor Number claim hook (Build -156): a creator who
+  // lands on the claim flow from a personal link gets her own
+  // counted neighbors BEFORE any form — but only when a checked
+  // record really carries her numbers. Anything else answers
+  // the generic variant. Every answer logs its view (variant
+  // split) into the captures feed; the read itself writes
+  // nothing else.
+  if (method === "GET" && seg[0] === "claim-hook" && seg.length === 1) {
+    const hook = await claimHookFor(query.handle || "", query.market || "");
+    await logCapture({ type: "claim_hook_view", actorId: null, actorRole: "creator", subjectId: null, market: hook.market || null, data: { variant: hook.variant, handle: hook.handle || null, neighborCount: hook.neighborCount || null, rank: hook.rank || null, checkedCount: hook.checkedCount || null } });
+    return json(200, { hook });
+  }
+
   // App sitemap (SEO, 2026-11-01): every FINISHED, public
   // creator profile on app.magpielocal.com, generated live. The
   // membership rule is the public page's own rule (roster +
@@ -24410,6 +24593,57 @@ async function route(event) {
     await store.set(`user:${user.id}`, user);
     await logEvent({ type: "market_changed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: fromMarket, to: user.market, fromCity, toCity: user.city || "", via } });
     return json(200, { user: await withFounding(user) });
+  }
+
+  // ---------- Build -156: my Neighbor Number ----------
+  if (seg[0] === "neighbor" && user && user.role === "creator") {
+    const fresh = (await store.get(`user:${user.id}`)) || user;
+    const marketName = normalizeMarketName(fresh.market || "");
+    // GET /neighbor/me — the live view: today's count and live
+    // rank (recomputed from the checked set on every read),
+    // beside the founding rank locked at claim. The two are
+    // labelled separately everywhere they print.
+    if (method === "GET" && seg[1] === "me" && seg.length === 2) {
+      const entries = await checkedNeighborSet(marketName);
+      const entry = entries.find((e) => e.userId === fresh.id);
+      return json(200, { neighbor: neighborViewForUser(fresh, entries, entry || null) });
+    }
+    // POST /neighbor/claim-complete — the claim flow calls this
+    // once, right after the claim's facts land. It locks the
+    // founding rank (first call wins; the lock never moves) and
+    // logs the hook conversion exactly once.
+    if (method === "POST" && seg[1] === "claim-complete" && seg.length === 2) {
+      const b = parseBody(event);
+      const entries = await checkedNeighborSet(marketName);
+      const entry = entries.find((e) => e.userId === fresh.id);
+      let view = neighborViewForUser(fresh, entries, entry || null);
+      if (entry && !fresh.creator.foundingNeighbor) {
+        const r = neighborRankOf(entries, entry);
+        fresh.creator.foundingNeighbor = {
+          rank: r.rank, checkedCount: r.checkedCount, market: marketName,
+          neighborCount: entry.neighborCount, localPct: Math.round(entry.localPct * 10) / 10,
+          extrapolated: entry.extrapolated, lockedAt: nowIso(),
+        };
+        fresh.updatedAt = nowIso();
+        await store.set(`user:${fresh.id}`, fresh);
+        view = neighborViewForUser(fresh, entries, entry);
+      }
+      if (!fresh.creator.neighborConversionLoggedAt) {
+        fresh.creator.neighborConversionLoggedAt = nowIso();
+        await store.set(`user:${fresh.id}`, fresh);
+        await logCapture({ type: "claim_hook_converted", actorId: fresh.id, actorRole: "creator", subjectId: fresh.id, market: marketName, data: { variant: b.variant === "personal" ? "personal" : "generic", foundingRank: view.founding ? view.founding.rank : null, neighborCount: view.neighborCount } });
+      }
+      return json(200, { neighbor: view });
+    }
+    // POST /neighbor/card-event — Neighbor Card generations and
+    // shares, into the same captures feed.
+    if (method === "POST" && seg[1] === "card-event" && seg.length === 2) {
+      const b = parseBody(event);
+      const action = b.action === "shared" ? "shared" : "generated";
+      const nb = neighborCountFor(fresh.creator || {});
+      await logCapture({ type: action === "shared" ? "neighbor_card_shared" : "neighbor_card_generated", actorId: fresh.id, actorRole: "creator", subjectId: fresh.id, market: marketName, data: { neighborCount: nb.count, extrapolated: nb.extrapolated, foundingRank: fresh.creator.foundingNeighbor ? fresh.creator.foundingNeighbor.rank : null } });
+      return json(200, { ok: true });
+    }
   }
 
   // ---------- profile ----------
@@ -28325,6 +28559,11 @@ async function route(event) {
         { type: "sig_ask", label: "Maggie asks" },
         { type: "audience_updated", label: "Audience updates" },
         { type: "profile_view", label: "In-app profile views" },
+        { type: "claim_hook_view", label: "Neighbor hook views" },
+        { type: "claim_hook_converted", label: "Claims from the Neighbor hook" },
+        { type: "neighbor_stack_added", label: "Neighbor stack adds" },
+        { type: "neighbor_card_generated", label: "Neighbor Cards made" },
+        { type: "neighbor_card_shared", label: "Neighbor Cards shared" },
       ];
       const captures = captureKinds.map((k) => ({ ...k, inRange: countType(k.type), since: sinceMap[k.type] || null }));
       captures.push({ type: "deck_actions", label: "Deck passes / Laters", inRange: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"].reduce((s, t) => s + countType(t), 0), since: sinceMap["deck_later"] || null });
