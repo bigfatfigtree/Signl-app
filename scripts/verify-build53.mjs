@@ -267,12 +267,24 @@ check("Applications tab is queue-only: refile sweep panel + Pending/Decided, no 
 check("queue rows keep the resolver suggestion + file-market tap",
   queueSrc.includes("marketSuggestion") && queueSrc.includes("fileUnderMarket(") && queueSrc.includes("File under "));
 const requestsSrc = win("async function loadAdminRequests()", "// Admin profile view");
-check("Requests keeps the platform-message panel, the Finish Engine panel and the founding roster counts",
-  requestsSrc.includes('id="admin-msg-panel"') && requestsSrc.includes('id="admin-finish-panel"') && requestsSrc.includes("Founding roster counts") && requestsSrc.includes("renderAdminMessages()") && requestsSrc.includes("renderAdminFinishEngine()"));
+// Pin updated at Build -163 (2026-11-09): Jeff ordered ALL
+// correspondence into the one Admin Messages home, so the
+// platform-message panel moved out of Requests — Requests now
+// points into Messages and keeps the Finish Engine panel and
+// the founding roster counts. Supersedes this suite's panel
+// pin the same way earlier builds superseded theirs.
+check("Requests points into the Messages home (Build -163), keeps the Finish Engine panel and the founding roster counts",
+  !requestsSrc.includes('id="admin-msg-panel"') && requestsSrc.includes("All conversations moved to Messages") && requestsSrc.includes("go('dashboard','Messages')") && requestsSrc.includes('id="admin-finish-panel"') && requestsSrc.includes("Founding roster counts") && requestsSrc.includes("renderAdminFinishEngine()"));
+const msgHomeSrc = win("async function loadAdminMessages152()", "async function bc153LoadAll()");
+check("Messages home hosts the conversations panel, the sent-to-many panel and the broadcast room (Build -163)",
+  msgHomeSrc.includes('id="admin-msg-panel"') && msgHomeSrc.includes('id="admin-campaigns-panel"') && msgHomeSrc.includes("renderAdminMessages()") && msgHomeSrc.includes("renderAdminCampaigns163()") && msgHomeSrc.includes('id="bc153-room"'));
 check("Requests builds the compose target map (state.adminMsgUsers)", requestsSrc.includes("state.adminMsgUsers"));
 const composeSrc = win("function adminMsgComposeTo(", "async function adminMsgOpenThread(");
-check("queue Message button crosses to Requests when the compose panel is off-screen",
-  composeSrc.includes('!document.getElementById("admin-msg-panel")') && composeSrc.includes('go("dashboard", "Requests")') && composeSrc.includes("adminMsg.scrollToCompose = true"));
+// Pin updated at Build -163 (2026-11-09): the queue's Message
+// button crosses to the Messages home and opens the person's
+// thread there, instead of the Requests compose box.
+check("queue Message button crosses to the Messages home when the thread panel is off-screen",
+  composeSrc.includes('!document.getElementById("admin-msg-panel")') && composeSrc.includes('go("dashboard", "Messages")') && composeSrc.includes("adminMsg.scrollToThread = true"));
 
 check("queue applies the board filter to pending + decided",
   queueSrc.includes(".filter(adminAppInFilter)") && queueSrc.includes("adminAppClearFilter"));

@@ -25802,12 +25802,15 @@ async function sendMessage(e, otherId) {
 
 // ---------- admin: platform messages (Build -40) ----------
 // Jeff writes to creators as the Magpie team, from inside the
-// Requests tab: a compose box (one creator, or a whole market's
-// finished creators as individual threads), the template picker,
-// and the thread list with unread reply counts. Nothing here
-// sends on its own: every send is Jeff's tap on Send, and the
-// server records each one in the Event Log.
-let adminMsg = { templates: [], threads: [], markets: [], targetId: null, segmentMarket: "", openCreatorId: null, threadCreator: null, threadMessages: [], lastTemplateFill: null };
+// Messages home (Build -163; the panel lived under Requests
+// until this build): ONE home for all platform correspondence —
+// the Conversations panel (every person's Magpie-team thread,
+// latest activity first, a "Needs reply" state that clears only
+// when the team answers), the "Sent to many" panel (a receipt
+// for every multi-recipient send, plus the fenced market-
+// segment tool), and the broadcast room below. Nothing here
+// sends on its own: every send is Jeff's tap on Send.
+let adminMsg = { templates: [], threads: [], markets: [], targetId: null, segmentMarket: "", openCreatorId: null, threadCreator: null, threadMessages: [], lastTemplateFill: null, scrollToThread: false };
 
 function adminMsgTargetUser() {
   if (!adminMsg.targetId) return null;
@@ -25848,18 +25851,18 @@ function adminMsgMarketChanged(v) {
   return false;
 }
 function adminMsgPanelHtml() {
-  const target = adminMsgTargetUser();
+  const roleWord = (r) => r === "business" ? "Business" : r === "partner" ? "Partner" : "Creator";
   const threadRows = (adminMsg.threads || []).map((t) => `
-    <div class="admin-msg-item" onclick="adminMsgOpenThread('${t.creatorId}')">
-      <strong>${esc(t.creatorName)}</strong> ${t.creatorHandle ? `<span class="muted">@${esc(t.creatorHandle)}</span>` : ""} <span class="muted small">${esc(t.creatorMarket || "")}</span>${t.unreadReplies ? ` <span class="badge info">${t.unreadReplies} unread ${t.unreadReplies === 1 ? "reply" : "replies"}</span>` : ""}
-      ${t.lastMessage ? `<div class="small muted">${t.lastMessage.fromId === SIGNL_TEAM_PEER ? "Magpie: " : ""}${esc((t.lastMessage.body || "").slice(0, 90))}</div>` : ""}
+    <div class="admin-msg-item" onclick="adminMsgOpenThread('${t.peerId || t.creatorId}')">
+      <strong>${esc(t.peerName || t.creatorName)}</strong> ${t.peerHandle ? `<span class="muted">@${esc(t.peerHandle)}</span>` : t.peerOrg ? `<span class="muted">${esc(t.peerOrg)}</span>` : ""} <span class="muted small">${esc(roleWord(t.peerRole))}${t.peerMarket || t.creatorMarket ? ` &middot; ${esc(t.peerMarket || t.creatorMarket)}` : ""}${t.lastAt ? ` &middot; ${fmtDate(t.lastAt)}` : ""}</span>${t.needsReply ? ` <span class="badge bad">Needs reply</span>` : ""}${t.unreadReplies ? ` <span class="badge info">${t.unreadReplies} unread ${t.unreadReplies === 1 ? "reply" : "replies"}</span>` : ""}
+      ${t.lastMessage ? `<div class="small muted">${t.lastMessage.fromId === SIGNL_TEAM_PEER ? "Magpie: " : `${esc(t.peerName || t.creatorName)}: `}${esc((t.lastMessage.body || "").slice(0, 90))}</div>` : ""}
     </div>`).join("");
   let threadView = "";
   if (adminMsg.openCreatorId && adminMsg.threadCreator) {
     const c = adminMsg.threadCreator;
     threadView = `
     <div class="mt">
-      <h4 style="margin:0 0 6px">Thread with ${esc(c.name)} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}</h4>
+      <h4 style="margin:0 0 6px">Thread with ${esc(c.name)} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}${c.org ? ` <span class="muted">${esc(c.org)}</span>` : ""} <span class="muted small">${esc(roleWord(c.role))}</span></h4>
       <div id="admin-msg-list">${(adminMsg.threadMessages || []).map((m) => `
         <div class="msg ${m.fromId === SIGNL_TEAM_PEER ? "platform-msg" : ""}">
           <div class="meta">${m.fromId === SIGNL_TEAM_PEER ? "Magpie" : esc(c.name)} &middot; ${fmtDate(m.createdAt)}</div>
@@ -25871,17 +25874,13 @@ function adminMsgPanelHtml() {
       </form>
     </div>`;
   }
+  const needsCount = (adminMsg.threads || []).filter((t) => t.needsReply).length;
   return `
   <div class="panel">
-    <h3 style="margin-top:0">Creator messages</h3>
-    <p class="muted small">Messages land in the creator's Magpie inbox as the Magpie team, and each one also emails them a short notification. A market send gives every finished creator in that market their own thread.</p>
-    ${target ? `<p><span class="badge ok">To: ${esc(target.name)}${target.creator && target.creator.handle ? ` (@${esc(target.creator.handle)})` : ""}${target.market ? ` &middot; ${esc(target.market)}` : ""}</span> <button type="button" class="btn small-btn ghost" onclick="adminMsgClearTarget()">Clear</button></p>`
-      : `<div class="field"><label>Market segment (finished creators)</label><select id="admin-msg-market" onchange="adminMsgMarketChanged(this.value)">${(adminMsg.markets || []).map((m) => `<option value="${esc(m)}" ${m === adminMsg.segmentMarket ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></div>`}
-    <div class="field"><label>Template</label><select id="admin-msg-template" onchange="adminMsgTemplateChanged()">${(adminMsg.templates || []).map((t) => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join("")}</select></div>
-    <div class="field"><label>Message</label><textarea id="admin-msg-body" rows="4" placeholder="Write to ${target ? esc(target.name) : "the segment"}..."></textarea></div>
-    <button type="button" class="btn" onclick="adminMsgSendCompose(this)">${target ? "Send message" : "Send to segment"}</button>
-    <span id="admin-msg-result" class="small" style="margin-left:8px"></span>
-    ${threadRows ? `<h4 class="mt">Threads</h4>${threadRows}` : `<p class="muted small mt">No platform threads yet. The first message you send starts one.</p>`}
+    <h3 style="margin-top:0">Conversations</h3>
+    <p class="muted small">Every conversation with a creator, a business or a partner, newest first — all in this one place. A thread marked <span class="badge bad">Needs reply</span> stays marked until you answer it; opening it does not clear the mark. Messages land in their Magpie inbox as the Magpie team, and each one also emails them a short notification.</p>
+    ${needsCount ? `<p class="small"><strong>${needsCount} ${needsCount === 1 ? "conversation is" : "conversations are"} waiting on your reply.</strong></p>` : ""}
+    ${threadRows ? threadRows : `<p class="muted small mt">No conversations yet. The first message you send starts one.</p>`}
     ${threadView}
   </div>`;
 }
@@ -26025,19 +26024,16 @@ async function adminFinishStartConcierge(creatorId, btn) {
   return false;
 }
 function adminMsgComposeTo(userId) {
-  adminMsg.targetId = userId;
+  adminMsg.openCreatorId = userId;
   if (!document.getElementById("admin-msg-panel")) {
-    // The compose box lives under Requests since the Build -53
-    // split; a Message tap on the Applications queue crosses
-    // tabs with the target already set, and loadAdminRequests
-    // scrolls the compose into view once the panel renders.
-    adminMsg.scrollToCompose = true;
-    return go("dashboard", "Requests");
+    // Build -163: the threads live in the Messages home now; a
+    // Message tap on the Applications queue crosses tabs and
+    // lands on the person's thread there, reply box ready.
+    adminMsg.scrollToThread = true;
+    return go("dashboard", "Messages");
   }
-  renderAdminMessages().then(() => {
-    const panel = document.getElementById("admin-msg-panel");
-    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
-    const ta = document.getElementById("admin-msg-body");
+  adminMsgOpenThread(userId).then(() => {
+    const ta = document.getElementById("admin-msg-reply");
     if (ta) ta.focus();
   });
   return false;
@@ -26051,29 +26047,31 @@ async function adminMsgOpenThread(creatorId) {
   return false;
 }
 async function adminMsgSendCompose(btn) {
+  // Build -163: this sender is the market-segment tool in the
+  // "Sent to many" area — the only thing it does is write one
+  // message into every finished creator's thread in a market.
+  // One-to-one sends happen in the thread itself (reply box) or
+  // by naming the person in the broadcast room.
   const ta = document.getElementById("admin-msg-body");
   const result = document.getElementById("admin-msg-result");
   const body = ta ? ta.value.trim() : "";
   if (!body) { if (result) result.textContent = "Write a message first."; return false; }
+  const msel = document.getElementById("admin-msg-market");
+  const market = msel ? msel.value : adminMsg.segmentMarket;
+  if (!market) { if (result) result.textContent = "Pick a market first."; return false; }
+  if (!window.confirm(`Send this message to every finished creator in ${market}?\n\nIt lands in each person's own thread in the app, and each send is recorded under "Sent to many".`)) return false;
   const sel = document.getElementById("admin-msg-template");
-  const payload = { body, templateId: sel ? sel.value : "blank" };
-  if (adminMsg.targetId) payload.creatorId = adminMsg.targetId;
-  else {
-    const msel = document.getElementById("admin-msg-market");
-    payload.market = msel ? msel.value : adminMsg.segmentMarket;
-  }
+  const payload = { body, templateId: sel ? sel.value : "blank", market };
   if (btn) btn.disabled = true;
   try {
     const data = await api("POST", "/admin/platform-messages", payload);
-    if (result) result.textContent = `Sent to ${data.sent} creator${data.sent === 1 ? "" : "s"}. Email notifications: ${data.emailSent} sent, ${data.emailFailed} failed.`;
     if (ta) { ta.value = ""; adminMsg.lastTemplateFill = null; }
-    const keepTarget = adminMsg.targetId;
     const keepMarket = adminMsg.segmentMarket;
     await renderAdminMessages();
-    adminMsg.targetId = keepTarget;
+    await renderAdminCampaigns163();
     adminMsg.segmentMarket = keepMarket;
     const r2 = document.getElementById("admin-msg-result");
-    if (r2) r2.textContent = `Sent to ${data.sent} creator${data.sent === 1 ? "" : "s"}. Email notifications: ${data.emailSent} sent, ${data.emailFailed} failed.`;
+    if (r2) r2.textContent = `Sent to ${data.sent} creator${data.sent === 1 ? "" : "s"}. Email notifications: ${data.emailSent} sent, ${data.emailFailed} failed. Recorded under "Sent to many" above.`;
   } catch (err) {
     if (result) result.textContent = err.message;
     if (btn) btn.disabled = false;
@@ -26085,11 +26083,81 @@ async function adminMsgSendReply(e) {
   const ta = document.getElementById("admin-msg-reply");
   const body = ta ? ta.value.trim() : "";
   if (!body || !adminMsg.openCreatorId) return false;
+  // Creators ride the creatorId spelling (its guards predate
+  // the home); everyone else rides userId (Build -163).
+  const role = adminMsg.threadCreator ? adminMsg.threadCreator.role : null;
+  const payload = role && role !== "creator" ? { userId: adminMsg.openCreatorId, body } : { creatorId: adminMsg.openCreatorId, body };
   try {
-    await api("POST", "/admin/platform-messages", { creatorId: adminMsg.openCreatorId, body });
+    await api("POST", "/admin/platform-messages", payload);
     await renderAdminMessages();
   } catch (err) { alert(err.message); }
   return false;
+}
+
+// ---------- Admin: Sent to many (Build -163) ----------
+// The receipt book for multi-recipient sends: segment sends
+// recorded by the server at send time, the two 2026-11-09
+// sends rebuilt from the stored messages, and every broadcast
+// (the broadcast room's own records) — one entry each, with
+// the exact copy and the recipient list, each recipient
+// opening their thread in Conversations above. The market-
+// segment tool lives at the bottom of this panel, fenced and
+// labelled: it is a send to many people, never a thread reply.
+let adminCamp163 = { campaigns: [], loaded: false };
+async function renderAdminCampaigns163() {
+  const host = document.getElementById("admin-campaigns-panel");
+  if (!host) return;
+  try {
+    getCache.delete("/admin/message-campaigns");
+    const data = await api("GET", "/admin/message-campaigns");
+    adminCamp163.campaigns = data.campaigns || [];
+    adminCamp163.loaded = true;
+  } catch (err) {
+    host.innerHTML = `<div class="panel"><h3 style="margin-top:0">Sent to many</h3><div class="error-box">${esc(err.message)}</div></div>`;
+    return;
+  }
+  host.innerHTML = adminCampPanelHtml163();
+}
+function adminCampOpenThread163(peerId) {
+  adminMsg.openCreatorId = peerId;
+  renderAdminMessages().then(() => {
+    const list = document.getElementById("admin-msg-list");
+    if (list) list.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    else { const panel = document.getElementById("admin-msg-panel"); if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  });
+  return false;
+}
+function adminCampPanelHtml163() {
+  const rows = (adminCamp163.campaigns || []).map((c) => {
+    const kindLabel = c.kind === "broadcast" ? "Broadcast" : "Market segment";
+    const people = (c.recipients || []).map((p) => `<button type="button" class="btn small-btn ghost" style="margin:0 6px 6px 0" onclick="return adminCampOpenThread163('${p.id}')">${esc(p.name)}${p.handle ? ` (@${esc(p.handle)})` : ""}</button>`).join("");
+    return `
+    <div class="admin-msg-item">
+      <strong>${esc(c.title || (c.kind === "broadcast" ? "Broadcast message" : "Segment message"))}</strong> <span class="badge info">${kindLabel}</span> <span class="muted small">${fmtDate(c.createdAt)} &middot; sent by ${esc(c.sentByName || "Magpie admin")}</span>
+      <div class="small muted">${esc(c.audienceLabel || "")}${c.audienceLabel ? " &middot; " : ""}${fmtNum(c.recipientCount)} ${c.recipientCount === 1 ? "person" : "people"}${c.messageCount && c.messageCount !== c.recipientCount ? ` &middot; ${fmtNum(c.messageCount)} messages` : ""}</div>
+      <div class="small">${esc(String(c.body || "").slice(0, 140))}${String(c.body || "").length > 140 ? "…" : ""}</div>
+      ${c.reconstructed ? `<div class="small muted">Rebuilt from the stored messages themselves — this send predates campaign records. ${esc(c.source || "")}</div>` : ""}
+      <details style="margin-top:6px"><summary class="small">Full message and who got it (${fmtNum(c.recipientCount)})</summary>
+        <div class="small" style="white-space:pre-wrap;margin:8px 0">${esc(c.body || "")}</div>
+        <div>${people || '<span class="muted small">No recipients on record.</span>'}</div>
+      </details>
+    </div>`;
+  }).join("");
+  return `
+  <div class="panel">
+    <h3 style="margin-top:0">Sent to many</h3>
+    <p class="muted small">Every message sent to more than one person, recorded once: when it went, the exact words, who sent it, and exactly who got it. Tap a name to open that person's conversation above.</p>
+    ${rows || `<p class="muted small">Nothing sent to many people yet.</p>`}
+    <div class="mt" style="border:2px dashed var(--line, #ccc);border-radius:10px;padding:12px">
+      <h4 style="margin:0 0 4px">Send to a market segment</h4>
+      <p class="muted small" style="margin-top:0">This is a send to MANY people at once — one message written into every finished creator's own thread in the market you pick. It is not a reply in a conversation. To write to one person, open their conversation above and reply there.</p>
+      <div class="field"><label>Market segment (finished creators)</label><select id="admin-msg-market" onchange="adminMsgMarketChanged(this.value)">${(adminMsg.markets || []).map((m) => `<option value="${esc(m)}" ${m === adminMsg.segmentMarket ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></div>
+      <div class="field"><label>Template</label><select id="admin-msg-template" onchange="adminMsgTemplateChanged()">${(adminMsg.templates || []).map((t) => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join("")}</select></div>
+      <div class="field"><label>Message</label><textarea id="admin-msg-body" rows="4" placeholder="Write to the segment..."></textarea></div>
+      <button type="button" class="btn" onclick="adminMsgSendCompose(this)">Send to segment</button>
+      <span id="admin-msg-result" class="small" style="margin-left:8px"></span>
+    </div>
+  </div>`;
 }
 
 // ---------- admin: Messages room (Build -152, portal rework -153) ----------
@@ -26147,11 +26215,30 @@ function bc153AvatarHtml(p) {
 async function loadAdminMessages152() {
   const el = document.getElementById("tab-body");
   if (!el) return;
+  // Build -163: Messages is the ONE home for all admin
+  // correspondence (Jeff's ruling, 2026-11-09). Conversations
+  // (every thread) first, then "Sent to many" (the receipt
+  // book + the segment tool), then the broadcast room — its
+  // folders track broadcasts only; every reply, wherever it
+  // started, lands in Conversations at the top of this screen.
   el.innerHTML = `
     <h3 style="margin-top:0">Messages</h3>
-    <p class="muted small" style="max-width:640px">Send a message to people in the app. It lands in their Messages inbox, from the Magpie team — never from a person. They can reply right in the thread, and their replies land in your Inbox here.</p>
+    <p class="muted small" style="max-width:640px">Every conversation and every message sent to many people lives on this one screen. People reply right in their thread in the app, and their replies land in Conversations below.</p>
+    <div id="admin-msg-panel"><p class="muted">Loading conversations...</p></div>
+    <div id="admin-campaigns-panel" class="mt"></div>
+    <h3 class="mt">Broadcast room</h3>
+    <p class="muted small" style="max-width:640px">A broadcast writes ONE new message into many people's inboxes at once — different from replying in a conversation above. Its folders below file broadcasts and the replies they drew; a reply also shows in Conversations, where you answer it.</p>
     <div id="bc153-room"><p class="muted">Loading...</p></div>`;
   try {
+    await renderAdminMessages();
+    await renderAdminCampaigns163();
+    if (adminMsg.scrollToThread) {
+      adminMsg.scrollToThread = false;
+      const list = document.getElementById("admin-msg-list");
+      if (list) list.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const ta = document.getElementById("admin-msg-reply");
+      if (ta) ta.focus();
+    }
     if (!adminBc153.meta) adminBc153.meta = await api("GET", "/admin/broadcasts/meta");
     await bc153LoadAll();
     if (adminBc153.pendingPickId) {
@@ -26197,7 +26284,7 @@ function bc153RenderRoom() {
       <div class="shop-main">
         <div class="bc153-toolbar">
           <button type="button" class="btn small-btn sr-filters" onclick="return shopRailToggle('bc153-folders-rail')">Folders</button>
-          <button type="button" class="btn" onclick="return bc153NewMessage()">Write a message</button>
+          <button type="button" class="btn" onclick="return bc153NewMessage()">Write a broadcast</button>
         </div>
         <div id="bc153-main"></div>
       </div>
@@ -29284,10 +29371,11 @@ async function loadApplications() {
 
 // ---------- Admin: Requests (Build -53) ----------
 // Everything that shared the old Applications destination and is
-// not the application queue: the platform-message panel (the
-// compose box the queue's Message buttons target), the Finish
-// Engine panel, and the founding roster counts strip — moved
-// here verbatim when Applications became the queue's own tab.
+// not the application queue: a pointer to the Messages home
+// (Build -163 moved the platform-message panel there — all
+// correspondence lives in Messages now; the queue's Message
+// buttons open the person's thread in that home), the Finish
+// Engine panel, and the founding roster counts strip.
 async function loadAdminRequests() {
   const el = document.getElementById("tab-body");
   try {
@@ -29307,27 +29395,18 @@ async function loadAdminRequests() {
       </table></div>
       ${s.auto ? `<p class="muted small">Auto-decided under the standing rules: ${s.auto.approved} approved, ${s.auto.rejected} rejected all time; today ${s.auto.approvedToday} approved, ${s.auto.rejectedToday} rejected. Referred claims always wait for a person.</p>` : ""}` : "";
     el.innerHTML = `
-      <div id="admin-msg-panel"><p class="muted">Loading creator messages...</p></div>
+      <div class="panel">
+        <h3 style="margin-top:0">Creator messages</h3>
+        <p class="muted small">All conversations moved to Messages — every thread, every reply and every send to many people lives there now, in one place.</p>
+        <button type="button" class="btn" onclick="return go('dashboard','Messages')">Open Messages</button>
+      </div>
       <div id="admin-finish-panel"></div>
       <div id="admin-demo-showcase"></div>
       <div id="admin-test-offers"></div>
       ${summaryStrip}`;
-    const rendered = renderAdminMessages();
     renderAdminFinishEngine();
     loadDemoShowcasePanel();
     loadTestOffersPanel();
-    // A queue-row Message tap that crossed tabs (adminMsgComposeTo)
-    // lands here with the target set: once the panel has rendered,
-    // bring the compose box into view and focus it.
-    if (adminMsg.scrollToCompose) {
-      adminMsg.scrollToCompose = false;
-      Promise.resolve(rendered).then(() => {
-        const panel = document.getElementById("admin-msg-panel");
-        if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
-        const ta = document.getElementById("admin-msg-body");
-        if (ta) ta.focus();
-      });
-    }
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }

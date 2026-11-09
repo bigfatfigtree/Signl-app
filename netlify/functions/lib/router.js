@@ -6859,6 +6859,107 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   return { message: msg, email: emailResult };
 }
 
+// ---------- message campaigns (Build -163) ----------
+// Jeff's ruling (2026-11-09): ALL correspondence lives together
+// in Admin → Messages. A multi-recipient platform send is
+// recorded ONCE as a campaign (pmcampaign:*) — when, the exact
+// copy, who sent it, and exactly who got it — so the Messages
+// home's "Sent to many" area is a receipt book read from the
+// store, never from the Event Log (a rolling window whose
+// platform_message_sent counts shift between reads; it cannot
+// prove a send). Broadcasts keep their own broadcast:* records
+// and are folded into the same list at read time.
+function peerDisplayName163(u) {
+  if (!u) return "Unknown";
+  return u.name || (u.business && u.business.businessName) || (u.partner && u.partner.name) || u.email || "Unknown";
+}
+function campaignPersonView163(u) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    name: peerDisplayName163(u),
+    role: u.role || null,
+    handle: u.creator ? (u.creator.handle || null) : null,
+    org: (u.business && u.business.businessName) || (u.partner && u.partner.name) || null,
+    market: u.market || null,
+  };
+}
+// The two mass sends of Monday 2026-11-09 predate campaign
+// records: they were fired one thread at a time from Jeff's
+// admin session (19 creators ~09:17-09:27 ET with the category
+// copy; 73 creators ~09:46-10:16 ET with the second-city copy).
+// The backfill rebuilds their entries from the stored thread
+// messages THEMSELVES — recipients are counted only where a
+// matching message actually sits in the store, and the copy is
+// the earliest stored copy, verbatim. Each spec is proven by a
+// distinctive phrase from the real copy plus its send window
+// (UTC); the campaign logs live in
+// ~/workspace/signl-campaign-run/{category,second-city}-message-log-2026-11-09.json.
+// Idempotent (fixed ids, written once); writes nothing when no
+// matching messages exist, so a fresh store stays clean.
+const MSG_CAMPAIGN_BACKFILLS_163 = [
+  {
+    id: "backfill-2026-11-09-categories",
+    title: "Category message — every creator deserves every category",
+    marker: "What you create in",
+    from: "2026-11-09T13:30:00.000Z",
+    to: "2026-11-09T15:00:00.000Z",
+    audienceLabel: "Approved creators listed under 1-5 categories (all markets)",
+  },
+  {
+    id: "backfill-2026-11-09-second-city",
+    title: "Second-city message — be listed where your followers live",
+    marker: "about your second city",
+    from: "2026-11-09T14:30:00.000Z",
+    to: "2026-11-09T15:45:00.000Z",
+    audienceLabel: "Approved creators with no second city declared",
+  },
+];
+async function maybeBackfillMsgCampaigns163() {
+  const rows = await store.list("message:");
+  for (const spec of MSG_CAMPAIGN_BACKFILLS_163) {
+    const key = `pmcampaign:${spec.id}`;
+    if (await store.get(key)) continue;
+    const matched = [];
+    for (const r of rows) {
+      const m = r.value;
+      if (!m || !m.platform || m.fromId !== PLATFORM_PEER_ID) continue;
+      if (m.createdAt < spec.from || m.createdAt >= spec.to) continue;
+      if (!String(m.body || "").includes(spec.marker)) continue;
+      matched.push(m);
+    }
+    if (!matched.length) continue;
+    matched.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+    const seen = new Set();
+    const recipientIds = [];
+    for (const m of matched) {
+      if (seen.has(m.toId)) continue;
+      seen.add(m.toId);
+      recipientIds.push(m.toId);
+    }
+    if (recipientIds.length < 2) continue; // a mass send has many recipients; anything less is not this campaign
+    await store.set(key, {
+      id: spec.id,
+      kind: "segment",
+      title: spec.title,
+      body: matched[0].body,
+      createdAt: matched[0].createdAt,
+      lastAt: matched[matched.length - 1].createdAt,
+      sentById: null,
+      sentByName: "Jeff's admin session",
+      market: null,
+      audienceLabel: spec.audienceLabel,
+      recipientIds,
+      messageCount: matched.length,
+      emailSent: null,
+      emailFailed: null,
+      templateId: null,
+      reconstructed: true,
+      source: "Rebuilt from the stored thread messages themselves (Build -163 backfill); the sends are logged in signl-campaign-run/category-message-log-2026-11-09.json and second-city-message-log-2026-11-09.json.",
+    });
+  }
+}
+
 // ---------- admin broadcasts (Build -152, reworked -153) ----------
 // The Admin Messages room: an admin writes ONE message — a
 // title plus a body — and it lands in every recipient's own
@@ -22328,7 +22429,7 @@ function adminGate138(user, seg, method, query) {
       return need("creators.view");
     case "search": return need("creators.view");
     case "preview": case "preview-targets": return deny("Previewing accounts is Jeff's tool in this version.");
-    case "platform-messages": case "finish-engine": return need("requests");
+    case "platform-messages": case "message-campaigns": case "finish-engine": return need("requests");
     case "broadcasts": return need("messages.send");
     case "recruiters": case "leaderboard": return need("outreach");
     case "campaign": return need("campaign");
@@ -27283,42 +27384,60 @@ async function route(event) {
       return json(200, { templates: [...MESSAGE_TEMPLATES, ...extra] });
     }
     if (method === "GET" && seg[1] === "platform-messages" && seg.length === 2) {
+      // Build -163: the thread store is generic — one thread per
+      // PERSON (creator, business or partner) with the Magpie
+      // team. The overview powers the Messages home: every
+      // thread, latest activity first, with the time of the last
+      // message, an unread count (replies Jeff has not opened),
+      // and a persistent needsReply flag — the last word is
+      // theirs — that clears only when the team replies, never
+      // merely by opening the thread. The creatorId spellings
+      // are kept for the callers that predate the home.
       const rows = await store.list("message:");
-      const byCreator = new Map();
+      const byPeer = new Map();
       for (const r of rows) {
         const m = r.value;
         if (!m || !m.platform) continue;
-        const creatorId = m.fromId === PLATFORM_PEER_ID ? m.toId : m.fromId;
-        if (!creatorId || creatorId === PLATFORM_PEER_ID) continue;
-        if (!byCreator.has(creatorId)) byCreator.set(creatorId, []);
-        byCreator.get(creatorId).push(m);
+        const peerId = m.fromId === PLATFORM_PEER_ID ? m.toId : m.fromId;
+        if (!peerId || peerId === PLATFORM_PEER_ID) continue;
+        if (!byPeer.has(peerId)) byPeer.set(peerId, []);
+        byPeer.get(peerId).push(m);
       }
-      if (query.creatorId) {
-        const creator = await store.get(`user:${query.creatorId}`);
-        if (!creator || creator.role !== "creator") return err(404, "Creator not found");
-        const messages = (byCreator.get(creator.id) || []).slice().sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-        await store.set(`pmstate:${creator.id}`, { creatorId: creator.id, adminLastReadAt: nowIso(), updatedAt: nowIso() });
-        return json(200, {
-          creator: { id: creator.id, name: creator.name, email: creator.email, market: creator.market, handle: creator.creator ? creator.creator.handle : null },
-          messages,
-        });
+      const detailId = query.userId || query.creatorId;
+      if (detailId) {
+        const peer = await store.get(`user:${detailId}`);
+        if (!peer || peer.role === "admin") return err(404, query.creatorId && !query.userId ? "Creator not found" : "Person not found");
+        const messages = (byPeer.get(peer.id) || []).slice().sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+        await store.set(`pmstate:${peer.id}`, { creatorId: peer.id, adminLastReadAt: nowIso(), updatedAt: nowIso() });
+        const view = { id: peer.id, name: peerDisplayName163(peer), email: peer.email, market: peer.market, role: peer.role, handle: peer.creator ? peer.creator.handle : null, org: (peer.business && peer.business.businessName) || (peer.partner && peer.partner.name) || null };
+        return json(200, { user: view, creator: view, messages });
       }
       const users = await allUsers();
       const usersById = new Map(users.map((u) => [u.id, u]));
       const threads = [];
-      for (const [creatorId, msgs] of byCreator.entries()) {
-        const creator = usersById.get(creatorId);
-        if (!creator) continue;
+      for (const [peerId, msgs] of byPeer.entries()) {
+        const peer = usersById.get(peerId);
+        if (!peer) continue;
         const sorted = msgs.slice().sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-        const state = await store.get(`pmstate:${creatorId}`);
+        const state = await store.get(`pmstate:${peerId}`);
         const readAt = state && state.adminLastReadAt ? state.adminLastReadAt : "";
+        const lastMessage = sorted[sorted.length - 1] || null;
         threads.push({
-          creatorId,
-          creatorName: creator.name,
-          creatorHandle: creator.creator ? creator.creator.handle : null,
-          creatorMarket: creator.market,
-          lastMessage: sorted[sorted.length - 1] || null,
-          unreadReplies: sorted.filter((m) => m.fromId === creatorId && m.createdAt > readAt).length,
+          peerId,
+          peerName: peerDisplayName163(peer),
+          peerRole: peer.role,
+          peerHandle: peer.creator ? peer.creator.handle : null,
+          peerOrg: (peer.business && peer.business.businessName) || (peer.partner && peer.partner.name) || null,
+          peerMarket: peer.market,
+          creatorId: peerId,
+          creatorName: peer.name,
+          creatorHandle: peer.creator ? peer.creator.handle : null,
+          creatorMarket: peer.market,
+          lastMessage,
+          lastAt: lastMessage ? lastMessage.createdAt : null,
+          messageCount: sorted.length,
+          unreadReplies: sorted.filter((m) => m.fromId === peerId && m.createdAt > readAt).length,
+          needsReply: !!lastMessage && lastMessage.fromId === peerId,
         });
       }
       threads.sort((a, b) => ((a.lastMessage && a.lastMessage.createdAt) < (b.lastMessage && b.lastMessage.createdAt) ? 1 : -1));
@@ -27327,6 +27446,47 @@ async function route(event) {
         .map((u) => normalizeMarketName(u.market))
         .filter(Boolean))].sort();
       return json(200, { threads, markets });
+    }
+    if (method === "GET" && seg[1] === "message-campaigns" && seg.length === 2) {
+      // Build -163: the "Sent to many" receipt book — campaign
+      // records (segment sends, recorded at send time; the two
+      // 2026-11-09 sends backfilled from the store) merged with
+      // broadcast records, newest first, recipients resolved to
+      // people so each one can open their thread from the entry.
+      await maybeBackfillMsgCampaigns163();
+      const users = await allUsers();
+      const usersById = new Map(users.map((u) => [u.id, u]));
+      const campaigns = [];
+      for (const r of await store.list("pmcampaign:")) {
+        const c = r.value;
+        if (!c) continue;
+        campaigns.push({
+          id: c.id, kind: c.kind || "segment", title: c.title || null, body: c.body || "",
+          createdAt: c.createdAt, lastAt: c.lastAt || null,
+          sentByName: c.sentByName || "Magpie admin", market: c.market || null,
+          audienceLabel: c.audienceLabel || (c.market ? `${c.market} — finished creators` : null),
+          recipientCount: (c.recipientIds || []).length,
+          messageCount: c.messageCount || null,
+          reconstructed: !!c.reconstructed, source: c.source || null,
+          recipients: (c.recipientIds || []).slice(0, 1000).map((id) => campaignPersonView163(usersById.get(id)) || { id, name: "Unknown", role: null, handle: null, org: null, market: null }),
+        });
+      }
+      for (const r of await store.list("broadcast:")) {
+        const b = r.value;
+        if (!b) continue;
+        campaigns.push({
+          id: b.id, kind: "broadcast", title: b.title || null, body: b.body || "",
+          createdAt: b.createdAt, lastAt: null,
+          sentByName: b.senderName || "Magpie admin", market: null,
+          audienceLabel: b.audienceLabel || null,
+          recipientCount: (b.recipientIds || []).length,
+          messageCount: null,
+          reconstructed: false, source: null,
+          recipients: (b.recipientIds || []).slice(0, 1000).map((id) => campaignPersonView163(usersById.get(id)) || { id, name: "Unknown", role: null, handle: null, org: null, market: null }),
+        });
+      }
+      campaigns.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      return json(200, { campaigns });
     }
     if (method === "POST" && seg[1] === "platform-messages" && seg.length === 2) {
       const b = parseBody(event);
@@ -27338,7 +27498,23 @@ async function route(event) {
       let recipients;
       let scope;
       let segmentMarket = null;
-      if (b.creatorId) {
+      if (b.userId) {
+        // Build -163: a reply in ANY person's team thread —
+        // businesses and partners hold threads too (broadcasts
+        // land there), and the Messages home answers everyone
+        // from the one thread view. The creatorId spelling keeps
+        // its creator-only guard below; this path requires an
+        // approved account or a thread that already exists.
+        const target = await store.get(`user:${String(b.userId)}`);
+        if (!target || target.role === "admin") return err(404, "Person not found");
+        if (target.status !== "approved") {
+          const existing = await store.list("message:");
+          const hasThread = existing.some((r) => r.value && r.value.platform && (r.value.fromId === target.id || r.value.toId === target.id));
+          if (!hasThread) return err(400, "That person is not active yet");
+        }
+        recipients = [target];
+        scope = "single";
+      } else if (b.creatorId) {
         const target = await store.get(`user:${String(b.creatorId)}`);
         if (!target || target.role !== "creator") return err(404, "Creator not found");
         if (target.status !== "approved") return err(400, "That creator is not active yet");
@@ -27361,6 +27537,29 @@ async function route(event) {
         if (sent.email && sent.email.sent) emailSent += 1; else emailFailed += 1;
       }
       if (scope === "segment") {
+        // Build -163: the campaign receipt — one store record
+        // per multi-recipient send, written at send time, so
+        // the Messages home's "Sent to many" area never has to
+        // reconstruct a send from the Event Log.
+        const campaignId = crypto.randomUUID();
+        await store.set(`pmcampaign:${campaignId}`, {
+          id: campaignId,
+          kind: "segment",
+          title: null,
+          body,
+          createdAt: nowIso(),
+          sentById: user.id,
+          sentByName: user.name || user.email || "Magpie admin",
+          market: segmentMarket,
+          audienceLabel: `${segmentMarket} — finished creators`,
+          recipientIds: recipients.map((u) => u.id),
+          messageCount: recipients.length,
+          emailSent,
+          emailFailed,
+          templateId,
+          reconstructed: false,
+          source: null,
+        });
         await logEvent({ type: "platform_message_segment", actorId: user.id, actorRole: "admin", subjectId: null, market: segmentMarket, data: { market: segmentMarket, recipients: recipients.length, emailSent, emailFailed, templateId } });
       }
       return json(201, { sent: recipients.length, recipients: recipients.map((u) => u.id), emailSent, emailFailed, scope, market: segmentMarket });
@@ -34174,4 +34373,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
