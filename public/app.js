@@ -4569,6 +4569,17 @@ function wireCampaignPrompt(host, p) {
 }
 const COACH_GO_LABELS = { city: "Set my market", audience: "Add my audience", local: "Add my local %", rate: "Set my rate", categories: "Pick my categories", bestwork: "Link a post", momentum: "See my Momentum" };
 function coachingCardHtml(s) {
+  if (s.type === "catbackfill") {
+    return `<section class="wcard prompt-card" aria-label="Your next step">
+    <div class="prompt-head"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div><div class="prompt-kicker">Your next step</div><div class="prompt-headline">${esc(s.headline || "")}</div></div></div>
+    <p style="margin:10px 0 0">${esc(s.why || "")}</p>
+    <div class="prompt-actions">
+      <button type="button" class="btn" data-cat-all>Add all of them</button>
+      <button type="button" class="btn ghost" data-cat-pick>Let me pick</button>
+      <button type="button" class="btn ghost" data-cat-one>My page is only about one thing</button>
+    </div>
+  </section>`;
+  }
   return `<section class="wcard prompt-card" aria-label="Your next step">
     <div class="prompt-head"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div><div class="prompt-kicker">Your next step</div><div class="prompt-headline">${esc(s.headline || "")}</div></div></div>
     <p style="margin:10px 0 0">${esc(s.why || "")}</p>
@@ -4590,6 +4601,39 @@ function coachGo(target) {
   return false;
 }
 function wireCoachingCard(host, s) {
+  if (s.type === "catbackfill") {
+    const allBtn = host.querySelector("[data-cat-all]");
+    if (allBtn) allBtn.onclick = async () => {
+      allBtn.disabled = true;
+      try {
+        const res = await api("PATCH", "/me/profile", { categories: [...(state.boot.creatorCategories || [])], catPromptSeen: true, catPromptChoice: "all" });
+        if (res && res.user) state.user = res.user;
+        host.innerHTML = "";
+      } catch (e) { allBtn.disabled = false; /* leave the card on failure */ }
+      return false;
+    };
+    const pickBtn = host.querySelector("[data-cat-pick]");
+    if (pickBtn) pickBtn.onclick = async () => {
+      pickBtn.disabled = true;
+      try {
+        const res = await api("PATCH", "/me/profile", { catPromptSeen: true, catPromptChoice: "pick" });
+        if (res && res.user) state.user = res.user;
+      } catch (e) { /* still take them to pick */ }
+      coachGo("categories");
+      return false;
+    };
+    const oneBtn = host.querySelector("[data-cat-one]");
+    if (oneBtn) oneBtn.onclick = async () => {
+      oneBtn.disabled = true;
+      try {
+        const res = await api("PATCH", "/me/profile", { categoriesLocked: true, catPromptSeen: true, catPromptChoice: "onething" });
+        if (res && res.user) state.user = res.user;
+        host.innerHTML = "";
+      } catch (e) { oneBtn.disabled = false; /* leave the card on failure */ }
+      return false;
+    };
+    return;
+  }
   const goBtn = host.querySelector("[data-coach-go]");
   if (goBtn) goBtn.onclick = () => coachGo(s.target);
   const snooze = host.querySelector("[data-coach-snooze]");
@@ -9217,7 +9261,7 @@ async function sigC2Start() {
   const pc = u.profileCompletion || { items: [], complete: false };
   const items = pc.items || [];
   const gapOrder = ["city", "audience", "categories", "local", "bio", "neighborhood", "bestwork"];
-  const gaps = gapOrder.filter((id) => { const it = items.find((i) => i.id === id); return it && !it.done; });
+  const gaps = gapOrder.filter((id) => { if (id === "categories" && (state.user.creator || {}).categoriesLocked === true) return false; const it = items.find((i) => i.id === id); return it && !it.done; });
   const photoMissing = (() => { const it = items.find((i) => i.id === "photo"); return it && !it.done; })();
   if (!gaps.length && pc.complete) {
     sigOpSay(ST(`Your profile is finished${photoMissing ? ", and the one thing chat cannot do is your photo: it is a file upload on your Profile screen" : ""}. Businesses can find you, and offers can reach you.`, `Tu perfil está terminado${photoMissing ? ", y lo único que el chat no puede hacer es tu foto: se sube en tu pantalla de Perfil" : ""}. Los negocios pueden encontrarte y las ofertas pueden llegarte.`), [
@@ -9245,13 +9289,23 @@ function sigC2AskGap() {
   if (gap === "categories") {
     const sel = f.data.patch.categories || ((state.user.creator && state.user.creator.categories) || []).slice();
     f.data.patch.categories = sel;
+    if (!sel.length && (state.boot.creatorCategories || []).length) { sel.push(...state.boot.creatorCategories); f.data.patch.categories = sel; }
     const toggle = (c) => ({ label: `${sel.includes(c) ? "✓ " : ""}${c}`, run: () => sigOpPick(c, async () => {
       const i = sel.indexOf(c);
       if (i >= 0) sel.splice(i, 1); else sel.push(c);
       sigC2AskGap();
     }) });
-    sigOpAsk(ST(`What do you create in? Tap your categories (at least one), then Done. Selected: ${sel.length ? sel.join(", ") : "none yet"}.`, `¿En qué categorías creas? Toca las tuyas (al menos una) y luego Listo. Seleccionadas: ${sel.length ? sel.join(", ") : "ninguna aún"}.`), [
+    const catTotal = (state.boot.creatorCategories || []).length;
+    const selSuffixEn = sel.length > 4 ? `Selected: ${sel.length} of ${catTotal}.` : `Selected: ${sel.length ? sel.join(", ") : "none yet"}.`;
+    const selSuffixEs = sel.length > 4 ? `Seleccionadas: ${sel.length} de ${catTotal}.` : `Seleccionadas: ${sel.length ? sel.join(", ") : "ninguna aún"}.`;
+    sigOpAsk(ST(`What do you create in? We've ticked everything — most creators here keep nearly all, because your followers are your neighbors, not a niche audience. Untap any you'd never post about, then Done. ${selSuffixEn}`, `¿En qué categorías creas? Marcamos todas: la mayoría aquí conserva casi todas, porque tus seguidores son tus vecinos, no una audiencia de nicho. Desmarca lo que nunca publicarías y luego Listo. ${selSuffixEs}`), [
       ...(state.boot.creatorCategories || []).map(toggle),
+      { label: ST("My page is only about one thing", "Mi página es de una sola cosa"), run: () => sigOpPick(ST("My page is only about one thing", "Mi página es de una sola cosa"), async () => {
+        if (!sel.length) { sigOpAsk(ST("Pick the one thing your page is about first, then tap that again.", "Elige primero la única cosa de la que trata tu página y luego toca eso de nuevo.")); return; }
+        f.data.patch.categoriesLocked = true;
+        f.data.idx += 1;
+        sigC2AskGap();
+      }) },
       { label: ST("Done", "Listo"), primary: true, run: () => sigOpPick(ST("Done", "Listo"), async () => {
         if (!sel.length) { sigOpAsk(ST("Pick at least one category: it is one of the four things a finished profile needs.", "Elige al menos una categoría: es una de las cuatro cosas que un perfil terminado necesita.")); return; }
         f.data.idx += 1;
@@ -9284,6 +9338,7 @@ function sigC2Summary() {
   const lines = [ST("Here is what I will save to your profile. Nothing is saved until you say yes:", "Esto guardaré en tu perfil. Nada se guarda hasta que digas que sí:")];
   for (const [k, v] of Object.entries(patch)) {
     if (k === "categories") lines.push(`${ST("Categories", "Categorías")}: ${(v || []).join(", ")}`);
+    else if (k === "categoriesLocked") { if (v === true) lines.push(ST("Categories: settled — your page is only about one thing, so we won't ask again.", "Categorías: definido — tu página es de una sola cosa, así que no volveremos a preguntar.")); }
     else if (k === "bestWork") lines.push(`${ST("Best work", "Mejor trabajo")}: ${(v || []).length} ${ST("link(s)", "enlace(s)")}`);
     else if (k === "audienceStack") lines.push(SIG_C2_TEXT_GAPS.audience.label(v));
     else if (SIG_C2_TEXT_GAPS[k]) lines.push(SIG_C2_TEXT_GAPS[k].label(v));
@@ -9496,6 +9551,7 @@ function claimDraftInit() {
     market: pf.market || "Virginia Beach",
     area: "",
     cats: [],
+    catsSeeded: false,
     localPct: 50,
     stack: {},
   };
@@ -9906,6 +9962,7 @@ function claimWelcomeGo() {
 // ---------- Screen 2: four quick facts ----------
 function renderClaimFacts() {
   const d = claimDraftInit();
+  if (!d.catsSeeded && (state.boot.creatorCategories || []).length) { d.cats = [...state.boot.creatorCategories]; d.catsSeeded = true; }
   const pfMarket = d.market || "Virginia Beach";
   const cats = (state.boot.creatorCategories || []).map((c) => `<button type="button" class="rchip${d.cats.includes(c) ? " on" : ""}" data-cat="${esc(c)}" onclick="return claimToggleCat(this)">${esc(c)}</button>`).join("");
   const stackRows = CLAIM_STACK_PLATFORMS.map((p) => `
@@ -9931,7 +9988,10 @@ function renderClaimFacts() {
       </div>
       <div class="c85-fact">
         <p class="fg-kicker">${T("What you post about", "De qué publicas")}</p>
+        <h3 class="c85-cat-head" style="margin:4px 0 6px">${T("Almost everything you post counts here.", "Casi todo lo que publicas cuenta aquí.")}</h3>
+        <p class="small" style="margin:0 0 10px">${T("Your followers are mostly your own neighbors, friends and family — and they'd love seeing you enjoy a meal, a haircut, a workout or a night out, not just one kind of post. So we've ticked everything for you. If your page is only ever about one thing, untick the rest and keep just yours.", "Tus seguidores son en su mayoría tus propios vecinos, amigos y familia, y les encantaría verte disfrutar una comida, un corte de pelo, un entrenamiento o una noche fuera, no solo un tipo de publicación. Por eso marcamos todo por ti. Si tu página es siempre de una sola cosa, desmarca el resto y deja solo la tuya.")}</p>
         <div class="chiprow" id="c85-cats">${cats}</div>
+        <p class="small muted" style="margin:8px 0 0">${T("Every ticked category is another kind of local business that can find you.", "Cada categoría marcada es otro tipo de negocio local que puede encontrarte.")}</p>
         <p class="small" id="c85-cat-warn" style="display:none;color:#B3261E;margin:8px 0 0">${T("Pick at least one, so businesses can find you.", "Elige al menos una, para que los negocios te encuentren.")}</p>
       </div>
       <div class="c85-fact">
@@ -9962,6 +10022,7 @@ function renderClaimFacts() {
 
 function claimToggleCat(btn) {
   const d = claimDraftInit();
+  d.catsSeeded = true;
   const cat = btn.getAttribute("data-cat") || "";
   const i = d.cats.indexOf(cat);
   if (i >= 0) d.cats.splice(i, 1); else d.cats.push(cat);
@@ -10358,7 +10419,7 @@ function renderJoinCreator() {
   // state. The full founding profile form below stays one tap
   // away for creators who would rather do it all now.
   if (state.joinMode !== "full") return renderQuickClaim();
-  const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}" onchange="proHintSync('jc')"> ${esc(c)}</label>`).join("");
+  const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}" checked onchange="proHintSync('jc')"> ${esc(c)}</label>`).join("");
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const pf = state.prefill || {};
   const pfMarket = pf.market || "Virginia Beach";
@@ -10445,7 +10506,7 @@ function renderJoinCreator() {
       </div>
       <div class="fgroup">
         <p class="fg-kicker">${T("What you create", "Lo que creas")}</p>
-        <div class="field"><label>${T("What do you create in? (pick at least one)", "¿En qué categorías creas? (elige al menos una)")}</label><div class="checkrow">${cats}</div></div>
+        <div class="field"><label>${T("What do you create in? (pick at least one)", "¿En qué categorías creas? (elige al menos una)")}</label><p class="small muted" style="margin:4px 0 8px">${T("We've ticked all of them — most creators here keep nearly all. Only untick what you'd never post about.", "Marcamos todas: la mayoría de los creadores aquí conserva casi todas. Solo desmarca lo que nunca publicarías.")}</p><div class="checkrow">${cats}</div></div>
         <div class="field"><label>${T("Comps you would accept (optional)", "Cortesías que aceptarías (opcional)")}</label><div class="checkrow">${comps}</div></div>
         <div class="field" id="jc-paid-wrap" style="display:none">
           <label class="tgl-row"><input type="checkbox" class="sw" id="jc-paid"><span><strong>${T("Paid cash campaigns", "Campañas pagadas en efectivo")}</strong> ${T("(Headliners tier): separate from comps, businesses can hire me for paid campaigns when a business runs one.", "(nivel Headliners): aparte de las cortesías, los negocios pueden contratarme para campañas pagadas cuando un negocio lance una.")}</span></label>
@@ -15925,7 +15986,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Add every platform you are on — Pinterest, Twitch, your own website, any of them. Each one gets a handle, a link and a follower count, and every count stacks into your total audience.</p>
         <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points. <strong>Magpie starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
       </div>
-      <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="checkrow">${cats}</div></div>
+      <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="checkrow">${cats}</div><p class="small muted" style="margin:6px 0 0">${T("More ticked categories means more kinds of businesses can find you. Most creators here are in almost all of them — your followers are your neighbors, and they'd watch you enjoy almost anything local.", "Más categorías marcadas significa que más tipos de negocios pueden encontrarte. La mayoría de los creadores aquí está en casi todas: tus seguidores son tus vecinos, y te verían disfrutar casi cualquier cosa local.")}</p></div>
       <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP} Once you add a local % for a platform in Your audience below, this number is worked out from those automatically.</p></div>
       </div>
       <div class="fgroup tint" id="pf-about">

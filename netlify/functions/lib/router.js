@@ -1926,7 +1926,7 @@ function coachLadderSteps() {
     { type: "platform", done: (u) => coachMissingPlatform(u) === null, headline: (u) => { const p = coachMissingPlatform(u); return p ? `Add your ${PLATFORM_LABELS[p] || p} audience` : "Add another platform audience"; }, why: () => "Every platform you add stacks into one total audience — and a bigger total is what businesses see first.", target: "audience" },
     { type: "local", done: (u) => { const c = u.creator || {}; return c.localAudiencePct !== null && c.localAudiencePct !== undefined; }, headline: () => "Add your local audience %", why: () => "Your local % is the number this platform ranks on. Businesses nearby see it before your follower count.", target: "local" },
     { type: "rate", done: (u) => Number((u.creator || {}).paidRate) > 0, headline: () => "Set your paid rate", why: () => "Businesses can only book a rate that is listed. No rate set means paid bookings cannot start with you.", target: "rate", evidence: "rate" },
-    { type: "categories", done: (u) => ((u.creator || {}).categories || []).length >= 2, headline: () => "Add a second thing you create", why: () => "Each category you pick is another kind of business that can find you. One category means one kind of offer.", target: "categories" },
+    { type: "categories", done: (u) => !!((u.creator || {}).categoriesLocked) || (((u.creator || {}).categories || []).length >= 2), headline: () => "Add a second thing you create", why: () => "Your followers are your neighbors — they'd watch you enjoy almost anything local. Creators here average about 7 categories, and each one is another kind of business that can find you.", target: "categories" },
     { type: "firstpost", done: (u, ctx) => ctx.hasPost, headline: () => "Link your first post", why: () => "Businesses look at your work before they pick. One linked post gives them something real to go on.", target: "bestwork" },
   ];
 }
@@ -2103,6 +2103,14 @@ function coachStepView(step, user, evidence) {
     why = `In ${marketTalkName(user.market || user.city)}, businesses pick creators with a rate set about ${evidence.ratio}x as often as creators without one (from real picks here so far). A listed rate is what lets a paid booking start.`;
   }
   return { type: step.type, headline: step.headline(user), why, target: step.target, evidence: evidence ? { ratio: evidence.ratio } : null };
+}
+function catBackfillView(user) {
+  if (!user || user.role !== "creator" || user.status !== "approved" || !user.creator || isTester(user)) return null;
+  const cats = user.creator.categories || [];
+  if (cats.length >= CREATOR_CATEGORIES.length) return null;
+  if (user.creator.categoriesLocked) return null;
+  if (user.creator.catPromptSeenAt) return null;
+  return { type: "catbackfill", headline: "Almost everything you post counts here.", why: `You're in ${cats.length} of ${CREATOR_CATEGORIES.length} categories right now. Your followers are mostly your neighbors, friends and family — they'd love seeing you enjoy a meal, a haircut, a workout or a night out, not just one kind of post. Most creators here keep nearly all of them, and each one is another kind of local business that can find you.`, catCount: cats.length, catTotal: CREATOR_CATEGORIES.length, target: "categories", evidence: null };
 }
 async function coachAct(user, action) {
   const state = await coachStateFor(user.id);
@@ -11490,7 +11498,7 @@ function conciergeMissingFields(user) {
   if (!String(c.handle || "").trim()) missing.push("handle");
   if (!String((user && user.city) || "").trim()) missing.push("city");
   if (!(audienceTotalOf(c) > 0)) missing.push("audience");
-  if (!Array.isArray(c.categories) || c.categories.length === 0) missing.push("categories");
+  if ((!Array.isArray(c.categories) || c.categories.length === 0) && !c.categoriesLocked) missing.push("categories");
   if (c.localAudiencePct === null || c.localAudiencePct === undefined) missing.push("local");
   return missing;
 }
@@ -23920,7 +23928,10 @@ async function route(event) {
     }
     if (user.role === "creator") {
       const got = await currentCoachingStep(user);
-      return json(200, { role: "creator", campaignPrompt: null, coaching: got ? got.step : null });
+      const step = got ? got.step : null;
+      const bf = catBackfillView(user);
+      if (bf && (!step || !step.type || step.type === "categories")) return json(200, { role: "creator", campaignPrompt: null, coaching: bf });
+      return json(200, { role: "creator", campaignPrompt: null, coaching: step });
     }
     return json(200, { role: user.role, campaignPrompt: null, coaching: null });
   }
@@ -24900,6 +24911,8 @@ async function route(event) {
         c.streets = cleanStreets;
       }
       if (Array.isArray(b.categories)) c.categories = [...new Set(b.categories.map((x) => canonicalFromList(x, CREATOR_CATEGORIES)).filter((x) => !!x))];
+      if (b.categoriesLocked !== undefined) c.categoriesLocked = b.categoriesLocked === true;
+      if (b.catPromptSeen === true) { c.catPromptSeenAt = new Date().toISOString(); if (["all", "pick", "onething"].includes(b.catPromptChoice)) c.catPromptChoice = b.catPromptChoice; }
       if (Array.isArray(b.compCategories)) {
         // Paid cash campaigns stay selectable only while the creator is
         // in the Headliners tier; dropping a tier drops the option.
