@@ -1463,6 +1463,13 @@ table { max-width: 100%; }
   body.v3-on .tb2-in{justify-content:flex-end;padding:14px 24px 0 0;pointer-events:none}
   body.v3-on .tb2-id, body.v3-on .tb2-help130, body.v3-on .tb2-actions{display:none}
   body.v3-on .tb2-brand{display:flex;flex:none;align-items:center}
+  /* Build -170: the Biz Dev seller shell already carries its one
+     logo in the rail head; the floated lockup strip landed on the
+     Sell home's own first row (Jeff's screenshot: the logo
+     doubled over the "Jeff · <date>" account text). The strip
+     stands down in this shell only — the creator, business and
+     partner shells keep theirs. */
+  body.bd-shell.v3-on #topbar2{display:none}
   body.v3-slim .tb2-brand{display:flex;flex:none;align-items:center;margin-left:auto}
   body.v3-slim .tb2-actions{margin-left:0}
 }

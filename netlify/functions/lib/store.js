@@ -76,6 +76,27 @@ function saveFile() {
 let storeVersion = 0;
 function bumpVersion() { storeVersion += 1; }
 
+// Build -170: per-prefix write counters. The global version
+// above changes on EVERY write anywhere — including high-churn
+// bookkeeping (event:, session:, pmstate:) that most aggregates
+// never read — so in a live store the version-keyed memos almost
+// never survived to a second read (the admin slowness Jeff
+// reported 2026-11-09). versionFor(prefixes) composes a version
+// string from ONLY the named prefixes' counters: a memo keyed
+// on it is invalidated exactly when a record it could have read
+// is written, and survives unrelated writes. Same TTL backstop
+// discipline as the global memo (cross-container writes are
+// still only bounded by the TTL).
+const prefixVersions = new Map();
+function bumpPrefix(key) {
+  const seg = String(key || "").split(":")[0];
+  if (!seg) return;
+  prefixVersions.set(seg, (prefixVersions.get(seg) || 0) + 1);
+}
+function versionFor(prefixes) {
+  return (prefixes || []).map((p) => `${p}=${prefixVersions.get(p) || 0}`).join(",");
+}
+
 const fileStore = {
   async get(key) {
     const db = loadFile();
@@ -86,12 +107,14 @@ const fileStore = {
     db[key] = value;
     saveFile();
     bumpVersion();
+    bumpPrefix(key);
   },
   async del(key) {
     const db = loadFile();
     delete db[key];
     saveFile();
     bumpVersion();
+    bumpPrefix(key);
   },
   async list(prefix) {
     const db = loadFile();
@@ -163,10 +186,12 @@ const blobsAdapter = {
   async set(key, value) {
     await getBlobs().setJSON(key, value);
     bumpVersion();
+    bumpPrefix(key);
   },
   async del(key) {
     await getBlobs().delete(key);
     bumpVersion();
+    bumpPrefix(key);
   },
   async listKeys(prefix) {
     const store = getBlobs();
@@ -194,3 +219,4 @@ const blobsAdapter = {
 module.exports = LOCAL ? fileStore : blobsAdapter;
 module.exports.isLocal = LOCAL;
 module.exports.version = () => storeVersion;
+module.exports.versionFor = versionFor;

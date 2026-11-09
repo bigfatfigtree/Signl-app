@@ -180,17 +180,114 @@ function pinHashOf(pin, salt) { return crypto.createHash("sha256").update(`${sal
 
 // ---------------- leads ----------------
 
-async function allLeads() {
-  const rows = await store().list("bdevlead:");
-  return rows.map((r) => r.value).filter(Boolean);
+// Build -170: read-path list memos. Every Biz Dev read used to
+// re-list the whole lead book (and the whole log book, and the
+// whole user list) several times per request — in production
+// each list is one Blobs fetch per record, so a single Sell
+// Home load cost ~1,900 record fetches and Manage's overview
+// ~3,500 (measured, fixture170). These memos key on
+// store.versionFor(prefix): a write to a record of that prefix
+// invalidates instantly, writes anywhere else (events,
+// sessions) leave the memo standing, and a 30s TTL backstops
+// writes other containers made — the memoAgg discipline, with
+// a version that matches the read set. Mutation paths that
+// must see this instant's data pass { fresh: true }.
+const bdMemo170 = new Map();
+function bdMemoGet170(key, prefixes) {
+  if (!storeLib.versionFor) return undefined;
+  const hit = bdMemo170.get(key);
+  if (hit && hit.v === storeLib.versionFor(prefixes) && Date.now() - hit.at < 30000) return hit.val;
+  return undefined;
 }
-async function leadsOfMarket(marketId) { return (await allLeads()).filter((l) => l.marketId === marketId); }
+function bdMemoSet170(key, prefixes, val) {
+  if (storeLib.versionFor) bdMemo170.set(key, { v: storeLib.versionFor(prefixes), at: Date.now(), val });
+  return val;
+}
+async function listPrefix170(prefix, opts) {
+  const fresh = !!(opts && opts.fresh);
+  const segName = prefix.split(":")[0];
+  // Callers get a copy of the array (never the memo's own), so
+  // an in-place sort/filter at a call site can't reorder the
+  // memo for the next reader. The records inside are shared
+  // references, exactly as a fresh list would hand back parsed
+  // copies of the same stored state.
+  if (!fresh) { const hit = bdMemoGet170("list:" + prefix, [segName]); if (hit !== undefined) return hit.slice(); }
+  const rows = (await store().list(prefix)).map((r) => r.value).filter(Boolean);
+  if (!fresh) bdMemoSet170("list:" + prefix, [segName], rows);
+  return rows.slice();
+}
+async function allUsers170() {
+  const hit = bdMemoGet170("allUsers", ["user"]);
+  if (hit !== undefined) return hit.slice();
+  const rows = deps.allUsers ? await deps.allUsers() : [];
+  bdMemoSet170("allUsers", ["user"], rows);
+  return rows.slice();
+}
+
+async function allLeads(opts) {
+  return listPrefix170("bdevlead:", opts);
+}
+
+// ---------------- Build -170: the Biz Dev CRM ----------------
+// The rolodex: every contact a seller works with, in one place.
+// Lead contacts are READ from the lead records' own contact
+// fields (dmName / dmRoleLabel / email / phone1 / phone2 /
+// secondContact — the fields the enrichment load-in fills);
+// contacts a seller adds by hand live in bdevcontact: records
+// they own. ownerUserId null = every book (the HQ view).
+async function rolodexEntries170(ownerUserId) {
+  const users = await allUsers170();
+  const nameOf = (uid) => { const u = users.find((x) => x.id === uid); return u ? (u.name || u.email || uid) : uid; };
+  const out = [];
+  for (const l of await allLeads()) {
+    if (ownerUserId && l.assignedRepId !== ownerUserId) continue;
+    if (!(l.dmName || l.email || l.phone1 || l.phone2)) continue;
+    out.push({
+      id: "lead:" + l.id, source: "lead", leadId: l.id,
+      name: l.dmName || "", business: l.name || "", role: l.dmRoleLabel || "",
+      email: l.email || "", phone: l.phone1 || l.phone2 || "",
+      city: l.city || "", neighborhood: l.neighborhood || "", notes: l.repNotes || "",
+      ownerId: l.assignedRepId || null, ownerName: nameOf(l.assignedRepId), marketName: l.marketName || "",
+    });
+    const sc = l.secondContact;
+    if (sc && sc.name) {
+      out.push({
+        id: "lead2:" + l.id, source: "lead", leadId: l.id,
+        name: sc.name || "", business: l.name || "", role: sc.roleLabel || sc.role || "",
+        email: sc.email || "", phone: sc.phone || "",
+        city: l.city || "", neighborhood: l.neighborhood || "", notes: "",
+        ownerId: l.assignedRepId || null, ownerName: nameOf(l.assignedRepId), marketName: l.marketName || "",
+      });
+    }
+  }
+  for (const c of await listPrefix170("bdevcontact:")) {
+    if (ownerUserId && c.ownerId !== ownerUserId) continue;
+    out.push({
+      id: c.id, source: "added", leadId: null,
+      name: c.name || "", business: c.business || "", role: c.role || "",
+      email: c.email || "", phone: c.phone || "", city: c.city || "", neighborhood: "",
+      notes: c.notes || "", ownerId: c.ownerId || null, ownerName: nameOf(c.ownerId), marketName: "",
+    });
+  }
+  out.sort((a, b) => String(a.business || a.name).localeCompare(String(b.business || b.name)) || String(a.name).localeCompare(String(b.name)));
+  return out;
+}
+
+async function ordersOf170(ownerUserId) {
+  const users = await allUsers170();
+  const nameOf = (uid) => { const u = users.find((x) => x.id === uid); return u ? (u.name || u.email || uid) : uid; };
+  return (await listPrefix170("bdevorder:"))
+    .filter((o) => o && (!ownerUserId || o.ownerId === ownerUserId))
+    .map((o) => ({ ...o, ownerName: nameOf(o.ownerId) }))
+    .sort((a, b) => String(b.date || b.createdAt).localeCompare(String(a.date || a.createdAt)));
+}
+async function leadsOfMarket(marketId, opts) { return (await allLeads(opts)).filter((l) => l.marketId === marketId); }
 async function getLead(id) { return id ? store().get(`bdevlead:${id}`) : null; }
 async function saveLead(lead) { lead.updatedAt = nowIso(); await store().set(`bdevlead:${lead.id}`, lead); return lead; }
 
-async function allLogs(leadId) {
-  const rows = await store().list("bdevlog:");
-  return rows.map((r) => r.value).filter((v) => v && (!leadId || v.leadId === leadId))
+async function allLogs(leadId, opts) {
+  const rows = await listPrefix170("bdevlog:", opts);
+  return rows.filter((v) => v && (!leadId || v.leadId === leadId))
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
 
@@ -412,7 +509,7 @@ async function dayPlan(seat) {
   if (main) for (const l of main.items) { if (!seen.has(l.id)) { stops.push(l); seen.add(l.id); } }
   // Order the stops by zone so the drive never crisscrosses.
   stops.sort((a, b) => zoneRank(a.neighborhood) - zoneRank(b.neighborhood));
-  const logs = (await store().list("bdevlog:")).map((r) => r.value).filter((v) => v && v.repId === seat.userId && v.visitAt && v.visitAt.slice(0, 10) === today);
+  const logs = (await listPrefix170("bdevlog:")).filter((v) => v && v.repId === seat.userId && v.visitAt && v.visitAt.slice(0, 10) === today);
   const doneIds = new Set(logs.map((v) => v.leadId));
   return {
     date: today,
@@ -470,12 +567,11 @@ function monthAdd(ym, n) {
 }
 
 async function activationsOf(repId, marketId) {
-  const rows = await store().list("bdevact:");
-  return rows.map((r) => r.value).filter((v) => v && v.repId === repId && (!marketId || v.marketId === marketId));
+  const rows = await listPrefix170("bdevact:");
+  return rows.filter((v) => v && v.repId === repId && (!marketId || v.marketId === marketId));
 }
 async function allActivations() {
-  const rows = await store().list("bdevact:");
-  return rows.map((r) => r.value).filter(Boolean);
+  return listPrefix170("bdevact:");
 }
 
 // Kept book at a month: businesses whose window covers that month
@@ -847,7 +943,7 @@ async function loaderStatusRecord() {
 // The health surface: live counts through the same store reads
 // the UI uses, plus the recorded loader states.
 async function bdevHealth() {
-  const seats = (await store().list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active);
+  const seats = (await listPrefix170("bdevrep:")).filter((v) => v && v.active);
   const leads = await allLeads();
   const leadsByMarket = {};
   for (const l of leads) leadsByMarket[l.marketId] = (leadsByMarket[l.marketId] || 0) + 1;
@@ -1291,7 +1387,7 @@ async function computeScoreboard(seat, now) {
 }
 
 async function latestScoreboard157(repId, marketId) {
-  const rows = (await store().list("bdevscore:")).map((r) => r.value)
+  const rows = (await listPrefix170("bdevscore:"))
     .filter((v) => v && v.repId === repId && (!marketId || !v.marketId || v.marketId === marketId))
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   const latest = rows[0] || null;
@@ -1675,7 +1771,7 @@ const maybeCleanup169 = singleFlight(async function () {
 async function runBizdevSweep(opts) {
   const now = opts && opts.now ? new Date(opts.now) : new Date();
   const today = now.toISOString().slice(0, 10);
-  const seats = (await store().list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active);
+  const seats = (await listPrefix170("bdevrep:")).filter((v) => v && v.active);
   let alarmsWritten = 0, scoreboardsWritten = 0;
   for (const seat of seats) {
     const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
@@ -1708,16 +1804,21 @@ async function runBizdevSweep(opts) {
 // the one write this builder can make — the Monday scoreboard
 // generation — keeping preview paths write-free.
 async function buildRepHome157(seat, user, opts) {
-  const plan = await dayPlan(seat);
-  const progress = await marketProgress(seat.marketId);
-  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+  // Build -170: the four independent reads run together
+  // instead of one after another (they shared the memoized
+  // lists either way; this just stops serializing the rest).
+  const [plan, progress, leads] = await Promise.all([
+    dayPlan(seat),
+    marketProgress(seat.marketId),
+    leadsOfMarket(seat.marketId).then((rows) => rows.filter((l) => l.assignedRepId === seat.userId)),
+  ]);
   const today = todayStr();
   const followUps = leads
     .filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today && !["Said no", "Not a fit"].includes(l.stage))
     .sort((a, b) => String(a.nextAction.date).localeCompare(String(b.nextAction.date)))
     .map((l) => repLeadPayload(l));
   const newLeads = leads.filter((l) => l.isNewForRep).map((l) => repLeadPayload(l));
-  const logs = (await store().list("bdevlog:")).map((r) => r.value).filter((v) => v && v.repId === seat.userId);
+  const logs = (await listPrefix170("bdevlog:")).filter((v) => v && v.repId === seat.userId);
   const weekAgo = addDaysStr(today, -6);
   const visitsThisWeek = logs.filter((v) => v.visitAt && v.visitAt.slice(0, 10) >= weekAgo && v.outcome).length;
   const money = await moneyFor(seat.userId, seat.marketId);
@@ -1867,15 +1968,24 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       cities: [...new Set(leads.map((l) => l.city || "").filter(Boolean))].sort(),
       neighborhoods: [...new Map(leads.filter((l) => l.neighborhood).map((l) => [`${l.neighborhood}|${l.city || ""}`, { name: l.neighborhood, city: l.city || "" }])).values()]
         .sort((a, b) => a.name.localeCompare(b.name)),
+      // Build -170 CRM: category + status facets over the same
+      // whole book, so the find-by pickers never narrow away.
+      categories: [...new Set(leads.map((l) => l.category || "").filter(Boolean))].sort(),
+      statuses: STATUSES.slice(),
     };
     const cityF = String((query && query.city) || "");
     const nbF = String((query && query.neighborhood) || "");
     if (cityF) leads = leads.filter((l) => (l.city || "") === cityF);
     if (nbF) leads = leads.filter((l) => (l.neighborhood || "") === nbF);
+    // Build -170 CRM: find by category and by status too.
+    const catF = String((query && query.category) || "");
+    const statusF = String((query && query.status) || "");
+    if (catF) leads = leads.filter((l) => (l.category || "") === catF);
+    if (statusF) leads = leads.filter((l) => statusOf(l) === statusF);
     const q = String((query && query.q) || "").toLowerCase();
     const filter = String((query && query.filter) || "all");
     const today = todayStr();
-    if (q) leads = leads.filter((l) => [l.name, l.neighborhood, l.category].join(" ").toLowerCase().includes(q));
+    if (q) leads = leads.filter((l) => [l.name, l.neighborhood, l.category, l.dmName].join(" ").toLowerCase().includes(q));
     if (filter === "due") leads = leads.filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today);
     else if (filter === "notvisited") leads = leads.filter((l) => l.stage === "Not visited yet");
     else if (filter === "thinking") leads = leads.filter((l) => ["Talked — needs to think", "Talked — wants a follow-up", "Visited — owner not in"].includes(l.stage));
@@ -1896,8 +2006,8 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       marketId: effSeat.marketId, name, neighborhood: String(b.neighborhood || "").trim(),
       phone1: b.phone || null, instagram: b.instagram || null, email: b.email || null,
     };
-    const marketLeads = await leadsOfMarket(effSeat.marketId);
-    const global = await allLeads();
+    const marketLeads = await leadsOfMarket(effSeat.marketId, { fresh: true });
+    const global = await allLeads({ fresh: true });
     const dup = await dupCheck(marketLeads, global, candidate, null);
     if (dup.hard) {
       if (dup.inMarket && dup.hard.assignedRepId === seat.userId) return json(200, { duplicate: "own", leadId: dup.hard.id, message: "This business is already in your book." });
@@ -1911,7 +2021,8 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       assignedRepId: seat.userId, source: "Added by rep", championName: null,
       name, shortName: null, category: b.category, subType: String(b.subType || ""),
       neighborhood: candidate.neighborhood, city: String(b.city || ""), address: b.address || null, website: null,
-      dmName: null, dmRole: null, dmRoleLabel: null, secondContact: null, usuallyHere: null,
+      dmName: String(b.contactName || "").trim() || null, dmRole: null, dmRoleLabel: String(b.contactRole || "").trim() || null, secondContact: null, usuallyHere: null,
+      repNotes: String(b.notes || "").trim() || null,
       phone1: candidate.phone1, phone1Verify: false, phone1Note: null, phone2: null, phone2Verify: false, phone2Note: null,
       email: candidate.email, instagram: candidate.instagram,
       hqTier: "B", flags: { doNotContact: false, jeffHandles: false, chain: false },
@@ -1928,6 +2039,67 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     await store().set(`bdevlead:${lead.id}`, lead);
     await logCapture({ type: "bdev_lead_added", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { source: "Added by rep" } });
     return json(200, { lead: repLeadPayload(lead, { full: true }) });
+  }
+
+  // Build -170 CRM: the rolodex (contacts) — lead contacts read
+  // from the lead records plus contacts the seller adds by hand.
+  if (seg[1] === "contacts" && seg.length === 2) {
+    if (method === "GET") {
+      const all = await rolodexEntries170(seat.userId);
+      const cities = [...new Set(all.map((c) => c.city).filter(Boolean))].sort();
+      const q = String((query && query.q) || "").toLowerCase();
+      const cityF = String((query && query.city) || "");
+      let contacts = all;
+      if (cityF) contacts = contacts.filter((c) => c.city === cityF);
+      if (q) contacts = contacts.filter((c) => [c.name, c.business, c.city, c.role].join(" ").toLowerCase().includes(q));
+      return json(200, { contacts, cities });
+    }
+    if (method === "POST") {
+      const name = String(b.name || "").trim();
+      if (!name) return err(400, "The contact needs a name.");
+      const rec = {
+        id: uuid(), ownerId: seat.userId,
+        name: name.slice(0, 80), business: String(b.business || "").trim().slice(0, 120),
+        role: String(b.role || "").trim().slice(0, 60), email: String(b.email || "").trim().slice(0, 120),
+        phone: String(b.phone || "").trim().slice(0, 40), city: String(b.city || "").trim().slice(0, 60),
+        notes: String(b.notes || "").trim().slice(0, 500),
+        createdAt: nowIso(), updatedAt: nowIso(),
+      };
+      await store().set(`bdevcontact:${rec.id}`, rec);
+      return json(201, { contact: rec });
+    }
+  }
+  if (method === "POST" && seg[1] === "contacts" && seg.length === 3) {
+    const rec = await store().get(`bdevcontact:${seg[2]}`);
+    if (!rec || rec.ownerId !== seat.userId) return err(404, "That contact isn't in your rolodex.");
+    for (const k of ["name", "business", "role", "email", "phone", "city", "notes"]) {
+      if (b[k] !== undefined) rec[k] = String(b[k] || "").trim().slice(0, k === "notes" ? 500 : 120);
+    }
+    if (!rec.name) return err(400, "The contact needs a name.");
+    rec.updatedAt = nowIso();
+    await store().set(`bdevcontact:${rec.id}`, rec);
+    return json(200, { contact: rec });
+  }
+
+  // Build -170 CRM: orders a seller records by hand. Display and
+  // record only — no payment processing, no comp math (the
+  // locked comp rules read activations, never these records).
+  if (seg[1] === "orders" && seg.length === 2) {
+    if (method === "GET") return json(200, { orders: await ordersOf170(seat.userId) });
+    if (method === "POST") {
+      const businessName = String(b.businessName || "").trim();
+      if (!businessName) return err(400, "The order needs the business name.");
+      const plan = [199, 349, 699].includes(Number(b.plan)) ? Number(b.plan) : null;
+      const rec = {
+        id: uuid(), ownerId: seat.userId, leadId: b.leadId ? String(b.leadId) : null,
+        businessName: businessName.slice(0, 120), plan,
+        date: String(b.date || "").slice(0, 10) || todayStr(),
+        notes: String(b.notes || "").trim().slice(0, 500),
+        createdAt: nowIso(),
+      };
+      await store().set(`bdevorder:${rec.id}`, rec);
+      return json(201, { order: rec });
+    }
   }
 
   // Lead-scoped routes
@@ -2177,7 +2349,7 @@ async function publicClaim(event) {
     // code came with it, across every market when it didn't (the
     // verbal-yes hold below then does the crediting).
     const pool = seat
-      ? (await Promise.all(seatMarkets(seat).map((m) => leadsOfMarket(m.marketId)))).flat()
+      ? (await Promise.all(seatMarkets(seat).map((m) => leadsOfMarket(m.marketId, { fresh: true })))).flat()
       : (await store().list("bdevlead:")).map((r) => r.value).filter(Boolean);
     lead = pool.find((l) => normName(l.name) === normName(businessName))
       || pool.find((l) => digits(l.phone1) && digits(l.phone1) === digits(contact))
@@ -2272,14 +2444,20 @@ function claimPageHtml(query) {
 
 // ---------------- HQ / Admin API ----------------
 
-function adminLeadPayload(lead) {
+function adminLeadPayload(lead, opts) {
+  // Build -170: the LIST shape (opts.slim) drops the two heavy
+  // per-lead bodies — the rendered playbook and the HQ research
+  // notes. The Manage list renders neither (it shows the
+  // hasPlaybook flag only); at 303 leads they were ~85% of an
+  // ~890KB payload. Single-lead readers keep the full shape.
+  const slim = !!(opts && opts.slim);
   return {
-    ...repLeadPayload(lead, { full: true }),
+    ...repLeadPayload(lead, { full: !slim }),
     marketId: lead.marketId, assignedRepId: lead.assignedRepId,
     hqTier: lead.hqTier, dmNameRaw: lead.dmName || null,
     status: statusOf(lead),
     statusHistory: lead.statusHistory || [],
-    hqResearch: lead.hqResearch || null,
+    hqResearch: slim ? undefined : lead.hqResearch || null,
     hasPlaybook: !!lead.playbook,
     attribution: lead.attribution || null, hqDecision: lead.hqDecision || null,
     notFitReason: lead.notFitReason || null, updatedAt: lead.updatedAt,
@@ -2314,6 +2492,8 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       money: await moneyPayload157(seat),
       queue: buildQueue157(book, bench),
       trips: buildTrips157(book, bench),
+      contacts: await rolodexEntries170(seat.userId),
+      orders: await ordersOf170(seat.userId),
     });
   }
 
@@ -2342,10 +2522,17 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     });
   }
 
+  // Build -170 CRM: HQ sees every book's rolodex + orders.
+  if (method === "GET" && sub === "contacts" && seg.length === 3) {
+    return json(200, { contacts: await rolodexEntries170(null) });
+  }
+  if (method === "GET" && sub === "orders" && seg.length === 3) {
+    return json(200, { orders: await ordersOf170(null) });
+  }
   if (method === "GET" && sub === "overview" && seg.length === 3) {
     const leads = await allLeads();
     const seats = (await store().list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active);
-    const users = deps.allUsers ? await deps.allUsers() : [];
+    const users = await allUsers170();
     const byId = new Map(users.map((u) => [u.id, u]));
     const markets = {};
     for (const l of leads) {
@@ -2360,12 +2547,12 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       markets[mid].progress = await marketProgress(mid);
       markets[mid].state = await marketState(mid);
     }
-    const claims = (await store().list("bdevclaim:")).map((r) => r.value).filter(Boolean)
+    const claims = (await listPrefix170("bdevclaim:"))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    const escalations = (await store().list("bdevesc:")).map((r) => r.value).filter((v) => v && v.status === "open")
+    const escalations = (await listPrefix170("bdevesc:")).filter((v) => v && v.status === "open")
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const pendingLeads = leads.filter((l) => l.pendingApproval);
-    const pendingReferrals = (await store().list("bdevpending:")).map((r) => r.value).filter((v) => v && v.status === "pending");
+    const pendingReferrals = (await listPrefix170("bdevpending:")).filter((v) => v && v.status === "pending");
     const acts = await allActivations();
     for (const mid of Object.keys(markets)) markets[mid].active = acts.filter((a) => a.marketId === mid).length;
     const liabilityCalc = await liability();
@@ -2392,7 +2579,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       m.byNeighborhood = [...m._nb.values()].sort((a, b) => a.neighborhood.localeCompare(b.neighborhood) || a.city.localeCompare(b.city));
       delete m._city; delete m._nb;
     }
-    const prewarm = (await store().list("bdevprewarm:")).map((r) => r.value).filter(Boolean)
+    const prewarm = (await listPrefix170("bdevprewarm:"))
       .map((r) => ({ leadId: r.leadId, business: r.business, toName: r.toName, draft: r.draft }))
       .sort((a, b) => String(a.business).localeCompare(String(b.business)));
     const latestByRep = (rows) => {
@@ -2403,10 +2590,10 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       }
       return [...map.values()];
     };
-    const scoreboards = latestByRep((await store().list("bdevscore:")).map((r) => r.value).filter(Boolean))
+    const scoreboards = latestByRep(await listPrefix170("bdevscore:"))
       .map((r) => ({ repId: r.repId, weekOf: r.weekOf, lines: r.lines, stats: r.stats, createdAt: r.createdAt }))
       .sort((a, b) => String(a.repId).localeCompare(String(b.repId)));
-    const alarmSummary = latestByRep((await store().list("bdevalarm:")).map((r) => r.value).filter(Boolean))
+    const alarmSummary = latestByRep(await listPrefix170("bdevalarm:"))
       .map((r) => ({ repId: r.repId, date: r.date, count: Array.isArray(r.items) ? r.items.length : 0 }))
       .sort((a, b) => String(a.repId).localeCompare(String(b.repId)));
     return json(200, {
@@ -2419,7 +2606,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       statusRollup, prewarm, scoreboards, alarmSummary,
       reps: seats.map((s) => { const u = byId.get(s.userId); return { userId: s.userId, name: u ? u.name : "", email: u ? u.email : "", marketId: s.marketId, marketName: s.marketName, repCode: s.repCode, seatState: s.seatState, vestedAt: s.vestedAt || null, warningMonth: s.warningMonth || null, atRisk: s.atRisk || null, hqSeat: !!s.hqSeat, markets: seatMarkets(s) }; }),
       unconfirmedClaims: claims.filter((c) => c.status === "waiting HQ confirm"),
-      escalations, pendingLeads: pendingLeads.map(adminLeadPayload), pendingReferrals,
+      escalations, pendingLeads: pendingLeads.map((l) => adminLeadPayload(l, { slim: true })), pendingReferrals,
       disputes, liability: liabilityCalc,
       dnc: await dncRecords(),
     });
@@ -2446,7 +2633,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     if (qp.neighborhood) leads = leads.filter((l) => (l.neighborhood || "") === qp.neighborhood);
     if (qp.status) leads = leads.filter((l) => statusOf(l) === qp.status);
     leads.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    return json(200, { leads: leads.map(adminLeadPayload), facets });
+    return json(200, { leads: leads.map((l) => adminLeadPayload(l, { slim: true })), facets });
   }
 
   if (method === "POST" && sub === "reps" && seg[3] === "assign") {

@@ -2238,6 +2238,16 @@ function bdevGateBuckets(cats) {
   return out;
 }
 async function bdevMarketCreators(marketId) {
+  // Build -170: memoized per market (see memoAggP) — the rep
+  // home, queue, trips and Show bench each asked for this scan
+  // separately, and every call re-listed every user + photo.
+  const memoHit = aggMemoPGet(`bdev-market-creators:${marketId}`, ["user", "photo"], 30000);
+  if (memoHit !== undefined) return memoHit;
+  const out = await bdevMarketCreatorsCompute(marketId);
+  aggMemoPSet(`bdev-market-creators:${marketId}`, ["user", "photo"], out);
+  return out;
+}
+async function bdevMarketCreatorsCompute(marketId) {
   const market = MARKETS.find((m) => m.id === marketId);
   const canonName = market ? market.name : marketId;
   const users = await allUsers();
@@ -5820,6 +5830,38 @@ async function memoAgg(key, ttlMs, compute) {
   if (hit !== undefined) return hit;
   const val = await compute();
   aggMemoSet(key, val);
+  return val;
+}
+
+// Build -170: prefix-scoped variant of the aggregate memo. The
+// global store version changes on EVERY write anywhere — event
+// logging, session bookkeeping, read-state stamps included —
+// so in the live store a memoAgg entry was invalidated before
+// it could serve a second read, and every admin tab paid its
+// full rebuild on every open (Jeff, 2026-11-09: "my entire
+// admin dashboard is just opening things slowly"). memoAggP
+// keys the entry on store.versionFor(prefixes): only writes to
+// the record prefixes the compute actually reads invalidate
+// it; the TTL stays as the cross-container backstop — the same
+// discipline as memoAgg, with a version matched to the read
+// set. The captured version is read AFTER the compute runs, so
+// a compute that repairs its own inputs (its writes bump the
+// prefixes) still leaves a hittable entry behind.
+const aggMemoP = new Map();
+function aggMemoPGet(key, prefixes, ttlMs) {
+  if (!store.versionFor) return undefined;
+  const hit = aggMemoP.get(key);
+  if (hit && hit.v === store.versionFor(prefixes) && Date.now() - hit.at < ttlMs) return hit.val;
+  return undefined;
+}
+function aggMemoPSet(key, prefixes, val) {
+  if (store.versionFor) aggMemoP.set(key, { v: store.versionFor(prefixes), at: Date.now(), val });
+}
+async function memoAggP(key, prefixes, ttlMs, compute) {
+  const hit = aggMemoPGet(key, prefixes, ttlMs);
+  if (hit !== undefined) return hit;
+  const val = await compute();
+  aggMemoPSet(key, prefixes, val);
   return val;
 }
 
@@ -26457,6 +26499,9 @@ async function route(event) {
       if (!canViewT) return err(403, "Templates are not part of your role on Magpie.");
       const canEditT = perms138.hasPerm(user, "templates.edit");
       if (method === "GET" && seg.length === 2) {
+        // Build -170: prefix memo (see memoAggP).
+        const tpMemoHit = aggMemoPGet(`admin-templates:${user.id}`, ["template", "prospect", "config"], 30000);
+        if (tpMemoHit !== undefined) return json(200, tpMemoHit);
         const recs = await templatesLib.listRecords();
         const byRef = new Map(recs.map((r) => [r.refId, r]));
         const automation = automationsCatalog.GROUPS.map((name) => ({ name, entries: [] }));
@@ -26467,7 +26512,9 @@ async function route(event) {
           byRef.delete(entry.templateRef);
         }
         const custom = [...byRef.values()].map((r) => ({ refId: r.refId, name: r.displayName, kind: r.kind, editLevel: r.editLevel, currentVersion: r.currentVersion, updatedAt: r.updatedAt }));
-        return json(200, { automation, custom, canEdit: canEditT });
+        const tpPayload = { automation, custom, canEdit: canEditT };
+        aggMemoPSet(`admin-templates:${user.id}`, ["template", "prospect", "config"], tpPayload);
+        return json(200, tpPayload);
       }
       if (method === "POST" && seg.length === 2) {
         if (!canEditT) return err(403, "Editing templates is not part of your role.");
@@ -26554,6 +26601,9 @@ async function route(event) {
       const canApproveM = perms138.hasPerm(user, "marketing.approve");
       if (!canDraftM && !canApproveM) return err(403, "Marketing is not part of your role on Magpie.");
       if (method === "GET" && seg.length === 2) {
+        // Build -170: prefix memo (see memoAggP).
+        const mktMemoHit = aggMemoPGet(`admin-marketing:${user.id}`, ["user", "prospect", "campaign-recipient", "campaign", "mkcampaign", "config"], 30000);
+        if (mktMemoHit !== undefined) return json(200, mktMemoHit);
         const suppressedSet = await marketingSuppression138();
         const all = await allUsers();
         const eligible = all.filter((u) => !isTester(u) && !(u.email && suppressedSet.has(String(u.email).toLowerCase())) && perms138.inMarketScope(user, u.market));
@@ -26568,13 +26618,15 @@ async function route(event) {
           campaigns.push({ id: c.id, subject: c.subject, channel: c.channel || "email", status: c.status, segment: c.segment, templateRefId: c.templateRefId || null, authorName: author ? author.name : null, authorId: c.authorId, approverName: approver ? approver.name : null, recipientCount: Array.isArray(c.recipientIds) ? c.recipientIds.length : null, runAt: c.runAt || null, sentAt: c.sentAt || null, results: c.results || null, sendProgress: c.sendProgress || null, createdAt: c.createdAt, changesNote: c.changesNote || null });
         }
         const sentTodayTotal = (await campaignSentToday(new Date())) + (await marketingSentToday138(new Date()));
-        return json(200, {
+        const mktPayload = {
           segments: defs, campaigns, canDraft: canDraftM, canApprove: canApproveM,
           from: "hello@magpielocal.com",
           dailyCeiling: campaignDailyCeiling(), sentToday: sentTodayTotal,
           sms: smsRailState138(),
           suppression: canApproveM ? [...suppressedSet] : undefined, suppressionCount: suppressedSet.size,
-        });
+        };
+        aggMemoPSet(`admin-marketing:${user.id}`, ["user", "prospect", "campaign-recipient", "campaign", "mkcampaign", "config"], mktPayload);
+        return json(200, mktPayload);
       }
       if (method === "POST" && seg.length === 3 && seg[2] === "segment-count") {
         const b = parseBody(event);
@@ -26815,6 +26867,9 @@ async function route(event) {
     if (seg[1] === "team") {
       if (!perms138.hasPerm(user, "team.manage")) return err(403, "Team is not part of your role on Magpie.");
       if (method === "GET" && seg.length === 2) {
+        // Build -170: prefix memo (see memoAggP).
+        const teamMemoHit = aggMemoPGet(`admin-team:${user.id}`, ["user", "teaminvite", "config"], 30000);
+        if (teamMemoHit !== undefined) return json(200, teamMemoHit);
         const admins = (await allUsers()).filter((u) => u.role === "admin");
         const members = admins.map((u) => {
           const p = perms138.permsOf(u);
@@ -26837,12 +26892,14 @@ async function route(event) {
           const o = storedTemplates[id];
           return { id, label: (o && o.label) || t.label, blurb: (o && o.blurb) || t.blurb, flags: o && Array.isArray(o.flags) ? o.flags : t.flags, statScopes: o && Array.isArray(o.statScopes) ? o.statScopes : t.statScopes };
         });
-        return json(200, {
+        const teamPayload = {
           members, invites, templates,
           flagReference: perms138.FLAGS.map((f) => ({ flag: f, label: perms138.FLAG_LABELS[f] })),
           statScopeReference: perms138.STAT_SCOPES.map((s) => ({ scope: s, label: perms138.STAT_SCOPE_LABELS[s] })),
           markets: MARKETS.map((m) => m.name),
-        });
+        };
+        aggMemoPSet(`admin-team:${user.id}`, ["user", "teaminvite", "config"], teamPayload);
+        return json(200, teamPayload);
       }
       if (method === "PUT" && seg.length === 3 && seg[2] === "templates") {
         const b = parseBody(event);
@@ -27113,7 +27170,7 @@ async function route(event) {
       // Aggregate memo (2026-11-06): the totals re-scan every
       // user record per load; the memo serves the computed
       // payload until any store write lands (see memoAgg).
-      const payload = await memoAgg(`platform-totals:${user.id}`, 30000, async () => {
+      const payload = await memoAggP(`platform-totals:${user.id}`, ["user"], 30000, async () => {
         const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
         // Build -138: a market-scoped teammate's totals are computed
         // from their markets' records only — the platform-wide
@@ -27133,12 +27190,16 @@ async function route(event) {
     // (partner.demo). Targets are resolved here, server-side, so
     // the client can never aim the view at another account.
     if (seg[1] === "preview-targets" && seg.length === 2 && method === "GET") {
-      const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
-      const t = previewTargets126(users);
-      return json(200, {
-        creator: t.creator ? { id: t.creator.id, name: t.creator.name || "Test creator" } : null,
-        partner: t.partner ? { id: t.partner.id, name: (t.partner.partner && t.partner.partner.orgName) || t.partner.name || "Demo partner" } : null,
+      // Build -170: prefix memo (see memoAggP).
+      const ptPayload = await memoAggP("admin-preview-targets", ["user"], 30000, async () => {
+        const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
+        const t = previewTargets126(users);
+        return {
+          creator: t.creator ? { id: t.creator.id, name: t.creator.name || "Test creator" } : null,
+          partner: t.partner ? { id: t.partner.id, name: (t.partner.partner && t.partner.partner.orgName) || t.partner.name || "Demo partner" } : null,
+        };
       });
+      return json(200, ptPayload);
     }
 
     // View the approved test creator's account (Build -126): the
@@ -27305,6 +27366,10 @@ async function route(event) {
     // through Forgot password. Edits cover markets, share, and
     // status only; a partner's code never changes once issued.
     if (seg[1] === "partners" && seg.length === 2 && method === "GET") {
+      // Build -170: prefix memo (see memoAggP). The origin is
+      // part of the key: the partner links are built from it.
+      const paMemoHit = aggMemoPGet(`admin-partners:${user.id}:${query.origin || ""}`, ["user", "recruiter"], 30000);
+      if (paMemoHit !== undefined) return json(200, paMemoHit);
       const partners = await allPartners();
       // Team seats (Build -107): each org's live seat count, so
       // growth is visible without opening every card. Revoked
@@ -27318,7 +27383,7 @@ async function route(event) {
         if (u.role === "pilot_partner" && u.invitedByPartner) bump(u.invitedByPartner);
       }
       for (const e of seatEntities) if (e.sponsorPartnerId && e.status !== "disabled") bump(e.sponsorPartnerId);
-      return json(200, {
+      const paPayload = {
         partners: partners.map((u) => ({
           id: u.id,
           email: u.email,
@@ -27326,7 +27391,9 @@ async function route(event) {
           teamSeatCount: seatCounts.get(u.id) || 0,
           links: partnerLinksFor(publicPartner(u.partner), query.origin || undefined),
         })),
-      });
+      };
+      aggMemoPSet(`admin-partners:${user.id}:${query.origin || ""}`, ["user", "recruiter"], paPayload);
+      return json(200, paPayload);
     }
     // Team seats (Build -107): Admin's revoke-anything override.
     // The seat is found across orgs (Admin-minted pilot leads
@@ -27661,6 +27728,12 @@ async function route(event) {
       // theirs — that clears only when the team replies, never
       // merely by opening the thread. The creatorId spellings
       // are kept for the callers that predate the home.
+      // Build -170: prefix memo for the conversations list (the
+      // detail read below always builds fresh). See memoAggP.
+      if (!(query.userId || query.creatorId)) {
+        const pmMemoHit = aggMemoPGet(`admin-platform-messages:${user.id}`, ["message", "user", "pmstate"], 30000);
+        if (pmMemoHit !== undefined) return json(200, pmMemoHit);
+      }
       const rows = await store.list("message:");
       const byPeer = new Map();
       for (const r of rows) {
@@ -27738,7 +27811,9 @@ async function route(event) {
         .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned")
         .map((u) => normalizeMarketName(u.market))
         .filter(Boolean))].sort();
-      return json(200, { threads, markets });
+      const pmPayload = { threads, markets };
+      aggMemoPSet(`admin-platform-messages:${user.id}`, ["message", "user", "pmstate"], pmPayload);
+      return json(200, pmPayload);
     }
     if (method === "GET" && seg[1] === "message-campaigns" && seg.length === 2) {
       // Build -163: the "Sent to many" receipt book — campaign
@@ -27747,6 +27822,9 @@ async function route(event) {
       // broadcast records, newest first, recipients resolved to
       // people so each one can open their thread from the entry.
       await maybeBackfillMsgCampaigns163();
+      // Build -170: prefix memo (see memoAggP).
+      const mcMemoHit = aggMemoPGet(`admin-message-campaigns:${user.id}`, ["pmcampaign", "broadcast", "user", "message"], 30000);
+      if (mcMemoHit !== undefined) return json(200, mcMemoHit);
       const users = await allUsers();
       const usersById = new Map(users.map((u) => [u.id, u]));
       const campaigns = [];
@@ -27782,7 +27860,9 @@ async function route(event) {
         });
       }
       campaigns.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-      return json(200, { campaigns });
+      const mcPayload = { campaigns };
+      aggMemoPSet(`admin-message-campaigns:${user.id}`, ["pmcampaign", "broadcast", "user", "message"], mcPayload);
+      return json(200, mcPayload);
     }
     if (method === "POST" && seg[1] === "platform-messages" && seg.length === 2) {
       const b = parseBody(event);
@@ -28234,7 +28314,7 @@ async function route(event) {
       // read it. The memo serves the built payload until any
       // store write lands (an approval writes, so post-action
       // reads are always fresh).
-      const memoHit = aggMemoGet(`admin-applications:${user.id}`, 30000);
+      const memoHit = aggMemoPGet(`admin-applications:${user.id}`, ["user", "booking", "post", "review", "bizreview", "offer", "config"], 30000);
       if (memoHit !== undefined) return json(200, memoHit);
       const all = await allUsers();
       await ensureBusinessAnchors(all);
@@ -28351,7 +28431,7 @@ async function route(event) {
         auto,
       };
       const payload = { pending: pending.map(attach), decided: decided.map(attach), summary };
-      aggMemoSet(`admin-applications:${user.id}`, payload);
+      aggMemoPSet(`admin-applications:${user.id}`, ["user", "booking", "post", "review", "bizreview", "offer", "config"], payload);
       return json(200, payload);
     }
     // Find a user (Build -116, Jeff, 2026-11-03): servicing an
@@ -28446,6 +28526,8 @@ async function route(event) {
       return json(200, { creator: card });
     }
     if (method === "GET" && seg[1] === "leaderboard") {
+      // Build -170: prefix memo (see memoAggP).
+      const lbMemo = await memoAggP("admin-leaderboard", ["user", "booking", "post", "review", "bizreview"], 30000, async () => {
       // Recruiter leaderboard (Jeff, 2026-10-18): every creator with
       // at least one credited sign-up, best Momentum first.
       // Warm the recruiter seed import in the background (Build
@@ -28475,14 +28557,16 @@ async function route(event) {
         });
       }
       rows.sort((a, b) => b.points - a.points || b.approved - a.approved || (a.createdAt < b.createdAt ? -1 : 1));
-      return json(200, { leaderboard: rows });
+      return { leaderboard: rows };
+      });
+      return json(200, lbMemo);
     }
     if (method === "GET" && seg[1] === "markets") {
       // Aggregate memo (2026-11-06): the markets read is the
       // heaviest admin read (every market row aggregates the
       // whole store). The Admin home AND the Markets tab both
       // read it; the memo serves repeats until a write lands.
-      const payload = await memoAgg(`admin-markets:${user.id}`, 30000, async () => {
+      const payload = await memoAggP(`admin-markets:${user.id}`, ["user", "config", "cityrequest", "offer", "booking", "post", "bdevlead"], 30000, async () => {
         const out = await adminMarketRows();
         // Build -138: the demand census rides the same payload.
         // Unlisted places belong to no one's market scope, so the
@@ -29277,7 +29361,7 @@ async function route(event) {
       // rebuilding it on every Stats load left the panel stuck
       // on its loading line past the function budget. Same
       // pattern as /admin/applications.
-      const memoHit = aggMemoGet("admin-suggestions", 30000);
+      const memoHit = aggMemoPGet("admin-suggestions", ["event", "prospect", "user", "offer", "booking", "post", "suggestion", "snapshot"], 30000);
       if (memoHit !== undefined) return json(200, memoHit);
       const candidates = await buildSuggestionCandidates();
       let visible = await syncSuggestionRecords(candidates, user.id);
@@ -29292,7 +29376,7 @@ async function route(event) {
         if (lines) { visible = visible.map((s, i) => ({ ...s, text: lines[i] })); phrased = true; }
       }
       const payload = { suggestions: visible.map((s) => ({ id: s.id, kind: s.kind, type: s.type, text: s.text, receipt: s.receipt, action: s.action || null, score: s.score, surfacedAt: s.surfacedAt || null })), watching: SUGGESTION_WATCHING, phrased, generatedAt: nowIso() };
-      aggMemoSet("admin-suggestions", payload);
+      aggMemoPSet("admin-suggestions", ["event", "prospect", "user", "offer", "booking", "post", "suggestion", "snapshot"], payload);
       return json(200, payload);
     }
     if (method === "POST" && seg[1] === "suggestions" && seg[2] === "dismiss" && seg.length === 3) {
@@ -29717,13 +29801,19 @@ async function route(event) {
     // where it stands in the post-or-pay-the-price timeline. Read
     // only; the sweep does the transitions.
     if (method === "GET" && seg[1] === "compliance") {
+      // Build -170: prefix memo (see memoAggP) + the creator
+      // lookup rides one users listing (a map), not one store
+      // read per booking row.
+      const cpMemoHit = aggMemoPGet("admin-compliance", ["booking", "post", "user"], 30000);
+      if (cpMemoHit !== undefined) return json(200, cpMemoHit);
       const allBk = await allBookings();
       const bookings = allBk.filter((b) => b.redeemedAt || b.honorReportedAt || b.status === "expired");
       const posts = await allPosts();
       const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+      const userById170 = new Map((await allUsers()).map((u) => [u.id, u]));
       const rows = [];
       for (const b of bookings) {
-        const creator = await store.get(`user:${b.creatorId}`);
+        const creator = userById170.get(b.creatorId) || null;
         const post = postByBooking.get(b.id) || null;
         const status = complianceStatusFor(b, post, creator ? standingState(creator) : "good");
         rows.push({
@@ -29777,7 +29867,9 @@ async function route(event) {
       const businesses = [...byBiz.values()].map((x) => ({ ...x, warning: x.reports >= 2 })).sort((a, b) => b.reports - a.reports);
       const counts = {};
       for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
-      return json(200, { visits: rows, businesses, counts });
+      const cpPayload = { visits: rows, businesses, counts };
+      aggMemoPSet("admin-compliance", ["booking", "post", "user"], cpPayload);
+      return json(200, cpPayload);
     }
     // Reinstate a banned (or paused) creator by hand. A late post
     // after a ban never does this automatically: a person decides.
@@ -32350,6 +32442,11 @@ async function route(event) {
   // ---------- notifications ----------
   if (seg[0] === "notifications") {
     if (method === "GET" && seg.length === 1) {
+      // Build -170: prefix memo (see memoAggP) — the badge pass
+      // rides every tab render, and its thread scan re-read the
+      // whole message store each time.
+      const ntMemoHit = aggMemoPGet(`notifications:${user.id}`, ["note", "message", "msgstate", "pmstate"], 30000);
+      if (ntMemoHit !== undefined) return json(200, ntMemoHit);
       const rows = await store.list(`note:${user.id}:`);
       const all = rows.map((r) => r.value).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       const notes = all.slice(0, 40);
@@ -32375,7 +32472,9 @@ async function route(event) {
         messages: await unreadThreadCount(user),
         total: unread.length,
       };
-      return json(200, { notifications: notes, unreadCount: unread.length, badges });
+      const ntPayload = { notifications: notes, unreadCount: unread.length, badges };
+      aggMemoPSet(`notifications:${user.id}`, ["note", "message", "msgstate", "pmstate"], ntPayload);
+      return json(200, ntPayload);
     }
     if (method === "POST" && seg.length === 2 && seg[1] === "read") {
       const rows = await store.list(`note:${user.id}:`);

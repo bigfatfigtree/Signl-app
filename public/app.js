@@ -2323,6 +2323,10 @@ function renderBottomNav() {
   const rail = document.getElementById("rail");
   const toprow = document.getElementById("toprow");
   document.body.classList.remove("bn-on", "has-bn", "admin-on", "preview-on");
+  // Build -170: mark the Biz Dev seller shell on the body so the
+  // chrome CSS can keep exactly one logo in it (the floated
+  // desktop lockup strip stands down there — see theme-v3.css).
+  document.body.classList.toggle("bd-shell", bdShellActive());
   // Build -161: Jeff in Sell mode gets the rep shell's chrome —
   // the same bottom bar his reps get — not the admin rail. One
   // scoped exception, keyed on the mode he explicitly picked.
@@ -3338,7 +3342,7 @@ function tabBarHtml() {
   if (bdShellActive()) {
     const t = state.tab || "BD Home";
     const items155 = [
-      ["BD Home", "home", "Home"], ["BD Leads", "users", "My Leads"], ["BD Kit", "deck", "Seller Kit"], ["BD Money", "stats", "My Money"], ["BD Menu", "menu", "Menu"],
+      ["BD Home", "home", "Home"], ["BD Leads", "users", "My Leads"], ["BD Contacts", "book", "Contacts"], ["BD Money", "stats", "My Money"], ["BD Menu", "menu", "Menu"],
     ];
     const btns = items155.map(([tab, icon, label], ix) => `
     <button type="button" class="tab-item tab-bar137 ${t === tab ? "on" : ""}" style="--bar-ord:${ix};order:${ix}" onclick="${tab === "BD Menu" ? "return bdMenuTap168()" : `return go('dashboard','${tab}')`}" aria-label="${label}">
@@ -3909,6 +3913,8 @@ function railItems() {
   if (bdShellActive()) {
     add("a", "home", "Home", "return go('dashboard','BD Home')", t === "BD Home" || !t);
     add("a", "users", "My Leads", "return go('dashboard','BD Leads')", t === "BD Leads");
+    add("a", "book", "Contacts", "return go('dashboard','BD Contacts')", t === "BD Contacts");
+    add("a", "receipt", "Orders", "return go('dashboard','BD Orders')", t === "BD Orders");
     add("a", "deck", "Seller Kit", "return go('dashboard','BD Kit')", t === "BD Kit");
     add("a", "stats", "My Money", "return go('dashboard','BD Money')", t === "BD Money");
     add("a", "menu", "Menu", "return bdMenuTap168()", t === "BD Menu");
@@ -33734,7 +33740,7 @@ async function saveAdvertiserPermit(userId, status) {
 // screen. Show Mode is a locked, client-facing deck: the rep
 // cannot edit a word of it.
 
-const BD_TABS = ["BD Home", "BD Leads", "BD Kit", "BD Money", "BD Menu"];
+const BD_TABS = ["BD Home", "BD Leads", "BD Contacts", "BD Orders", "BD Kit", "BD Money", "BD Menu"];
 const BD_STATUSES = ["Not contacted", "Contacted", "Meeting set", "Follow up", "Declined", "Closed"];
 // Build -157: true only while Jeff is looking at a rep's Show
 // Mode through the admin preview — every mutating Show path
@@ -33744,6 +33750,10 @@ const bdPractice = {};
 const bd = {
   tab: "BD Home", home: null, leads: null, filter: "all", q: "",
   city: "", neighborhood: "", facets: null, practiceItems: [],
+  // Build -170 CRM: category/status find, the rolodex, orders.
+  category: "", status: "",
+  contacts: null, contactCities: [], contactQ: "", contactCity: "", contactAddOpen: false, contactEditId: null,
+  orders: null, orderAddOpen: false,
   leadId: null, lead: null, logs: [],
   logDraft: null, show: null, kit: null, money: null,
   addOpen: false, nearNote: "",
@@ -33825,6 +33835,8 @@ function renderBizdevDash() {
   const el = () => document.getElementById("tab-body");
   if (tab === "Account") { el().innerHTML = accountViewHtml126("Biz Dev"); return; }
   if (tab === "BD Leads") return bdLoadLeads(el());
+  if (tab === "BD Contacts") return bdLoadContacts(el());
+  if (tab === "BD Orders") return bdLoadOrders(el());
   if (tab === "BD Kit") return bdLoadKit(el());
   if (tab === "BD Money") return bdLoadMoney(el());
   if (tab === "BD Menu") return bdRenderMenu(el());
@@ -33924,12 +33936,27 @@ function bdMapsUrl(l) {
   const q = encodeURIComponent([l.name, l.address || "", l.city || ""].filter(Boolean).join(", "));
   return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
+// Build -170: the per-lead contact line — who to ask for, the
+// email and the phone, read from the lead record's own contact
+// fields (dmName / email / phone1 / phone2). Tappable on mobile.
+// A lead with none of them gets the one quiet research line —
+// never invented data.
+function bdContactLine(l) {
+  const bits = [];
+  if (l.dmName) bits.push(`Ask for ${esc(l.dmName)}`);
+  if (l.email) bits.push(`<a href="mailto:${esc(l.email)}">${esc(l.email)}</a>`);
+  const ph = l.phone1 || l.phone2;
+  if (ph) bits.push(`<a href="tel:${esc(String(ph).replace(/[^0-9+]/g, ""))}">${esc(ph)}</a>`);
+  if (!bits.length) return `<div class="muted small" style="margin-top:4px">Contact info being researched.</div>`;
+  return `<div class="small" style="margin-top:4px">${bits.join(" · ")}</div>`;
+}
 function bdLeadCard(l, opts) {
   const o = opts || {};
   return `<div class="card bd-lead-card" ${o.big ? 'style="padding:18px"' : ""}>
     ${bdFlagBanners(l)}
     <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${bdStageBadge(l.stage)}</span></div>
     <div class="muted small">${esc(l.category)}${l.subType ? ` · ${esc(l.subType)}` : ""} · ${esc(l.neighborhood || "")}</div>
+    ${bdContactLine(l)}
     ${l.pendingApproval ? `<div class="bd-pending">Waiting for Jeff to check — you can work it now; it counts once he approves it.</div>` : ""}
     ${bdNextLine(l)}
     <div class="bd-card-btns">
@@ -34041,7 +34068,9 @@ async function bdLoadLeads(el) {
   let d = null;
   const cityQ = bd.city ? `&city=${encodeURIComponent(bd.city)}` : "";
   const nbQ = bd.neighborhood ? `&neighborhood=${encodeURIComponent(bd.neighborhood)}` : "";
-  try { d = await api("GET", bdPath(`/bdev/leads?filter=${encodeURIComponent(bd.filter === "near" ? "all" : bd.filter)}&q=${encodeURIComponent(bd.q)}${cityQ}${nbQ}`)); bdCacheSet("leads", d); bdSyncSeat161(d.seat); }
+  const catQ = bd.category ? `&category=${encodeURIComponent(bd.category)}` : "";
+  const statusQ = bd.status ? `&status=${encodeURIComponent(bd.status)}` : "";
+  try { d = await api("GET", bdPath(`/bdev/leads?filter=${encodeURIComponent(bd.filter === "near" ? "all" : bd.filter)}&q=${encodeURIComponent(bd.q)}${cityQ}${nbQ}${catQ}${statusQ}`)); bdCacheSet("leads", d); bdSyncSeat161(d.seat); }
   catch (e) { d = bdCacheGet("leads"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
   if (d.facets) bd.facets = d.facets;
   const facets = d.facets || bd.facets || { cities: [], neighborhoods: [] };
@@ -34059,6 +34088,10 @@ async function bdLoadLeads(el) {
     <select id="bd-city" onchange="bdSetCity(this.value)" aria-label="City"><option value="">All cities</option>${(facets.cities || []).map((c) => `<option value="${esc(c)}" ${bd.city === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
     <select id="bd-neighborhood" onchange="bdSetNeighborhood(this.value)" aria-label="Neighborhood"><option value="">All neighborhoods</option>${nbOptions.map((n) => `<option value="${esc(n.name)}" ${bd.neighborhood === n.name ? "selected" : ""}>${esc(n.name)}</option>`).join("")}</select>
   </div>
+  <div class="bd-searchrow">
+    <select id="bd-category" onchange="bdSetCategory(this.value)" aria-label="Category"><option value="">All categories</option>${(facets.categories || []).map((c) => `<option value="${esc(c)}" ${bd.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+    <select id="bd-status" onchange="bdSetStatusFilter(this.value)" aria-label="Status"><option value="">Any status</option>${(facets.statuses || BD_STATUSES).map((st) => `<option value="${esc(st)}" ${bd.status === st ? "selected" : ""}>${esc(st)}</option>`).join("")}</select>
+  </div>
   <div class="chip-row">${BD_FILTERS.map(([k, label]) => `<button type="button" class="chip ${bd.filter === k ? "on" : ""}" onclick="return bdSetFilter('${k}')">${esc(label)}</button>`).join("")}</div>
   ${bd.nearNote ? `<p class="muted small">${esc(bd.nearNote)}</p>` : ""}
   <div id="bd-add-slot">${bd.addOpen ? bdAddFormHtml() : ""}</div>
@@ -34066,6 +34099,8 @@ async function bdLoadLeads(el) {
 }
 let bdSearchTimer = null;
 function bdSetCity(v) { bd.city = v || ""; bd.neighborhood = ""; bdLoadLeads(); return false; }
+function bdSetCategory(v) { bd.category = v || ""; bdLoadLeads(); return false; }
+function bdSetStatusFilter(v) { bd.status = v || ""; bdLoadLeads(); return false; }
 function bdSetNeighborhood(v) { bd.neighborhood = v || ""; bdLoadLeads(); return false; }
 function bdSearchInput(v) { bd.q = v; clearTimeout(bdSearchTimer); bdSearchTimer = setTimeout(() => bdLoadLeads(), 350); return false; }
 function bdSetFilter(k) {
@@ -34084,25 +34119,33 @@ function bdAddFormHtml() {
     <p class="muted small">You can work it right away. It counts once Jeff checks it — usually within a business day.</p>
     <div class="field"><label>Business name</label><input id="bd-add-name" placeholder="The shop's name"></div>
     <div class="field"><label>Kind of business</label><select id="bd-add-cat">${cats.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+    <div class="field"><label>City</label><input id="bd-add-city" placeholder="e.g. Virginia Beach"></div>
     <div class="field"><label>Neighborhood</label><input id="bd-add-nb" placeholder="e.g. Ghent Norfolk"></div>
     <div class="field"><label>Address (if you have it)</label><input id="bd-add-addr" placeholder="Street address"></div>
-    <div class="field"><label>Phone, Instagram, or email (any one)</label><input id="bd-add-contact" placeholder="One way to reach them — or leave blank if you walked in"></div>
+    <div class="field"><label>Who to ask for (if you know)</label><input id="bd-add-cname" placeholder="The owner or manager's name"></div>
+    <div class="field"><label>Email (if you have it)</label><input id="bd-add-email" placeholder="hello@theirshop.com"></div>
+    <div class="field"><label>Phone (if you have it)</label><input id="bd-add-phone" placeholder="(757) 555-0100"></div>
+    <div class="field"><label>Instagram (if you have it)</label><input id="bd-add-ig" placeholder="@theirshop"></div>
+    <div class="field"><label>Notes</label><input id="bd-add-notes" placeholder="Anything Jeff should know"></div>
     <button type="button" class="btn" onclick="return bdAddSubmit()">Add to my book</button>
     <span id="bd-add-msg" class="small muted" style="margin-left:8px"></span>
   </div>`;
 }
 async function bdAddSubmit() {
   const msg = document.getElementById("bd-add-msg");
-  const contact = (document.getElementById("bd-add-contact").value || "").trim();
+  const val = (id) => { const n = document.getElementById(id); return n ? n.value.trim() : ""; };
   const body = {
-    name: document.getElementById("bd-add-name").value,
+    name: val("bd-add-name"),
     category: document.getElementById("bd-add-cat").value,
-    neighborhood: document.getElementById("bd-add-nb").value,
-    address: document.getElementById("bd-add-addr").value,
+    city: val("bd-add-city"),
+    neighborhood: val("bd-add-nb"),
+    address: val("bd-add-addr"),
+    contactName: val("bd-add-cname"),
+    email: val("bd-add-email"),
+    phone: val("bd-add-phone"),
+    instagram: val("bd-add-ig"),
+    notes: val("bd-add-notes"),
   };
-  if (contact.includes("@") && contact.includes(".")) body.email = contact;
-  else if (/^@?[A-Za-z0-9._]+$/.test(contact) && !/\d{3}/.test(contact)) body.instagram = contact;
-  else if (contact) body.phone = contact;
   try {
     const d = await api("POST", bdPath("/bdev/leads"), body);
     if (d.duplicate) { msg.textContent = d.message; return false; }
@@ -34110,6 +34153,143 @@ async function bdAddSubmit() {
     showToast("Added. It's in your book — Jeff checks it before it counts.");
     bdLoadLeads();
   } catch (e) { msg.textContent = e.message; }
+  return false;
+}
+
+
+// ---------- Contacts (the rolodex) + Orders — Build -170 CRM ----------
+
+function bdContactCard(c, opts) {
+  const o = opts || {};
+  const bits = [];
+  if (c.email) bits.push(`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`);
+  if (c.phone) bits.push(`<a href="tel:${esc(String(c.phone).replace(/[^0-9+]/g, ""))}">${esc(c.phone)}</a>`);
+  return `<div class="card bd-lead-card">
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(c.name || c.business || "No name")}</strong><span class="badge">${c.source === "lead" ? "From a lead" : "Added"}</span></div>
+    <div class="muted small">${esc(c.business || "")}${c.role ? ` · ${esc(c.role)}` : ""}${c.city ? ` · ${esc(c.city)}` : ""}${c.neighborhood ? ` · ${esc(c.neighborhood)}` : ""}${o.ownerTag && c.ownerName ? ` · ${esc(c.ownerName)}'s book` : ""}</div>
+    ${bits.length ? `<div class="small" style="margin-top:4px">${bits.join(" · ")}</div>` : `<div class="muted small" style="margin-top:4px">Contact info being researched.</div>`}
+    ${c.notes ? `<p class="small" style="margin:6px 0 0">${esc(c.notes)}</p>` : ""}
+    ${!o.ro ? `<div class="bd-card-btns">
+      ${c.source === "lead" && c.leadId ? `<button type="button" class="btn ghost" onclick="return bdOpenLead('${c.leadId}')">Open the lead</button>` : ""}
+      ${c.source === "added" ? `<button type="button" class="btn ghost" onclick="return bdContactEdit('${c.id}')">Edit</button>` : ""}
+    </div>` : ""}
+  </div>`;
+}
+function bdContactFormHtml(c) {
+  const v = c || {};
+  return `<div class="panel">
+    <h3 style="margin-top:0">${c ? "Edit contact" : "Add a contact"}</h3>
+    <div class="field"><label>Name</label><input id="bd-ct-name" value="${esc(v.name || "")}" placeholder="Who you talk to"></div>
+    <div class="field"><label>Business</label><input id="bd-ct-business" value="${esc(v.business || "")}" placeholder="Their shop's name"></div>
+    <div class="field"><label>Role</label><input id="bd-ct-role" value="${esc(v.role || "")}" placeholder="Owner, manager, chef..."></div>
+    <div class="field"><label>Email</label><input id="bd-ct-email" value="${esc(v.email || "")}" placeholder="hello@theirshop.com"></div>
+    <div class="field"><label>Phone</label><input id="bd-ct-phone" value="${esc(v.phone || "")}" placeholder="(757) 555-0100"></div>
+    <div class="field"><label>City</label><input id="bd-ct-fcity" value="${esc(v.city || "")}" placeholder="e.g. Virginia Beach"></div>
+    <div class="field"><label>Notes</label><input id="bd-ct-notes" value="${esc(v.notes || "")}" placeholder="Anything worth remembering"></div>
+    <button type="button" class="btn" onclick="return bdContactSubmit('${c ? c.id : ""}')">${c ? "Save" : "Add to my rolodex"}</button>
+    <button type="button" class="btn ghost" onclick="return bdContactCancel()">Cancel</button>
+    <span id="bd-ct-msg" class="small muted" style="margin-left:8px"></span>
+  </div>`;
+}
+async function bdLoadContacts(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  try {
+    const qs = new URLSearchParams();
+    if (bd.contactQ) qs.set("q", bd.contactQ);
+    if (bd.contactCity) qs.set("city", bd.contactCity);
+    const d = await api("GET", bdPath(`/bdev/contacts?${qs.toString()}`));
+    bd.contacts = d.contacts || []; bd.contactCities = d.cities || [];
+  } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
+  bdRenderContacts(el);
+}
+function bdRenderContacts(el) {
+  const list = bd.contacts || [];
+  const editing = bd.contactEditId ? list.find((c) => c.id === bd.contactEditId && c.source === "added") : null;
+  el.innerHTML = `
+  <h2>Contacts</h2>
+  <p class="muted small" style="margin:4px 0 10px">Your rolodex — everyone you talk to, in one place. Contacts from your leads show up on their own; add anyone else by hand.</p>
+  <div class="bd-searchrow">
+    <input id="bd-ct-q" type="search" placeholder="Find a person or business" value="${esc(bd.contactQ)}" oninput="bdContactSearch(this.value)">
+    <button type="button" class="btn" onclick="return bdContactToggleAdd()">Add a contact</button>
+  </div>
+  <div class="bd-searchrow">
+    <select id="bd-ct-city" onchange="bdContactSetCity(this.value)" aria-label="City"><option value="">All cities</option>${(bd.contactCities || []).map((c) => `<option value="${esc(c)}" ${bd.contactCity === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+  </div>
+  <div id="bd-ct-form">${editing ? bdContactFormHtml(editing) : (bd.contactAddOpen ? bdContactFormHtml(null) : "")}</div>
+  <div id="bd-ct-list">${list.length ? list.map((c) => bdContactCard(c)).join("") : `<div class="panel"><p class="muted" style="margin:0">No contacts match. Add the people you meet and they'll live here.</p></div>`}</div>`;
+}
+let bdContactTimer = null;
+function bdContactSearch(v) { bd.contactQ = v; clearTimeout(bdContactTimer); bdContactTimer = setTimeout(() => bdLoadContacts(), 350); return false; }
+function bdContactSetCity(v) { bd.contactCity = v || ""; bdLoadContacts(); return false; }
+function bdContactToggleAdd() { bd.contactAddOpen = !bd.contactAddOpen; bd.contactEditId = null; bdRenderContacts(document.getElementById("tab-body")); return false; }
+function bdContactEdit(id) { bd.contactEditId = id; bd.contactAddOpen = false; bdRenderContacts(document.getElementById("tab-body")); return false; }
+function bdContactCancel() { bd.contactAddOpen = false; bd.contactEditId = null; bdRenderContacts(document.getElementById("tab-body")); return false; }
+async function bdContactSubmit(id) {
+  const msg = document.getElementById("bd-ct-msg");
+  const val = (x) => { const n = document.getElementById(x); return n ? n.value.trim() : ""; };
+  const body = { name: val("bd-ct-name"), business: val("bd-ct-business"), role: val("bd-ct-role"), email: val("bd-ct-email"), phone: val("bd-ct-phone"), city: val("bd-ct-fcity"), notes: val("bd-ct-notes") };
+  try {
+    if (id) await api("POST", bdPath(`/bdev/contacts/${id}`), body);
+    else await api("POST", bdPath("/bdev/contacts"), body);
+    bd.contactAddOpen = false; bd.contactEditId = null;
+    showToast(id ? "Contact saved." : "Added to your rolodex.");
+    bdLoadContacts();
+  } catch (e) { if (msg) msg.textContent = e.message; }
+  return false;
+}
+
+function bdOrderPlanLabel(plan) {
+  return plan ? `Founding plan — $${plan}/mo` : "Plan not set yet";
+}
+function bdOrderCard(o, opts) {
+  const ow = opts && opts.ownerTag && o.ownerName ? ` · ${esc(o.ownerName)}'s book` : "";
+  return `<div class="card bd-lead-card">
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(o.businessName || "")}</strong><span class="badge ok">${esc(bdOrderPlanLabel(o.plan))}</span></div>
+    <div class="muted small">${esc(o.date || "")}${ow}</div>
+    ${o.notes ? `<p class="small" style="margin:6px 0 0">${esc(o.notes)}</p>` : ""}
+  </div>`;
+}
+async function bdLoadOrders(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  try { const d = await api("GET", bdPath("/bdev/orders")); bd.orders = d.orders || []; }
+  catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
+  bdRenderOrders(el);
+}
+function bdRenderOrders(el) {
+  const list = bd.orders || [];
+  el.innerHTML = `
+  <h2>Orders</h2>
+  <p class="muted small" style="margin:4px 0 10px">Orders you've taken, in your own book. This is your record — the money Jeff's system counts lives under My Money.</p>
+  <div class="bd-searchrow"><button type="button" class="btn" onclick="return bdOrderToggleAdd()">Record an order</button></div>
+  <div id="bd-order-form">${bd.orderAddOpen ? bdOrderFormHtml() : ""}</div>
+  <div id="bd-order-list">${list.length ? list.map((o) => bdOrderCard(o)).join("") : `<div class="panel"><p class="muted" style="margin:0">No orders recorded yet. When a business says yes, write it down here.</p></div>`}</div>`;
+}
+function bdOrderFormHtml() {
+  const today = new Date().toISOString().slice(0, 10);
+  return `<div class="panel">
+    <h3 style="margin-top:0">Record an order</h3>
+    <div class="field"><label>Business name</label><input id="bd-ord-biz" placeholder="The shop's name"></div>
+    <div class="field"><label>Plan</label><select id="bd-ord-plan"><option value="">Not sure yet</option><option value="199">Founding — $199/mo</option><option value="349">Founding — $349/mo</option><option value="699">Founding — $699/mo</option></select></div>
+    <div class="field"><label>Date</label><input id="bd-ord-date" type="date" value="${today}"></div>
+    <div class="field"><label>Notes</label><input id="bd-ord-notes" placeholder="Anything worth remembering"></div>
+    <button type="button" class="btn" onclick="return bdOrderSubmit()">Save the order</button>
+    <button type="button" class="btn ghost" onclick="return bdOrderToggleAdd()">Cancel</button>
+    <span id="bd-ord-msg" class="small muted" style="margin-left:8px"></span>
+  </div>`;
+}
+function bdOrderToggleAdd() { bd.orderAddOpen = !bd.orderAddOpen; bdRenderOrders(document.getElementById("tab-body")); return false; }
+async function bdOrderSubmit() {
+  const msg = document.getElementById("bd-ord-msg");
+  const val = (x) => { const n = document.getElementById(x); return n ? n.value.trim() : ""; };
+  const body = { businessName: val("bd-ord-biz"), plan: val("bd-ord-plan"), date: val("bd-ord-date"), notes: val("bd-ord-notes") };
+  try {
+    await api("POST", bdPath("/bdev/orders"), body);
+    bd.orderAddOpen = false;
+    showToast("Order recorded.");
+    bdLoadOrders();
+  } catch (e) { if (msg) msg.textContent = e.message; }
   return false;
 }
 
@@ -34179,6 +34359,7 @@ function bdRenderLead(el) {
     ${l.pendingApproval ? `<div class="bd-pending">Waiting for Jeff to check — you can work it now; it counts once he approves it.</div>` : ""}
     ${l.championName ? `<p class="small">Introduced by Champion — ${esc(l.championName)}</p>` : ""}
     <p style="margin:8px 0"><strong>Who runs it:</strong> ${l.dmName ? `${esc(l.dmName)}${l.dmRoleLabel ? ` — ${esc(l.dmRoleLabel)}` : ""}` : "Owner — name not on file, ask on your first visit"}${l.secondContact ? `<br><span class="muted small">Also: ${esc(l.secondContact.name)} — ${esc(l.secondContact.roleLabel || "")}</span>` : ""}${l.usuallyHere ? `<br><span class="muted small">Usually here: ${esc(l.usuallyHere)}</span>` : ""}</p>
+    ${bdContactLine(l)}
     <div id="bd-oneliner" class="bd-oneliner"><span class="muted small">Maggie's one-liner is loading...</span></div>
     ${bdPlaybookHtml(l)}
     <div class="bd-routes">${routes.join("")}</div>
@@ -34716,6 +34897,16 @@ function bdRenderMenu(el) {
     <button type="button" class="btn ghost" onclick="signOut()">Sign out</button>
   </div>` : ""}
   <div class="panel">
+    <h3 style="margin-top:0">Your sections</h3>
+    <p class="muted small" style="margin:0 0 8px">Everything in your seller book, one tap each.</p>
+    <button type="button" class="btn ghost" onclick="return go('dashboard','BD Home')">Today</button>
+    <button type="button" class="btn ghost" onclick="return go('dashboard','BD Leads')">My Leads</button>
+    <button type="button" class="btn ghost" onclick="return go('dashboard','BD Contacts')">Contacts</button>
+    <button type="button" class="btn ghost" onclick="return go('dashboard','BD Orders')">Orders</button>
+    <button type="button" class="btn ghost" onclick="return go('dashboard','BD Kit')">Seller Kit</button>
+    <button type="button" class="btn ghost" onclick="return go('dashboard','BD Money')">My Money</button>
+  </div>
+  <div class="panel">
     <h3 style="margin-top:0">Show Mode PIN</h3>
     <p class="muted small">The 4 numbers that get you out of Show Mode. Set it before your first show.</p>
     <div class="bd-pinset"><input id="bd-pin-new" inputmode="numeric" maxlength="4" placeholder="4 numbers"><button type="button" class="btn" onclick="return bdSetPin()">Save PIN</button></div>
@@ -34739,15 +34930,24 @@ async function bdSetPin() {
 
 // ---------- Admin: Biz Dev room (Build -155) ----------
 
-const abd = { data: null, leads: [], preview: null, previewTab: "Home", previewLead: null, leadFilter: { city: "", neighborhood: "", status: "", rep: "" }, manageOpen: {}, prewarmOpen: {} };
+const abd = { data: null, leads: [], contacts: [], orders: [], contactQ: "", preview: null, previewTab: "Home", previewLead: null, leadFilter: { city: "", neighborhood: "", status: "", rep: "", q: "", category: "" }, manageOpen: {}, prewarmOpen: {} };
 async function loadAdminBizdev155() {
   const el = document.getElementById("tab-body");
   if (!el) return;
   el.innerHTML = `<p class="muted">Loading the seller system...</p>`;
   try {
-    abd.data = await api("GET", "/admin/bdev/overview");
-    const leadsRes = await api("GET", "/admin/bdev/leads");
+    // Build -170: the overview and the lead list are independent
+    // reads — fetch them together instead of one after the other.
+    const [overviewRes, leadsRes, contactsRes, ordersRes] = await Promise.all([
+      api("GET", "/admin/bdev/overview"),
+      api("GET", "/admin/bdev/leads"),
+      api("GET", "/admin/bdev/contacts").catch(() => ({ contacts: [] })),
+      api("GET", "/admin/bdev/orders").catch(() => ({ orders: [] })),
+    ]);
+    abd.data = overviewRes;
     abd.leads = leadsRes.leads || [];
+    abd.contacts = contactsRes.contacts || [];
+    abd.orders = ordersRes.orders || [];
     abdRender(el);
   } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
 }
@@ -34847,8 +35047,32 @@ async function abdSetStatus(leadId) {
   return false;
 }
 function abdFilteredLeads() {
-  const f = abd.leadFilter || { city: "", neighborhood: "", status: "", rep: "" };
-  return (abd.leads || []).filter((l) => (!f.city || l.city === f.city) && (!f.neighborhood || l.neighborhood === f.neighborhood) && (!f.status || l.status === f.status) && (!f.rep || l.assignedRepId === f.rep));
+  const f = abd.leadFilter || { city: "", neighborhood: "", status: "", rep: "", q: "", category: "" };
+  const q = String(f.q || "").toLowerCase();
+  return (abd.leads || []).filter((l) => (!f.city || l.city === f.city) && (!f.neighborhood || l.neighborhood === f.neighborhood) && (!f.status || l.status === f.status) && (!f.rep || l.assignedRepId === f.rep) && (!f.category || l.category === f.category) && (!q || [l.name, l.dmName, l.category, l.city, l.neighborhood].join(" ").toLowerCase().includes(q)));
+}
+function abdSetLeadQuery(v) {
+  abd.leadFilter.q = v || "";
+  const host = document.getElementById("abd-lead-list");
+  if (host) host.innerHTML = abdLeadRowsHtml();
+  return false;
+}
+function abdSetContactQuery(v) {
+  abd.contactQ = v || "";
+  const host = document.getElementById("abd-contact-list");
+  if (host) host.innerHTML = abdContactsHtml();
+  return false;
+}
+function abdContactsHtml() {
+  const q = String(abd.contactQ || "").toLowerCase();
+  const list = (abd.contacts || []).filter((c) => !q || [c.name, c.business, c.city, c.role, c.ownerName].join(" ").toLowerCase().includes(q));
+  if (!list.length) return `<p class="muted small" style="margin:0">No contacts match.</p>`;
+  return list.map((c) => bdContactCard(c, { ro: true, ownerTag: true })).join("");
+}
+function abdOrdersHtml() {
+  const list = abd.orders || [];
+  if (!list.length) return `<p class="muted small" style="margin:0">No orders recorded yet. When a seller records one, it shows here.</p>`;
+  return list.map((o) => bdOrderCard(o, { ownerTag: true })).join("");
 }
 // Build -161: compact rows. The status control stays inline in
 // the row (it's the daily job); everything heavier — the guarded
@@ -34867,7 +35091,8 @@ function abdLeadRowsHtml() {
     return `
       <div class="bd-logrow abd-leadrow">
         <div class="abd-leadline"><strong>${esc(l.name)}</strong> ${bdStatusBadge(l.status)}<button type="button" class="btn ghost small-btn" style="margin-left:8px" onclick="return abdToggleManage('${l.id}')">${open ? "Close" : "Manage"}</button></div>
-        <div class="muted small" style="margin-top:2px">${esc(l.category)} · ${esc(l.neighborhood || "")}${l.city ? ` · ${esc(l.city)}` : ""} · ${esc(l.stage)} · ${esc(repName(l.assignedRepId))}${l.pendingApproval ? " · ⏳ waiting your check" : ""}${l.founding && l.founding.status === "Claimed" ? " · claimed, unconfirmed" : ""}${l.founding && l.founding.status === "Confirmed" ? " · claimed ✓" : ""}${l.hasPlaybook ? " · has playbook" : ""}</div>
+        <div class="muted small" style="margin-top:2px">${esc(l.category)} · ${esc(l.neighborhood || "")}${l.city ? ` · ${esc(l.city)}` : ""} · ${esc(l.stage)} · ${esc(repName(l.assignedRepId))}${l.source === "Added by rep" ? " · added by the rep" : ""}${l.pendingApproval ? " · ⏳ waiting your check" : ""}${l.founding && l.founding.status === "Claimed" ? " · claimed, unconfirmed" : ""}${l.founding && l.founding.status === "Confirmed" ? " · claimed ✓" : ""}${l.hasPlaybook ? " · has playbook" : ""}</div>
+        ${bdContactLine(l)}
         <span style="display:block;margin-top:6px">
           <select id="abd-status-${l.id}" aria-label="Status for ${esc(l.name)}">${BD_STATUSES.map((s) => `<option value="${esc(s)}" ${l.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
           <button type="button" class="btn ghost small-btn" onclick="return abdSetStatus('${l.id}')">Set status</button>
@@ -34913,7 +35138,7 @@ function abdPreviewRender() {
   let host = document.getElementById("abd-preview");
   if (!host) { host = document.createElement("div"); host.id = "abd-preview"; document.body.appendChild(host); }
   const seat = pv.seat || {};
-  const tabs = ["Home", "My Leads", "Seller Kit", "My Money"];
+  const tabs = ["Home", "My Leads", "Contacts", "Orders", "Seller Kit", "My Money"];
   host.innerHTML = `
   <div class="abd-pv-banner"><span>You're seeing <strong>${esc(seat.repName || "the rep")}'s</strong> view — looking only. Nothing you tap here saves, sends, or counts.</span><button type="button" class="btn small-btn" onclick="return abdPreviewClose()">Back to your view</button></div>
   <div class="abd-pv-frame">
@@ -34960,6 +35185,14 @@ function abdPvHome() {
   ${h.progress ? `<section class="panel"><h3 style="margin-top:0">Founding progress</h3><p style="margin:0">Creators: ${h.progress.creators} of ${h.progress.gateLow}–${h.progress.gateHigh}</p><p class="muted small">Businesses on the founding list: ${h.progress.foundingClaimed}</p></section>` : ""}
   ${h.numbers ? `<section class="panel"><h3 style="margin-top:0">My numbers</h3><p style="margin:0">${h.numbers.claimedThisMonth} founding spots claimed this month · ${h.numbers.visitsThisWeek} visits this week · $${Number(h.numbers.moneyBuilding || 0).toLocaleString()} building up</p></section>` : ""}`;
 }
+function abdPvContacts() {
+  const list = (abd.preview && abd.preview.contacts) || [];
+  return `<h3 class="bd-h" style="margin-top:6px">Contacts</h3>${list.length ? list.map((c) => bdContactCard(c, { ro: true })).join("") : `<div class="panel"><p class="muted" style="margin:0">No contacts in this book yet.</p></div>`}`;
+}
+function abdPvOrders() {
+  const list = (abd.preview && abd.preview.orders) || [];
+  return `<h3 class="bd-h" style="margin-top:6px">Orders</h3>${list.length ? list.map((o) => bdOrderCard(o)).join("") : `<div class="panel"><p class="muted" style="margin:0">No orders recorded yet.</p></div>`}`;
+}
 function abdPvLeads() {
   const leads = abdPvLeadsList();
   return `<h3 class="bd-h" style="margin-top:6px">My Leads</h3>${leads.length ? leads.map((l) => abdPvLeadCard(l)).join("") : `<div class="panel"><p class="muted" style="margin:0">No leads in this book yet.</p></div>`}`;
@@ -34992,6 +35225,8 @@ function abdPvRenderBody() {
   if (!host || !abd.preview) return;
   if (abd.previewLead) { host.innerHTML = abdPvLeadDetailHtml(); return; }
   if (abd.previewTab === "My Leads") host.innerHTML = abdPvLeads();
+  else if (abd.previewTab === "Contacts") host.innerHTML = abdPvContacts();
+  else if (abd.previewTab === "Orders") host.innerHTML = abdPvOrders();
   else if (abd.previewTab === "Seller Kit") host.innerHTML = abdPvKit();
   else if (abd.previewTab === "My Money") host.innerHTML = abdPvMoney();
   else host.innerHTML = abdPvHome();
@@ -35139,6 +35374,8 @@ function abdRender(el) {
     <strong>All leads</strong>
     <p class="muted small" style="margin:4px 0 0">Every lead in every book. Filter it down; work a lead from its row.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <input type="search" placeholder="Find a business or contact" value="${esc(abd.leadFilter.q || "")}" oninput="abdSetLeadQuery(this.value)" aria-label="Search leads" style="min-width:200px">
+      <select onchange="abdSetLeadFilter('category',this.value)" aria-label="Category filter"><option value="">All categories</option>${[...new Set(abd.leads.map((l) => l.category).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}" ${abd.leadFilter.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
       <select onchange="abdSetLeadFilter('city',this.value)" aria-label="City filter"><option value="">All cities</option>${[...new Set(abd.leads.map((l) => l.city).filter(Boolean))].map((c) => `<option value="${esc(c)}" ${abd.leadFilter.city === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
       <select onchange="abdSetLeadFilter('neighborhood',this.value)" aria-label="Neighborhood filter"><option value="">All neighborhoods</option>${[...new Set(abd.leads.map((l) => l.neighborhood).filter(Boolean))].map((n) => `<option value="${esc(n)}" ${abd.leadFilter.neighborhood === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
       <select onchange="abdSetLeadFilter('status',this.value)" aria-label="Status filter"><option value="">All statuses</option>${BD_STATUSES.map((s) => `<option value="${esc(s)}" ${abd.leadFilter.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
@@ -35146,6 +35383,19 @@ function abdRender(el) {
     </div>
     <div id="abd-lead-list" style="margin-top:8px">${abdLeadRowsHtml()}
     </div>
+  </div>
+  <div class="panel">
+    <strong>Contacts — the rolodex</strong>
+    <p class="muted small" style="margin:4px 0 0">Every contact in every book: the people on the lead records, plus the ones sellers added by hand.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <input type="search" placeholder="Find a person, business, or city" value="${esc(abd.contactQ || "")}" oninput="abdSetContactQuery(this.value)" aria-label="Search contacts" style="min-width:220px">
+    </div>
+    <div id="abd-contact-list" style="margin-top:8px">${abdContactsHtml()}</div>
+  </div>
+  <div class="panel">
+    <strong>Orders sellers recorded</strong>
+    <p class="muted small" style="margin:4px 0 0">Orders the sellers wrote down in their own books. Records only — the money the system counts lives in the books above.</p>
+    <div style="margin-top:8px">${abdOrdersHtml()}</div>
   </div>`;
 }
 async function abdRefresh() { await loadAdminBizdev155(); }
