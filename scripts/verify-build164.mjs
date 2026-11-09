@@ -120,10 +120,21 @@ console.log("== A: source pins ==");
   check("broadcast room: the Inbox names broadcasts + says other replies live in Conversations",
     appJs.includes("Inbox — replies to your broadcasts") && appJs.includes("counts replies to broadcasts only")
     && appJs.includes("No replies to a broadcast yet.") && !appJs.includes("Inbox — replies to your messages"), "");
+  // Pin updated at Build -165 (2026-11-09): the repair gate
+  // legitimately moved — the -164 done-stamp already fired in
+  // production, so the recompute re-runs once under the new
+  // gate backfill:msgcampaigns-165 and stamps records
+  // repaired165 (a prior repaired164 stamp is carried through,
+  // never re-claimed). The broadcast-exclusion arm is unchanged.
   check("server: backfill excludes broadcast-stamped copies + repairs under a done-stamp",
-    routerJs.includes("if (m.broadcastId) continue;") && routerJs.includes('"backfill:msgcampaigns-164"') && routerJs.includes("repaired164: true"), "");
+    routerJs.includes("if (m.broadcastId) continue;") && routerJs.includes('"backfill:msgcampaigns-165"') && routerJs.includes("repaired165: true"), "");
+  // Pin updated at Build -165 (2026-11-09): the staff predicate
+  // was renamed staffPeer165 when it gained the explicit
+  // isStaff marker arm (see maybeMarkStaff165) — Jeff's real
+  // creator account shares no email/id with the admin record,
+  // so the -164 live arms alone could not exempt it.
   check("server: staff-owned peers are exempt from needs-reply",
-    routerJs.includes("staffPeer164") && routerJs.includes("needsReply: !staffOwned && !!lastMessage && lastMessage.fromId === peerId"), "");
+    routerJs.includes("staffPeer165") && routerJs.includes("needsReply: !staffOwned && !!lastMessage && lastMessage.fromId === peerId"), "");
 }
 
 // --- B: fixture people ----------------------------------------
@@ -228,8 +239,14 @@ let campaigns = (await admin("GET", "/api/admin/message-campaigns")).data.campai
 }
 {
   const stored = await store.get("pmcampaign:backfill-2026-11-09-categories");
+  // Check updated at Build -165 (2026-11-09): the repair pass
+  // now runs under the -165 gate and stamps repaired165 (the
+  // -164 stamp is only carried through when a prior pass set
+  // it; this fixture seeds the pre-repair -163 shape, which
+  // carries neither). The repair itself — time + counts
+  // recomputed in place — is unchanged.
   check("repair: the stored record itself was fixed + stamped, source carries no paths or build numbers",
-    !!stored && stored.createdAt === "2026-11-09T14:17:00.000Z" && stored.messageCount === 4 && stored.repaired164 === true
+    !!stored && stored.createdAt === "2026-11-09T14:17:00.000Z" && stored.messageCount === 4 && stored.repaired165 === true
     && !String(stored.source || "").includes("/") && !String(stored.source || "").includes("Build -"),
     JSON.stringify(stored).slice(0, 240));
   const cat = campaigns.find((c) => c.id === "backfill-2026-11-09-categories");

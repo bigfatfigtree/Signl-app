@@ -122,6 +122,7 @@
     "verify-build162": "node scripts/verify-build162.mjs",
     "verify-build163": "node scripts/verify-build163.mjs",
     "verify-build164": "node scripts/verify-build164.mjs",
+    "verify-build165": "node scripts/verify-build165.mjs",
     "verify-sigprivacy": "node scripts/verify-sigprivacy.mjs",
     "verify-sigphrasing": "node scripts/verify-sigphrasing.mjs",
     "verify-build131": "node scripts/verify-build131.mjs",

@@ -6936,6 +6936,22 @@ const MSG_CAMPAIGN_BACKFILLS_163 = [
 // which is what left the sections below Conversations sitting
 // on "Loading…". Once the entries are built/repaired the read
 // path never scans the message store again.
+// Build -165: the SAME recompute runs once more under a new
+// gate (backfill:msgcampaigns-165, records stamped
+// repaired165). The -164 gate already fired in production, so
+// without a new gate nothing would ever re-prove the stored
+// records. The recompute is the arbiter, never the stored
+// fields: recipients are the distinct people holding a
+// matching THREAD message, messageCount is every matching
+// thread message (a true duplicate to one person counts), and
+// broadcastId copies never count here at all (they are the
+// broadcast entry's receipt). Live truth for the category
+// entry, settled from the store arithmetic + the campaign
+// log: 19 thread sends, one per recipient, plus karsen_16's
+// 09:10 broadcast twin — the twin was the -163 count's 20th
+// "message", so the truthful entry reads 19 people · 19
+// messages (Build -164's repair already landed that number;
+// this pass re-derives and re-stamps it in place).
 function msgCampaignCluster164(rows, spec) {
   const matched = [];
   for (const r of rows) {
@@ -6950,7 +6966,7 @@ function msgCampaignCluster164(rows, spec) {
   return matched;
 }
 async function maybeBackfillMsgCampaigns163() {
-  const stateKey = "backfill:msgcampaigns-164";
+  const stateKey = "backfill:msgcampaigns-165";
   if (await store.get(stateKey)) return; // built + repaired already; reads stay scan-free
   const rows = await store.list("message:");
   let adminName = null;
@@ -6989,10 +7005,70 @@ async function maybeBackfillMsgCampaigns163() {
       templateId: null,
       reconstructed: true,
       source: "Rebuilt from the stored thread messages themselves; this send predates campaign records.",
-      repaired164: true,
+      ...(prior && prior.repaired164 ? { repaired164: true } : {}),
+      repaired165: true,
     });
   }
   await store.set(stateKey, { done: true, at: nowIso() });
+}
+
+// ---------- staff-owned threads (Build -165) ----------
+// Build -164 kept the team's own threads from flagging
+// needs-reply by matching the peer live against the admin
+// accounts (same id, same email, tester flag). Live
+// verification after -164 shipped showed Jeff's own creator
+// thread STILL flagged, and the diagnosis is structural: the
+// admin record is the ensureAdmin account (email =
+// ADMIN_EMAIL, name "Jeff Rimmer", no creator profile), while
+// Jeff's creator account is a separate, ordinary signup —
+// role "creator", no tester flag, a DIFFERENT email, a
+// different id — and the user schema carries no shared auth
+// identity to join them (Google sign-in was never enabled).
+// The two records share NO stable key, so no live predicate
+// can ever match them. Build -165 stores the truth on the
+// record instead: an explicit isStaff marker, written once
+// by this idempotent loader (done-stamp + warm flag). The
+// loader keys on, in order:
+//   1. an email that matches any admin account's email;
+//   2. a creator-role record carrying the PRIMARY admin's
+//      exact name while being the ONLY creator record with
+//      that name. The primary admin is the ensureAdmin
+//      account (the ADMIN_EMAIL match, else the single
+//      admin — the same identification the bizdev seat
+//      loader uses for Jeff). If two creator records share
+//      the name, the loader marks NEITHER: it never guesses
+//      whose profile is whose.
+// Marked threads stay listed; they simply never flag
+// needs-reply and never count in the waiting line.
+const STAFF_MARKS_KEY_165 = "config:staffMarks165";
+let staffMarksDone165 = false;
+async function maybeMarkStaff165() {
+  if (staffMarksDone165) return;
+  if (await store.get(STAFF_MARKS_KEY_165)) { staffMarksDone165 = true; return; }
+  const users = await allUsers();
+  const admins = users.filter((u) => u && u.role === "admin");
+  const adminEmails = new Set(admins.map((u) => String(u.email || "").toLowerCase()).filter(Boolean));
+  const envAdminEmail = (process.env.ADMIN_EMAIL || "jeff@magpielocal.com").toLowerCase();
+  const primaryAdmin = admins.find((u) => String(u.email || "").toLowerCase() === envAdminEmail) || (admins.length === 1 ? admins[0] : null);
+  const norm165 = (s) => String(s || "").trim().toLowerCase();
+  let marked = 0;
+  for (const u of users) {
+    if (!u || u.role === "admin" || u.isStaff === true) continue;
+    let why = null;
+    if (u.email && adminEmails.has(String(u.email).toLowerCase())) {
+      why = "email matches an admin account";
+    } else if (primaryAdmin && u.role === "creator" && norm165(u.name) && norm165(u.name) === norm165(primaryAdmin.name)) {
+      const rivals = users.filter((x) => x && x.id !== u.id && x.role === "creator" && norm165(x.name) === norm165(u.name));
+      if (!rivals.length) why = "the only creator profile carrying the admin account's name";
+    }
+    if (!why) continue;
+    u.isStaff = true;
+    u.staffMarked165 = { at: nowIso(), why };
+    await store.set(`user:${u.id}`, u);
+    marked += 1;
+  }
+  await store.set(STAFF_MARKS_KEY_165, { done: true, at: nowIso(), marked });
+  staffMarksDone165 = true;
 }
 
 // ---------- admin broadcasts (Build -152, reworked -153) ----------
@@ -27447,6 +27523,7 @@ async function route(event) {
         const view = { id: peer.id, name: peerDisplayName163(peer), email: peer.email, market: peer.market, role: peer.role, handle: peer.creator ? peer.creator.handle : null, org: (peer.business && peer.business.businessName) || (peer.partner && peer.partner.name) || null };
         return json(200, { user: view, creator: view, messages });
       }
+      await maybeMarkStaff165();
       const users = await allUsers();
       const usersById = new Map(users.map((u) => [u.id, u]));
       // Build -164: a thread the team itself owns — the admin's
@@ -27454,9 +27531,14 @@ async function route(event) {
       // an admin account, or a tester account — can never be
       // "waiting on your reply": Jeff is not going to answer
       // himself. The thread stays listed; it just never flags.
+      // Build -165: the live arms below cannot see Jeff's real
+      // creator account (separate signup, different email — see
+      // maybeMarkStaff165), so the predicate ALSO reads the
+      // explicit isStaff marker the loader stamps on the
+      // record itself.
       const adminIds164 = new Set(users.filter((u) => u.role === "admin").map((u) => u.id));
       const adminEmails164 = new Set(users.filter((u) => u.role === "admin").map((u) => String(u.email || "").toLowerCase()).filter(Boolean));
-      const staffPeer164 = (peer) => !!peer && (peer.role === "admin" || peer.tester === true || adminIds164.has(peer.id) || (!!peer.email && adminEmails164.has(String(peer.email).toLowerCase())));
+      const staffPeer165 = (peer) => !!peer && (peer.role === "admin" || peer.tester === true || peer.isStaff === true || adminIds164.has(peer.id) || (!!peer.email && adminEmails164.has(String(peer.email).toLowerCase())));
       // Read states fetched in parallel (Build -164): one store
       // read per thread, but never one-at-a-time down the list.
       const stateByPeer164 = new Map(await Promise.all([...byPeer.keys()].map(async (peerId) => [peerId, await store.get(`pmstate:${peerId}`)])));
@@ -27468,7 +27550,7 @@ async function route(event) {
         const state = stateByPeer164.get(peerId);
         const readAt = state && state.adminLastReadAt ? state.adminLastReadAt : "";
         const lastMessage = sorted[sorted.length - 1] || null;
-        const staffOwned = staffPeer164(peer);
+        const staffOwned = staffPeer165(peer);
         threads.push({
           peerId,
           peerName: peerDisplayName163(peer),

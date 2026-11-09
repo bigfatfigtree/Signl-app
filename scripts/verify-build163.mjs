@@ -138,8 +138,15 @@ console.log("== A: source pins ==");
   // flags — Jeff is not going to answer himself. Supersedes the
   // bare derivation pin the same way earlier builds superseded
   // theirs.
-  check("server: needsReply derives from the last message being theirs, staff-owned threads exempt (Build -164)",
-    routerJs.includes("needsReply: !staffOwned && !!lastMessage && lastMessage.fromId === peerId") && routerJs.includes("staffPeer164"), "");
+  // Pin updated at Build -165 (2026-11-09): the staff predicate
+  // was renamed staffPeer165 when it gained the explicit
+  // isStaff marker arm — the -164 live-match arms could not
+  // see Jeff's real creator account (separate signup,
+  // different email), so the marker is stamped on the record
+  // by maybeMarkStaff165. The needsReply derivation itself is
+  // unchanged.
+  check("server: needsReply derives from the last message being theirs, staff-owned threads exempt (Build -164, predicate extended -165)",
+    routerJs.includes("needsReply: !staffOwned && !!lastMessage && lastMessage.fromId === peerId") && routerJs.includes("staffPeer165") && routerJs.includes("maybeMarkStaff165"), "");
 }
 
 // --- B: fixture people + seeded threads -----------------------
