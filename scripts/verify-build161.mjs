@@ -247,7 +247,13 @@ console.log("== F: Jeff's kits are his own ==");
   check("Jeff's Nashville kit speaks as Jeff, about Nashville", /I'm Jeff/.test(kN.data.kit.openers[0].text) && /Nashville/.test(kN.data.kit.openers[0].text), kN.data.kit.openers[0].text.slice(0, 120));
   check("Jeff's kit never says Tony, never carries Tony's print cards", !/Tony/.test(kitN) && Array.isArray(kN.data.kit.printKit) && kN.data.kit.printKit.length === 0, "");
   check("Jeff's kit keeps the canon: founding terms + do-not-say intact", Array.isArray(kN.data.kit.foundingTerms) && kN.data.kit.foundingTerms.length >= 5 && /Never promise/.test(JSON.stringify(kN.data.kit.doNotSay)), "");
-  const kH = await admin("GET", "/api/bdev/kit");
+  // Build -161 fix pass: the working city is a seat-level
+  // preference, not per-device — after the Nashville pick
+  // above, a BARE kit request (a new phone, no localStorage)
+  // still speaks Nashville. An explicit pick then restores HR.
+  const kBare = await admin("GET", "/api/bdev/kit");
+  check("the picked city persists server-side (bare request remembers Nashville)", /Nashville/.test(kBare.data.kit.openers[0].text), kBare.data.kit.openers[0].text.slice(0, 120));
+  const kH = await admin("GET", "/api/bdev/kit?mkt=hampton-roads");
   check("Jeff's Hampton Roads kit is the HR variant", /I'm Jeff/.test(kH.data.kit.openers[0].text) && /Hampton Roads/.test(kH.data.kit.openers[0].text), "");
   check("practice answers derive from the caller's own kit", Array.isArray(kN.data.practice) && kN.data.practice.length > 0 && kN.data.practice.every((p) => !/Tony/.test(String(p.answer || ""))), "");
 }

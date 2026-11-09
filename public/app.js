@@ -2369,7 +2369,13 @@ function renderBottomNav() {
   // here is what stranded founding businesses on the slim
   // shell with no navigation at all). Build -70: staff
   // recruiters get the full rail too.
-  const full = u.status === "approved" && (u.role === "creator" || u.role === "partner" || u.role === "recruiter" || u.role === "pilot_partner" || u.role === "business" || businessAccessState(u) === "active");
+  // Build -161 fix: an active biz dev seat earns the full nav
+  // on the seat axis alone — a seat holder whose CREATOR
+  // application is still pending (Tony's tester profile) got
+  // the seller content with an empty tab bar, stranded on Home.
+  // On the creator side itself (bdShellActive false) the
+  // status rule is unchanged.
+  const full = (u.status === "approved" || bdShellActive()) && (u.role === "creator" || u.role === "partner" || u.role === "recruiter" || u.role === "pilot_partner" || u.role === "business" || businessAccessState(u) === "active");
   document.body.classList.toggle("v3-on", full);
   document.body.classList.toggle("v3-slim", !full);
   renderTopBar2(full);
@@ -6459,7 +6465,13 @@ async function render() {
   // It is one screen, shown once: the exits below clear the step,
   // and a returning pending creator gets the normal pending home.
   if (state.claimStep === 5 && state.claimDone) return renderClaimDone();
-  if (u.status === "pending") return u.role === "business" ? renderBusinessFoundingStatus() : renderPending();
+  // Build -161 fix: an active biz dev seat is a separate axis
+  // from the creator application — a seat holder whose creator
+  // profile is still in review lands in the seller shell, not
+  // on the pending wall (the server already treats the seat
+  // that way; only this wall disagreed). The wall still applies
+  // on the creator side itself, where bdShellActive() is false.
+  if (u.status === "pending" && !bdShellActive()) return u.role === "business" ? renderBusinessFoundingStatus() : renderPending();
   if (u.status === "rejected") return renderRejected();
   // Build -68: approved founding businesses route into the
   // real dashboard like everyone else; the founding wall that
@@ -33930,7 +33942,7 @@ function bdRenderLead(el) {
   </div>
   <div class="panel">
     <h3 style="margin-top:0">What's happened here</h3>
-    ${(l.statusHistory && l.statusHistory.length) ? [...l.statusHistory].reverse().map((h) => `<div class="bd-logrow"><span class="muted small">${esc(String(h.at || "").slice(0, 10))}</span> Status set to ${esc(h.status || "")}${h.by ? ` <span class="muted small">· ${esc(h.by)}</span>` : ""}</div>`).join("") : ""}
+    ${(l.statusHistory && l.statusHistory.length) ? [...l.statusHistory].reverse().map((h) => `<div class="bd-logrow"><span class="muted small">${esc(String(h.at || "").slice(0, 10))}</span> Status set to ${esc(h.status || "")}${h.by && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(h.by) ? ` <span class="muted small">· ${esc(h.by)}</span>` : ""}</div>`).join("") : ""}
     ${(bd.logs || []).length ? [...bd.logs].reverse().map((v) => `<div class="bd-logrow"><span class="muted small">${esc(String(v.visitAt || v.createdAt || "").slice(0, 10))}</span> ${v.type === "price_shown" ? "Price was shown" : v.type === "show_session" ? `Show Mode was used (${v.pages || 0} screens)` : `<strong>${esc(v.outcome || "")}</strong>${v.spokeName ? ` — talked to ${esc(v.spokeName)}` : ""}${v.objections && v.objections.length ? `<br><span class="muted small">Pushed back on: ${esc(v.objections.join(", "))}</span>` : ""}`}</div>`).join("") : ((l.statusHistory && l.statusHistory.length) ? "" : `<p class="muted" style="margin:0">Nothing yet. The first visit starts the story.</p>`)}
   </div>`;
   api("GET", bdPath(`/bdev/leads/${l.id}/oneliner`)).then((d) => {
@@ -34136,31 +34148,35 @@ async function bdPriceEnter(leadId) {
 }
 function bdShowScreens() {
   const d = bd.show.data;
+  // Build -161 fix: the deck speaks the LEAD's market (the show
+  // payload carries it) — a Nashville business must never be
+  // told a Hampton Roads story over a Nashville bench.
+  const mktName = d.marketName || "Hampton Roads";
   const bench = d.bench || [];
   const cards = bench.map((c) => `
     <div class="bd-show-card">
       ${c.photoUrl ? `<img class="bd-show-photo" src="${esc(c.photoUrl)}" alt="" onerror="this.remove()">` : `<div class="bd-show-photo bd-show-mono">${esc(String(c.firstName || "?").charAt(0).toUpperCase())}</div>`}
       <div class="bd-show-cmain">
         <div class="bd-show-cname">${esc(c.firstName || c.name)} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}</div>
-        <div class="muted small">${esc(c.categoryLine)}${c.alsoLine ? " · Also in Hampton Roads" : ""}</div>
+        <div class="muted small">${esc(c.categoryLine)}${c.alsoLine ? ` · Also in ${esc(mktName)}` : ""}</div>
         ${c.reachLine ? `<div class="bd-show-reach">${esc(c.reachLine)}</div>` : ""}
         ${c.areaLine ? `<div class="bd-show-reach">${esc(c.areaLine)}</div>` : ""}
       </div>
     </div>`).join("");
   const af = d.areaFraming;
   return [
-    { title: "Your next regulars are already following people right here in Hampton Roads.", body: `<p>Magpie is a local list of creators — neighbors with local followings. Local shops use them to get local people in the door. You're being invited in early, before we open here.</p>` },
-    { title: "These are founding creators in Hampton Roads.", body: bench.length ? `${cards}${af ? `<p class="bd-show-reach">Based in ${esc(af.label)}: ${af.count} of these creators — together they reach about ${fmtNum(af.combinedNeighbors)} ${af.anyExtrapolated ? "potential neighbors" : "neighbors"}.</p>` : ""}<p class="muted">The founding list is growing every week. Shops that claim a spot now get first pick when we open.</p>` : `<p>The founding list is growing every week — the first creators in this category are being added now. Shops that claim a spot now get first pick when we open.</p>` },
+    { title: `Your next regulars are already following people right here in ${mktName}.`, body: `<p>Magpie is a local list of creators — neighbors with local followings. Local shops use them to get local people in the door. You're being invited in early, before we open here.</p>` },
+    { title: `These are founding creators in ${mktName}.`, body: bench.length ? `${cards}${af ? `<p class="bd-show-reach">Based in ${esc(af.label)}: ${af.count} of these creators — together they reach about ${fmtNum(af.combinedNeighbors)} ${af.anyExtrapolated ? "potential neighbors" : "neighbors"}.</p>` : ""}<p class="muted">The founding list is growing every week. Shops that claim a spot now get first pick when we open.</p>` : `<p>The founding list is growing every week — the first creators in this category are being added now. Shops that claim a spot now get first pick when we open.</p>` },
     { title: "You pick. You approve. Nothing posts without you.", body: `<ol class="bd-show-steps"><li>Invite a creator to come in. Treat them to a visit — a meal, a service, an experience — and they post 1 post + 1 story.</li><li>Or book them at their own listed price for bigger work. They set their rate. (Creators keep 97% of their rate — the 3% is card processing.)</li><li>Every visit is counted at your register with their own code — you'll see exactly who came in because of them.</li></ol><p><strong>You choose every creator. You approve every visit. You see the count.</strong></p>` },
     { title: "We don't guess. We count.", body: `<p>Magpie's match system ranks creators by how many of their followers actually live here — not by who's most famous. When you want an idea, Maggie, our in-app helper, suggests a campaign and names the creators she'd pick for your shop, and why. After a visit, you don't get “good vibes” — you get a count: how many of their people came in and used the code.</p>` },
-    { title: "Hampton Roads founding spots are open now.", body: `<p>We're building the founding creator list for Hampton Roads right now. Shops that claim a founding spot are first in line when we open — first pick of creators, founding pricing locked, and we'll set your page up with you. There's nothing to pay today — paying starts when we open here, and we open when the founding creator roster is full. You're being invited in early.</p>` },
+    { title: `${mktName} founding spots are open now.`, body: `<p>We're building the founding creator list for ${mktName} right now. Shops that claim a founding spot are first in line when we open — first pick of creators, founding pricing locked, and we'll set your page up with you. There's nothing to pay today — paying starts when we open here, and we open when the founding creator roster is full. You're being invited in early.</p>` },
     { title: "Claim your founding spot.", body: BD_PREVIEW ? `
       <form id="bd-show-claim" onsubmit="return bdShowClaim(event)">
         <fieldset disabled>
         <div class="field"><label>Your name</label><input id="bsc-name" autocomplete="name" disabled></div>
         <div class="field"><label>Business name</label><input id="bsc-biz" value="${esc(d.lead.name)}" autocomplete="organization" disabled></div>
         <div class="field"><label>Best phone or Instagram to reach you</label><input id="bsc-contact" disabled></div>
-        <label class="bd-show-check"><input type="checkbox" id="bsc-yes" disabled> <span>Yes — put us on the Hampton Roads founding list.</span></label>
+        <label class="bd-show-check"><input type="checkbox" id="bsc-yes" disabled> <span>Yes — put us on the ${mktName} founding list.</span></label>
         <button type="submit" class="btn bd-show-next" disabled>Claim your founding spot</button>
         </fieldset>
         <p class="muted small">Claims are off while Jeff is looking.</p>
@@ -34171,7 +34187,7 @@ function bdShowScreens() {
         <div class="field"><label>Your name</label><input id="bsc-name" autocomplete="name"></div>
         <div class="field"><label>Business name</label><input id="bsc-biz" value="${esc(d.lead.name)}" autocomplete="organization"></div>
         <div class="field"><label>Best phone or Instagram to reach you</label><input id="bsc-contact"></div>
-        <label class="bd-show-check"><input type="checkbox" id="bsc-yes"> <span>Yes — put us on the Hampton Roads founding list.</span></label>
+        <label class="bd-show-check"><input type="checkbox" id="bsc-yes"> <span>Yes — put us on the ${mktName} founding list.</span></label>
         <button type="submit" class="btn bd-show-next">Claim your founding spot</button>
         <p class="muted small">Or scan the code on the card ${esc(d.repFirstName || "your rep")} leaves you and do it on your own phone. No payment today.</p>
         <p id="bsc-msg" class="small"></p>

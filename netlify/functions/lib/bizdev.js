@@ -719,7 +719,7 @@ function reachLine(pct) {
   return `${tenths} out of 10 of their followers live here`;
 }
 
-async function showBench(marketId, leadCategory, leadArea) {
+async function showBench(marketId, leadCategory, leadArea, marketName) {
   const creators = deps.marketCreators ? await deps.marketCreators(marketId) : { bench: [] };
   const bench = creators.bench || [];
   const want = LEAD_CAT_TO_CREATOR_CATS[leadCategory] || [];
@@ -751,7 +751,7 @@ async function showBench(marketId, leadCategory, leadArea) {
     firstName: c.firstName || c.name || "",
     name: c.name || "",
     handle: c.handle || "",
-    categoryLine: c.community ? `A Hampton Roads ${String((c.categories || [])[0] || "local").toLowerCase()} community` : ((c.categories || [])[0] || "Local creator"),
+    categoryLine: c.community ? `A ${marketName || "Hampton Roads"} ${String((c.categories || [])[0] || "local").toLowerCase()} community` : ((c.categories || [])[0] || "Local creator"),
     reachLine: reachLine(c.localPct),
     reachPct: c.localPct == null ? null : Math.round(Number(c.localPct)),
     neighborCount: typeof c.neighborCount === "number" ? c.neighborCount : null,
@@ -1426,6 +1426,21 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     effSeat = effectiveSeat(seat, reqMkt161);
     if (!effSeat) return err(400, "That city isn't in your book.");
   }
+  // Build -161 fix: the working city is a SEAT-level preference,
+  // not a per-device one — a rep who flips to Nashville at the
+  // desk finds Nashville on the phone. An explicit ?mkt= (already
+  // validated against the seat's own markets above) is
+  // remembered on the seat record; a request with no ?mkt=
+  // falls back to the remembered city, validated the same way.
+  if (reqMkt161 && seatHasMarket(seat, reqMkt161)) {
+    if (seat.lastMarketId !== reqMkt161) {
+      seat.lastMarketId = reqMkt161;
+      await store().set(`bdevrep:${seat.userId}`, seat);
+    }
+  } else if (!reqMkt161 && seat.lastMarketId && seat.lastMarketId !== seat.marketId) {
+    const remembered = effectiveSeat(seat, seat.lastMarketId);
+    if (remembered) effSeat = remembered;
+  }
 
   // GET /bdev/home — the payload builder is shared with HQ's
   // read-only preview (buildRepHome157); behavior is unchanged
@@ -1540,7 +1555,11 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     if (method === "POST" && seg[3] === "status") {
       const status = String(b.status || "");
       if (!STATUSES.includes(status)) return err(400, "Pick a status from the list.");
-      await setLeadStatus(lead, status, seat.userId);
+      // History is rep-facing: record the actor's NAME, never
+      // the raw user id (a UUID rendered on the lead page in
+      // the -161 rendered QA). Older entries already carrying
+      // an id are hidden client-side.
+      await setLeadStatus(lead, status, String(user.name || "").trim() || seat.repCode || "Rep");
       return json(200, { ok: true, lead: repLeadPayload(lead, { full: true }) });
     }
 
@@ -1660,7 +1679,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
 
     if (method === "GET" && seg[3] === "show") {
       if (lead.flags && (lead.flags.doNotContact || lead.flags.jeffHandles)) return err(403, "This lead can't be shown.");
-      const show = await showBench(effSeat.marketId, lead.category, { neighborhood: lead.neighborhood || "", city: lead.city || "" });
+      const show = await showBench(effSeat.marketId, lead.category, { neighborhood: lead.neighborhood || "", city: lead.city || "" }, effSeat.marketName);
       const progress = await marketProgress(effSeat.marketId);
       void progress;
       return json(200, {
@@ -1914,7 +1933,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     if (!lead || lead.marketId !== seat.marketId || lead.assignedRepId !== repId) return err(404, "That lead isn't in this rep's book.");
     const targetUser = await userRecord157(seat.userId);
     const logs = await allLogs(lead.id);
-    const show = await showBench(seat.marketId, lead.category, { neighborhood: lead.neighborhood || "", city: lead.city || "" });
+    const show = await showBench(seat.marketId, lead.category, { neighborhood: lead.neighborhood || "", city: lead.city || "" }, seat.marketName);
     return json(200, {
       preview: true,
       lead: repLeadPayload(lead, { full: true }),
