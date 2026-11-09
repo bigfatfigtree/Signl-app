@@ -852,11 +852,27 @@ async function bdevHealth() {
   const leadsByMarket = {};
   for (const l of leads) leadsByMarket[l.marketId] = (leadsByMarket[l.marketId] || 0) + 1;
   const bgw = await getLead("bgw-williamsburg-dest");
+  // Build -169: per-seat book counts, so the checker surface
+  // shows each rep's book directly (Jeff's Hampton Roads count
+  // after the cleanup, and how many Busch Gardens records sit
+  // in it) instead of market totals alone.
+  const codeByUser = new Map(seats.map((s) => [s.userId, s.repCode]));
+  const books = {};
+  for (const l of leads) {
+    const code = codeByUser.get(l.assignedRepId);
+    if (!code) continue;
+    books[code] = books[code] || {};
+    books[code][l.marketId] = (books[code][l.marketId] || 0) + 1;
+  }
+  const hq = seats.find((s) => s.repCode === "HQ-JEFF");
+  const bgwInJeffBook = hq ? leads.filter((l) => l.assignedRepId === hq.userId && l.marketId === "hampton-roads" && normName(l.name) === "busch gardens williamsburg").length : null;
   return {
     seats: seats.length,
     seatCodes: seats.map((s) => s.repCode).sort(),
     leadsTotal: leads.length,
     leadsByMarket,
+    books,
+    bgwInJeffBook,
     bgwPresent: !!bgw,
     loaderStatus: await loaderStatusRecord(),
   };
@@ -1367,6 +1383,15 @@ const maybeLoadJeffSeat161 = singleFlight(async function () {
   const sources = hrAll.filter((l) => l.assignedRepId !== jeff.id);
   const mine = hrAll.filter((l) => l.assignedRepId === jeff.id);
   const mineByMaster = new Map(mine.map((l) => [l.masterId, l]));
+  // Build -169: a second idempotency key — business identity
+  // (name + city) already in Jeff's book. masterId alone let a
+  // copy OF a copy through: when the same business sat in two
+  // other books (Tony's original and the legacy HR-JEFF seat's
+  // copy of it), each source record spawned its own copy here,
+  // and Jeff's book filled with duplicates of the same business
+  // (126 records in production for a ~33-business universe).
+  const identityOf169 = (l) => `${normName(l.name)}||${normName(l.city || "")}`;
+  const mineIdentity = new Set(mine.map(identityOf169));
   let hrCopied = 0, hrPlaybooksFilled = 0;
   for (const src of sources) {
     const existing = mineByMaster.get(src.id);
@@ -1374,6 +1399,8 @@ const maybeLoadJeffSeat161 = singleFlight(async function () {
       if (!existing.playbook && src.playbook) { existing.playbook = src.playbook; existing.updatedAt = nowIso(); await saveLead(existing); hrPlaybooksFilled++; }
       continue;
     }
+    if (mineIdentity.has(identityOf169(src))) continue; // Build -169: this business is already in Jeff's book under another copy chain
+    mineIdentity.add(identityOf169(src));
     const copy = JSON.parse(JSON.stringify(src));
     copy.id = uuid();
     copy.assignedRepId = jeff.id;
@@ -1458,6 +1485,189 @@ const maybeLoadJeffSeat161 = singleFlight(async function () {
   jeffSeatDone161 = true;
   return true;
 }, jeffFlight167, "jeffSeat161");
+
+// ---------------- Build -169: retire the legacy HR-JEFF seat + dedupe Jeff's books ----------------
+// Live facts (2026-11-09 14:44 ET, Jeff's real admin): THREE
+// active seats — HR-TONY (correct, untouchable), HQ-JEFF
+// (Jeff's real seat on his jeff@joinsignl.com admin) and
+// HR-JEFF (a legacy extra on Jeff's personal account,
+// willjeffrimmer@gmail.com, Hampton Roads, probation). Jeff's
+// HQ Hampton Roads book held 126 leads for a ~33-business
+// universe: the -161 copies step keyed idempotency on masterId
+// alone, so the same business arrived once per copy chain
+// (Tony's original AND the legacy seat's copy of it), and
+// Busch Gardens Williamsburg sat in his book TWICE.
+// This one-time loader, in order:
+//   1. Migrates every lead held by an HR-JEFF seat (a seat
+//      with rep code HR-JEFF on any account other than the
+//      HQ-JEFF holder) into the HQ-JEFF book — same market,
+//      assignedRepId becomes Jeff's, the trail recorded on the
+//      lead (migratedFrom169) — then retires the seat:
+//      active=false, the record PRESERVED for audit, and the
+//      account's seat stamp cleared.
+//   2. Dedupes WITHIN each of Jeff's own books (per market):
+//      same normalized business name + same normalized city
+//      ⇒ one lead. The keeper is the richer record (a fuller
+//      playbook outranks a bare one; a first-generation copy —
+//      masterId still pointing at another rep's lead — wins
+//      ties), and the -161 copies step's business-identity
+//      guard guarantees no deleted copy is ever re-created;
+//      every loser's playbook,
+//      research, contacts, stage progress, founding claim and
+//      logs are merged or re-pointed onto the keeper before
+//      the loser record is deleted, and the merge is recorded
+//      on the keeper (mergedFrom169). Other reps' books are
+//      NEVER touched — Tony's book stays byte-identical,
+//      including his own Busch Gardens original.
+//   3. Records before/after counts in the loader status
+//      (cleanup169), so the result is visible on the HQ
+//      overview and GET /api/verify/counts.
+const CLEANUP_FLAG_169 = "config:bdevCleanup169";
+let cleanupDone169 = false;
+const cleanupFlight169 = {};
+const identity169 = (l) => `${normName(l.name)}||${normName(l.city || "")}`;
+function playbookSections169(pb) {
+  if (!pb || typeof pb !== "object") return 0;
+  return Object.values(pb).filter((v) => v != null && v !== "" && (typeof v !== "object" || Object.keys(v).length)).length;
+}
+function richness169(l, logCounts) {
+  let score = 0;
+  // A fuller playbook (more sections written) outranks a bare
+  // one — when two copies of a business carry different
+  // playbooks, the richer content is what must survive.
+  score += 30 * playbookSections169(l.playbook);
+  if (l.hqResearch) score += 40;
+  if (l.stage && l.stage !== "Not visited yet") score += 60;
+  score += Math.min(50, 5 * ((l.stageHistory || []).length));
+  if (l.founding && l.founding.status && l.founding.status !== "Not claimed") score += 80;
+  for (const k of ["email", "phone1", "phone2", "instagram", "dmName", "address", "website", "secondContact"]) if (l[k]) score += 5;
+  score += Math.min(30, 3 * ((logCounts && logCounts.get(l.id)) || 0));
+  return score;
+}
+const maybeCleanup169 = singleFlight(async function () {
+  if (cleanupDone169) return true;
+  const flag = await store().get(CLEANUP_FLAG_169);
+  if (flag && flag.done) {
+    cleanupDone169 = true;
+    await noteLoaderStatus("cleanup169", { state: "done", detail: "cleanup flag done", migrated: flag.migrated != null ? flag.migrated : null, dupesRemoved: flag.dupesRemoved != null ? flag.dupesRemoved : null, jeffHrAfter: flag.jeffHrAfter != null ? flag.jeffHrAfter : null });
+    return true;
+  }
+  await maybeLoadJeffSeat161(); // chains seed/enrich/dest first; the HQ seat + books must exist
+  const seatRows = (await store().list("bdevrep:")).map((r) => r.value).filter(Boolean);
+  const hqSeat = seatRows.filter((s) => s.active && s.repCode === "HQ-JEFF")
+    .sort((a, b) => String(a.assignedAt || "").localeCompare(String(b.assignedAt || "")))[0];
+  if (!hqSeat) { await noteLoaderStatus("cleanup169", { state: "waiting", detail: "no active HQ-JEFF seat yet" }); return false; }
+  const jeffId = hqSeat.userId;
+  await store().set(CLEANUP_FLAG_169, { claimedAt: nowIso(), done: false, running: true });
+
+  const users = deps.allUsers ? await deps.allUsers() : [];
+  const userById = new Map((users || []).map((u) => [u.id, u]));
+  let leads = await allLeads();
+  const jeffHrBefore = leads.filter((l) => l.assignedRepId === jeffId && l.marketId === "hampton-roads").length;
+
+  // 1. Migrate + retire the legacy HR-JEFF seat(s).
+  const legacySeats = seatRows.filter((s) => s.repCode === "HR-JEFF" && s.userId !== jeffId);
+  let migrated = 0;
+  const retiredCodes = [];
+  for (const legacy of legacySeats) {
+    for (const lead of leads.filter((l) => l.assignedRepId === legacy.userId)) {
+      lead.migratedFrom169 = {
+        fromUserId: legacy.userId, fromRepCode: legacy.repCode, at: nowIso(),
+        fromAttributionRepCode: (lead.attribution && lead.attribution.repCode) || null,
+      };
+      lead.assignedRepId = jeffId;
+      if (lead.attribution) lead.attribution = { ...lead.attribution, repCode: "HQ-JEFF" };
+      await saveLead(lead);
+      migrated += 1;
+    }
+    if (legacy.active) {
+      legacy.active = false;
+      legacy.retiredAt = nowIso();
+      legacy.retiredBy169 = "Build -169: legacy duplicate of the HQ-JEFF seat; its book was migrated into HQ-JEFF. Record preserved for audit.";
+      await store().set(`bdevrep:${legacy.userId}`, legacy);
+      retiredCodes.push(legacy.repCode);
+    }
+    const legacyUser = userById.get(legacy.userId);
+    if (legacyUser && legacyUser.bizdevSeat && legacyUser.bizdevSeat.active) await stampUserSeat(legacyUser, null);
+  }
+
+  // 2. Dedupe within Jeff's own books, per market.
+  leads = await allLeads();
+  const byId = new Map(leads.map((l) => [l.id, l]));
+  const logRows = await store().list("bdevlog:");
+  const logCounts = new Map();
+  for (const r of logRows) { const v = r.value; if (v && v.leadId) logCounts.set(v.leadId, (logCounts.get(v.leadId) || 0) + 1); }
+  const groups = new Map();
+  for (const l of leads.filter((x) => x.assignedRepId === jeffId)) {
+    const k = `${l.marketId}||${identity169(l)}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(l);
+  }
+  const FILL_FIELDS = ["shortName", "subType", "neighborhood", "address", "website", "websiteNote", "dmName", "dmRole", "dmRoleLabel", "secondContact", "usuallyHere", "phone1", "phone1Note", "phone2", "phone2Note", "email", "emailNote", "emailEvidence", "instagram", "instagramNote", "playbook", "hqResearch", "deskLead", "championName"];
+  let dupesRemoved = 0;
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const scored = group.map((l) => {
+      const src = l.masterId && l.masterId !== l.id ? byId.get(l.masterId) : null;
+      // A first-generation copy (its masterId still points at
+      // another rep's lead) is preferred, all else equal — but
+      // only as a tiebreak-weight: content richness outranks
+      // it, and the -161 copies step's business-identity guard
+      // is what guarantees no copy is ever re-created.
+      const sourceCover = src && src.assignedRepId !== jeffId ? 100 : (src ? 50 : 0);
+      return { l, score: sourceCover + richness169(l, logCounts) };
+    }).sort((a, b) => (b.score - a.score)
+      || String(a.l.createdAt || "").localeCompare(String(b.l.createdAt || ""))
+      || String(a.l.id).localeCompare(String(b.l.id)));
+    const keeper = scored[0].l;
+    const losers = scored.slice(1).map((s) => s.l);
+    for (const loser of losers) {
+      for (const k of FILL_FIELDS) {
+        if ((keeper[k] == null || keeper[k] === "") && loser[k] != null && loser[k] !== "") keeper[k] = loser[k];
+      }
+      // Playbook + research merge section by section: the
+      // keeper's sections win, the loser's fill any gap, so no
+      // written section is lost with the deleted record.
+      if (keeper.playbook && loser.playbook && typeof keeper.playbook === "object" && typeof loser.playbook === "object") {
+        keeper.playbook = { ...loser.playbook, ...keeper.playbook };
+      }
+      if (keeper.hqResearch && loser.hqResearch && typeof keeper.hqResearch === "object" && typeof loser.hqResearch === "object") {
+        keeper.hqResearch = { ...loser.hqResearch, ...keeper.hqResearch };
+      }
+      keeper.flags = {
+        doNotContact: !!((keeper.flags && keeper.flags.doNotContact) || (loser.flags && loser.flags.doNotContact)),
+        jeffHandles: !!((keeper.flags && keeper.flags.jeffHandles) || (loser.flags && loser.flags.jeffHandles)),
+        chain: !!((keeper.flags && keeper.flags.chain) || (loser.flags && loser.flags.chain)),
+      };
+      if ((!keeper.founding || keeper.founding.status === "Not claimed") && loser.founding && loser.founding.status && loser.founding.status !== "Not claimed") keeper.founding = loser.founding;
+      if ((!keeper.stage || keeper.stage === "Not visited yet") && loser.stage && loser.stage !== "Not visited yet") {
+        keeper.stage = loser.stage;
+        keeper.stageHistory = loser.stageHistory || keeper.stageHistory;
+      }
+      if ((!keeper.nextAction || !keeper.nextAction.date) && loser.nextAction && loser.nextAction.date) keeper.nextAction = loser.nextAction;
+      if (!keeper.lastTouch && loser.lastTouch) keeper.lastTouch = loser.lastTouch;
+      keeper.mergedFrom169 = [...(keeper.mergedFrom169 || []), { id: loser.id, masterId: loser.masterId || null, name: loser.name, at: nowIso() }];
+      for (const r of logRows) {
+        const v = r.value;
+        if (v && v.leadId === loser.id) { v.leadId = keeper.id; await store().set(r.key, v); }
+      }
+      await store().del(`bdevlead:${loser.id}`);
+      dupesRemoved += 1;
+    }
+    await saveLead(keeper);
+  }
+
+  leads = await allLeads();
+  const jeffHr = leads.filter((l) => l.assignedRepId === jeffId && l.marketId === "hampton-roads");
+  const jeffNash = leads.filter((l) => l.assignedRepId === jeffId && l.marketId === "nashville");
+  const bgwInJeffBook = jeffHr.filter((l) => normName(l.name) === "busch gardens williamsburg").length;
+  const counts = { migrated, retiredSeats: retiredCodes, dupesRemoved, jeffHrBefore, jeffHrAfter: jeffHr.length, jeffNashvilleAfter: jeffNash.length, bgwInJeffBook };
+  await store().set(CLEANUP_FLAG_169, { done: true, at: nowIso(), ...counts });
+  cleanupDone169 = true;
+  await noteLoaderStatus("cleanup169", { state: "done", detail: "HR-JEFF retired; its book migrated into HQ-JEFF; Jeff's books deduped by business identity", ...counts });
+  await logEvent({ type: "bdev_cleanup_169", actorId: null, actorRole: "system", subjectId: jeffId, market: "Hampton Roads", data: counts });
+  return true;
+}, cleanupFlight169, "cleanup169");
 
 // The daily sweep (POST /admin/bdev/sweep): one alarm record per
 // rep per day while follow-ups sit overdue (same-day overwrite =
@@ -2373,7 +2583,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
 }
 
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, runBizdevSweep, bdevHealth,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, runBizdevSweep, bdevHealth,
   claimPageHtml, seatOf, KIT,
   _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable },
 };

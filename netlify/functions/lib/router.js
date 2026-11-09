@@ -4888,7 +4888,16 @@ async function handleVerifyCounts(event) {
   // read failure reports null, never breaks the counts.
   let bdev167 = null;
   try { bdev167 = await bizdev.bdevHealth(); } catch (e) { bdev167 = null; }
-  return json(200, { totals, markets, recount, agree, bdev: bdev167 });
+  // Build -169: the staff-marking diagnostic rides the same
+  // surface — candidates found (shape only: role, thread
+  // ownership, email domain), which record was marked and why
+  // the others were not — so a third silent failure of the
+  // self-thread fix is impossible: the evidence is one read
+  // away. Null until the -169 loader has run (it fires on the
+  // first platform-messages overview read).
+  let staff169 = null;
+  try { staff169 = await store.get(STAFF_DIAG_KEY_169); } catch (e) { staff169 = null; }
+  return json(200, { totals, markets, recount, agree, bdev: bdev167, staff: staff169 });
 }
 
 // The Admin home preview tabs' targets (Build -126), resolved in
@@ -7077,6 +7086,141 @@ async function maybeMarkStaff165() {
   }
   await store.set(STAFF_MARKS_KEY_165, { done: true, at: nowIso(), marked });
   staffMarksDone165 = true;
+}
+
+// ---------- staff-owned threads, round 3 (Build -169) ----------
+// Live verification after -165 shipped: Jeff's own thread STILL
+// flagged needs-reply ("2 conversations are waiting", the false
+// one his @Brojaysimpson thread). The -165 rule keys on the
+// primary admin's exact name and marks NOBODY when two creator
+// records carry it — and production carries exactly that shape:
+// Jeff has more than one record (the jeff@joinsignl.com admin, a
+// personal account that holds a seller seat), so a second
+// "Jeff Rimmer" creator record is enough to trip the fail-safe
+// forever. Two more -165 assumptions production breaks: its
+// name normalizer never collapses internal whitespace, and its
+// primary-admin pick dies when no admin matches ADMIN_EMAIL
+// and several admin records exist.
+// Build -169 keeps the -165 marker and arms, and replaces the
+// DECISION with a deterministic ranking over stable evidence:
+//   0. an email that matches ANY admin account's email;
+//   1. owns a platform thread the team has written in — the
+//      conversation the admin's own outbound messages went to
+//      (the self-test thread: the platform side has sent TO
+//      this account);
+//   2. owns any platform thread at all;
+//   3. earliest created.
+// Candidates are creator records whose normalized name matches
+// ANY admin record's name (normalization now collapses
+// whitespace), plus any non-admin record caught by arm 0. If
+// the top two candidates are indistinguishable on EVERY key
+// (same arms, same thread evidence, same createdAt) the loader
+// still marks NEITHER — it never guesses — but now it says so.
+// Every run writes a diagnostic (config:staffDiag169): the
+// candidates found with non-sensitive shape (role, thread
+// ownership, email DOMAIN only), which record was marked and
+// why the others were not. The diagnostic rides
+// GET /api/verify/counts as the `staff` block, the same
+// visibility pattern Build -167 gave the Biz Dev loaders.
+const STAFF_MARKS_KEY_169 = "config:staffMarks169";
+const STAFF_DIAG_KEY_169 = "config:staffDiag169";
+let staffMarksDone169 = false;
+const normStaff169 = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+function emailDomain169(email) {
+  const e = String(email || "");
+  const at = e.lastIndexOf("@");
+  return at > -1 ? e.slice(at + 1).toLowerCase() : null;
+}
+async function maybeMarkStaff169() {
+  if (staffMarksDone169) return;
+  if (await store.get(STAFF_MARKS_KEY_169)) { staffMarksDone169 = true; return; }
+  const users = await allUsers();
+  const admins = users.filter((u) => u && u.role === "admin");
+  const adminEmails = new Set(admins.map((u) => String(u.email || "").toLowerCase()).filter(Boolean));
+  const adminNames = new Set(admins.map((u) => normStaff169(u.name)).filter(Boolean));
+  // Thread evidence, one pass over the platform messages: who
+  // owns a thread, and whose thread the team has written in.
+  const threadOf = new Map();
+  for (const r of await store.list("message:")) {
+    const m = r.value;
+    if (!m || !m.platform) continue;
+    const peerId = m.fromId === PLATFORM_PEER_ID ? m.toId : m.fromId;
+    if (!peerId || peerId === PLATFORM_PEER_ID) continue;
+    const t = threadOf.get(peerId) || { any: false, outbound: false };
+    t.any = true;
+    if (m.fromId === PLATFORM_PEER_ID) t.outbound = true;
+    threadOf.set(peerId, t);
+  }
+  const existingMarks = users.filter((u) => u && u.isStaff === true).map((u) => u.id);
+  const candidates = [];
+  for (const u of users) {
+    if (!u || u.role === "admin" || u.isStaff === true) continue;
+    const emailMatch = !!u.email && adminEmails.has(String(u.email).toLowerCase());
+    const nameMatch = u.role === "creator" && !!normStaff169(u.name) && adminNames.has(normStaff169(u.name));
+    if (!emailMatch && !nameMatch) continue;
+    const t = threadOf.get(u.id) || { any: false, outbound: false };
+    candidates.push({
+      user: u, emailMatch, nameMatch,
+      hasThread: t.any, hasOutbound: t.outbound,
+      createdAt: u.createdAt ? String(u.createdAt) : "9999",
+    });
+  }
+  const rankKey = (c) => [c.emailMatch ? 0 : 1, c.hasOutbound ? 0 : 1, c.hasThread ? 0 : 1, c.createdAt, String(c.user.id)];
+  candidates.sort((a, b) => {
+    const ka = rankKey(a), kb = rankKey(b);
+    for (let i = 0; i < ka.length; i += 1) { if (ka[i] < kb[i]) return -1; if (ka[i] > kb[i]) return 1; }
+    return 0;
+  });
+  const winner = candidates[0] || null;
+  const runnerUp = candidates[1] || null;
+  const tied = (a, b) => !!a && !!b
+    && a.emailMatch === b.emailMatch && a.hasOutbound === b.hasOutbound
+    && a.hasThread === b.hasThread && a.createdAt === b.createdAt;
+  const ambiguous = tied(winner, runnerUp);
+  const whyFor = (c) => {
+    if (c.emailMatch) return "email matches an admin account";
+    if (c.hasOutbound) return "the same-name profile that owns a platform thread the team has written in (the self-test thread)";
+    if (c.hasThread) return "the same-name profile that owns a platform thread";
+    return "the only creator profile carrying an admin account's name";
+  };
+  let markedId = null;
+  if (winner && !ambiguous) {
+    const u = winner.user;
+    u.isStaff = true;
+    u.staffMarked169 = { at: nowIso(), why: whyFor(winner) };
+    await store.set(`user:${u.id}`, u);
+    markedId = u.id;
+  }
+  const diag = {
+    at: nowIso(),
+    rule: "staff169-v1: email match > owns a thread the team wrote in > owns any platform thread > earliest created; an exact tie on every key marks neither",
+    admins: { count: admins.length, names: [...adminNames] },
+    existingMarks,
+    candidates: candidates.map((c) => ({
+      id: c.user.id,
+      role: c.user.role,
+      emailDomain: emailDomain169(c.user.email),
+      emailMatch: c.emailMatch,
+      nameMatch: c.nameMatch,
+      hasThread: c.hasThread,
+      hasOutbound: c.hasOutbound,
+      createdAt: c.user.createdAt || null,
+      decision: markedId === c.user.id ? "marked" : "not marked",
+      why: markedId === c.user.id
+        ? whyFor(c)
+        : (ambiguous && tied(c, winner)
+          ? "indistinguishable from the top candidate on every key (same evidence, same createdAt) — the loader never guesses"
+          : (winner && markedId
+            ? `outranked by the marked record (${whyFor(winner)})`
+            : "no candidate could be marked")),
+    })),
+    markedId,
+    markedWhy: markedId && winner ? whyFor(winner) : null,
+    ambiguous,
+  };
+  await store.set(STAFF_DIAG_KEY_169, diag);
+  await store.set(STAFF_MARKS_KEY_169, { done: true, at: nowIso(), marked: markedId ? 1 : 0, ambiguous });
+  staffMarksDone169 = true;
 }
 
 // ---------- admin broadcasts (Build -152, reworked -153) ----------
@@ -23150,6 +23294,11 @@ async function route(event) {
     // -157 enrichment settles so the copies carry their playbooks;
     // idempotent on re-runs.
     (async () => { try { await bizdev.maybeEnrich157(); await bizdev.maybeLoadJeffSeat161(); } catch (e) { /* Jeff seat load is best-effort */ } })(),
+    // Build -169: retire the legacy HR-JEFF seat, migrate its
+    // book into HQ-JEFF and dedupe Jeff's books by business
+    // identity. Chains the Jeff-seat load first; claimed-flag
+    // guarded, best-effort like every loader here.
+    (async () => { try { await bizdev.maybeLoadJeffSeat161(); await bizdev.maybeCleanup169(); } catch (e) { /* Biz Dev cleanup is best-effort */ } })(),
     // One-time profileComplete backfill, claimed-flag guarded.
     (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
     // One-time Build -61 public-page backfill, claimed-flag guarded.
@@ -27532,6 +27681,12 @@ async function route(event) {
         return json(200, { user: view, creator: view, messages });
       }
       await maybeMarkStaff165();
+      // Build -169: the -165 pass can still mark nobody in
+      // production's shape (duplicate same-name records trip
+      // its fail-safe); the -169 pass ranks the candidates on
+      // thread evidence and marks deterministically, writing
+      // its diagnostic either way.
+      await maybeMarkStaff169();
       const users = await allUsers();
       const usersById = new Map(users.map((u) => [u.id, u]));
       // Build -164: a thread the team itself owns — the admin's
