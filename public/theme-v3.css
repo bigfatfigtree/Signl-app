@@ -1474,6 +1474,11 @@ table { max-width: 100%; }
   body.v3-slim .tb2-actions{margin-left:0}
 }
 
+/* Build -170: Orders + Seller Kit ride the desktop rail; the
+   phone bar keeps its five slots (the -168 drawer and the Menu
+   page carry those two sections on phones). */
+@media (max-width:1023px){ body.bd-shell .tab-item.bd-rail-extra{display:none} }
+
 
 /* ================= Maggie (2026-11-07): Sig becomes Maggie.
    Her mark is the magpie from Jeff's canonical logo master,

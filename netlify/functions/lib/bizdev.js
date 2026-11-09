@@ -1765,6 +1765,134 @@ const maybeCleanup169 = singleFlight(async function () {
   return true;
 }, cleanupFlight169, "cleanup169");
 
+// Build -170 amendment (Jeff's order, 2026-11-09, from the live
+// check after -169 shipped): -169 deduped Jeff's books but
+// Tony's book (HR-TONY) still holds ~63 records for the same 33
+// Hampton Roads businesses. This one-time loader mirrors
+// maybeCleanup169's rules, scoped to the HR-TONY book ONLY:
+// dedupe within Tony's book per market by normalized business
+// name + city; the keeper is the richer record (richness169,
+// plus a cover bonus for the record other books' copies point
+// at via masterId, so Jeff's copies keep their source link);
+// playbook/research merge section-by-section; statuses, status
+// history and notes preserved; logs, claims, escalations and
+// activations re-pointed onto the keeper before the loser is
+// deleted. Every other book stays byte-identical. Idempotent:
+// the flag makes re-runs no-ops.
+const CLEANUP_FLAG_TONY170 = "config:bdevCleanupTony170";
+// (No in-process latch: the stored flag alone gates re-runs,
+// so a reset flag always re-runs the cleanup.)
+const cleanupTonyFlight170 = {};
+const identityTony170 = (l) => `${normName(l.name)}||${normName(l.city || "")}`;
+const maybeCleanupTony170 = singleFlight(async function () {
+  // The stored flag is the durable truth (checked first, like
+  // the loaders above): a completed cleanup never re-runs, and
+  // if the flag is ever reset the cleanup runs again.
+  const flag = await store().get(CLEANUP_FLAG_TONY170);
+  if (flag && flag.done) {
+    await noteLoaderStatus("cleanupTony170", { state: "done", detail: "cleanup flag done", dupesRemoved: flag.dupesRemoved != null ? flag.dupesRemoved : null, tonyAfter: flag.tonyAfter != null ? flag.tonyAfter : null });
+    return true;
+  }
+  await maybeLoadJeffSeat161(); // chains seed/enrich/dest; Tony's seat + book must exist
+  await maybeCleanup169();      // Jeff's books first (flag-gated no-op once done)
+  const seatRows = (await store().list("bdevrep:")).map((r) => r.value).filter(Boolean);
+  const tonySeat = seatRows.filter((s) => s.active && s.repCode === "HR-TONY")
+    .sort((a, b) => String(a.assignedAt || "").localeCompare(String(b.assignedAt || "")))[0];
+  if (!tonySeat) { await noteLoaderStatus("cleanupTony170", { state: "waiting", detail: "no active HR-TONY seat yet" }); return false; }
+  const tonyId = tonySeat.userId;
+  await store().set(CLEANUP_FLAG_TONY170, { claimedAt: nowIso(), done: false, running: true });
+
+  let leads = await allLeads({ fresh: true });
+  const tonyBefore = leads.filter((l) => l.assignedRepId === tonyId).length;
+  const byId = new Map(leads.map((l) => [l.id, l]));
+  // Records in OTHER books whose masterId points at a Tony
+  // record: that record is the surviving source if it can be.
+  const referencedByOthers = new Set();
+  for (const l of leads) if (l.assignedRepId !== tonyId && l.masterId) referencedByOthers.add(l.masterId);
+  const logRows = await store().list("bdevlog:");
+  const logCounts = new Map();
+  for (const r of logRows) { const v = r.value; if (v && v.leadId) logCounts.set(v.leadId, (logCounts.get(v.leadId) || 0) + 1); }
+  const groups = new Map();
+  for (const l of leads.filter((x) => x.assignedRepId === tonyId)) {
+    const k = `${l.marketId}||${identityTony170(l)}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(l);
+  }
+  const FILL_FIELDS = ["shortName", "subType", "neighborhood", "address", "website", "websiteNote", "dmName", "dmRole", "dmRoleLabel", "secondContact", "usuallyHere", "phone1", "phone1Note", "phone2", "phone2Note", "email", "emailNote", "emailEvidence", "instagram", "instagramNote", "playbook", "hqResearch", "deskLead", "championName", "repNotes"];
+  const mergeHistory = (a, b) => {
+    const seen = new Set(); const out = [];
+    for (const e of [...(a || []), ...(b || [])]) {
+      const k = `${e && e.at}|${e && (e.status || e.stage || "")}|${e && (e.by || "")}`;
+      if (seen.has(k)) continue; seen.add(k); out.push(e);
+    }
+    return out.sort((x, y) => String((x && x.at) || "").localeCompare(String((y && y.at) || "")));
+  };
+  let dupesRemoved = 0;
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const scored = group.map((l) => ({ l, score: (referencedByOthers.has(l.id) ? 100 : 0) + richness169(l, logCounts) }))
+      .sort((a, b) => (b.score - a.score)
+        || String(a.l.createdAt || "").localeCompare(String(b.l.createdAt || ""))
+        || String(a.l.id).localeCompare(String(b.l.id)));
+    const keeper = scored[0].l;
+    const losers = scored.slice(1).map((s) => s.l);
+    for (const loser of losers) {
+      for (const k of FILL_FIELDS) {
+        if ((keeper[k] == null || keeper[k] === "") && loser[k] != null && loser[k] !== "") keeper[k] = loser[k];
+      }
+      if (keeper.playbook && loser.playbook && typeof keeper.playbook === "object" && typeof loser.playbook === "object") {
+        keeper.playbook = { ...loser.playbook, ...keeper.playbook };
+      }
+      if (keeper.hqResearch && loser.hqResearch && typeof keeper.hqResearch === "object" && typeof loser.hqResearch === "object") {
+        keeper.hqResearch = { ...loser.hqResearch, ...keeper.hqResearch };
+      }
+      keeper.flags = {
+        doNotContact: !!((keeper.flags && keeper.flags.doNotContact) || (loser.flags && loser.flags.doNotContact)),
+        jeffHandles: !!((keeper.flags && keeper.flags.jeffHandles) || (loser.flags && loser.flags.jeffHandles)),
+        chain: !!((keeper.flags && keeper.flags.chain) || (loser.flags && loser.flags.chain)),
+      };
+      if ((!keeper.founding || keeper.founding.status === "Not claimed") && loser.founding && loser.founding.status && loser.founding.status !== "Not claimed") keeper.founding = loser.founding;
+      if ((!keeper.stage || keeper.stage === "Not visited yet") && loser.stage && loser.stage !== "Not visited yet") {
+        keeper.stage = loser.stage;
+        keeper.stageHistory = mergeHistory(loser.stageHistory, keeper.stageHistory);
+      } else if ((loser.stageHistory || []).length) {
+        keeper.stageHistory = mergeHistory(keeper.stageHistory, loser.stageHistory);
+      }
+      // Statuses preserved exactly: adopt the loser's status
+      // when the keeper carries none, and always merge the
+      // status histories (chronological, de-duplicated).
+      if (!keeper.status && loser.status) keeper.status = loser.status;
+      if ((loser.statusHistory || []).length || (keeper.statusHistory || []).length) {
+        keeper.statusHistory = mergeHistory(keeper.statusHistory, loser.statusHistory);
+      }
+      if ((!keeper.nextAction || !keeper.nextAction.date) && loser.nextAction && loser.nextAction.date) keeper.nextAction = loser.nextAction;
+      if (!keeper.lastTouch && loser.lastTouch) keeper.lastTouch = loser.lastTouch;
+      keeper.mergedFrom170 = [...(keeper.mergedFrom170 || []), { id: loser.id, masterId: loser.masterId || null, name: loser.name, at: nowIso() }];
+      for (const r of logRows) {
+        const v = r.value;
+        if (v && v.leadId === loser.id) { v.leadId = keeper.id; await store().set(r.key, v); }
+      }
+      for (const prefix of ["bdevclaim:", "bdevesc:", "bdevact:"]) {
+        for (const r of await store().list(prefix)) {
+          const v = r.value;
+          if (v && v.leadId === loser.id) { v.leadId = keeper.id; await store().set(r.key, v); }
+        }
+      }
+      await store().del(`bdevlead:${loser.id}`);
+      dupesRemoved += 1;
+    }
+    await saveLead(keeper);
+  }
+
+  leads = await allLeads({ fresh: true });
+  const tonyAfter = leads.filter((l) => l.assignedRepId === tonyId).length;
+  const counts = { tonyBefore, tonyAfter, dupesRemoved };
+  await store().set(CLEANUP_FLAG_TONY170, { done: true, at: nowIso(), ...counts });
+  await noteLoaderStatus("cleanupTony170", { state: "done", detail: "Tony's book deduped by business identity (mirrors the -169 cleanup)", ...counts });
+  await logEvent({ type: "bdev_cleanup_tony_170", actorId: null, actorRole: "system", subjectId: tonyId, market: "Hampton Roads", data: counts });
+  return true;
+}, cleanupTonyFlight170, "cleanupTony170");
+
 // The daily sweep (POST /admin/bdev/sweep): one alarm record per
 // rep per day while follow-ups sit overdue (same-day overwrite =
 // idempotent), plus Monday scoreboards for the week just ended.
@@ -2444,20 +2572,20 @@ function claimPageHtml(query) {
 
 // ---------------- HQ / Admin API ----------------
 
-function adminLeadPayload(lead, opts) {
-  // Build -170: the LIST shape (opts.slim) drops the two heavy
-  // per-lead bodies — the rendered playbook and the HQ research
-  // notes. The Manage list renders neither (it shows the
-  // hasPlaybook flag only); at 303 leads they were ~85% of an
-  // ~890KB payload. Single-lead readers keep the full shape.
-  const slim = !!(opts && opts.slim);
+function adminLeadPayload(lead) {
+  // Build -170 note: a slimmed list shape was tried here and
+  // reverted the same day — verify-build157 locks HQ research
+  // notes into this payload ("on the admin payload only"), and
+  // -170's rule is that -155..-169 behavior stays green. The
+  // speed win on this endpoint is the read memo (370 record
+  // fetches -> ~3 on repeat), not the payload trim.
   return {
-    ...repLeadPayload(lead, { full: !slim }),
+    ...repLeadPayload(lead, { full: true }),
     marketId: lead.marketId, assignedRepId: lead.assignedRepId,
     hqTier: lead.hqTier, dmNameRaw: lead.dmName || null,
     status: statusOf(lead),
     statusHistory: lead.statusHistory || [],
-    hqResearch: slim ? undefined : lead.hqResearch || null,
+    hqResearch: lead.hqResearch || null,
     hasPlaybook: !!lead.playbook,
     attribution: lead.attribution || null, hqDecision: lead.hqDecision || null,
     notFitReason: lead.notFitReason || null, updatedAt: lead.updatedAt,
@@ -2606,7 +2734,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       statusRollup, prewarm, scoreboards, alarmSummary,
       reps: seats.map((s) => { const u = byId.get(s.userId); return { userId: s.userId, name: u ? u.name : "", email: u ? u.email : "", marketId: s.marketId, marketName: s.marketName, repCode: s.repCode, seatState: s.seatState, vestedAt: s.vestedAt || null, warningMonth: s.warningMonth || null, atRisk: s.atRisk || null, hqSeat: !!s.hqSeat, markets: seatMarkets(s) }; }),
       unconfirmedClaims: claims.filter((c) => c.status === "waiting HQ confirm"),
-      escalations, pendingLeads: pendingLeads.map((l) => adminLeadPayload(l, { slim: true })), pendingReferrals,
+      escalations, pendingLeads: pendingLeads.map((l) => adminLeadPayload(l)), pendingReferrals,
       disputes, liability: liabilityCalc,
       dnc: await dncRecords(),
     });
@@ -2633,7 +2761,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     if (qp.neighborhood) leads = leads.filter((l) => (l.neighborhood || "") === qp.neighborhood);
     if (qp.status) leads = leads.filter((l) => statusOf(l) === qp.status);
     leads.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    return json(200, { leads: leads.map((l) => adminLeadPayload(l, { slim: true })), facets });
+    return json(200, { leads: leads.map((l) => adminLeadPayload(l)), facets });
   }
 
   if (method === "POST" && sub === "reps" && seg[3] === "assign") {
@@ -2770,7 +2898,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
 }
 
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, runBizdevSweep, bdevHealth,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, runBizdevSweep, bdevHealth,
   claimPageHtml, seatOf, KIT,
   _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable },
 };

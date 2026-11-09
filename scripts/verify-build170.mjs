@@ -160,7 +160,7 @@ check("overview repeat read collapses (fetches)", ov2.fetches < Math.max(6, ov1.
 
 const al = await admin("GET", "/api/admin/bdev/leads");
 check("admin bdev leads 200 with the converged book", al.status === 200 && al.body.leads && al.body.leads.length === BASE_LEADS, `${al.status}/${al.body.leads && al.body.leads.length}`);
-check("admin lead payload drops hqResearch bodies", !al.raw.includes("hqResearch") && !al.raw.includes("Long research notes"), "payload still carries research");
+check("admin lead payload keeps the -157 contract (hqResearch rides along)", al.raw.includes("hqResearch") && al.raw.includes("Long research notes"), "payload lost the research bodies -157 locks in");
 check("admin lead payload keeps the hasPlaybook flag", al.body.leads.every((l) => typeof l.hasPlaybook === "boolean"));
 check("admin lead payload keeps contact fields", (() => { const m = al.body.leads.find((l) => l.id === "v170-l1"); return m && m.dmName === "Maria Santos" && m.email === "maria@mariastacos.example" && m.phone1 === "(757) 555-0119"; })());
 
@@ -245,6 +245,49 @@ const alEnd = await admin("GET", "/api/admin/bdev/leads");
 check("converged book preserved + the one added", alEnd.body.leads.length === BASE_LEADS + 1, String(alEnd.body.leads.length));
 const l1 = await store.get("bdevlead:v170-l1");
 check("an original lead record is byte-stable in its contact fields", l1.dmName === "Maria Santos" && l1.email === "maria@mariastacos.example" && l1.phone1 === "(757) 555-0119" && !!l1.playbook && !!l1.hqResearch);
+
+// ---------------- Tony book dedupe (-170 amendment) ----------------
+console.log("— crm: tony dedupe —");
+const bizdev = require("../netlify/functions/lib/bizdev.js");
+const tonyLeadsNow = async () => (await store.list("bdevlead:")).map((r) => r.value).filter((l) => l && l.assignedRepId === TONY);
+const jeffFixtureBefore = {};
+for (const id of ["v170-l4", "v170-l5", "v170-l6"]) jeffFixtureBefore[id] = JSON.stringify(await store.get(`bdevlead:${id}`));
+const tonyCountBefore = (await tonyLeadsNow()).length;
+// Group A: the bare copy carries the status + history + a log;
+// the richer copy carries the playbook + contact info.
+const dupA1 = lead("v170-dup-a1", TONY, "hampton-roads", "Hampton Roads", { name: "QA Duplicate Taqueria", category: "Restaurants & Dining", neighborhood: "Ocean View", city: "Norfolk", status: "Contacted" });
+dupA1.statusHistory = [{ status: "Contacted", at: "2026-11-05T10:00:00.000Z", by: TONY }];
+const dupA2 = lead("v170-dup-a2", TONY, "hampton-roads", "Hampton Roads", { name: "QA Duplicate Taqueria", category: "Restaurants & Dining", neighborhood: "Ocean View", city: "Norfolk", email: "dup@taqueria.example", phone1: "(757) 555-0131", playbook: true });
+// Group B: the bare copy is the one Jeff's book points at via
+// masterId, so it must survive and inherit the playbook.
+const dupB1 = lead("v170-dup-b1", TONY, "hampton-roads", "Hampton Roads", { name: "QA Duplicate Barbers", category: "Beauty & Grooming", neighborhood: "Oceanfront", city: "Virginia Beach", playbook: true });
+const dupB2 = lead("v170-dup-b2", TONY, "hampton-roads", "Hampton Roads", { name: "QA Duplicate Barbers", category: "Beauty & Grooming", neighborhood: "Oceanfront", city: "Virginia Beach" });
+const refCopy = lead("v170-ref-copy", ADMIN, "hampton-roads", "Hampton Roads", { name: "QA Duplicate Barbers — HQ copy", category: "Beauty & Grooming", city: "Virginia Beach" });
+refCopy.masterId = "v170-dup-b2";
+for (const l of [dupA1, dupA2, dupB1, dupB2, refCopy]) await store.set(`bdevlead:${l.id}`, l);
+await store.set("bdevlog:v170-log-dup", { id: "v170-log-dup", leadId: "v170-dup-a1", repId: TONY, marketId: "hampton-roads", createdAt: "2026-11-05T10:00:00.000Z" });
+await store.set("bdevclaim:v170-claim-dup", { id: "v170-claim-dup", leadId: "v170-dup-a1", repId: TONY, status: "waiting HQ confirm", createdAt: "2026-11-05T10:00:00.000Z" });
+await store.del("config:bdevCleanupTony170");
+await bizdev.maybeCleanupTony170();
+const tonyAfterDedupe = await tonyLeadsNow();
+check("tony dedupe removes exactly the 2 duplicate records", tonyAfterDedupe.length === tonyCountBefore + 2, `${tonyCountBefore} -> ${tonyAfterDedupe.length}`);
+const survA = await store.get("bdevlead:v170-dup-a2");
+check("group A: the richer record survives", !!survA && !(await store.get("bdevlead:v170-dup-a1")));
+check("group A: the loser's status + history are preserved on the keeper", !!survA && survA.status === "Contacted" && (survA.statusHistory || []).length === 1 && survA.mergedFrom170 && survA.mergedFrom170.some((m) => m.id === "v170-dup-a1"));
+check("group A: logs + claims re-pointed to the keeper", (await store.get("bdevlog:v170-log-dup")).leadId === "v170-dup-a2" && (await store.get("bdevclaim:v170-claim-dup")).leadId === "v170-dup-a2");
+const survB = await store.get("bdevlead:v170-dup-b2");
+check("group B: the masterId-referenced record survives and inherits the playbook", !!survB && !!survB.playbook && !(await store.get("bdevlead:v170-dup-b1")));
+let jeffUntouched = true;
+for (const id of ["v170-l4", "v170-l5", "v170-l6"]) if (JSON.stringify(await store.get(`bdevlead:${id}`)) !== jeffFixtureBefore[id]) jeffUntouched = false;
+check("jeff's fixture leads are byte-identical after tony's dedupe", jeffUntouched);
+const tonyFlag = await store.get("config:bdevCleanupTony170");
+check("cleanup flag records the counts", !!tonyFlag && tonyFlag.done === true && tonyFlag.dupesRemoved === 2 && tonyFlag.tonyAfter === tonyCountBefore + 2, JSON.stringify(tonyFlag));
+const ovD = await admin("GET", "/api/admin/bdev/overview");
+check("loader status surface shows cleanupTony170 done", ovD.status === 200 && ovD.body.loaderStatus && ovD.body.loaderStatus.cleanupTony170 && ovD.body.loaderStatus.cleanupTony170.state === "done", String(ovD.status) + " " + JSON.stringify(ovD.body.loaderStatus || {}).slice(0, 200));
+const hashTony = async () => JSON.stringify((await tonyLeadsNow()).map((l) => [l.id, l.updatedAt, (l.mergedFrom170 || []).length]).sort());
+const hashBefore = await hashTony();
+await bizdev.maybeCleanupTony170();
+check("re-running the cleanup is a no-op", (await hashTony()) === hashBefore);
 
 console.log(`\nverify-build170: ${passed} passed, ${failed} failed`);
 if (failures.length) { console.log("FAILURES:\n - " + failures.join("\n - ")); process.exit(1); }

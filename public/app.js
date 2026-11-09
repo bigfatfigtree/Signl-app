@@ -3104,6 +3104,8 @@ function bdOpenDrawer168() {
     { title: "Sell", rows: [
       dest("home", "Home", "Your day, your next best doors", "BD Home"),
       dest("users", "My Leads", "Your book, one business at a time", "BD Leads"),
+      dest("book", "Contacts", "Your rolodex — every person, one place", "BD Contacts"),
+      dest("receipt", "Orders", "Orders you have recorded", "BD Orders"),
       dest("deck", "Seller Kit", "The cards and pages you show", "BD Kit"),
       dest("stats", "My Money", "What you have earned so far", "BD Money"),
     ] },
@@ -3342,10 +3344,10 @@ function tabBarHtml() {
   if (bdShellActive()) {
     const t = state.tab || "BD Home";
     const items155 = [
-      ["BD Home", "home", "Home"], ["BD Leads", "users", "My Leads"], ["BD Contacts", "book", "Contacts"], ["BD Money", "stats", "My Money"], ["BD Menu", "menu", "Menu"],
+      ["BD Home", "home", "Home"], ["BD Leads", "users", "My Leads"], ["BD Contacts", "book", "Contacts"], ["BD Orders", "receipt", "Orders"], ["BD Kit", "deck", "Seller Kit"], ["BD Money", "stats", "My Money"], ["BD Menu", "menu", "Menu"],
     ];
     const btns = items155.map(([tab, icon, label], ix) => `
-    <button type="button" class="tab-item tab-bar137 ${t === tab ? "on" : ""}" style="--bar-ord:${ix};order:${ix}" onclick="${tab === "BD Menu" ? "return bdMenuTap168()" : `return go('dashboard','${tab}')`}" aria-label="${label}">
+    <button type="button" class="tab-item tab-bar137 ${t === tab ? "on" : ""}${tab === "BD Orders" || tab === "BD Kit" ? " bd-rail-extra" : ""}" style="--bar-ord:${ix};order:${ix}" onclick="${tab === "BD Menu" ? "return bdMenuTap168()" : `return go('dashboard','${tab}')`}" aria-label="${label}">
       <span class="tab-ic">${bnIcon(icon)}</span>
       <span class="tab-label"><span class="lbl-full">${label}</span><span class="lbl-short">${label}</span></span>
     </button>`).join("");
