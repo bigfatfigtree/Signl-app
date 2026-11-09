@@ -8259,8 +8259,31 @@ function validateBestWork(input) {
   if (links.length > 3) return { ok: false, error: "Add up to 3 best work links" };
   return { ok: true, links };
 }
+// Read-side filter for stored best-work links (Build -159):
+// profile saves validate strictly (validateBestWork above, and
+// its all-or-nothing failure shape has no links list), but a
+// legacy or imported record can carry an entry that fails
+// validation today — a non-platform URL, an over-long string, a
+// fourth link. bestWorkCards used to dereference the validator's
+// links and 500 every surface that renders a creator card (the
+// founding page first). Read paths never throw on stored data:
+// the entries that pass the same per-link checks, in stored
+// order, deduped, capped at 3. A failing entry is skipped
+// (treated as absent); a valid record renders exactly as before.
+function storedBestWorkLinks(creator) {
+  const stored = creator && Array.isArray(creator.bestWork) ? creator.bestWork : [];
+  const links = [];
+  for (const raw of stored) {
+    const s = String(raw == null ? "" : raw).trim();
+    if (!s || s.length > 300) continue;
+    if (!bestWorkPlatform(s)) continue;
+    if (!links.includes(s)) links.push(s);
+    if (links.length >= 3) break;
+  }
+  return links;
+}
 function bestWorkCards(creator) {
-  const links = validateBestWork(creator && creator.bestWork).links;
+  const links = storedBestWorkLinks(creator);
   // Build -79: the shared embed descriptor rides every card, so the
   // in-app profile, the creator's own preview, and the server-rendered
   // public page all embed (or fall back) identically.

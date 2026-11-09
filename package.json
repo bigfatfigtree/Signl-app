@@ -116,6 +116,7 @@
     "verify-navparity": "node scripts/verify-navparity.mjs",
     "verify-build157": "node scripts/verify-build157.mjs",
     "verify-build158": "node scripts/verify-build158.mjs",
+    "verify-build159": "node scripts/verify-build159.mjs",
     "verify-sigprivacy": "node scripts/verify-sigprivacy.mjs",
     "verify-sigphrasing": "node scripts/verify-sigphrasing.mjs",
     "verify-build131": "node scripts/verify-build131.mjs",
