@@ -410,6 +410,21 @@ function buildBusinessFacts(d) {
       lastVisitAt: r.lastVisitAt || null, rebookedSince: !!r.rebookedSince,
     })),
     regularsCount: (d.regulars || []).length,
+    // Build -154: counted customers per creator at THIS
+    // business (firsts + came-backs, the counted chokepoint,
+    // computed in the router) and Maggie's current Lineup for
+    // the business (top five matched creators with why-lines
+    // and the combined neighbor count). Both are the business's
+    // own scoped records only.
+    customersByCreator: (d.customersByCreator || []).map((r) => ({ creatorId: r.creatorId, name: r.name || "", handle: r.handle || "", customers: r.customers || 0 })),
+    lineup: d.lineup ? {
+      creators: (d.lineup.creators || []).map((c) => ({ userId: c.userId, name: c.name || "", handle: c.handle || "", why: c.why || "", neighborCount: c.neighborCount || 0, paidRate: c.paidRate != null ? c.paidRate : null, compOpen: c.compOpen !== false })),
+      combinedNeighbors: d.lineup.combinedNeighbors || 0,
+      anyExtrapolated: !!d.lineup.anyExtrapolated,
+      compCount: d.lineup.compCount || 0,
+      paidCount: d.lineup.paidCount || 0,
+      paidTotal: d.lineup.paidTotal || 0,
+    } : null,
     licencesExpiring: (d.licencesExpiring || []).map((l) => ({
       postId: l.postId, creatorName: l.creatorName || "", creatorHandle: l.creatorHandle || "",
       title: l.title || "", kind: l.kind || "licensed", fee: l.fee != null ? l.fee : null,
@@ -532,6 +547,11 @@ function buildCreatorFacts(d) {
     })(),
     profileComplete: !!pc.complete,
     missingLabels: d.missingLabels || [],
+    // Build -154: Regulars brought in — this creator's counted
+    // customers (firsts + came-backs) from the counted
+    // chokepoint, computed in the router. Zero is a true answer
+    // and is stated as zero, never rounded into a story.
+    regularsBroughtIn: d.regularsBroughtIn ? { customers: d.regularsBroughtIn.customers || 0, cameBacks: d.regularsBroughtIn.cameBacks || 0, total: d.regularsBroughtIn.total || 0 } : { customers: 0, cameBacks: 0, total: 0 },
     offersOpen: d.openOffers || 0,
     directInvites: d.directInvites || 0,
     applicationsPending: o.applicationsPending || 0,
@@ -667,6 +687,8 @@ function factsLines(role, f) {
     if (f.planName) lines.push(`Their plan is ${f.planName} at ${money(f.planPrice)} a month with ${f.visitsPerMonth} creator visits a month and a ${money(f.foundingCredit)} founding credit off the first month. This month they have used ${fmt(f.visitsUsed)} of ${fmt(f.visitsAllowance)} visits (${fmt(f.visitsRemaining)} left${f.visitsCarried ? `, including ${fmt(f.visitsCarried)} rolled over from last month` : ""}).`);
     lines.push(`Their numbers right now: ${fmt(f.offersLive)} offers live, ${fmt(f.draftOffers)} drafts, ${fmt(f.applicantsWaiting)} applicants waiting on their answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live. Counted register dollars so far: ${money(f.countedDollars)} (counted means rung up through visit codes). Modeled estimate on top of that: ${money(f.modeledDollars)}, and that figure is an estimate, never a counted sale. Creators with finished profiles in their market: ${fmt(f.rosterInMarket)}.`);
     if (f.intentTotal > 0) lines.push(`Post intent on their live posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded by the creators, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come. These are recorded figures, not counted sales. Their Return score across those posts is ${f.returnScore != null ? fmt(f.returnScore) + " out of 100" : "not scored yet (not enough data)"}.`);
+    if (f.customersByCreator && f.customersByCreator.length) lines.push(`Counted customers by creator at their business (real register counts only — first visits plus came-backs, from the same counted records Results reads): ${f.customersByCreator.slice(0, 5).map((r) => `${r.name}${r.handle ? " (@" + r.handle + ")" : ""} brought in ${fmt(r.customers)} counted ${plural(r.customers, "customer")}`).join("; ")}. The full per-creator figures sit in Results, beside posts delivered.`);
+    if (f.lineup && f.lineup.creators.length) lines.push(`Their Lineup right now (Maggie's top ${f.lineup.creators.length} matched creators for their business, ranked by the match engine on local reach): ${f.lineup.creators.map((c) => `${c.name}${c.handle ? " (@" + c.handle + ")" : ""} — ${c.why}`).join("; ")}. Together they reach about ${fmt(f.lineup.combinedNeighbors)} ${f.lineup.anyExtrapolated ? "potential neighbors (some of that count is estimated at each creator's confirmed local rate, and is labeled potential for that reason)" : "neighbors"}. The Lineup is optional packaging in Find creators: each creator still visits on their own, and Book all five simply sends five separate invites in one go. It never replaces booking one creator at a time.`);
     if (f.regularsCount) lines.push(`Their Regulars (creators who completed a visit and posted): ${f.regulars.map((r) => `${r.name}${r.handle ? " (@" + r.handle + ")" : ""}, ${fmt(r.visits)} ${plural(r.visits, "visit")}, last visit ${r.lastVisitAt ? String(r.lastVisitAt).slice(0, 10) : "on record"}${r.rebookedSince ? ", already rebooked since" : ""}`).join("; ")}. Regulars live in the Regulars view, where Book again clones the last visit's deal into a new draft.`);
     if (f.licencesExpiring && f.licencesExpiring.length) lines.push(`Licences ending soon: ${f.licencesExpiring.map((l) => `${l.creatorName || "a creator"}'s post "${l.title}" ends ${l.endsOn} (${l.ended ? "already ended" : fmt(Math.max(0, l.daysLeft)) + " days left"})`).join("; ")}. Renewing goes through the creator: a fresh request at their listed fee for 90 days, approved by them, never automatic.`);
     if (f.paidPostingTerms && f.paidPostingTerms.length) lines.push(`Agreed posting terms on their paid bookings: ${f.paidPostingTerms.map((t) => `${t.creatorName} ("${t.title}"): ${t.line}`).join("; ")}. A paid visit's post clock runs off these agreed terms, not the comped ladder.`);
@@ -705,6 +727,9 @@ function factsLines(role, f) {
     ? `${label}: connected${r.accountLabel ? ` as ${r.accountLabel}` : ""}${r.lastSyncAt ? `, followers last checked ${String(r.lastSyncAt).slice(0, 10)}` : ""}${r.verified ? " (count synced)" : ""}`
     : `${label}: not connected${gate ? ` (${gate})` : ""}`;
   lines.push(`Connected accounts: ${cnRow("Instagram", cn.instagram)}; ${cnRow("YouTube", cn.youtube, cn.ytConfigured ? "connect is open on their Profile" : "connect is being switched on")}; TikTok: connect is being prepared, so the count stays self-reported; Facebook: connect is covered by the same Meta review as Instagram. Google sign-in: ${cn.google && cn.google.linked ? `linked${cn.google.email ? ` as ${cn.google.email}` : ""}, so they can sign in with Google` : "not linked; they sign in with email and password, and can link Google in Settings"}.`);
+  lines.push(f.regularsBroughtIn && f.regularsBroughtIn.total > 0
+    ? `Regulars they have brought in: ${fmt(f.regularsBroughtIn.total)} counted ${plural(f.regularsBroughtIn.total, "customer")} through the door in total — ${fmt(f.regularsBroughtIn.customers)} first counted visits${f.regularsBroughtIn.cameBacks ? ` and ${fmt(f.regularsBroughtIn.cameBacks)} came back within a month` : ""}. Counted means a customer used their code at a register and Magpie logged it; nothing is estimated. The counter sits on their Numbers page and, once it is above zero, on their public booking page.`
+    : "Regulars they have brought in: 0 counted so far. The count starts the first time a customer uses their code at a business's register; it is never estimated or filled in.");
   if (f.intentTotal > 0) lines.push(`Intent on their own posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come.`);
   if (f.paidRate) lines.push(`Their listed paid rate is ${cmoney(f, f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${cmoney(f, f.licenseFee)}` : ""}.`);
   else if (f.rateStarting) lines.push(`They have not set a paid rate yet. The Profile rate boxes pre-fill a starting point for their ${f.rateStarting.tier} tier: paid rate ${cmoney(f, f.rateStarting.paidRate)} and licensing fee ${cmoney(f, f.rateStarting.licensingFee)}. Those are starting points only, filled in because the fields were blank. They are editable, they are not a price the creator has to use, and nothing is stored until the creator saves.`);
@@ -1162,6 +1187,27 @@ function answerBusiness(f, q, t) {
     const visitsText = `${fmt(f.visitsBooked)} visits booked so far: ${fmt(f.visitsRedeemed)} redeemed at the counter and ${fmt(f.postsLive)} posts live from them.`;
     return f.visitsBooked ? linked(visitsText, "Open Visits and posts", "biz-visits") : visitsText;
   }
+  // The Lineup (Build -154): Maggie's top five for this
+  // business, named with their why-lines. The card itself —
+  // with Book all five on it — lives in Find creators; this
+  // answer proposes it and walks there. Optional, always:
+  // nothing about the answer pushes the bundle over booking
+  // one creator.
+  if (hasPhrase(t, "lineup", "line up", "book all five", "book all 5", "who should i book", "who should we book", "best five", "top five creators", "top 5 creators")) {
+    if (!f.lineup || !f.lineup.creators.length) return linked("No Lineup yet: a Lineup needs at least two creators in your market who match your business well, and there are not two there yet. Booking one creator at a time works exactly as always in Find creators.", "Find creators", "biz-discover");
+    const names = f.lineup.creators.map((c) => `${c.name}${c.handle ? " (@" + c.handle + ")" : ""} — ${c.why}`).join("; ");
+    return linked(`Your Lineup: the five creators who match ${f.businessName} best right now. ${names}. Together they reach about ${fmt(f.lineup.combinedNeighbors)} ${f.lineup.anyExtrapolated ? "potential neighbors" : "neighbors"}. A Lineup is just packaging: each of them visits on their own, like any booking, and Book all five on the card in Find creators sends the five separate invites in one go. It is optional — book one, book all five, or skip it entirely.`, "See your Lineup in Find creators", "biz-discover");
+  }
+  // Who brought me the most customers (Build -154): counted
+  // customers per creator at THIS business only, from the
+  // counted chokepoint. Zero is answered as zero.
+  if (hasPhrase(t, "brought me the most", "brought in the most", "brought the most", "most customers", "who brought me", "which creator brought", "brought me customers", "brings me the most", "brought in customers")) {
+    const rows = f.customersByCreator || [];
+    if (!rows.length) return linked("No counted customers yet, for any creator. That count starts the first time a follower uses a creator's code at your register, and from then on Results shows it per creator, beside their posts. Nothing is estimated into it.", "See Results", "biz-results");
+    const top = rows[0];
+    const rest = rows.slice(1, 4).map((r) => `${r.name}${r.handle ? " (@" + r.handle + ")" : ""} with ${fmt(r.customers)}`).join("; ");
+    return linked(`${top.name}${top.handle ? " (@" + top.handle + ")" : ""} has brought you the most customers: ${fmt(top.customers)} counted at your register${rest ? `. Behind them: ${rest}` : ""}. Counted means rung up through their visit codes — the same figures Results shows per creator, beside posts delivered.`, "See Results", "biz-results");
+  }
   // My Regulars (Build -95)
   if (hasWord(t, "regular", "regulars") || hasPhrase(t, "book again", "rebook", "visited before", "been here before", "came back", "who has visited", "creators who visited")) {
     if (!f.regularsCount) return linked("No Regulars yet. A creator becomes one of your Regulars the day a visit with them is completed and their post is live. Then they sit in your Regulars view with the deal that ran and a Book again button.", "Open Regulars", "biz-regulars");
@@ -1230,6 +1276,14 @@ function answerCreator(f, q, t) {
       if (f.listedMarkets && f.listedMarkets.length > 1) s += ` You are listed in ${fmt(f.listedMarkets.length)} markets on those shares.`;
       return linked(s, "See my audience", "cr-profile");
     }
+  }
+  // Regulars brought in (Build -154): the creator's own counted
+  // customers, from the counted chokepoint. Zero is answered as
+  // zero, with the plain starts-counting line.
+  if (hasPhrase(t, "how many regulars", "regulars have i", "regulars did i", "my regulars", "brought in", "customers have i brought", "customers did i bring", "people have i brought", "customers i brought", "regulars brought")) {
+    const r = f.regularsBroughtIn || { customers: 0, cameBacks: 0, total: 0 };
+    if (!r.total) return linked(`None counted yet. Your Regulars count starts the first time a customer uses your code at a business's register${f.marketLive ? "" : " — for you, that is when your market opens and your first visits run"}. It only ever counts real register redemptions, so there is no number to show before the first one lands. It lives on your Numbers page.`, "See my Numbers", "cr-numbers");
+    return linked(`Your Regulars brought in count is ${fmt(r.total)}: ${fmt(r.customers)} first counted ${plural(r.customers, "visit")}${r.cameBacks ? ` and ${fmt(r.cameBacks)} came back within a month` : ""}. Counted means they used your code at the register and Magpie logged it; nothing is estimated. The counter sits on your Numbers page and on your public booking page.`, "See my Numbers", "cr-numbers");
   }
   // Paid posting terms (Phase C, Build -112): read back from
   // the creator's own booking records. Placed before the
@@ -1795,6 +1849,9 @@ function buildHomeState(role, f) {
     if (f.postsOwed && f.postsOwed.length) chips.push(`${fmt(f.postsOwed.length)} ${plural(f.postsOwed.length, "post")} owed`);
     if (f.applicationsPending) chips.push(`${fmt(f.applicationsPending)} ${plural(f.applicationsPending, "application")} waiting on an answer`);
     if (f.licenseRequestsPending) chips.push(`${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} waiting`);
+    // Build -154: the Regulars scoreboard as a home chip —
+    // real counted records only; at zero the chip stays silent.
+    if (f.regularsBroughtIn && f.regularsBroughtIn.total > 0) chips.push(`${fmt(f.regularsBroughtIn.total)} ${plural(f.regularsBroughtIn.total, "Regular")} brought in`);
     // Build -132: a deal waiting on this creator expires on its
     // own — it prompts while it is real, and only then.
     if (f.deals && f.deals.waitingOnMe && f.deals.waitingOnMe.length) chips.push(`${fmt(f.deals.waitingOnMe.length)} ${plural(f.deals.waitingOnMe.length, "deal")} waiting on your answer`);

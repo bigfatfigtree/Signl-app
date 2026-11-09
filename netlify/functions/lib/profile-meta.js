@@ -281,8 +281,15 @@ function profileBodyHtml(p, place) {
         </div>
         <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${[...bd.segments].sort((a, b) => (a.market === profileViewOf(p).market ? -1 : b.market === profileViewOf(p).market ? 1 : b.pct - a.pct)).map((s) => { const cnt = followersForPct(s.pct, p.totalAudience); return `${escHtml(s.market)} ${Number(s.pct) || 0}%${cnt ? ` &middot; ${cnt} followers` : ""}`; }).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. ${(() => { const vSegs = bd.segments.filter((s) => s.verified).map((s) => escHtml(s.market)); return vSegs.length === 0 ? "Self-reported by the creator." : vSegs.length === bd.segments.length ? "Verified from Instagram." : `${vSegs.join(" and ")} verified from Instagram; the rest is self-reported by the creator.`; })()}</p>
       </div>` : "";
-  const proof = p.proof && p.proof.visitsCompleted > 0 ? `
-      <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on Magpie</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real Magpie visits, counted by Magpie, not claimed by the creator.</p></div>` : "";
+  // Regulars (Build -154): the counted customers this creator
+  // brought through the door, from the same public proof
+  // payload. The payload's forming gate nulls the counts while
+  // they would expose a single business's register, and the
+  // line renders only above zero — pre-launch and pre-first-
+  // redemption, the honest state is that the line is absent.
+  const regularsTotal = p.proof && typeof p.proof.customersCounted === "number" ? p.proof.customersCounted + (typeof p.proof.cameBacks === "number" ? p.proof.cameBacks : 0) : 0;
+  const proof = p.proof && (p.proof.visitsCompleted > 0 || regularsTotal > 0) ? `
+      <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on Magpie</span></p>${p.proof.visitsCompleted > 0 ? `<p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p>` : ""}${regularsTotal > 0 ? `<p style="margin:8px 0 0"><strong>${regularsTotal.toLocaleString("en-US")} Regulars brought in</strong> — real customers counted at the register through this creator's code.</p>` : ""}<p class="small muted" style="margin:6px 0 0">From this creator's real Magpie visits, counted by Magpie, not claimed by the creator.</p></div>` : "";
   // Client-parity blocks (Build -92): lines the in-app render
   // has always shown under the categories — realtor farm areas,
   // the creator's streets, comp openness — plus, after the rate

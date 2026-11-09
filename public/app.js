@@ -664,6 +664,14 @@ function followersForPct(pct, total) {
 // The public name line (Build -68): first name only, pronouns
 // beside it when set; a record with no real first name renders
 // exactly as it did.
+// Regulars (Build -154): counted customers on a public proof
+// payload — firsts plus came-backs. The payload's forming gate
+// nulls the counts while they would expose one business's
+// register; null reads as zero here and the line stays hidden.
+function regularsTotalOf(proof) {
+  if (!proof || typeof proof.customersCounted !== "number") return 0;
+  return proof.customersCounted + (typeof proof.cameBacks === "number" ? proof.cameBacks : 0);
+}
 function profileDisplayName(p) {
   if (p.firstName) return p.pronouns ? `${p.firstName} \u00B7 ${p.pronouns}` : String(p.firstName);
   return p.name || "";
@@ -822,7 +830,7 @@ async function renderPublicProfile() {
           : `<div class="big">${view.pct}%</div><div class="lbl">of their audience is local to ${esc(view.market)}</div>${followersForPct(view.pct, total) ? `<div style="font-weight:800;margin-top:2px">${followersForPct(view.pct, total)} followers</div>` : ""}${total > 0 ? `<div class="cc-neighbors">That&rsquo;s about ${fmtFull(Math.round((view.pct / 100) * total))} neighbors who could actually walk through your door.</div>` : ""}<div class="src">${bd && bd.segments && bd.segments.some((s) => s.market === view.market && s.verified) ? `<span class="badge ok">Verified from Instagram</span>` : (p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
       </div>
       ${breakdownHtml}
-      ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on Magpie</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real Magpie visits, counted by Magpie, not claimed by the creator.</p></div>` : ""}
+      ${p.proof && (p.proof.visitsCompleted > 0 || regularsTotalOf(p.proof) > 0) ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on Magpie</span></p>${p.proof.visitsCompleted > 0 ? `<p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p>` : ""}${regularsTotalOf(p.proof) > 0 ? `<p style="margin:8px 0 0"><strong>${fmtNum(regularsTotalOf(p.proof))} Regulars brought in</strong> — real customers counted at the register through this creator's code.</p>` : ""}<p class="small muted" style="margin:6px 0 0">From this creator's real Magpie visits, counted by Magpie, not claimed by the creator.</p></div>` : ""}
       ${p.engagement && p.engagement.postsWithMetrics >= 3 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Post engagement</span></p><p style="margin:8px 0 0"><strong>${Number(p.engagement.totals.views || 0).toLocaleString("en-US")} views &middot; ${Number(p.engagement.totals.likes || 0).toLocaleString("en-US")} likes &middot; ${Number(p.engagement.totals.shares || 0).toLocaleString("en-US")} shares &middot; ${Number(p.engagement.totals.saves || 0).toLocaleString("en-US")} saves</strong></p><p class="small muted" style="margin:4px 0 0">Per post on average: ${Number(p.engagement.averages.views || 0).toLocaleString("en-US")} views, ${Number(p.engagement.averages.likes || 0).toLocaleString("en-US")} likes, ${Number(p.engagement.averages.shares || 0).toLocaleString("en-US")} shares, ${Number(p.engagement.averages.saves || 0).toLocaleString("en-US")} saves. From ${p.engagement.postsWithMetrics} Magpie posts with reported numbers. Recorded: the creator's own reported figures.</p></div>` : ""}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
@@ -1946,6 +1954,11 @@ function dealRowsHtml(o) {
   }
   if (o.includes) main.push(["Included", esc(o.includes)]);
   if (o.experience) main.push(["Experience", esc(o.experience)]);
+  // Build -154: the neighbor special the business attached, in
+  // the deal facts where the creator decides — followers who
+  // come in with the creator's code get the perk, and each one
+  // counts toward the creator's Regulars.
+  if (o.neighborSpecial) main.push(["For your followers", `Neighbor special: ${esc(o.neighborSpecial)} — followers who come in with your code get it, and they count toward your Regulars`]);
   // Phase A4 (M1): a paid deal's Post row never states a window —
   // its timing is the agreed posting terms on the row right
   // below, not the comped 48-hour standard. Comped rows unchanged.
@@ -6285,6 +6298,9 @@ function go(view, tab) {
   // is kept (state.offerDraft survives re-renders); only the
   // direct targeting ends when the business walks away from it.
   if (tab && tab !== "My Offers" && tab !== "Campaign Setup") state.offerTarget = null;
+  // Build -154: a Lineup book-all in progress ends the same
+  // way when the business walks away from the composer.
+  if (tab && tab !== "My Offers" && tab !== "Campaign Setup") state.lineupTargets = null;
   // Build -146: the discover brief belongs to the Discover
   // visit that produced it. Walking to any other tab ends it,
   // so a booking started elsewhere never inherits it.
@@ -12008,7 +12024,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
         ${(() => { const pills = stackList(c).filter((x) => x.hasLink); return pills.length ? `<div class="cc-platforms">${pills.map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}${x.synced ? " &middot; Synced" : ""}</span>`).join("")}</div>` : ""; })()}
       </div>
     </div>
-    ${(!adminView && !preview) ? `<div class="pdp-topacts"><button type="button" class="btn" onclick="startOffer('${c.userId}')">Book ${esc(firstName)}</button><button type="button" class="btn ghost" id="pdp-save-top" onclick="return pdpSaveToggle('${c.userId}')">${c.isFavorite ? "Saved" : "Save"}</button><button type="button" class="btn ghost" onclick="openThread('${c.userId}')">Message</button></div>` : ""}
+    ${(!adminView && !preview) ? `<div class="pdp-topacts"><button type="button" class="btn" onclick="startOffer('${c.userId}')">Book ${esc(firstName)}</button>${c.haveBack && state.user && state.user.role === "business" ? `<button type="button" class="btn" onclick="return haveThemBack('${c.userId}', this)">${esc(c.haveBack.label)}</button>` : ""}<button type="button" class="btn ghost" id="pdp-save-top" onclick="return pdpSaveToggle('${c.userId}')">${c.isFavorite ? "Saved" : "Save"}</button><button type="button" class="btn ghost" onclick="openThread('${c.userId}')">Message</button></div>${c.haveBack && state.user && state.user.role === "business" ? `<p class="small muted" style="margin-top:6px">"${esc(c.haveBack.label)}" copies your last visit's terms into a new draft. Nothing sends until you check it and publish.</p>` : ""}` : ""}
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">Greyed out in search and unable to take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. Offers can still be sent; accepting reopens next week.</span></p>` : ""}
     ${whatYouGetHtml(c)}
@@ -16411,6 +16427,37 @@ async function sendDeal(creatorId) {
   } catch (e) { if (note) note.textContent = e.message; }
 }
 
+// The creator's Lineup card (Build -154): when a direct invite
+// arrived as part of a business's Lineup, the invite carries
+// the snapshot — the five faces, the business, the combined
+// neighbor count — plus a saveable card. The invite itself is
+// unchanged: the creator's own, accepted or declined alone.
+function lineupCreatorBlockHtml(o) {
+  const lu = o.lineup;
+  const members = lu.members || [];
+  const nWord = members.length === 5 ? "five" : String(members.length);
+  const faces = members.map((m) => `<span title="${esc(m.name)}" style="flex:none;width:40px;height:40px;border-radius:50%;overflow:hidden;background:#E3F5EA;display:inline-flex;align-items:center;justify-content:center">${m.photoUrl ? `<img src="${esc(m.photoUrl)}" alt="" style="width:40px;height:40px;object-fit:cover;display:block">` : `<span style="font-weight:800">${esc((m.name || "").trim().charAt(0).toUpperCase() || "M")}</span>`}</span>`).join("");
+  return `<div class="notice blue" style="margin-top:10px">
+    <strong>You're in the Lineup for ${esc(lu.businessName || o.businessName)}</strong>
+    <div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap">${faces}</div>
+    <p class="small" style="margin:0">Maggie picked ${nWord} local creators for ${esc(lu.businessName || o.businessName)} — together you reach about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential neighbors" : "neighbors"}. You each visit on your own; this invite is yours alone, like any booking.</p>
+    <p style="margin:8px 0 0"><button type="button" class="btn small-btn ghost" onclick="return lineupShareCard('${o.id}')">Save my Lineup card</button></p>
+  </div>`;
+}
+function lineupShareCard(offerId) {
+  const o = (state._lineupOffers || {})[offerId];
+  if (!o || !o.lineup) return false;
+  const lu = o.lineup;
+  const others = (lu.members || []).filter((m) => m.userId !== (state.user && state.user.id)).map((m) => m.name).join(" · ");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><text x="540" y="300" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#5F7265" text-anchor="middle">I'M IN THE LINEUP</text><text x="540" y="430" font-family="Arial, sans-serif" font-size="76" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc(lu.businessName || o.businessName || "A local business")}</text><text x="540" y="540" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">with ${esc(others || "four other local creators")}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#0B0D0C" text-anchor="middle">Together: about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential neighbors" : "neighbors"}</text><text x="540" y="880" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">Picked by Maggie · Magpie</text></svg>`;
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "magpie-lineup-card.svg";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return false;
+}
 async function loadDirectOffers() {
   const direct = document.getElementById("direct-offers");
   if (!direct) return;
@@ -16427,6 +16474,8 @@ async function loadDirectOffers() {
     // (perfection pass, 2026-10-26).
     const bookedOfferIds = new Set((bkData.bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
     const mine = (data.offers || []).filter((o) => o.lane !== "open");
+    state._lineupOffers = {};
+    for (const o of mine) if (o.lineup) state._lineupOffers[o.id] = o;
     if (!mine.length) {
       direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No invites yet</h3><p>When a business sends an offer straight to you, it lands here. Offers open to every creator in your market live in Find offers.</p></div>`;
       return;
@@ -16441,6 +16490,7 @@ async function loadDirectOffers() {
             <div class="slot-meta"><span>${o.bookedCount}/${o.spots} spots booked</span><span>${o.creatorId ? "Sent directly to you" : "Open to your market"}</span></div>
           </div>
         </div>
+        ${o.lineup ? lineupCreatorBlockHtml(o) : ""}
         <div class="slot-value"><span class="sv-num">${o.kind === "coupon" ? esc(couponFaceLabelClient(o.coupon)) : `$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}`}</span><span class="sv-lbl">${o.kind === "paid" ? "Your rate · you keep 97%" : o.kind === "coupon" ? "Coupon value" : "Comp value"}</span></div>
         <div class="slot-deal">
         ${dealRowsHtml(o)}
@@ -19875,6 +19925,25 @@ async function regularSaveNote(creatorId, btn) {
   } catch (e) { if (ok) ok.textContent = e.message; }
   return false;
 }
+// Build -154: Have them back — the same Book again draft clone,
+// started from the creator's page. One tap copies the last
+// visit's terms into a new draft in Campaigns; nothing sends
+// until the business checks it and publishes.
+async function haveThemBack(creatorId, btn) {
+  const label = btn ? btn.textContent : "Have them back";
+  if (btn) { btn.disabled = true; btn.textContent = "Drafting..."; }
+  try {
+    const d = await api("POST", `/me/regulars/${creatorId}/book-again`, {});
+    state.offersSeg = "drafts";
+    toast(`Draft created: "${d.offer.title}" has the same terms as the last visit. Nothing was sent — open the draft to check it and publish when you are ready.`);
+    return go("dashboard", "My Offers");
+  } catch (e) {
+    toast(e.message, true);
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+  return false;
+}
+
 async function regularBookAgain(creatorId, btn) {
   if (btn) { btn.disabled = true; btn.textContent = "Drafting..."; }
   try {
@@ -20139,9 +20208,16 @@ function crStatsHtml(d) {
   const pts = s.points || {};
   const lvlName = typeof pts.level === "string" ? pts.level : ((pts.level || {}).name || "");
   const pointsStrip = `<p class="small" style="margin:10px 0 0">Momentum: <strong>${fmtNum(pts.total || 0)} points</strong>${lvlName ? ` &middot; Level: <strong>${esc(lvlName)}</strong>` : ""} (all time — points never reset by period). ${POINTS_WHY_SHORT}</p>`;
+  // Regulars (Build -154): the counted-customers scoreboard.
+  // All time, counted-only; at zero it says plainly how the
+  // count starts instead of dressing up an empty number.
+  const reg = s.regulars || { customers: 0, cameBacks: 0, total: 0 };
+  const regularsPanel = `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 4px">Regulars brought in</h3>${reg.total > 0
+    ? `<div style="font-size:2rem;font-weight:800;line-height:1.1">${fmtNum(reg.total)}</div><p class="small" style="margin:4px 0 0">customers counted at the register through your code, all time — ${fmtNum(reg.customers)} first counted ${reg.customers === 1 ? "visit" : "visits"}${reg.cameBacks ? ` and ${fmtNum(reg.cameBacks)} who came back within a month` : ""}. Counted means rung up with your code; nothing is estimated.</p>`
+    : `<p class="small" style="margin:0">None counted yet. Your count starts the first time a customer uses your code at a business's register — it only ever counts real redemptions.</p>`}</div>`;
   if (!s.hasData) {
     return `<div class="panel">${head}
-      <p class="small" style="margin:8px 0 0">Nothing has landed yet. When businesses book you and your posts go live, this fills in with your money — held, released and paid, each with its reason — plus your offers, deals and comps for the period you pick.</p>${pointsStrip}</div>`;
+      <p class="small" style="margin:8px 0 0">Nothing has landed yet. When businesses book you and your posts go live, this fills in with your money — held, released and paid, each with its reason — plus your offers, deals and comps for the period you pick.</p>${pointsStrip}</div>${regularsPanel}`;
   }
   const tiles = `<div class="cc-tiles" style="margin-top:10px">
     <div class="cc-tile cc-hero"><div class="cc-tlabel">Paid out this period</div><div class="cc-tnum">${ccMoneyFmt(money.paidOut || 0)}</div><div class="cc-tsub">Money that reached you${(money.releasedNotPaid || 0) > 0 ? ` &middot; ${ccMoneyFmt(money.releasedNotPaid)} released, on its way` : ""}</div></div>
@@ -20152,7 +20228,7 @@ function crStatsHtml(d) {
   </div>`;
   const heldPanel = (held.items || []).length ? `<div class="panel"><h3 style="margin:0 0 4px">Held, and why</h3><p class="muted small" style="margin:0 0 6px">Money that is yours but has not released yet — every item names its reason.</p>
     ${(held.items || []).map((r) => `<div class="cc-att-row"><span>${ccMoneyFmt(r.amount || 0)} — ${esc(r.businessName || "A business")} &middot; ${esc(r.blocker || "")}${r.releasesAt ? ` Releases ${esc(fmtDay(r.releasesAt))}.` : ""}</span></div>`).join("")}</div>` : "";
-  return `<div class="panel">${head}${tiles}${pointsStrip}</div>${heldPanel}`;
+  return `<div class="panel">${head}${tiles}${pointsStrip}</div>${regularsPanel}${heldPanel}`;
 }
 
 async function renderAnalyticsTab() {
@@ -20222,7 +20298,7 @@ async function renderAnalyticsTab() {
       <p class="ana-note">Stages count real Magpie events only. There is no email-open stage: Magpie does not track opens, so the funnel starts at the invite itself.</p>` : `<p class="wc-sub" style="margin:6px 0 2px">Your funnel fills in once your campaigns are live: invited, accepted, visited, posted.</p>`}
     </div>
     <div class="wcard"><h3>Creators by local audience</h3>
-      ${lb.length ? lb.map((row, i) => `<div class="lb-row"><span class="lb-rank">${i + 1}</span><div class="lb-main"><div class="lb-name">${esc(row.creatorName)} <span class="muted" style="font-weight:600">@${esc(row.creatorHandle)}</span></div><div class="lb-meta">${row.posts} post${row.posts === 1 ? "" : "s"}${row.onTimePct !== null && row.onTimePct !== undefined ? ` · ${row.onTimePct}% on time` : ""}</div></div><span class="lb-num">${fmtNum(row.localReach)}<span class="u">local reach</span></span></div>`).join("") : `<p class="wc-sub" style="margin:6px 0 2px">Once posts land, your creators rank here by the local reach they delivered.</p>`}
+      ${lb.length ? lb.map((row, i) => `<div class="lb-row"><span class="lb-rank">${i + 1}</span><div class="lb-main"><div class="lb-name">${esc(row.creatorName)} <span class="muted" style="font-weight:600">@${esc(row.creatorHandle)}</span></div><div class="lb-meta">${row.posts} post${row.posts === 1 ? "" : "s"}${row.customers ? ` · ${fmtNum(row.customers)} customer${row.customers === 1 ? "" : "s"} brought in` : ""}${row.onTimePct !== null && row.onTimePct !== undefined ? ` · ${row.onTimePct}% on time` : ""}</div></div><span class="lb-num">${fmtNum(row.localReach)}<span class="u">local reach</span></span></div>`).join("") : `<p class="wc-sub" style="margin:6px 0 2px">Once posts land, your creators rank here by the local reach they delivered.</p>`}
     </div>
     ${h.costPerVisit && h.pipeline && (h.pipeline.clockRunning || 0) > 0 ? `<div class="wcard"><h3>Cost per visit</h3>
       <p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in the modeled estimate; your Magpie ROAS Score on Home counts register events only.</p>
@@ -21925,6 +22001,7 @@ async function loadDiscover() {
       <span class="sr-sel"><select id="f-sort" aria-label="Sort by" onchange="var m=document.getElementById('f-sort-m'); if(m){m.value=this.value;} runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></span>
       <button type="button" class="btn small-btn sr-filters" id="disc-rail-btn" onclick="return shopRailToggle('disc-rail')">Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}</button>
     </div>
+    <div id="lineup-slot"></div>
     <p id="discover-count" class="disc-count" aria-live="polite"></p>
     <p id="match-hint" class="small muted" style="margin:2px 0 0"></p>
     <div id="discover-toggle"></div>
@@ -21932,7 +22009,82 @@ async function loadDiscover() {
     </div>
     </div>`;
   loadDiscCampaigns();
+  loadLineup();
   runDiscover();
+}
+
+// ---------- The Lineup (Build -154) ----------
+// Maggie's top five matched creators for this business, as ONE
+// optional card at the top of Find creators. Packaging only:
+// every creator still books and visits on their own through
+// the existing flow, and tapping a row's View opens their
+// normal profile. Dismissing hides this exact five on this
+// device (keyed to the member set, so a genuinely new Lineup
+// can still appear) and costs nothing — no state changes on
+// the server, no penalty, no nagging.
+function lineupDismissKey(members) {
+  const ids = (members || []).map((c) => c.userId).sort().join(",");
+  return `magpie-lineup-off:${(state.user && state.user.id) || ""}:${ids}`;
+}
+async function loadLineup() {
+  const slot = document.getElementById("lineup-slot");
+  if (!slot || !state.user || state.user.role !== "business") return;
+  let data = null;
+  try { data = await api("GET", "/lineup"); } catch (e) { data = null; }
+  if (!document.getElementById("lineup-slot")) return;
+  const lu = data && data.lineup;
+  if (!lu || !(lu.creators || []).length) { slot.innerHTML = ""; return; }
+  try { if (localStorage.getItem(lineupDismissKey(lu.creators))) { slot.innerHTML = ""; return; } } catch (e) { /* private mode: the card simply shows */ }
+  state.lineup = lu;
+  slot.innerHTML = lineupCardHtml(lu);
+}
+function lineupCardHtml(lu) {
+  const sym = ownCurrencySymbol();
+  const nWord = lu.creators.length === 5 ? "five" : String(lu.creators.length);
+  // Combined terms, overlap-honest: most creators take a comped
+  // visit AND list a paid rate, so the two counts are never
+  // written as if they split the five between them.
+  const terms = lu.compCount && lu.paidCount
+    ? `${lu.compCount === lu.creators.length ? `All ${nWord}` : `${lu.compCount} of the ${nWord}`} take a comped visit; ${lu.paidCount === lu.creators.length ? `all ${nWord}` : lu.paidCount} also list paid rates, adding up to ${sym}${fmtPrice(lu.paidTotal)} if you booked them paid instead`
+    : lu.paidCount
+      ? `Their listed paid rates add up to ${sym}${fmtPrice(lu.paidTotal)}`
+      : `All ${nWord} take comped visits — the experience is the payment`;
+  const rows = lu.creators.map((c) => `
+    <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--hairline,#DFE7DF)">
+      <span style="flex:none;width:44px;height:44px;border-radius:50%;overflow:hidden;background:#E3F5EA;display:flex;align-items:center;justify-content:center">${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="" style="width:44px;height:44px;object-fit:cover;display:block">` : `<span style="font-weight:800;font-size:1.1rem">${esc((c.name || "").trim().charAt(0).toUpperCase() || "M")}</span>`}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700">${esc(c.name)} <span class="muted" style="font-weight:600">@${esc(c.handle || "")}</span></div>
+        <div class="small muted">${esc(c.why || "")}</div>
+      </div>
+      <span style="flex:none;text-align:right"><strong>${fmtNum(c.neighborCount)}</strong><br><span class="small muted">${c.neighborExtrapolated ? "potential neighbors" : "neighbors"}</span></span>
+      <span style="flex:none"><button type="button" class="btn small-btn ghost" onclick="return openCreatorProfile('${c.userId}')">View</button></span>
+    </div>`).join("");
+  return `<section class="wcard" id="lineup-card">
+    <div class="flex-between" style="flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">Your Lineup</h3>
+      <button type="button" class="btn small-btn ghost" onclick="return lineupDismiss()">Not now</button>
+    </div>
+    <p class="small" style="margin:6px 0 0">Maggie picked the ${nWord} creators who match ${esc(lu.businessName || "your business")} best. <strong>A Lineup is optional:</strong> each creator visits on their own, exactly like any booking — book one, book all ${nWord}, or skip it.</p>
+    <div>${rows}</div>
+    <p style="margin:10px 0 0"><strong>Together: about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential neighbors" : "neighbors"}</strong> <span class="muted">— the ${nWord} creators' local audiences added up${lu.anyExtrapolated ? "; part of that count is estimated at each creator's confirmed local rate, so it is labeled potential" : ""}. ${esc(terms)}.</span></p>
+    <p style="margin:12px 0 0"><button type="button" class="btn" onclick="return lineupBookAll()">Book all ${nWord}</button> <span class="small muted">One offer, sent as ${nWord} separate invites. Booking one at a time works exactly as always.</span></p>
+  </section>`;
+}
+function lineupDismiss() {
+  const lu = state.lineup;
+  if (lu) { try { localStorage.setItem(lineupDismissKey(lu.creators), "1"); } catch (e) { /* private mode */ } }
+  const slot = document.getElementById("lineup-slot");
+  if (slot) slot.innerHTML = "";
+  return false;
+}
+function lineupBookAll() {
+  const lu = state.lineup;
+  if (!lu || !(lu.creators || []).length) return false;
+  state.lineupTargets = lu.creators.map((c) => ({ userId: c.userId, name: c.name, handle: c.handle }));
+  state.offerTarget = null;
+  state.composerLane = "direct";
+  go("dashboard", "Campaign Setup");
+  return false;
 }
 
 // Match Engine v1: the campaign picker in the Find filters rail.
@@ -22593,6 +22745,9 @@ function offerGuidance() { return (state.boot && state.boot.offerGuidance) || { 
 
 function composerMode() {
   if (state.offerTarget) return "direct";
+  // Build -154: a Lineup book-all composes in the direct lane —
+  // one offer, sent as a separate invite to each of the five.
+  if (state.lineupTargets && state.lineupTargets.length) return "direct";
   return state.composerLane || "open";
 }
 
@@ -22600,6 +22755,7 @@ function setComposerLane(lane) {
   offerDraftSync();
   state.composerLane = lane;
   state.offerTarget = null;
+  state.lineupTargets = null;
   loadCampaignSetup();
 }
 
@@ -22629,6 +22785,7 @@ function offerDraftSync() {
   const set = (key, id) => { const el = document.getElementById(id); if (el) d[key] = el.value; };
   set("title", "o2-title"); set("comped", "o2-comped"); set("cap", "o2-cap"); set("rate", "o2-rate");
   set("brief", "o2-brief"); set("includes", "o2-includes"); set("experience", "o2-experience");
+  set("special", "o2-special");
   set("spots", "o2-spots"); set("applydays", "o2-applydays"); set("windowdays", "o2-windowdays");
   set("window", "o2-window"); set("windowmode", "o2-windowmode"); set("template", "o2-template");
   // Brief Builder fields (Jeff, 2026-10-28): keys are prefixed
@@ -23585,8 +23742,9 @@ async function loadCampaignSetup() {
     </div>
     <p class="small muted" style="margin-top:6px">${mode === "open" ? `Post it to ${esc(foundingBizPlace(state.user))}. Any creator who fits can apply, and you pick from the stack.` : "Pick one creator by name. The invite goes only to them."}</p>
     </div>
-    ${mode === "direct" && !target ? `<p class="small muted">Pick the creator in Find creators and tap Invite, or <a href="#" onclick="setComposerLane('open'); return false;">post an open call</a> and let creators apply.</p>` : ""}
+    ${mode === "direct" && !target && !(state.lineupTargets && state.lineupTargets.length) ? `<p class="small muted">Pick the creator in Find creators and tap Invite, or <a href="#" onclick="setComposerLane('open'); return false;">post an open call</a> and let creators apply.</p>` : ""}
     ${mode === "direct" && target ? `<div class="notice blue">Sending directly to <strong>${esc(target.name)}</strong> (@${esc(target.profile.handle)}), ${esc(target.profile.tierBand || "")} tier. <a href="#" onclick="state.offerTarget=null; loadCampaignSetup(); return false;">Make it an open offer instead</a></div>` : ""}
+    ${state.lineupTargets && state.lineupTargets.length ? `<div class="notice blue">Your Lineup: this one offer goes as a <strong>separate invite to each of the ${state.lineupTargets.length === 5 ? "five" : state.lineupTargets.length}</strong> — ${state.lineupTargets.map((t) => esc(t.name)).join(", ")}. Each creator visits on their own, exactly like any booking; nothing about the visits changes. <a href="#" onclick="state.lineupTargets=null; loadCampaignSetup(); return false;">Clear the Lineup and compose normally</a></div>` : ""}
     <form onsubmit="return createOfferV2(event)">
       <input type="hidden" id="o2-template" value="${dv(dft.template)}">
       <div class="fgroup tint">
@@ -23646,6 +23804,7 @@ async function loadCampaignSetup() {
       </div>
       <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Mats, towels and the smoothie after are on us" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea><p class="small muted camp-help" style="margin:4px 0 0">Spell out what's included — specific offers get grabbed first. Creators see this line word for word.</p></div>
       <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
+      <div class="field"><label>Neighbor special <span class="opt-tag">Optional</span></label><input id="o2-special" maxlength="140" value="${dv(dft.special)}" placeholder="For example: Show this post, get a free queso" oninput="offerDraftSync()"><p class="small muted camp-help" style="margin:4px 0 0">A little extra for the creator's followers, in your words. It rides the visit's code — no second code — and every follower who uses it counts as a customer that creator brought you.</p></div>
       <div class="field spanish-panel"><div class="lrow"><input type="checkbox" class="sw" id="o2-spanish" ${dft.spanish ? "checked" : ""} onchange="offerDraftSync()"><div><label for="o2-spanish"><strong>Content in Spanish</strong></label> <span class="opt-tag">Optional</span><p class="small muted" style="margin:2px 0 0">Reach Spanish-speaking customers with content made in Spanish. The offer is marked; it never blocks anyone from applying.</p></div></div></div>
       </div>
       <div class="fgroup">
@@ -23699,8 +23858,8 @@ async function loadCampaignSetup() {
       <p class="small muted">${BOOKING_STARTED_LINE}</p>
       <div class="cta-row" style="justify-content:flex-start">
         ${foundingBiz
-          ? `<button class="btn" type="button" onclick="return createOfferV2(event, true)">${mode === "direct" ? "Save invite for opening day" : "Save for opening day"}</button>`
-          : `<button class="btn" type="submit">${mode === "direct" ? "Send invite" : "Post open call"}</button>
+          ? `<button class="btn" type="button" onclick="return createOfferV2(event, true)">${state.lineupTargets && state.lineupTargets.length ? `Save all ${state.lineupTargets.length === 5 ? "five" : state.lineupTargets.length} for opening day` : mode === "direct" ? "Save invite for opening day" : "Save for opening day"}</button>`
+          : `<button class="btn" type="submit">${state.lineupTargets && state.lineupTargets.length ? `Send all ${state.lineupTargets.length === 5 ? "five" : state.lineupTargets.length} invites` : mode === "direct" ? "Send invite" : "Post open call"}</button>
         <button class="btn ghost" type="button" onclick="return createOfferV2(event, true)">Save as draft</button>`}
       </div>
       ${foundingBiz
@@ -23972,6 +24131,9 @@ async function createOfferV2(e, draft) {
   payload.moment = d.moment || undefined;
   payload.countedResult = d.countedResult || undefined;
   payload.assetPacketAttached = d.packetManual ? !!d.packetAttach : kind === "paid";
+  // Build -154: the neighbor special the business wrote rides
+  // the offer onto the booking (see the composer's field).
+  if (d.special && String(d.special).trim()) payload.neighborSpecial = String(d.special).trim();
   // Build -84: every offer carries its deliverables (the kind's
   // recommended standard until the business edits them); a
   // coupon offer carries the coupon itself.
@@ -24006,6 +24168,44 @@ async function createOfferV2(e, draft) {
     payload.windowMode = d.windowmode || "7days";
   }
   try {
+    if (state.lineupTargets && state.lineupTargets.length && mode === "direct") {
+      // Build -154: Book all — this same offer, posted once per
+      // creator through the existing create flow, each carrying
+      // the lineup snapshot the server recomputes. Partial
+      // success is reported by name; nothing retries silently.
+      const targets = state.lineupTargets.slice();
+      const memberIds = targets.map((t) => t.userId);
+      const sent = [];
+      const failed = [];
+      for (const t of targets) {
+        try {
+          await api("POST", "/offers", { ...payload, creatorId: t.userId, lineup: { creatorIds: memberIds } });
+          sent.push(t);
+        } catch (e2) {
+          failed.push({ name: t.name, message: e2.message });
+        }
+      }
+      state.lineupTargets = null;
+      if (!sent.length) {
+        const fe = document.getElementById("form-error");
+        if (fe) fe.innerHTML = `<div class="error-box">None of the invites went out. ${esc(failed[0] ? failed[0].message : "")}</div>`;
+        window.scrollTo(0, 0);
+        return false;
+      }
+      state.offerDraft = {};
+      state.offerTarget = null;
+      state.promptSourceBrief = null;
+      refreshBadges();
+      if (isFoundingBusiness(state.user)) state.offersSeg = "drafts";
+      else if (draft === true) state.offersSeg = "drafts";
+      else state.offersSeg = "live";
+      state.campaignStep = 0;
+      showToast(failed.length
+        ? `Sent to ${sent.length} of ${targets.length}. ${failed.map((f) => `${f.name}: ${f.message}`).join(" ")}`
+        : (isFoundingBusiness(state.user) ? `All ${sent.length} Lineup invites saved for opening day.` : `All ${sent.length} Lineup invites sent — each creator got their own.`));
+      go("dashboard", "My Offers");
+      return false;
+    }
     await api("POST", "/offers", payload);
     state.offerDraft = {};
     state.offerTarget = null;

@@ -8310,6 +8310,18 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     attachedAt: ts,
     source: "booking_default",
   };
+  // Build -154: a neighbor special written on the offer wins
+  // over the standing default for this visit. Same one code,
+  // same counted rail — the special is simply the perk the
+  // followers see, and every use counts for this creator.
+  if (offer.neighborSpecial) {
+    booking.audienceOffer = {
+      title: "Neighbor special",
+      perk: String(offer.neighborSpecial).slice(0, 140),
+      attachedAt: ts,
+      source: "offer",
+    };
+  }
   if (kind === "paid") {
     // Paid open offer: the business posted a cash rate for the
     // Standard Visit package. The escrow ledger is exactly the
@@ -9165,6 +9177,10 @@ async function publicCreator(u, viewer, foundingPriority, marketContext) {
     scoreComponents: impact ? impact.components : null,
     history,
     isFavorite,
+    // Build -154: Have them back — business viewers only, and
+    // only when this pair has a completed, posted visit (the
+    // Book again gate). Null everywhere else.
+    haveBack: viewer && viewer.role === "business" ? await haveBackFor(viewer, u.id) : null,
     bookedUp: visitsThisWeek(await allBookings(), u.id, Date.now()) >= maxVisitsPerWeekOf(u),
   };
 }
@@ -13384,7 +13400,7 @@ function creatorTotalAudience(c) {
   const stack = c.audienceStack || {};
   return Object.values(stack).reduce((s, v) => s + (Number(v) || 0), 0) || Number(c.followerCount) || 0;
 }
-function homeAnalyticsExtras(triples, plan, now, apps = []) {
+function homeAnalyticsExtras(triples, plan, now, apps = [], redEvents = []) {
   const DAY = 24 * 3600 * 1000;
   const postedAtOf = (post) => (post ? Date.parse(post.reportedAt || post.submittedAt || post.createdAt || "") || null : null);
   let localReachDelivered = 0;
@@ -13493,8 +13509,22 @@ function homeAnalyticsExtras(triples, plan, now, apps = []) {
     if (r.onTime) row.onTime += 1;
     lbByHandle.set(key, row);
   }
+  // Build -154: counted customers per creator across ALL of
+  // this business's bookings in the set (posted or not), from
+  // the one counted chokepoint — the "customers brought in"
+  // figure Results shows beside posts delivered. Counted-only,
+  // like everything on this surface: real register events and
+  // the reported tally, never an estimate.
+  const custByKey = new Map();
+  for (const t of triples) {
+    const key = (t.booking && (t.booking.creatorHandle || t.booking.creatorName)) || "";
+    if (!key) continue;
+    const m = bookingMoneyFrom(t.booking, redEvents || []);
+    const n = m.customers + m.returns;
+    if (n > 0) custByKey.set(key, (custByKey.get(key) || 0) + n);
+  }
   const leaderboard = [...lbByHandle.values()]
-    .map((r) => ({ creatorName: r.creatorName, creatorHandle: r.creatorHandle, localReach: r.localReach, posts: r.posts, onTimePct: r.posts ? Math.round((r.onTime / r.posts) * 100) : null }))
+    .map((r) => ({ creatorName: r.creatorName, creatorHandle: r.creatorHandle, localReach: r.localReach, posts: r.posts, customers: custByKey.get(r.creatorHandle || r.creatorName) || 0, onTimePct: r.posts ? Math.round((r.onTime / r.posts) * 100) : null }))
     .sort((a, b) => b.localReach - a.localReach)
     .slice(0, 10);
   const postsTracked30 = contentLibrary.filter((r) => { const ms = Date.parse(r.postedAt || ""); return Number.isFinite(ms) && ms >= now - 30 * DAY; }).length;
@@ -13953,6 +13983,32 @@ function regularDealOf(booking) {
   return { kind: "comp", line: `Comp visit: ${booking.whatComped || "a visit on us"}${booking.dollarCap ? ` (up to $${fmtPriceS(booking.dollarCap)})` : ""}`, rightsLine: "Native share only: 1 post + 1 story." };
 }
 
+// Build -154: "Have them back" — the button on a creator's page
+// for a business that has booked them before. The label uses the
+// creator's own pronouns when they are on file (she/her → "Have
+// her back", he/him → "Have him back"), else "Have them back".
+// Visibility matches the action exactly: the pair qualifies when
+// a visit completed and its post is live — the same gate the
+// Regulars Book again draft endpoint enforces — so the button
+// never shows where its tap would fail.
+function haveBackLabel(creatorRec) {
+  const p = String((creatorRec && creatorRec.creator && creatorRec.creator.pronouns) || "").toLowerCase();
+  const tokens = p.split(/[\s/,;]+/).filter(Boolean);
+  if (tokens.includes("she") || tokens.includes("her")) return "Have her back";
+  if (tokens.includes("he") || tokens.includes("him")) return "Have him back";
+  return "Have them back";
+}
+async function haveBackFor(bizUser, creatorId) {
+  if (!bizUser || bizUser.role !== "business" || isTester(bizUser)) return null;
+  const mine = (await allBookings()).filter((b) => b.businessId === bizUser.id && b.creatorId === creatorId && !b.test && b.collabRole !== "plusone");
+  if (!mine.length) return null;
+  const ids = new Set(mine.map((b) => b.id));
+  const posts = await allPosts();
+  if (!posts.some((p) => ids.has(p.bookingId))) return null;
+  const creator = await store.get(`user:${creatorId}`);
+  return { label: haveBackLabel(creator || {}) };
+}
+
 async function regularsFor(bizUser) {
   if (!bizUser || bizUser.role !== "business" || !bizUser.business || isTester(bizUser)) return [];
   const bookings = (await allBookings()).filter((b) => b.businessId === bizUser.id && !b.test && b.collabRole !== "plusone");
@@ -14390,7 +14446,11 @@ async function businessHome(user) {
     bookings.map((b) => ({ booking: b, post: postByBooking.get(b.id) || null, creator: userById.get(b.creatorId) || null })),
     plan,
     now,
-    apps
+    apps,
+    // Build -154: this business's counted register events, so
+    // the leaderboard's per-creator customers figure derives
+    // from the same events every counted surface reads.
+    (await allRedemptionEvents()).filter((e) => e && e.businessId === user.id)
   );
 
   // Sig activation signals (Jeff, 2026-10-28): the market
@@ -14787,6 +14847,13 @@ async function buildSigFacts(user, full) {
       })(),
       rosterInMarket,
       verifiedInMarketCount,
+      // Build -154: who actually brought this business counted
+      // customers (its own bookings only, the counted
+      // chokepoint) and Maggie's current Lineup for it — Sig
+      // answers both from these same records, never a second
+      // source.
+      customersByCreator: await customersByCreatorFor(user),
+      lineup: await lineupForBusiness(user),
       // Build -95: My Regulars + licences nearing expiry, from
       // the same builders the Regulars view and the alert
       // surface read, so Sig can never tell a different story.
@@ -14921,6 +14988,9 @@ async function buildSigFacts(user, full) {
       // definition the Momentum award also reads, so Sig's
       // prompt can name exactly what is missing.
       geoBreakdown: user.creator ? geoBreakdownState(user, platformLinksOf(user.creator)) : null,
+      // Build -154: this creator's Regulars — counted customers
+      // brought in, all time, from the counted chokepoint.
+      regularsBroughtIn: await creatorRegularsCount(user.id),
       missingLabels: (pc.missing || []).map((id) => itemLabels[id] || id),
       // Build -108: whether the Instagram connect lane is open
       // in this environment at all (Meta credentials present);
@@ -17143,6 +17213,163 @@ function bookingMoneyFrom(booking, events) {
     return { source: "tally", customers: Math.floor(Number(red.count) || 0), spend: roasRound2(Number(red.basketTotal) || 0), returns: 0, returnSpend: 0 };
   }
   return { source: "none", customers: 0, spend: 0, returns: 0, returnSpend: 0 };
+}
+
+// ---------- Build -154: Regulars Receipts + The Lineup ----------
+// The per-creator neighbor count, from the ONE local-follower
+// model (lib/audience-markets): every platform at its own rate,
+// or at the confirmed rate R when it has none — those followers
+// are "potential neighbors" and the label must say so (the
+// extrapolated flag). When no rate exists anywhere, the legacy
+// hand-typed local % over the total audience is the fallback,
+// exactly as the profile save path rules it.
+function neighborCountFor(creatorRec) {
+  const c = creatorRec || {};
+  const m = localRateModel(c);
+  if (m && typeof m.neighborCount === "number") return { count: m.neighborCount, extrapolated: !m.allReal };
+  const total = creatorTotalAudience(c);
+  const pct = Number(c.localAudiencePct);
+  if (total > 0 && Number.isFinite(pct) && pct > 0) return { count: Math.round((total * pct) / 100), extrapolated: false };
+  return { count: 0, extrapolated: false };
+}
+// Regulars: the counted customers ONE creator brought through
+// the door, all time — firsts plus came-backs, derived ONLY
+// from the counted chokepoint (bookingMoneyFrom: real register
+// events, the reported tally as its labelled fallback; voided
+// and unconfirmed events never count). Nothing here is ever
+// estimated, seeded, or simulated: a creator with no counted
+// redemption reads exactly zero, and surfaces say so plainly.
+function regularsFromBookings(bookings, events) {
+  let customers = 0;
+  let cameBacks = 0;
+  for (const b of bookings || []) {
+    if (!b) continue;
+    const m = bookingMoneyFrom(b, events || []);
+    customers += m.customers;
+    cameBacks += m.returns;
+  }
+  return { customers, cameBacks, total: customers + cameBacks };
+}
+async function creatorRegularsCount(creatorId) {
+  const bookings = (await store.list("booking:")).map((r) => r.value).filter((b) => b && b.creatorId === creatorId);
+  const events = (await allRedemptionEvents()).filter((e) => e && e.creatorId === creatorId);
+  return regularsFromBookings(bookings, events);
+}
+// Per-creator counted customers for ONE business, from the same
+// chokepoint: [{ creatorId, name, handle, customers }] with
+// customers > 0 only, best first. The business's own bookings
+// and events only — this is Sig's scoped answer data and the
+// Results leaderboard's source, never another business's.
+async function customersByCreatorFor(bizUser) {
+  const [bookings, events, users] = await Promise.all([allBookings(), allRedemptionEvents(), allUsers()]);
+  const byId = new Map(users.map((u) => [u.id, u]));
+  const totals = new Map();
+  for (const b of bookings) {
+    if (!b || b.businessId !== bizUser.id) continue;
+    const m = bookingMoneyFrom(b, events);
+    const n = m.customers + m.returns;
+    if (n > 0) totals.set(b.creatorId, (totals.get(b.creatorId) || 0) + n);
+  }
+  return [...totals.entries()].map(([creatorId, customers]) => {
+    const u = byId.get(creatorId);
+    return { creatorId, name: (u && u.name) || "", handle: (u && u.creator && u.creator.handle) || "", customers };
+  }).sort((a, b) => b.customers - a.customers);
+}
+// The Lineup (Build -154): Maggie's top five matched creators
+// for a business — the existing match engine run on the
+// business's own-market brief (its category's fit set, comp
+// lane), the prompt band's qualifying floor, top five. It is
+// packaging only: five separate creators who each visit on
+// their own, exactly like single bookings. Fewer than two
+// qualifying creators is not a lineup: null, and every surface
+// stays silent. Combined neighbors are the SUM of the five
+// creators' own neighbor counts; the extrapolated flag rides
+// along so the label can say "potential neighbors" whenever
+// any member's count leans on the confirmed-rate estimate.
+function lineupMemberView(card, userRec) {
+  const c = (userRec && userRec.creator) || {};
+  const nb = neighborCountFor(c);
+  return {
+    userId: card.userId,
+    name: card.name || (userRec && userRec.name) || "",
+    handle: (c.handle || card.handle || ""),
+    photoUrl: card.photoUrl || null,
+    why: promptWhyLine(card),
+    matchScore: card.matchScore,
+    neighborCount: nb.count,
+    neighborExtrapolated: nb.extrapolated,
+    localPct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
+    paidRate: typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null,
+    compOpen: c.compOpen !== false,
+  };
+}
+function lineupTotals(members) {
+  let combinedNeighbors = 0;
+  let anyExtrapolated = false;
+  let compCount = 0;
+  let paidCount = 0;
+  let paidTotal = 0;
+  for (const m of members || []) {
+    combinedNeighbors += m.neighborCount || 0;
+    if (m.neighborExtrapolated) anyExtrapolated = true;
+    if (m.compOpen) compCount += 1;
+    if (m.paidRate) { paidCount += 1; paidTotal += m.paidRate; }
+  }
+  return { combinedNeighbors, anyExtrapolated, compCount, paidCount, paidTotal };
+}
+async function lineupForBusiness(bizUser) {
+  if (!bizUser || bizUser.role !== "business" || !bizUser.market) return null;
+  const biz = bizUser.business || {};
+  if (!biz.category) return null;
+  const fit = CATEGORY_FIT[biz.category] || { primary: [] };
+  const brief = { source: "lineup", market: bizUser.market, category: biz.category, categoryKind: "business", kind: "comp", budget: null, categories: fit.primary || [] };
+  const res = await discoverCards({}, bizUser, { brief, suppressMatchImpression: true });
+  const top = (res.creators || []).filter((c) => c.matchScore != null && c.matchScore >= PROMPT_QUALIFYING_SCORE).sort((a, b) => b.matchScore - a.matchScore).slice(0, 5);
+  if (top.length < 2) return null;
+  const users = await allUsers();
+  const byId = new Map(users.map((u) => [u.id, u]));
+  const members = top.map((card) => lineupMemberView(card, byId.get(card.userId)));
+  return {
+    businessName: biz.businessName || "",
+    market: bizUser.market,
+    creators: members,
+    ...lineupTotals(members),
+    brief: matchBriefView({ ...brief, label: "your Lineup" }),
+  };
+}
+// The snapshot an offer carries when it was sent as part of a
+// Lineup book-all: validated and RECOMPUTED here from the real
+// records (never trusted from the request) — 2 to 5 members,
+// every one an approved roster creator, the offer's own target
+// among them. Returns null when the claimed set does not check
+// out; the offer itself is then just a normal direct invite.
+async function lineupSnapshotFor(bizUser, memberIds, targetCreator) {
+  const ids = [...new Set((memberIds || []).filter((x) => typeof x === "string"))];
+  if (ids.length < 2 || ids.length > 5) return null;
+  if (!targetCreator || !ids.includes(targetCreator.id)) return null;
+  const members = [];
+  for (const id of ids) {
+    const u = await store.get(`user:${id}`);
+    if (!u || u.role !== "creator" || u.status !== "approved" || isTester(u) || !profileCompleteOf(u)) return null;
+    const c = u.creator || {};
+    const nb = neighborCountFor(c);
+    members.push({
+      userId: u.id,
+      name: u.name || "",
+      handle: c.handle || "",
+      photoUrl: c.hasPhoto ? `/api/users/${u.id}/photo` : null,
+      neighborCount: nb.count,
+      neighborExtrapolated: nb.extrapolated,
+    });
+  }
+  const totals = lineupTotals(members);
+  return {
+    businessName: (bizUser.business && bizUser.business.businessName) || "",
+    members,
+    combinedNeighbors: totals.combinedNeighbors,
+    anyExtrapolated: totals.anyExtrapolated,
+    at: nowIso(),
+  };
 }
 // M7: the creator's proof, minted from Magpie's own counted
 // records only. Aggregates travel; a business's identity and
@@ -20983,6 +21210,12 @@ async function ccCreatorStats(P, user) {
       paidOut, releasedNotPaid: ccMoney(Math.max(0, releasedTotal - paidOut)),
     },
     points: { total: t.total, momentumPoints: t.momentumPoints, linePoints: t.linePoints, level: t.levelInfo },
+    // Build -154: Regulars brought in — all-time counted
+    // customers (firsts + came-backs) from the counted
+    // chokepoint. All-time on purpose: the counter is a career
+    // scoreboard, not a period figure, and the client labels
+    // it that way.
+    regulars: await creatorRegularsCount(user.id),
     hasData,
   };
 }
@@ -25079,6 +25312,84 @@ async function route(event) {
   // netlify/functions/compliance-sweep.mjs POSTs here on a schedule
   // with the x-signl-sweep-token header when SIGNL_SWEEP_TOKEN is
   // set. Without the env var, only an admin session can trigger it.
+  // ---------- Build -154: the morning-after note ----------
+  // The morning after a creator's post for a visit lands, BOTH
+  // sides get one short Maggie note with the counted truth from
+  // the Receipts layer (bookingMoneyFrom: counted redemption
+  // events only, never an estimate). "Morning after" = the first
+  // sweep run on a later America/New_York calendar day than the
+  // post's day. The booking is stamped (morningAfterNoteAt)
+  // BEFORE the sends, so a re-run — or a crash mid-run — never
+  // sends a second note for the same visit. A zero count still
+  // gets the note, worded honestly: the post is live and counting
+  // has started. Delivery = the in-app platform (Maggie) thread
+  // message plus an email doorbell through deliverEmail honoring
+  // the recipient's existing email switches, exactly like every
+  // other milestone. Tester accounts are fenced: never sent.
+  async function runMorningAfterSweep(opts = {}) {
+    const nowDate = opts.now ? new Date(opts.now) : new Date();
+    const etDay = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+    const todayEt = etDay(nowDate);
+    const summary = { checked: 0, fired: 0, alreadyStamped: 0, fenced: 0 };
+    const posts = (await store.list("post:")).map((r) => r.value).filter(Boolean);
+    const firstPostByBooking = new Map();
+    for (const p of posts) {
+      if (!p.bookingId) continue;
+      const at = p.reportedAt || p.submittedAt || p.createdAt;
+      if (!at) continue;
+      const cur = firstPostByBooking.get(p.bookingId);
+      if (!cur || String(at) < cur) firstPostByBooking.set(p.bookingId, String(at));
+    }
+    const bookings = (await store.list("booking:")).map((r) => r.value).filter(Boolean);
+    const events = await allRedemptionEvents();
+    for (const booking of bookings) {
+      const postedAt = firstPostByBooking.get(booking.id);
+      if (!postedAt) continue;
+      summary.checked += 1;
+      if (booking.morningAfterNoteAt) { summary.alreadyStamped += 1; continue; }
+      if (!(etDay(new Date(postedAt)) < todayEt)) continue; // the morning after has not come yet
+      booking.morningAfterNoteAt = nowDate.toISOString();
+      await store.set(`booking:${booking.id}`, booking);
+      const money = bookingMoneyFrom(booking, events);
+      const n = money.customers + money.returns;
+      const creator = await store.get(`user:${booking.creatorId}`);
+      const business = await store.get(`user:${booking.businessId}`);
+      const creatorName = (creator && creator.name) || booking.creatorName || "Your creator";
+      const bizName = booking.businessName || (business && business.business && business.business.businessName) || "the business";
+      const countLine = n > 0 ? `${n} neighbor${n === 1 ? " has" : "s have"} come in so far.` : null;
+      const sides = [
+        {
+          user: business,
+          text: n > 0
+            ? `${creatorName} posted last night. ${countLine}`
+            : `${creatorName} posted last night. The post is live and counting has started: neighbors who come in with the code will show up in your Results.`,
+          subject: n > 0 ? `${creatorName} posted: ${n} neighbor${n === 1 ? "" : "s"} in so far` : `${creatorName} posted last night`,
+        },
+        {
+          user: creator,
+          text: n > 0
+            ? `Your post for ${bizName} went up last night. ${countLine} They count toward your Regulars brought in.`
+            : `Your post for ${bizName} is live. Counting has started: neighbors who come in with your code will show up in your Regulars brought in count.`,
+          subject: n > 0 ? `Your post for ${bizName}: ${n} neighbor${n === 1 ? "" : "s"} in so far` : `Your post for ${bizName} is live`,
+        },
+      ];
+      let sentAny = false;
+      for (const side of sides) {
+        if (!side.user) continue;
+        if (isTester(side.user)) { summary.fenced += 1; continue; }
+        await deliverTeamMessage152(side.user, { body: side.text });
+        try {
+          if (side.user.email && notifyEmailAllowed(side.user, "morning_after_note")) {
+            await deliverEmail("morning_after_note", side.user, side.subject, `${side.text}\n\nOpen Magpie: https://app.magpielocal.com`, null);
+          }
+        } catch (e) { /* the in-app message is the guaranteed record */ }
+        sentAny = true;
+      }
+      if (sentAny) summary.fired += 1;
+    }
+    return summary;
+  }
+
   // ---------- Build -87: notification rail sweep + outbox ----------
   // Same auth discipline as the compliance sweep: the scheduled
   // function (netlify/functions/notify-sweep.mjs) POSTs with the
@@ -25096,8 +25407,10 @@ async function route(event) {
     // Build -95: the licence-expiry thresholds (14 days, 1 day)
     // ride the same hourly clock and the same sandbox rail.
     const licenceSweep = await runLicenceExpirySweep(opts);
+    // Build -154: the morning-after notes ride the same clock.
+    const morningAfterSweep = await runMorningAfterSweep(opts);
     await store.set("config:notifySweep", { lastRunAt: nowIso() });
-    return json(200, { ok: true, sweep, licenceSweep, providers: notifyLib.providerStatus() });
+    return json(200, { ok: true, sweep, licenceSweep, morningAfterSweep, providers: notifyLib.providerStatus() });
   }
   if (method === "GET" && seg[0] === "admin" && seg[1] === "notify" && seg[2] === "outbox") {
     if (!user || user.role !== "admin") return err(403, "Admin only");
@@ -29313,6 +29626,20 @@ async function route(event) {
   //                   a ?category=; scores ride each card as
   //                   matchScore + match { score, parts, reasons }
   //                   and the resolved brief as matchBrief)
+  // The Lineup (Build -154): Maggie's top five matched creators
+  // for this business, as ONE optional card. Presentation only —
+  // booking stays the existing per-creator flow, the card never
+  // gates or replaces single-creator booking, and dismissing it
+  // is a client-side hide with zero server state or penalty.
+  if (method === "GET" && seg[0] === "lineup" && seg.length === 1) {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const lineup = await lineupForBusiness(user);
+    if (lineup) {
+      await logCapture({ type: "lineup_shown", actorId: user.id, actorRole: "business", subjectId: null, market: user.market || null, data: { creatorIds: lineup.creators.map((c) => c.userId), scores: lineup.creators.map((c) => c.matchScore), combinedNeighbors: lineup.combinedNeighbors } });
+    }
+    return json(200, { lineup });
+  }
+
   if (method === "GET" && seg[0] === "discover") {
     // The query itself lives in discoverCards() so the admin Business
     // Preview answers with the identical roster, filters, and sorts.
@@ -29692,6 +30019,23 @@ async function route(event) {
       // from; a create without one stores nothing extra.
       const sourceBrief = normalizeSourceBrief(b.sourceBrief);
       if (sourceBrief) offer.sourceBrief = sourceBrief;
+      // Build -154: the neighbor special — a small follower
+      // offer the business writes in its own words at setup.
+      // It rides the offer onto the booking (see
+      // createBookingForOffer), where it replaces the standing
+      // audience-offer default for THIS visit: followers who
+      // use the visit's one code are counted for the creator.
+      const neighborSpecial = String(b.neighborSpecial || "").trim().slice(0, 140);
+      if (neighborSpecial) offer.neighborSpecial = neighborSpecial;
+      // Build -154: a direct invite sent as part of a Lineup
+      // book-all carries the lineup snapshot, recomputed from
+      // the real records — the five members, the business, and
+      // the combined neighbor count the creator's card shows.
+      // An unverifiable claim stores nothing.
+      if (lane === "direct" && b.lineup && Array.isArray(b.lineup.creatorIds)) {
+        const snap = await lineupSnapshotFor(user, b.lineup.creatorIds, targetCreator);
+        if (snap) offer.lineup = snap;
+      }
       if (lane === "open") {
         const tl = offerTimeline({ applyWindowDays: b.applyWindowDays, windowDays: b.windowDays, windowStartAt: b.windowStartAt }, Date.parse(ts));
         Object.assign(offer, tl);
