@@ -1866,3 +1866,44 @@ body.drawer168-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .ham137-panel, .ev125-panel { animation: none !important; }
 }
+
+/* ============================================================
+   Build -171 (Jeff, 2026-11-09, correcting -168 the same
+   afternoon): "i meant for it to go in the top left — the
+   hamburger menu — and the logo goes to top right now — on
+   all dashboards."
+
+   Phone widths only. In the slim top bar (.tb2 — creator,
+   business, partner, pilot/recruiter shells and the Biz Dev
+   seller shell) and in the admin top row (.tr), the HAMBURGER
+   becomes the first element on the left and the Magpie lockup
+   the last element on the right. The identity chip, help and
+   the Messages / numbers shortcuts keep their places between
+   the two ends; the spelled-out name stays hidden at this
+   width (Build -130 / the -161 bridge block above). Above
+   768px nothing in this block applies: rails, headers and the
+   desktop top-right lockup strip are exactly as they were.
+
+   The hamburger keeps opening the -168 left drawer; the
+   drawer head still carries its own logo + ✕. .tb2-actions
+   unwraps (display:contents — the trick .tr-right has used
+   since Build -130) so the hamburger inside it can take the
+   first flex slot while the Messages shortcut stays in the
+   row. These order rules supersede the phone ordering in the
+   Part 8 and bridge blocks above; if the bridge block is
+   ever removed (its item-5.6 restoration), this arrangement
+   still stands on its own.
+   ============================================================ */
+@media (max-width: 767.98px) {
+  .tb2-actions { display: contents; }
+  .tb2-burger137, .tb2-ev125 { order: 1; }
+  .tb2-id { order: 2; margin-left: 0; }
+  .tb2-help130 { order: 3; }
+  .tb2-actions > .tb2-btn:not(.tb2-burger137):not(.tb2-ev125) { order: 4; }
+  .tb2-brand { order: 5; margin-left: auto; }
+  .tr-ev125 { order: 1; margin-left: 0; }
+  .tr-id { order: 2; margin-left: 0; }
+  .tr-help126 { order: 3; }
+  .tr-right > button:not(.tr-ev125) { order: 4; margin-left: 0; }
+  .tr-brand { order: 5; margin-left: auto; }
+}
