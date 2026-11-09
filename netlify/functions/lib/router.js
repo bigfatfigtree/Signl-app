@@ -115,11 +115,8 @@ function medianOf(nums) {
 
 // The one aggregation the daily snapshot, the Admin Data view
 // and the Suggestions panel all read. Supply = approved,
-// profile-complete creators (the bookable roster) per market x
-// creator category — the home market always, plus any non-home
-// market the creator counts toward under the launch-gate rule
-// (Build -160: switch ON + gate signal, see gateMarketsFor).
-// Demand = open offers per market,
+// profile-complete creators (the bookable roster) per home
+// market x creator category. Demand = open offers per market,
 // mapped from each offer's business category to creator
 // categories through the platform's own CATEGORY_FIT primaries
 // (the same map the match engine scores a business brief with).
@@ -156,19 +153,12 @@ async function buildDataAggregates() {
     for (const cat of CREATOR_CATEGORIES) matrix[m.name][cat] = { supply: 0, demand: 0 };
   }
   for (const u of bookable) {
-    // Launch-gate supply (Build -160): the home market counts
-    // exactly as before; a NON-home market counts only when the
-    // creator's switch there is ON and the market is a real gate
-    // signal — declared share at the gate's category floor, or
-    // IG-Verified there (gateMarketsFor, lib/audience-markets).
-    for (const gm of gateMarketsFor(u, GATE_CATEGORY_FLOOR)) {
-      const mk = gm.market;
-      if (!matrix[mk]) continue;
-      for (const cat of (u.creator && u.creator.categories) || []) {
-        if (!matrix[mk][cat]) continue;
-        matrix[mk][cat].supply += 1;
-        (cellCreators[`${mk}|${cat}`] = cellCreators[`${mk}|${cat}`] || []).push({ u, pct: gm.pct });
-      }
+    const mk = normalizeMarketName(u.market);
+    if (!matrix[mk]) continue;
+    for (const cat of (u.creator && u.creator.categories) || []) {
+      if (!matrix[mk][cat]) continue;
+      matrix[mk][cat].supply += 1;
+      (cellCreators[`${mk}|${cat}`] = cellCreators[`${mk}|${cat}`] || []).push(u);
     }
   }
   let demandUnmapped = 0;
@@ -186,17 +176,11 @@ async function buildDataAggregates() {
     const locals = [];
     const audiences = [];
     const rates = [];
-    for (const entry of cell) {
-      const u = entry.u;
+    for (const u of cell) {
       const h = historyOf.get(u.id) || { postsOnTime: 0, postsLate: 0 };
       const delivered = h.postsOnTime + h.postsLate;
       if (delivered > 0) onTime.push(Math.round((100 * h.postsOnTime) / delivered));
-      // The cell's local % is the share in THE CELL'S market:
-      // for home cells that is localAudiencePct itself (the
-      // gateMarketsFor home pct), so home benchmarks are
-      // unchanged; second-market cells benchmark on their own
-      // declared share there.
-      const lp = Number(entry.pct); if (Number.isFinite(lp) && lp > 0) locals.push(lp);
+      const lp = Number(u.creator && u.creator.localAudiencePct); if (Number.isFinite(lp) && lp > 0) locals.push(lp);
       const ta = Number(u.creator && u.creator.totalAudience); if (Number.isFinite(ta) && ta > 0) audiences.push(ta);
       const pr = Number(u.creator && u.creator.paidRate); if (Number.isFinite(pr) && pr > 0) rates.push(pr);
     }
@@ -657,11 +641,7 @@ async function buildSuggestionCandidates() {
     let total = 0;
     for (const u of agg.creators) {
       if (u.status !== "approved" || !profileCompleteOf(u) || standingState(u) === "banned") continue;
-      // Build -160: home counts as always; a non-home market
-      // counts this creator only under the same gate rule the
-      // supply matrix uses (switch ON + share at the category
-      // floor, or IG-Verified there).
-      if (gateMarketsFor(u, GATE_CATEGORY_FLOOR).some((e) => e.market === mk)) total += 1;
+      if (normalizeMarketName(u.market) === mk) total += 1;
     }
     if (total < GATE_LOW - 10) continue;
     let thin = null;
@@ -2192,7 +2172,7 @@ const maggieAi = require("./maggie-ai");
 const { buildProfilePageHtml, buildClaimPageHtml, buildRosterPageHtml, buildRosterNotFoundHtml } = require("./profile-meta");
 const { videoEmbedFor } = require("./video-embed");
 const intentLib = require("./intent");
-const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, declaredOffMarketsFor, gateMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT, verifiedInMarket, computeAudienceVerification, canonicalMarketName, COUNT_PLATFORM_KEYS, PLATFORM_LABELS, MATCHED_LOCAL_PLATFORMS, normalizePlatformLocalPct, normalizePlatformLinks, localRateModel, geoBreakdownState } = require("./audience-markets");
+const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT, verifiedInMarket, computeAudienceVerification, canonicalMarketName, COUNT_PLATFORM_KEYS, PLATFORM_LABELS, MATCHED_LOCAL_PLATFORMS, normalizePlatformLocalPct, normalizePlatformLinks, localRateModel, geoBreakdownState } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
 const bizdev = require("./bizdev");
@@ -4730,11 +4710,9 @@ async function adminMarketRows() {
 // published definitions (the verify-counts truth model:
 // canonical market matching, stacked totals, signed-up =
 // approved+pending minus testers, listings = home + shares
-// >= 5% whose market switch is on — an entry with active ===
-// false never lists; no flag is a legacy declaration and reads
-// as on (Build -160) — unstated shares excluded never zero).
-// The checker asserts the two computations agree, stat by
-// stat. No record, no name, no email ever leaves through here.
+// >= 5%, unstated shares excluded never zero). The checker
+// asserts the two computations agree, stat by stat. No record,
+// no name, no email ever leaves through here.
 function verifyTokenOk(event) {
   const want = process.env.SIGNL_VERIFY_TOKEN || "";
   if (!want) return false;
@@ -4768,11 +4746,7 @@ function verifyCountsRecount(users) {
       const pct = Number(e.pct);
       if (!Number.isFinite(pct) || pct <= 0) continue;
       const clamped = Math.max(0, Math.min(100, pct));
-      // The switch rides with the winning share, mirroring
-      // normalizeAudienceMarkets: strictly larger replaces, a
-      // tie keeps the first entry's flag.
-      const prev = byMarket.get(m);
-      if (!prev || clamped > prev.pct) byMarket.set(m, { pct: clamped, active: typeof e.active === "boolean" ? e.active : undefined });
+      if (!byMarket.has(m) || clamped > byMarket.get(m)) byMarket.set(m, clamped);
     }
     return byMarket;
   };
@@ -4785,14 +4759,14 @@ function verifyCountsRecount(users) {
       return pct === null || pct === undefined || !Number.isFinite(Number(pct)) ? null : Number(pct);
     }
     const hit = extras(user).get(marketName);
-    return hit === undefined ? null : hit.pct;
+    return hit === undefined ? null : hit;
   };
   const listings = (user) => {
     if (!user || user.role !== "creator" || !user.creator) return [];
     const home = canon(user.market);
     if (!home) return [];
     const out = [{ market: home, pct: share(user, home) }];
-    for (const [m, e] of extras(user)) if (e.pct >= 5 && e.active !== false) out.push({ market: m, pct: e.pct });
+    for (const [m, pct] of extras(user)) if (pct >= 5) out.push({ market: m, pct });
     return out;
   };
   const tester = (u) => !!(u && u.tester);
@@ -9303,10 +9277,6 @@ async function publicCreator(u, viewer, foundingPriority, marketContext) {
     // card was built for when it is not the home market, so the
     // card can say whose local number it is showing.
     listedMarkets: listedMarketsFor(u),
-    // Build -160: markets declared but switched OFF — the home
-    // surface names them as declared/not-listed with a pointer
-    // to the switch, never as listed.
-    declaredMarkets: declaredOffMarketsFor(u),
     marketContext: inOtherMarket ? { market: normalizeMarketName(marketContext), pct: shareHere, homeMarket: normalizeMarketName(u.market) } : null,
     totalAudience: audienceTotalOf(u.creator || {}),
     audienceStack: audienceView(u.creator || {}).platforms,
@@ -9489,9 +9459,8 @@ function categoryBySlug(slug) {
 }
 // The members of one market cell (or market x category cell):
 // finished-public creators LISTED in the market (Build -63:
-// home, or a reported share at or above the listing floor —
-// with that market's switch on since Build -160), ranked by
-// their local share in THAT market, the item-12
+// home, or a reported share at or above the listing floor),
+// ranked by their local share in THAT market, the item-12
 // Verified flag as tiebreak, then handle for stability. Each
 // card carries the market's own share, never the home number.
 function rosterMembers(users, marketName, categoryName) {
@@ -24632,11 +24601,7 @@ async function route(event) {
       const newHomeEntry = prior.find((e) => e.market === market.name);
       const rest = prior.filter((e) => e.market !== market.name);
       if (typeof c.localAudiencePct === "number" && c.localAudiencePct > 0 && user.market !== UNLISTED) {
-        // Build -160: the old home was a live listing (home
-        // always lists), so its preserved entry is explicitly
-        // ON — a market move preserves an existing listing; it
-        // never creates a new declaration.
-        rest.push({ market: normalizeMarketName(user.market), pct: c.localAudiencePct, active: true });
+        rest.push({ market: normalizeMarketName(user.market), pct: c.localAudiencePct });
       }
       c.audienceMarkets = normalizeAudienceMarkets(rest, market.name);
       c.localAudiencePct = newHomeEntry ? newHomeEntry.pct : null;
@@ -25197,15 +25162,11 @@ async function route(event) {
       // home market at write (the home share is localAudiencePct
       // below, never an entry here; unknown markets and junk
       // drop out in lib/audience-markets.js). A share at or above
-      // MULTI_MARKET_MIN_PCT lists them in that market ONLY with
-      // that market's switch on (Build -160: entry.active; no
-      // flag = legacy on): discovery, the Local List, the offer
-      // board, applying and accepting all read the same helper,
-      // so one save moves every gate at once. Deliberately NOT
-      // a completeness field.
-      let prevAudienceMarkets = null;
+      // MULTI_MARKET_MIN_PCT lists them in that market: discovery,
+      // the Local List, the offer board, applying and accepting
+      // all read the same helper, so one save moves every gate
+      // at once. Deliberately NOT a completeness field.
       if (b.audienceMarkets !== undefined) {
-        prevAudienceMarkets = normalizeAudienceMarkets(c.audienceMarkets, user.market);
         const cleanMarkets = normalizeAudienceMarkets(b.audienceMarkets, user.market);
         changes.audienceMarkets = [Array.isArray(c.audienceMarkets) ? c.audienceMarkets.length : 0, cleanMarkets.length];
         c.audienceMarkets = cleanMarkets;
@@ -25290,20 +25251,7 @@ async function route(event) {
         await logEvent({ type: "local_audience_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: changes.localAudiencePct[0], to: changes.localAudiencePct[1], source: "Self-reported" } });
       }
       if (changes.audienceMarkets) {
-        // Build -160: each market's switch state rides the
-        // event, and any market this save turned ON — brand new
-        // here, or stored OFF before — records the travel
-        // acknowledgement on the event itself: the ack is a
-        // stored fact, and every surface that can flip a switch
-        // on shows the travel copy at the switch. A legacy
-        // flagless entry that was already effectively on earns
-        // no ack (nothing was flipped).
-        const prevByMarket = new Map((prevAudienceMarkets || []).map((e) => [e.market, e]));
-        const travelAckMarkets = (c.audienceMarkets || [])
-          .filter((e) => e.active !== false)
-          .filter((e) => { const prev = prevByMarket.get(e.market); return !prev || prev.active === false; })
-          .map((e) => e.market);
-        await logEvent({ type: "audience_markets_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { markets: (c.audienceMarkets || []).map((e) => { const row = { market: e.market, pct: e.pct }; if (typeof e.active === "boolean") row.active = e.active; return row; }), listed: listedMarketsFor(user).map((e) => e.market), ...(travelAckMarkets.length ? { travelAckMarkets, travelAckAt: ts } : {}), source: "Self-reported" } });
+        await logEvent({ type: "audience_markets_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { markets: (c.audienceMarkets || []).map((e) => ({ market: e.market, pct: e.pct })), listed: listedMarketsFor(user).map((e) => e.market), source: "Self-reported" } });
       }
       // Build -140: the geography award moment — this save
       // flipped the breakdown to complete. The response flag
@@ -30989,7 +30937,7 @@ async function route(event) {
       // exactly as if it were not posted yet.
       if (!offerVisibleToCreator(offer, user, Date.now(), await isMarketLive(offer.market))) return err(404, "Offer not available");
       if (offer.status !== "open") return err(409, "This offer is not taking applications right now");
-      if (!isListedInMarket(user, offer.market)) return err(403, "This offer is in a market you are not listed in. Add your audience share for that market under Profile, in Your audience, and flip its switch on, and its offers open to you.");
+      if (!isListedInMarket(user, offer.market)) return err(403, "This offer is in a market you are not listed in. Add your audience share for that market under Profile, in Your audience, and its offers open to you.");
       if (offer.applicationsCloseAt && Date.now() > Date.parse(offer.applicationsCloseAt)) return err(409, "Applications for this offer have closed");
       const tier = normalizeTierBand(user.creator ? user.creator.tierBand : "");
       if (Array.isArray(offer.targetTiers) && offer.targetTiers.length && !offer.targetTiers.includes(tier)) return err(403, `This offer is for ${offer.targetTiers.join(", ")} creators. Your tier is ${tier}.`);
@@ -31064,7 +31012,7 @@ async function route(event) {
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.status !== "open") return err(404, "Offer not available");
       if (offer.creatorId && offer.creatorId !== user.id) return err(403, "This offer was sent to a different creator");
-      if (!isListedInMarket(user, offer.market)) return err(403, "This offer is in a market you are not listed in. Add your audience share for that market under Profile, in Your audience, and flip its switch on, and its offers open to you.");
+      if (!isListedInMarket(user, offer.market)) return err(403, "This offer is in a market you are not listed in. Add your audience share for that market under Profile, in Your audience, and its offers open to you.");
       const b = parseBody(event);
       const allBk = await allBookings();
       const existing = allBk.filter((bk) => bk.offerId === offer.id && bk.status !== "expired" && bk.status !== "cancelled");
