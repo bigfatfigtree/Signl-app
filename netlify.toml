@@ -47,6 +47,14 @@
   to = "/.netlify/functions/api/rosterpage/:splat"
   status = 200
 
+# Biz Dev founding-claim page (Build -155): served by the api
+# function (seg "founding-claim") so a claim from a rep's card QR
+# or tracked link posts into the same attribution record.
+[[redirects]]
+  from = "/founding-claim"
+  to = "/.netlify/functions/api/founding-claim"
+  status = 200
+
 # SPA fallback: every other route serves the app shell.
 [[redirects]]
   from = "/*"

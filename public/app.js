@@ -3098,6 +3098,7 @@ function identityMenuRows126() {
     signout,
   ];
   if (u.role === "creator") return [
+    ...(u.bizdevSeat && u.bizdevSeat.active ? [{ icon: "building", label: "Biz Dev home", sub: "Your seller dashboard", act: "return bdGoShell()" }] : []),
     dest("profile", "My profile", "Your public creator profile", "Profile"),
     dest("sliders", "Settings", "Notifications, connected accounts, password", "Settings"),
     signout,
@@ -3194,6 +3195,32 @@ function avaHtml122(txtCls, imgCls, url, initial) {
   return `<span class="ava122w">${base}<img class="${imgCls} ava122i" src="${esc(url)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
 }
 function tabBarHtml() {
+  // Build -155: the rep shell's phone bar — Home · My Leads ·
+  // Seller Kit · My Money · Menu, same .tab-item language as
+  // every other role's bar.
+  if (bdShellActive()) {
+    const t = state.tab || "BD Home";
+    const items155 = [
+      ["BD Home", "home", "Home"], ["BD Leads", "users", "My Leads"], ["BD Kit", "deck", "Seller Kit"], ["BD Money", "stats", "My Money"], ["BD Menu", "menu", "Menu"],
+    ];
+    const btns = items155.map(([tab, icon, label], ix) => `
+    <button type="button" class="tab-item tab-bar137 ${t === tab ? "on" : ""}" style="--bar-ord:${ix};order:${ix}" onclick="return go('dashboard','${tab}')" aria-label="${label}">
+      <span class="tab-ic">${bnIcon(icon)}</span>
+      <span class="tab-label"><span class="lbl-full">${label}</span><span class="lbl-short">${label}</span></span>
+    </button>`).join("");
+    const u = state.user;
+    const nm = u.name || "";
+    const photo = selfAvatarUrl122(u);
+    const initial = String(nm).trim().charAt(0).toUpperCase() || "S";
+    const railhead = `<div class="tab-railhead"><span class="brand-lockup"><img src="/assets/logo.png" alt="Magpie"><span class="formerly-line" data-bridge="formerly-signl">formerly SIGNL</span></span><span class="trh-sub">Biz Dev</span></div>`;
+    const railfoot = `<div class="tab-railfoot"><div class="tab-user tab-user-btn" role="button" tabindex="0" title="Your account" aria-label="Your account menu" onclick="return openIdentityMenu126()">${avaHtml122("tu-ava", "tu-ava", photo, initial)}<span><span class="tu-name">${esc(nm)}</span><br><span class="tu-sub">${esc(u.bizdevSeat.marketName || "")}</span></span></div></div>`;
+    const signout = `
+    <div class="tab-more-sep" aria-hidden="true"></div>
+    <button type="button" class="tab-item tab-signout" onclick="signOut()">
+      <span class="tab-ic">${bnIcon("signout")}</span><span class="tab-label">Sign out</span>
+    </button>`;
+    return `${railhead}<div class="tab-main">${btns}${signout}</div>${railfoot}`;
+  }
   const items = tabItemsFor();
   if (!items.length) return "";
   const u = state.user;
@@ -3679,7 +3706,7 @@ function adminTabsAllowed138() {
     "Social": ["social.view", "social.draft", "social.approve"],
     "Automations": ["connections.view", "automations.manage"],
     "Templates": ["templates.view", "templates.edit"], "Team": ["team.manage"],
-    "Messages": ["messages.send"],
+    "Messages": ["messages.send"], "Biz Dev": ["bizdev.view"],
   };
   return (label) => { const need = ROOMS[label]; if (!need) return true; return need.some(has); };
 }
@@ -3710,6 +3737,10 @@ function railItems() {
     // composer (segments or named people, into their in-app
     // Magpie-team threads), with the sent history and replies.
     add("a", "chat", "Messages", "return go('dashboard','Messages')", t === "Messages");
+    // Build -155: the Biz Dev room — reps, lead books, founding
+    // claims, escalations and the commission liability, all in
+    // one place (the HQ side of the seller dashboard).
+    add("a", "building", "Biz Dev", "return go('dashboard','Biz Dev')", t === "Biz Dev");
     add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
     add("a", "users", "Creators", "return go('dashboard','Creators')", t === "Creators");
     add("a", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
@@ -3734,6 +3765,16 @@ function railItems() {
     // the same rule the server enforces on every route.
     const allow138 = adminTabsAllowed138();
     if (allow138) { for (let i = items.length - 1; i >= 0; i--) if (!allow138(items[i].label)) items.splice(i, 1); }
+    return items;
+  }
+  // Build -155: in the rep shell the rail is the rep's five
+  // stops, whatever the account's own role is.
+  if (bdShellActive()) {
+    add("a", "home", "Home", "return go('dashboard','BD Home')", t === "BD Home" || !t);
+    add("a", "users", "My Leads", "return go('dashboard','BD Leads')", t === "BD Leads");
+    add("a", "deck", "Seller Kit", "return go('dashboard','BD Kit')", t === "BD Kit");
+    add("a", "stats", "My Money", "return go('dashboard','BD Money')", t === "BD Money");
+    add("a", "menu", "Menu", "return go('dashboard','BD Menu')", t === "BD Menu");
     return items;
   }
   if (u.status !== "approved" || isFoundingBusiness(u)) {
@@ -11462,6 +11503,10 @@ function renderDashboard() {
   const u = state.user;
   if (u.role === "admin" && state.preview) return renderPreview();
   if (u.role === "admin") return renderAdmin();
+  // Build -155: a biz dev seat makes Rep Home the default shell;
+  // the account's own role surfaces stay one tap away (Menu →
+  // My creator side) and the seat never changes the role itself.
+  if (bdShellActive()) return renderBizdevDash();
   if (u.role === "creator") return renderCreatorDash();
   // Build -106: a partner inside one of their pilot scopes
   // gets the Impact Portal shell, not the license shell.
@@ -26598,6 +26643,8 @@ function renderAdmin() {
   if (tab === "Team") loadAdminTeam138();
   // Build -152 room.
   if (tab === "Messages") loadAdminMessages152();
+  // Build -155 room.
+  if (tab === "Biz Dev") loadAdminBizdev155();
 }
 
 // Admin "Your account" (Build -126): Jeff had no Settings
@@ -33005,5 +33052,927 @@ async function saveAdvertiserPermit(userId, status) {
     // visible at all before; confirm it.
     showToast("Saved.");
   } catch (err) { alert(err.message); }
+  return false;
+}
+
+// ================= Biz Dev Dashboard (Build -155) =================
+// The field-seller shell. A biz dev seat on the account
+// (user.bizdevSeat) makes this the default shell; the account's
+// own role surfaces stay reachable from the rep Menu. Everything
+// here renders server payloads from /bdev/* — the server enforces
+// market + book scoping; this layer only presents. Plain words
+// throughout (the fresh-eyes rule): no insider terms on any rep
+// screen. Show Mode is a locked, client-facing deck: the rep
+// cannot edit a word of it.
+
+const BD_TABS = ["BD Home", "BD Leads", "BD Kit", "BD Money", "BD Menu"];
+const bd = {
+  tab: "BD Home", home: null, leads: null, filter: "all", q: "",
+  leadId: null, lead: null, logs: [],
+  logDraft: null, show: null, kit: null, money: null,
+  addOpen: false, nearNote: "",
+};
+
+function bdShellActive() {
+  const u = state.user;
+  return !!(u && u.bizdevSeat && u.bizdevSeat.active && state.shell !== "creator" && state.view !== "staff");
+}
+function bdGoShell() { state.shell = "bizdev"; state.tab = "BD Home"; renderNav(); return go("dashboard", "BD Home"); }
+function bdGoCreator() { state.shell = "creator"; state.tab = "Dashboard"; renderNav(); return go("dashboard", "Dashboard"); }
+
+function bdCacheSet(key, val) { try { localStorage.setItem("bd155:" + key, JSON.stringify({ at: Date.now(), val })); } catch (e) { /* storage full/blocked */ } }
+function bdCacheGet(key) { try { const r = JSON.parse(localStorage.getItem("bd155:" + key) || "null"); return r ? r.val : null; } catch (e) { return null; } }
+function bdOutbox() { try { return JSON.parse(localStorage.getItem("bd155:outbox") || "[]"); } catch (e) { return []; } }
+function bdOutboxSet(list) { try { localStorage.setItem("bd155:outbox", JSON.stringify(list)); } catch (e) { /* ignore */ } }
+async function bdFlushOutbox() {
+  const box = bdOutbox();
+  if (!box.length) return;
+  const left = [];
+  for (const item of box) {
+    try { await api("POST", item.path, item.body); } catch (e) { left.push(item); }
+  }
+  bdOutboxSet(left);
+}
+function bdQueuePost(path, body) {
+  const box = bdOutbox(); box.push({ path, body, at: Date.now() }); bdOutboxSet(box);
+}
+
+function renderBizdevDash() {
+  let tab = state.tab || "BD Home";
+  if (!BD_TABS.includes(tab) && tab !== "Account") tab = "BD Home";
+  state.tab = tab; bd.tab = tab;
+  app.innerHTML = `<div class="wrap bd-wrap"><div id="tab-body"><p class="muted">Loading...</p></div></div>`;
+  bdFlushOutbox();
+  const el = () => document.getElementById("tab-body");
+  if (tab === "Account") { el().innerHTML = accountViewHtml126("Biz Dev"); return; }
+  if (tab === "BD Leads") return bdLoadLeads(el());
+  if (tab === "BD Kit") return bdLoadKit(el());
+  if (tab === "BD Money") return bdLoadMoney(el());
+  if (tab === "BD Menu") return bdRenderMenu(el());
+  return bdLoadHome(el());
+}
+
+// ---------- shared bits ----------
+
+function bdFlagBanners(l) {
+  const out = [];
+  if (l.flags.doNotContact) out.push(`<div class="bd-banner bd-banner-stop">Do not contact this business.</div>`);
+  else if (l.flags.jeffHandles) out.push(`<div class="bd-banner bd-banner-stop">Jeff is handling this business personally. Don't visit, call, or message.</div>`);
+  if (l.phoneVerify) out.push(`<div class="bd-banner bd-banner-warn">Two numbers on file for this business — check which is right before you use it.</div>`);
+  if (l.flags.chain) out.push(`<div class="bd-banner bd-banner-warn">Part of a chain — the owner's okay may sit above this shop.</div>`);
+  return out.join("");
+}
+function bdLocked(l) { return !!(l.flags.doNotContact || l.flags.jeffHandles); }
+function bdStageBadge(stage) {
+  const kind = stage === "Founding spot claimed" ? "ok" : stage === "Said no" || stage === "Not a fit" ? "" : "info";
+  return `<span class="badge ${kind}">${esc(stage)}</span>`;
+}
+function bdNextLine(l) {
+  if (!l.nextAction) return "";
+  const na = l.nextAction;
+  const when = na.date ? (l.nextLate ? `<span class="bd-late">${esc(l.nextLate)}</span>` : esc(na.date)) : "when you can";
+  return `<div class="bd-next">${esc(na.type || "Visit")} · ${when}${na.what ? ` — ${esc(na.what)}` : ""}</div>`;
+}
+function bdMapsUrl(l) {
+  const q = encodeURIComponent([l.name, l.address || "", l.city || ""].filter(Boolean).join(", "));
+  return `https://www.google.com/maps/search/?api=1&query=${q}`;
+}
+function bdLeadCard(l, opts) {
+  const o = opts || {};
+  return `<div class="card bd-lead-card" ${o.big ? 'style="padding:18px"' : ""}>
+    ${bdFlagBanners(l)}
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong>${bdStageBadge(l.stage)}</div>
+    <div class="muted small">${esc(l.category)}${l.subType ? ` · ${esc(l.subType)}` : ""} · ${esc(l.neighborhood || "")}</div>
+    ${l.pendingApproval ? `<div class="bd-pending">Waiting for Jeff to check — you can work it now; it counts once he approves it.</div>` : ""}
+    ${bdNextLine(l)}
+    <div class="bd-card-btns">
+      ${o.big ? `<a class="btn" href="${bdMapsUrl(l)}" target="_blank" rel="noopener">Go</a><button type="button" class="btn" onclick="return bdCheckin('${l.id}')">I'm Here</button>` : ""}
+      <button type="button" class="btn ${o.big ? "ghost" : ""}" onclick="return bdOpenLead('${l.id}')">Open</button>
+    </div>
+  </div>`;
+}
+
+// ---------- Home ----------
+
+async function bdLoadHome(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  let d = null, offline = false;
+  try { d = await api("GET", "/bdev/home"); bd.home = d; bdCacheSet("home", d); }
+  catch (e) { d = bdCacheGet("home"); offline = true; if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
+  const p = d.progress;
+  const pct = Math.min(100, Math.round((p.creators / p.gateLow) * 100));
+  const buckets = Object.entries(p.byBucket).map(([name, b]) => `<div class="bd-bucket"><span>${esc(name)}</span><strong>${b.count}</strong><span class="muted small">${esc(b.word)}</span></div>`).join("");
+  const stops = d.plan.stops || [];
+  const nextUp = stops[0];
+  const restStops = stops.slice(1);
+  const dayLine = stops.length ? `${d.plan.doneCount} of ${d.plan.totalCount} done today` : "No visits planned today";
+  el.innerHTML = `
+  <div class="bd-toprow"><strong>${esc(d.rep.marketName)}</strong><span class="muted">${esc(d.rep.firstName)} · ${esc(d.date)}</span></div>
+  ${offline ? `<p class="bd-offline">You're seeing a saved copy — no signal right now. Anything you log saves on this phone and sends itself later.</p>` : ""}
+  <section class="sigtop130 panel">
+    <div class="sigbox130">
+      <div class="sigbox-head">${sigOrbMedia130(true)}<div class="sigbox-htext"><strong>Maggie</strong><span>Your morning brief</span></div></div>
+      <div class="bd-brief">${d.brief.map((line) => `<p>${esc(line)}</p>`).join("")}</div>
+      <form class="sigbox-form" onsubmit="return bdCoachSend(event)">
+        <input id="bd-coach-input" type="text" placeholder="Objection? Ask Maggie" autocomplete="off" aria-label="Ask Maggie about an objection">
+        <button type="submit" class="btn sigbox-go">Ask</button>
+      </form>
+      <div class="sigbox-thread" id="bd-coach-thread" hidden></div>
+    </div>
+  </section>
+  ${bdOutbox().length ? `<div class="bd-banner bd-banner-warn">${bdOutbox().length} saved item${bdOutbox().length === 1 ? "" : "s"} on this phone waiting for signal.</div>` : ""}
+  ${(d.unfinished || []).length ? `<section class="panel"><h3 style="margin-top:0">Finish today's logs</h3><p class="muted small" style="margin:0 0 8px">${d.unfinished.length} visit${d.unfinished.length === 1 ? "" : "s"} started but not logged. They stay here until they're done.</p>${d.unfinished.map((u) => `<button type="button" class="btn ghost small-btn" style="margin:0 6px 6px 0" onclick="return bdOpenLead('${u.leadId}')">Finish the log</button>`).join("")}<p class="small" style="margin:8px 0 0">Today so far: ${d.numbers.visitsThisWeek} visits this week · ${d.numbers.claimedThisMonth} founding spots claimed this month.</p></section>` : ""}
+  <section>
+    <h3 class="bd-h">Today's visits</h3>
+    <p class="bd-dayline">${esc(dayLine)}${d.plan.zoneLabel ? ` · ${esc(d.plan.zoneLabel)}` : ""}</p>
+    <div class="bd-progress"><span style="width:${stops.length ? Math.round((d.plan.doneCount / Math.max(1, d.plan.totalCount)) * 100) : 0}%"></span></div>
+    ${nextUp ? bdLeadCard(nextUp, { big: true }) : `<div class="panel"><p class="muted" style="margin:0">No visits planned. Pick a neighborhood below or see new leads.</p></div>`}
+    ${restStops.map((l) => bdLeadCard(l)).join("")}
+    ${(d.plan.clusters || []).length ? `<p class="muted small">Neighborhoods with unvisited shops: ${d.plan.clusters.map((c) => `${esc(c.zone)} (${c.count})`).join(" · ")}</p>` : ""}
+  </section>
+  ${(d.followUps || []).length ? `<section><h3 class="bd-h">Follow-ups due <span class="badge info">${d.followUps.length}</span></h3>${d.followUps.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
+  ${(d.newLeads || []).length ? `<section><h3 class="bd-h">New leads for you</h3>${d.newLeads.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
+  <section class="panel">
+    <h3 style="margin-top:0">${esc(d.rep.marketName)} founding progress</h3>
+    <p class="bd-gate-big">Creators: ${p.creators} of ${p.gateLow}–${p.gateHigh} needed to open ${esc(d.rep.marketName)}</p>
+    <div class="bd-progress"><span style="width:${pct}%"></span></div>
+    <div class="bd-buckets">${buckets}</div>
+    <p style="margin:10px 0 2px">Businesses on the founding list: <strong>${p.foundingClaimed}</strong></p>
+    <p class="muted small" style="margin:0">We open when the founding creator roster is full.</p>
+  </section>
+  <section class="panel">
+    <h3 style="margin-top:0">My numbers</h3>
+    <div class="bd-numbers">
+      <div><strong>${d.numbers.claimedThisMonth}</strong><span>Founding spots claimed (this month)</span></div>
+      <div><strong>${d.numbers.visitsThisWeek}</strong><span>Visits this week</span></div>
+      <div><strong>$${Number(d.numbers.moneyBuilding || 0).toLocaleString()}</strong><span>Money building up so far</span></div>
+    </div>
+    <button type="button" class="btn ghost" onclick="return go('dashboard','BD Money')">See My Money</button>
+  </section>`;
+}
+
+async function bdCoachSend(ev) {
+  ev.preventDefault();
+  const input = document.getElementById("bd-coach-input");
+  const thread = document.getElementById("bd-coach-thread");
+  const q = (input.value || "").trim();
+  if (!q) return false;
+  thread.hidden = false;
+  thread.innerHTML = `<div class="bd-coach-q">${esc(q)}</div><p class="muted small">Maggie is checking the Seller Kit...</p>`;
+  try {
+    const d = await api("POST", "/bdev/maggie/coach", { q });
+    thread.innerHTML = `<div class="bd-coach-q">${esc(q)}</div><div class="bd-coach-a"><strong>${esc(d.title || "From the Seller Kit")}</strong><p>${esc(d.answer || "")}</p></div>`;
+    input.value = "";
+  } catch (e) { thread.innerHTML = `<div class="bd-coach-q">${esc(q)}</div><p class="muted small">${esc(e.message)}</p>`; }
+  return false;
+}
+
+async function bdCheckin(id) {
+  try {
+    await api("POST", `/bdev/leads/${id}/checkin`, {});
+    showToast("You're checked in. The log will be waiting when you walk out.");
+  } catch (e) {
+    bdQueuePost(`/bdev/leads/${id}/checkin`, {});
+    showToast("Saved on this phone — it will send when you have signal.");
+  }
+  return false;
+}
+
+// ---------- Leads ----------
+
+const BD_FILTERS = [["all", "All"], ["due", "Due today"], ["notvisited", "Not visited yet"], ["thinking", "Thinking it over"], ["claimed", "Founding spot claimed"], ["near", "Near me"], ["checked", "Checked by Jeff"]];
+async function bdLoadLeads(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  bd.leadId = null;
+  let d = null;
+  try { d = await api("GET", `/bdev/leads?filter=${encodeURIComponent(bd.filter === "near" ? "all" : bd.filter)}&q=${encodeURIComponent(bd.q)}`); bdCacheSet("leads", d); }
+  catch (e) { d = bdCacheGet("leads"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
+  let leads = d.leads || [];
+  el.innerHTML = `
+  <h2>My Leads</h2>
+  <p class="muted small" style="margin:4px 0 10px">Your Hampton Roads book. Work it top to bottom — the next thing to do is always at the top.</p>
+  <div class="bd-searchrow">
+    <input id="bd-q" type="search" placeholder="Find a business in my book" value="${esc(bd.q)}" oninput="bdSearchInput(this.value)">
+    <button type="button" class="btn" onclick="return bdToggleAdd()">Add a Lead</button>
+  </div>
+  <div class="chip-row">${BD_FILTERS.map(([k, label]) => `<button type="button" class="chip ${bd.filter === k ? "on" : ""}" onclick="return bdSetFilter('${k}')">${esc(label)}</button>`).join("")}</div>
+  ${bd.nearNote ? `<p class="muted small">${esc(bd.nearNote)}</p>` : ""}
+  <div id="bd-add-slot">${bd.addOpen ? bdAddFormHtml() : ""}</div>
+  <div id="bd-lead-list">${leads.length ? leads.map((l) => bdLeadCard(l)).join("") : `<div class="panel"><p class="muted" style="margin:0">Nothing in this view. Pick another filter, or add a lead you walked past.</p></div>`}</div>`;
+}
+let bdSearchTimer = null;
+function bdSearchInput(v) { bd.q = v; clearTimeout(bdSearchTimer); bdSearchTimer = setTimeout(() => bdLoadLeads(), 350); return false; }
+function bdSetFilter(k) {
+  bd.filter = k;
+  if (k === "near") {
+    bd.nearNote = "Near me: your neighborhoods in drive order, starting where you last checked in. (Magpie doesn't track your location in the background — ever.)";
+  } else bd.nearNote = "";
+  bdLoadLeads();
+  return false;
+}
+function bdToggleAdd() { bd.addOpen = !bd.addOpen; const s = document.getElementById("bd-add-slot"); if (s) s.innerHTML = bd.addOpen ? bdAddFormHtml() : ""; return false; }
+function bdAddFormHtml() {
+  const cats = ["Restaurants & Dining", "Bars & Nightlife", "Health & Aesthetics", "Beauty & Grooming", "Experiences & Attractions", "Retail & Boutiques"];
+  return `<div class="panel">
+    <h3 style="margin-top:0">Add a lead</h3>
+    <p class="muted small">You can work it right away. It counts once Jeff checks it — usually within a business day.</p>
+    <div class="field"><label>Business name</label><input id="bd-add-name" placeholder="The shop's name"></div>
+    <div class="field"><label>Kind of business</label><select id="bd-add-cat">${cats.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+    <div class="field"><label>Neighborhood</label><input id="bd-add-nb" placeholder="e.g. Ghent Norfolk"></div>
+    <div class="field"><label>Address (if you have it)</label><input id="bd-add-addr" placeholder="Street address"></div>
+    <div class="field"><label>Phone, Instagram, or email (any one)</label><input id="bd-add-contact" placeholder="One way to reach them — or leave blank if you walked in"></div>
+    <button type="button" class="btn" onclick="return bdAddSubmit()">Add to my book</button>
+    <span id="bd-add-msg" class="small muted" style="margin-left:8px"></span>
+  </div>`;
+}
+async function bdAddSubmit() {
+  const msg = document.getElementById("bd-add-msg");
+  const contact = (document.getElementById("bd-add-contact").value || "").trim();
+  const body = {
+    name: document.getElementById("bd-add-name").value,
+    category: document.getElementById("bd-add-cat").value,
+    neighborhood: document.getElementById("bd-add-nb").value,
+    address: document.getElementById("bd-add-addr").value,
+  };
+  if (contact.includes("@") && contact.includes(".")) body.email = contact;
+  else if (/^@?[A-Za-z0-9._]+$/.test(contact) && !/\d{3}/.test(contact)) body.instagram = contact;
+  else if (contact) body.phone = contact;
+  try {
+    const d = await api("POST", "/bdev/leads", body);
+    if (d.duplicate) { msg.textContent = d.message; return false; }
+    bd.addOpen = false;
+    showToast("Added. It's in your book — Jeff checks it before it counts.");
+    bdLoadLeads();
+  } catch (e) { msg.textContent = e.message; }
+  return false;
+}
+
+// ---------- Lead detail + logging ----------
+
+async function bdOpenLead(id) {
+  bd.leadId = id;
+  const el = document.getElementById("tab-body");
+  if (!el) return false;
+  el.innerHTML = `<p class="muted">Loading...</p>`;
+  try {
+    const d = await api("GET", `/bdev/leads/${id}`);
+    bd.lead = d.lead; bd.logs = d.logs || [];
+    bdRenderLead(el);
+  } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+  return false;
+}
+
+function bdRenderLead(el) {
+  const l = bd.lead;
+  if (!l) return;
+  const locked = bdLocked(l);
+  const routes = [];
+  if (l.phone1) routes.push(`<a class="btn ghost small-btn" href="tel:${esc(l.phone1.replace(/[^0-9+]/g, ""))}">Call ${esc(l.phone1)}</a>`);
+  if (l.phone2) routes.push(`<a class="btn ghost small-btn" href="tel:${esc(l.phone2.replace(/[^0-9+]/g, ""))}">Call ${esc(l.phone2)}</a>`);
+  if (l.instagram) routes.push(`<a class="btn ghost small-btn" href="https://instagram.com/${esc(l.instagram)}" target="_blank" rel="noopener">Instagram @${esc(l.instagram)}</a>`);
+  if (l.email) routes.push(`<a class="btn ghost small-btn" href="mailto:${esc(l.email)}">Email</a>`);
+  if (!routes.length) routes.push(`<span class="muted small">No contact route on file — visit in person.</span>`);
+  el.innerHTML = `
+  <button type="button" class="linklike" onclick="return go('dashboard','BD Leads')">← My Leads</button>
+  <div class="card" style="margin-top:8px">
+    ${bdFlagBanners(l)}
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.name)}</strong>${bdStageBadge(l.stage)}</div>
+    <p class="muted" style="margin:4px 0">${esc(l.category)}${l.subType ? ` · ${esc(l.subType)}` : ""} · ${esc(l.neighborhood || "")}${l.address ? `<br>${esc(l.address)}` : ""}</p>
+    ${l.pendingApproval ? `<div class="bd-pending">Waiting for Jeff to check — you can work it now; it counts once he approves it.</div>` : ""}
+    ${l.championName ? `<p class="small">Introduced by Champion — ${esc(l.championName)}</p>` : ""}
+    <p style="margin:8px 0"><strong>Who runs it:</strong> ${l.dmName ? `${esc(l.dmName)}${l.dmRoleLabel ? ` — ${esc(l.dmRoleLabel)}` : ""}` : "Owner — name not on file, ask on your first visit"}${l.secondContact ? `<br><span class="muted small">Also: ${esc(l.secondContact.name)} — ${esc(l.secondContact.roleLabel || "")}</span>` : ""}${l.usuallyHere ? `<br><span class="muted small">Usually here: ${esc(l.usuallyHere)}</span>` : ""}</p>
+    <div id="bd-oneliner" class="bd-oneliner"><span class="muted small">Maggie's one-liner is loading...</span></div>
+    <div class="bd-routes">${routes.join("")}</div>
+    ${l.flags.noEmail && !l.email ? `<p class="muted small">No email on file — visit or phone only.</p>` : ""}
+    <p style="margin:10px 0 4px"><strong>Founding spot:</strong> ${l.founding.status === "Confirmed" ? "Claimed — confirmed ✓" : l.founding.status === "Claimed" ? "Claimed — waiting for HQ to confirm" : "Not claimed yet"}${l.founding.planInterest ? ` · They're thinking about the $${l.founding.planInterest} plan` : ""}</p>
+    ${bdNextLine(l)}
+    <div class="bd-actions">
+      <a class="btn" href="${bdMapsUrl(l)}" target="_blank" rel="noopener">Go</a>
+      <button type="button" class="btn" ${locked ? "disabled" : ""} onclick="return bdCheckin('${l.id}')">I'm Here</button>
+      <button type="button" class="btn" ${locked ? "disabled" : ""} onclick="return bdStartLog()">Log this visit</button>
+      <button type="button" class="btn ghost" ${locked ? "disabled" : ""} onclick="return bdShowEnter('${l.id}')">Show</button>
+      <button type="button" class="btn ghost" ${locked ? "disabled" : ""} onclick="return bdPriceEnter('${l.id}')">Asked about price — show plans</button>
+      <button type="button" class="btn ghost" onclick="return bdSendClaim('${l.id}')">Send them their claim link</button>
+      <button type="button" class="btn ghost" onclick="return bdEscalateOpen()">Ask Jeff</button>
+    </div>
+    <div id="bd-lead-slot"></div>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">What's happened here</h3>
+    ${(bd.logs || []).length ? [...bd.logs].reverse().map((v) => `<div class="bd-logrow"><span class="muted small">${esc(String(v.visitAt || v.createdAt || "").slice(0, 10))}</span> ${v.type === "price_shown" ? "Price was shown" : v.type === "show_session" ? `Show Mode was used (${v.pages || 0} screens)` : `<strong>${esc(v.outcome || "")}</strong>${v.spokeName ? ` — talked to ${esc(v.spokeName)}` : ""}${v.objections && v.objections.length ? `<br><span class="muted small">Pushed back on: ${esc(v.objections.join(", "))}</span>` : ""}`}</div>`).join("") : `<p class="muted" style="margin:0">Nothing yet. The first visit starts the story.</p>`}
+  </div>`;
+  api("GET", `/bdev/leads/${l.id}/oneliner`).then((d) => {
+    const s = document.getElementById("bd-oneliner");
+    if (s && d.text) s.innerHTML = `<strong>Maggie:</strong> ${esc(d.text)}`;
+  }).catch(() => { const s = document.getElementById("bd-oneliner"); if (s) s.innerHTML = ""; });
+}
+
+async function bdSendClaim(id) {
+  try {
+    const d = await api("POST", `/bdev/leads/${id}/send-claim`, {});
+    const slot = document.getElementById("bd-lead-slot");
+    if (slot) slot.innerHTML = `<div class="bd-pending" style="margin-top:10px">${esc(d.message)}<br><strong>${esc(d.claimUrl)}</strong></div>`;
+  } catch (e) { alert(e.message); }
+  return false;
+}
+function bdEscalateOpen() {
+  const slot = document.getElementById("bd-lead-slot");
+  if (!slot) return false;
+  const reasons = ["Wants a discount or free months", "Partner, sponsorship, or media talk", "Chain or multi-location deal", "Wants to invest", "Complaint about Magpie", "Press", "Other"];
+  slot.innerHTML = `<div class="panel" style="margin-top:10px">
+    <h3 style="margin-top:0">Ask Jeff</h3>
+    <p class="muted small">Say this out loud while you send it: <em>“That's above what I can say yes to — and I won't guess at it. That's Jeff's call, he's the founder. I'll put it to him today and come back to you with his actual answer, not my version of it.”</em></p>
+    <div class="field"><label>What's it about?</label><select id="bd-esc-reason">${reasons.map((r) => `<option>${esc(r)}</option>`).join("")}</select></div>
+    <div class="field"><label>Anything Jeff should know (optional)</label><textarea id="bd-esc-note" rows="2"></textarea></div>
+    <button type="button" class="btn" onclick="return bdEscalateSend()">Send it to Jeff</button>
+  </div>`;
+  return false;
+}
+async function bdEscalateSend() {
+  try {
+    await api("POST", `/bdev/leads/${bd.leadId}/escalate`, { reason: document.getElementById("bd-esc-reason").value, note: document.getElementById("bd-esc-note").value });
+    showToast("Sent to Jeff. Use the holding line out loud — he'll take it from there.");
+    bdOpenLead(bd.leadId);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---------- Visit log flow ----------
+
+const BD_OUTCOMES = ["Claimed a founding spot", "Very interested — set a follow-up", "Talked — needs to think", "Talked to staff — need the owner", "Owner not in", "Said no", "Shop closed / not a fit", "Owner said never contact again"];
+const BD_OBJECTIONS = ["Price", "No time", "Tried influencers before", "Doesn't get local %", "Asked when it launches", "Wants to pick creators", "Worried about no-shows", "Wants to know who else is on it", "Other"];
+const BD_WANT = ["Food", "Fitness", "Beauty", "Lifestyle", "Going Out", "Other"];
+const BD_COMPETITORS = ["Instagram direct", "An agency", "Another platform", "Radio", "None"];
+
+function bdStartLog() {
+  const l = bd.lead;
+  bd.logDraft = {
+    clientUid: `bd${Date.now()}${Math.random().toString(36).slice(2, 8)}`,
+    outcome: "", spokeWith: l.dmName ? "Owner" : "", spokeName: l.dmName || "",
+    interest: "", objections: [], catsWanted: [], supplyGap: "", competitor: "",
+    followUp: "", followUpDate: "", saidWords: "", walkInIntel: "", referral: "",
+    visitType: "In person", notFitReason: "", photoData: null, photoType: null,
+  };
+  const slot = document.getElementById("bd-lead-slot");
+  if (!slot) return false;
+  const d = bd.logDraft;
+  const chip = (group, val, label, on) => `<button type="button" class="chip bd-chip ${on ? "on" : ""}" onclick="return bdLogPick('${group}','${esc(val)}')">${esc(label || val)}</button>`;
+  slot.innerHTML = `<div class="panel bd-logflow" style="margin-top:10px">
+    <h3 style="margin-top:0">Log this visit</h3>
+    <p class="bd-logstep">1 · What happened?</p>
+    <div class="chip-row">${BD_OUTCOMES.map((o) => chip("outcome", o, o === "Claimed a founding spot" ? "⭐ " + o : o)).join("")}</div>
+    <p class="bd-logstep">2 · Who did you talk to?</p>
+    <div class="chip-row">${["Owner", "Manager", "Staff", "No one"].map((s) => chip("spokeWith", s, s === "Owner" && l.dmName ? `Owner — ${l.dmName.split(" ")[0]}` : s)).join("")}</div>
+    <input id="bd-log-spokename" placeholder="Their name (if different)" value="${esc(d.spokeName && !l.dmName ? d.spokeName : "")}" style="margin-top:6px">
+    <div id="bd-log-interest" hidden>
+      <p class="bd-logstep">3 · How interested?</p>
+      <div class="chip-row">${["Hot", "Warm", "Cold"].map((s) => chip("interest", s)).join("")}</div>
+    </div>
+    <div id="bd-log-obj" hidden>
+      <p class="bd-logstep">What did they push back on? (tap any)</p>
+      <div class="chip-row">${BD_OBJECTIONS.map((o) => chip("objections", o)).join("")}</div>
+    </div>
+    <p class="bd-logstep">What kinds of creators do they want? (tap any)</p>
+    <div class="chip-row">${BD_WANT.map((o) => chip("catsWanted", o)).join("")}</div>
+    <div class="field"><label>Asked for a creator type we don't have?</label><input id="bd-log-gap" placeholder="Say what they asked for"></div>
+    <p class="bd-logstep">Follow-up</p>
+    <div class="chip-row">${[["auto", "Let Magpie pick"], ["tomorrow", "Tomorrow"], ["3days", "In 3 days"], ["week", "Next week"], ["pick", "Pick a date"], ["none", "No follow-up"]].map(([k, label]) => chip("followUp", k, label, k === "auto")).join("")}</div>
+    <input type="date" id="bd-log-fudate" hidden>
+    <div class="field"><label>What they said — in their words</label><textarea id="bd-log-said" rows="2" placeholder="Anything worth remembering, in their words"></textarea></div>
+    <div class="field"><label>Anything else you noticed</label><textarea id="bd-log-intel" rows="2" placeholder="A renovation, a second location, a competitor's poster in the window..."></textarea></div>
+    <div class="field"><label>Did they name another business we should visit?</label><input id="bd-log-referral" placeholder="Business name — Jeff gets it as a possible new lead"></div>
+    <p class="bd-logstep">Who have they used before?</p>
+    <div class="chip-row">${BD_COMPETITORS.map((o) => chip("competitor", o)).join("")}</div>
+    <div class="field"><label>Storefront photo (optional — helps you spot the shop next time)</label><input type="file" id="bd-log-photo" accept="image/*" onchange="bdLogPhoto(this)"></div>
+    <button type="button" class="btn bd-done" onclick="return bdLogSubmit()">Done</button>
+    <span id="bd-log-msg" class="small muted" style="margin-left:8px"></span>
+  </div>`;
+  slot.scrollIntoView({ behavior: "smooth", block: "start" });
+  return false;
+}
+function bdLogPick(group, val) {
+  const d = bd.logDraft;
+  if (!d) return false;
+  if (group === "objections" || group === "catsWanted") {
+    const arr = d[group];
+    const i = arr.indexOf(val);
+    if (i > -1) arr.splice(i, 1); else arr.push(val);
+  } else d[group] = val;
+  if (group === "outcome") {
+    const interestDiv = document.getElementById("bd-log-interest");
+    const objDiv = document.getElementById("bd-log-obj");
+    const implies = ["Claimed a founding spot", "Said no", "Owner not in", "Shop closed / not a fit", "Owner said never contact again"].includes(val);
+    if (interestDiv) interestDiv.hidden = implies;
+    if (objDiv) objDiv.hidden = !["Talked — needs to think", "Talked to staff — need the owner", "Said no", "Very interested — set a follow-up"].includes(val);
+  }
+  if (group === "followUp") {
+    const dateInput = document.getElementById("bd-log-fudate");
+    if (dateInput) dateInput.hidden = val !== "pick";
+  }
+  // repaint chip states inside the log flow only
+  const slot = document.getElementById("bd-lead-slot");
+  if (slot) slot.querySelectorAll(".bd-chip").forEach((c) => {
+    const oc = c.getAttribute("onclick") || "";
+    const m = oc.match(/bdLogPick\('([^']+)','((?:[^'\\]|\\.)*)'\)/);
+    if (!m) return;
+    const g = m[1], v = m[2].replace(/\\'/g, "'");
+    const on = (g === "objections" || g === "catsWanted") ? d[g].includes(v) : d[g] === v;
+    c.classList.toggle("on", !!on);
+  });
+  return false;
+}
+function bdLogPhoto(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    const max = 1100;
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const cv = document.createElement("canvas");
+    cv.width = Math.round(img.width * scale); cv.height = Math.round(img.height * scale);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    const url = cv.toDataURL("image/jpeg", 0.72);
+    bd.logDraft.photoData = url.split(",")[1];
+    bd.logDraft.photoType = "image/jpeg";
+    URL.revokeObjectURL(img.src);
+  };
+  img.src = URL.createObjectURL(file);
+}
+async function bdLogSubmit() {
+  const d = bd.logDraft;
+  const msg = document.getElementById("bd-log-msg");
+  if (!d.outcome) { msg.textContent = "Pick what happened first."; return false; }
+  if (!d.spokeWith) { msg.textContent = "Say who you talked to."; return false; }
+  const body = {
+    clientUid: d.clientUid, outcome: d.outcome, spokeWith: d.spokeWith,
+    spokeName: (document.getElementById("bd-log-spokename").value || d.spokeName || "").trim() || null,
+    interest: d.interest || null, objections: d.objections, catsWanted: d.catsWanted,
+    supplyGap: document.getElementById("bd-log-gap").value || null,
+    competitor: d.competitor || null, saidWords: document.getElementById("bd-log-said").value || null,
+    walkInIntel: document.getElementById("bd-log-intel").value || null,
+    referral: document.getElementById("bd-log-referral").value || null,
+    visitType: d.visitType, photoData: d.photoData, photoType: d.photoType,
+  };
+  if (d.followUp === "none") body.followUp = "none";
+  else if (d.followUp === "tomorrow") body.followUpDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  else if (d.followUp === "3days") body.followUpDate = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  else if (d.followUp === "week") body.followUpDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  else if (d.followUp === "pick") body.followUpDate = document.getElementById("bd-log-fudate").value || null;
+  msg.textContent = "Saving...";
+  try {
+    const r = await api("POST", `/bdev/leads/${bd.leadId}/log`, body);
+    showToast(r.message || "Logged.");
+    bd.logDraft = null;
+    bdOpenLead(bd.leadId);
+  } catch (e) {
+    bdQueuePost(`/bdev/leads/${bd.leadId}/log`, body);
+    showToast("Saved on this phone — it will send when you have signal.");
+    bd.logDraft = null;
+    go("dashboard", "BD Home");
+  }
+  return false;
+}
+
+// ---------- Show Mode ----------
+
+async function bdEnsurePin() {
+  const home = bd.home || bdCacheGet("home");
+  if (home && home.rep && home.rep.pinSet) return true;
+  const pin = window.prompt("Set your 4-number Show Mode PIN first — it's the only way out of Show Mode, so a client holding your phone can't wander into your book.");
+  if (!pin) return false;
+  try { await api("POST", "/bdev/pin", { pin }); if (bd.home) bd.home.rep.pinSet = true; return true; }
+  catch (e) { alert(e.message); return false; }
+}
+async function bdShowEnter(leadId) {
+  if (!await bdEnsurePin()) return false;
+  try {
+    const d = await api("GET", `/bdev/leads/${leadId}/show`);
+    bd.show = { data: d, screen: 1, maxSeen: 1, startedAt: Date.now(), pricing: false };
+    bdShowRender();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function bdPriceEnter(leadId) {
+  if (!await bdEnsurePin()) return false;
+  try {
+    await api("POST", `/bdev/leads/${leadId}/price-shown`, {});
+    const d = await api("GET", `/bdev/leads/${leadId}/show`);
+    bd.show = { data: d, screen: 7, maxSeen: 7, startedAt: Date.now(), pricing: true };
+    bdShowRender();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+function bdShowScreens() {
+  const d = bd.show.data;
+  const bench = d.bench || [];
+  const cards = bench.map((c) => `
+    <div class="bd-show-card">
+      ${c.photoUrl ? `<img class="bd-show-photo" src="${esc(c.photoUrl)}" alt="" onerror="this.remove()">` : `<div class="bd-show-photo bd-show-mono">${esc(String(c.firstName || "?").charAt(0).toUpperCase())}</div>`}
+      <div class="bd-show-cmain">
+        <div class="bd-show-cname">${esc(c.firstName || c.name)} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}</div>
+        <div class="muted small">${esc(c.categoryLine)}${c.alsoLine ? " · Also in Hampton Roads" : ""}</div>
+        ${c.reachLine ? `<div class="bd-show-reach">${esc(c.reachLine)}</div>` : ""}
+      </div>
+    </div>`).join("");
+  return [
+    { title: "Your next regulars are already following people right here in Hampton Roads.", body: `<p>Magpie is a local list of creators — neighbors with local followings. Local shops use them to get local people in the door. You're being invited in early, before we open here.</p>` },
+    { title: "These are founding creators in Hampton Roads.", body: bench.length ? `${cards}<p class="muted">The founding list is growing every week. Shops that claim a spot now get first pick when we open.</p>` : `<p>The founding list is growing every week — the first creators in this category are being added now. Shops that claim a spot now get first pick when we open.</p>` },
+    { title: "You pick. You approve. Nothing posts without you.", body: `<ol class="bd-show-steps"><li>Invite a creator to come in. Treat them to a visit — a meal, a service, an experience — and they post 1 post + 1 story.</li><li>Or book them at their own listed price for bigger work. They set their rate. (Creators keep 97% of their rate — the 3% is card processing.)</li><li>Every visit is counted at your register with their own code — you'll see exactly who came in because of them.</li></ol><p><strong>You choose every creator. You approve every visit. You see the count.</strong></p>` },
+    { title: "We don't guess. We count.", body: `<p>Magpie's match system ranks creators by how many of their followers actually live here — not by who's most famous. When you want an idea, Maggie, our in-app helper, suggests a campaign and names the creators she'd pick for your shop, and why. After a visit, you don't get “good vibes” — you get a count: how many of their people came in and used the code.</p>` },
+    { title: "Hampton Roads founding spots are open now.", body: `<p>We're building the founding creator list for Hampton Roads right now. Shops that claim a founding spot are first in line when we open — first pick of creators, founding pricing locked, and we'll set your page up with you. There's nothing to pay today — paying starts when we open here, and we open when the founding creator roster is full. You're being invited in early.</p>` },
+    { title: "Claim your founding spot.", body: `
+      <form id="bd-show-claim" onsubmit="return bdShowClaim(event)">
+        <div class="field"><label>Your name</label><input id="bsc-name" autocomplete="name"></div>
+        <div class="field"><label>Business name</label><input id="bsc-biz" value="${esc(d.lead.name)}" autocomplete="organization"></div>
+        <div class="field"><label>Best phone or Instagram to reach you</label><input id="bsc-contact"></div>
+        <label class="bd-show-check"><input type="checkbox" id="bsc-yes"> <span>Yes — put us on the Hampton Roads founding list.</span></label>
+        <button type="submit" class="btn bd-show-next">Claim your founding spot</button>
+        <p class="muted small">Or scan the code on the card ${esc(d.repFirstName || "your rep")} leaves you and do it on your own phone. No payment today.</p>
+        <p id="bsc-msg" class="small"></p>
+      </form>` },
+    { title: "Founding plans.", pricing: true, body: `<div class="bd-plans"><div class="bd-plan"><strong>$199</strong><span>a month</span></div><div class="bd-plan"><strong>$349</strong><span>a month</span></div><div class="bd-plan"><strong>$699</strong><span>a month</span></div></div><p>3-month minimum · $100 off your first month.</p><p class="muted">You'd pick your plan when we open — nothing to pay today.</p>` },
+  ];
+}
+function bdShowRender() {
+  const s = bd.show;
+  if (!s) return;
+  const screens = bdShowScreens();
+  const total = s.pricing ? 1 : 6;
+  const idx = s.pricing ? 7 : s.screen;
+  const sc = screens[idx - 1];
+  let host = document.getElementById("bd-show-overlay");
+  if (!host) { host = document.createElement("div"); host.id = "bd-show-overlay"; document.body.appendChild(host); }
+  host.innerHTML = `
+  <div class="bd-show-wrap">
+    <div class="bd-show-top">
+      <span class="bd-show-mark" id="bd-show-mark" title="Magpie"><img src="/assets/logo.png" alt="Magpie"></span>
+      <span class="muted small">${s.pricing ? "Founding plans" : `${idx} of ${total}`}</span>
+    </div>
+    <div class="bd-show-progress"><span style="width:${(idx / 6) * 100}%"></span></div>
+    <div class="bd-show-body">
+      <h1 class="bd-show-title">${esc(sc.title)}</h1>
+      <div class="bd-show-text">${sc.body}</div>
+    </div>
+    ${idx === 6 || s.pricing ? "" : `<button type="button" class="btn bd-show-next" onclick="return bdShowNext()">Next</button>`}
+    ${!s.pricing && idx > 1 && idx < 6 ? `<button type="button" class="linklike bd-show-back" onclick="return bdShowBack()">Back</button>` : ""}
+    <p class="muted small bd-show-hint">Hold the Magpie mark to hand the phone back.</p>
+  </div>`;
+  const mark = document.getElementById("bd-show-mark");
+  let timer = null;
+  mark.addEventListener("pointerdown", () => { timer = setTimeout(bdShowPinPad, 2000); });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => mark.addEventListener(ev, () => clearTimeout(timer)));
+  let tx = null;
+  host.ontouchstart = (e) => { tx = e.touches[0].clientX; };
+  host.ontouchend = (e) => {
+    if (tx == null || s.pricing) return;
+    const dx = e.changedTouches[0].clientX - tx;
+    if (dx < -60) bdShowNext(); else if (dx > 60) bdShowBack();
+    tx = null;
+  };
+}
+function bdShowNext() { if (bd.show && bd.show.screen < 6) { bd.show.screen += 1; bd.show.maxSeen = Math.max(bd.show.maxSeen, bd.show.screen); bdShowRender(); } return false; }
+function bdShowBack() { if (bd.show && bd.show.screen > 1) { bd.show.screen -= 1; bdShowRender(); } return false; }
+async function bdShowClaim(ev) {
+  ev.preventDefault();
+  const msg = document.getElementById("bsc-msg");
+  const body = {
+    rep: (bd.home && bd.home.rep && bd.home.rep.repCode) || "",
+    lead: bd.show.data.lead.id,
+    businessName: document.getElementById("bsc-biz").value,
+    name: document.getElementById("bsc-name").value,
+    contact: document.getElementById("bsc-contact").value,
+    yes: document.getElementById("bsc-yes").checked,
+  };
+  try {
+    const d = await api("POST", "/bdev/claim", body);
+    msg.textContent = d.message || "You're on the list.";
+    msg.style.color = "#1F6B3B";
+  } catch (e) { msg.textContent = e.message; }
+  return false;
+}
+function bdShowPinPad() {
+  const host = document.getElementById("bd-show-overlay");
+  if (!host || !bd.show) return;
+  host.innerHTML = `<div class="bd-show-wrap bd-pin-wrap">
+    <p class="bd-pin-title">Enter your PIN</p>
+    <div class="bd-pin-dots"><span id="bd-pin-dot"></span></div>
+    <div class="bd-pin-pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, "", 0, "←"].map((n) => n === "" ? `<span></span>` : `<button type="button" class="bd-pin-key" onclick="return bdPinKey('${n}')">${n}</button>`).join("")}</div>
+    <p id="bd-pin-msg" class="small muted"></p>
+    <button type="button" class="linklike" onclick="bdShowRender()">Back to the show</button>
+  </div>`;
+  bd.show.pinEntry = "";
+}
+function bdPinKey(k) {
+  const s = bd.show;
+  if (!s) return false;
+  if (k === "←") s.pinEntry = (s.pinEntry || "").slice(0, -1);
+  else if ((s.pinEntry || "").length < 4) s.pinEntry = (s.pinEntry || "") + k;
+  const dot = document.getElementById("bd-pin-dot");
+  if (dot) dot.textContent = "•".repeat((s.pinEntry || "").length);
+  if ((s.pinEntry || "").length === 4) bdPinVerify();
+  return false;
+}
+async function bdPinVerify() {
+  const s = bd.show;
+  try {
+    const d = await api("POST", "/bdev/pin/verify", { pin: s.pinEntry });
+    if (d.ok) {
+      const pages = s.pricing ? 1 : s.maxSeen;
+      const seconds = Math.round((Date.now() - s.startedAt) / 1000);
+      const leadId = s.data.lead.id;
+      api("POST", `/bdev/leads/${leadId}/show-session`, { pages, seconds }).catch(() => {});
+      const host = document.getElementById("bd-show-overlay");
+      if (host) host.remove();
+      bd.show = null;
+      showToast("Show Mode closed.");
+    } else {
+      const msg = document.getElementById("bd-pin-msg");
+      if (msg) msg.textContent = "That PIN didn't match. Try again.";
+      s.pinEntry = "";
+      const dot = document.getElementById("bd-pin-dot");
+      if (dot) dot.textContent = "";
+    }
+  } catch (e) {
+    const msg = document.getElementById("bd-pin-msg");
+    if (msg) msg.textContent = e.message;
+  }
+}
+
+// ---------- Seller Kit ----------
+
+async function bdLoadKit(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  let d = null;
+  try { d = await api("GET", "/bdev/kit"); bd.kit = d.kit; bdCacheSet("kit", d); }
+  catch (e) { d = bdCacheGet("kit"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
+  const k = d.kit;
+  const card = (title, text) => `<div class="card bd-kit-card"><strong>${esc(title)}</strong><p>${esc(text)}</p></div>`;
+  el.innerHTML = `
+  <h2>Seller Kit</h2>
+  <p class="muted small" style="margin:4px 0 10px">Every word here is approved to say out loud, word for word. If it isn't in the Kit, it goes to Jeff.</p>
+  <div class="field"><input id="bd-kit-q" type="search" placeholder="Search the kit — try “launch” or “expensive”" oninput="bdKitSearch(this.value)"></div>
+  <div id="bd-kit-results"></div>
+  <h3 class="bd-h">Openers</h3>
+  ${k.openers.map((o) => card(o.title, o.text)).join("")}
+  <h3 class="bd-h">The founding list</h3>
+  ${card(k.openers[1].title, k.openers[1].text)}
+  <h3 class="bd-h">Price answers <span class="muted small">(only when they ask)</span></h3>
+  ${k.priceAnswers.map((o) => card(o.title, o.text)).join("")}
+  <div class="card bd-kit-card"><strong>Founding terms — exactly what you may quote</strong><ul class="bd-terms">${k.foundingTerms.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+  <p style="margin:10px 0 0"><a class="btn ghost small-btn" href="${esc(k.deck.url)}" target="_blank" rel="noopener">Open the seller deck (${esc(k.deck.version)})</a></p></div>
+  <h3 class="bd-h">Objections</h3>
+  ${k.objections.map((o) => card(o.q, o.a)).join("")}
+  <h3 class="bd-h">Closing</h3>
+  ${k.closing.map((o) => card(o.title, o.text)).join("")}
+  <div class="card bd-kit-danger">
+    <strong>Rules — never say these</strong>
+    <ul class="bd-terms">${k.doNotSay.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+  </div>
+  <div class="card bd-kit-card">
+    <strong>Help from Jeff</strong>
+    <p>Some things are always Jeff's call: discounts or free months, partner or media talk, chains, anyone wanting to invest, complaints, press.</p>
+    <p><em>“${esc(k.holdingLine)}”</em></p>
+    <p class="muted small">Send it from the lead's page with <strong>Ask Jeff</strong> — one tap, before you leave the shop.</p>
+  </div>`;
+}
+function bdKitSearch(q) {
+  const host = document.getElementById("bd-kit-results");
+  if (!host || !bd.kit) return;
+  q = (q || "").trim().toLowerCase();
+  if (q.length < 2) { host.innerHTML = ""; return; }
+  const k = bd.kit;
+  const pool = [...k.openers, ...k.priceAnswers, ...k.closing, ...k.objections.map((o) => ({ title: o.q, text: o.a }))];
+  const hits = pool.filter((i) => (i.title + " " + i.text).toLowerCase().includes(q));
+  host.innerHTML = hits.length ? hits.map((i) => `<div class="card bd-kit-card"><strong>${esc(i.title)}</strong><p>${esc(i.text)}</p></div>`).join("") : `<p class="muted small">Nothing in the Kit matches that. If it isn't in the Kit, it goes to Jeff.</p>`;
+}
+
+// ---------- My Money ----------
+
+async function bdLoadMoney(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  let d = null;
+  try { d = await api("GET", "/bdev/money"); bd.money = d; }
+  catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
+  const m = d.money;
+  const v = m.vesting;
+  const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  el.innerHTML = `
+  <h2>My Money</h2>
+  <section class="panel">
+    <p class="bd-money-big">Money building up: ${money(m.accrued)}</p>
+    <p class="muted" style="margin:0">This is commission you've earned on paper. Magpie isn't collecting payments yet, so commissions are paid once Hampton Roads opens for payments and businesses start paying. No payout date is promised.</p>
+    ${d.seatState === "probation" ? `<p class="bd-pending" style="margin-top:10px">Probation: 25% direct rate. Exclusivity and the 5% Hampton Roads residual vest at 15 activations, or 3 straight months of 3+.</p>` : ""}
+    ${d.warningMonth ? `<div class="bd-banner bd-banner-warn">Warning month: ${esc(d.warningMonth)} — Jeff has put this seat on a warning month. One more failing month and the seat lapses; the book you've built keeps paying either way.</div>` : ""}
+    ${d.atRisk ? `<div class="bd-banner bd-banner-warn">Heads up: ${esc(d.atRisk)}</div>` : ""}
+  </section>
+  <section class="panel">
+    <h3 style="margin-top:0">Founding pipeline — not earned yet</h3>
+    ${d.pipeline.length ? d.pipeline.map((p) => `<div class="bd-logrow"><strong>${esc(p.name)}</strong> · ${p.status === "Confirmed" ? "Claimed — confirmed ✓" : "Claimed — waiting for HQ to confirm"}${p.plan ? ` · thinking about $${p.plan}/mo` : " · no plan picked yet"}</div>`).join("") : `<p class="muted" style="margin:0">No founding spots claimed yet. The first one starts this list.</p>`}
+    ${d.pipeline.length ? `<p class="small" style="margin:10px 0 0">If they all activate ${d.pipeline.some((p) => !p.plan) ? "at a typical founding plan" : "on the plans they're thinking about"}, that's about <strong>${money(d.pipelineMonthlyIfActive)}</strong> a month in commission at your 25% rate. An estimate — it depends on businesses opening and paying.</p>` : ""}
+  </section>
+  <section class="panel">
+    <h3 style="margin-top:0">My book</h3>
+    ${m.perBusiness.length ? m.perBusiness.map((b) => `<div class="bd-logrow"><strong>${esc(b.businessName)}</strong> · ${esc(b.lane)}${b.plan ? ` · $${b.plan}/mo` : " · plan not picked yet"}<br><span class="muted small">${b.windowStart ? `Commission window: started ${esc(b.windowStart)} (12 months)` : "Window not started — starts when this business's first payment is collected"} · Building up: ${money(b.accrued)}</span>${b.championName ? `<br><span class="muted small">Champion intro — a $250 bounty goes to the champion on activation, paid by Magpie, not from your pay.</span>` : ""}</div>`).join("") : `<p class="muted" style="margin:0">No active businesses yet — this fills when Hampton Roads opens and your founding list activates.</p>`}
+    ${m.residualCount ? `<p class="small" style="margin:10px 0 0">Other Hampton Roads openings (combined): ${m.residualCount} business${m.residualCount === 1 ? "" : "es"} — the 5% residual counts once you're vested.</p>` : ""}
+  </section>
+  <section class="panel">
+    <h3 style="margin-top:0">Your rate</h3>
+    <p style="margin:0 0 6px">Your rate this month: <strong>${m.ratePct}%</strong></p>
+    <p class="muted" style="margin:0 0 6px">Kept book: ${m.kept} business${m.kept === 1 ? "" : "es"}${m.shrank ? " — the book shrank this month, so this month pays the base rate. Tiers need a no-shrink month." : m.kept >= 25 ? " — book held or grew ✓, tier test passed on size." : ""}</p>
+    <p class="muted" style="margin:0">New activations this month: ${m.newThisMonth || 0} of 5 <span class="bd-dots">${[1, 2, 3, 4, 5].map((i) => `<span class="bd-dot ${i <= (m.newThisMonth || 0) ? "on" : ""}"></span>`).join("")}</span> — 5 in a month earns +3 points that month. Any rate is capped at 38%.</p>
+    <p class="muted small">Once Hampton Roads opens, this test runs on active businesses. Right now it sits at the base rate.</p>
+    ${d.nextTier ? `<p style="margin:10px 0 0">At ${d.nextTier.at} kept businesses (no shrink), your rate becomes ${d.nextTier.rate}%. You're at ${d.nextTier.have}.</p>` : ""}
+  </section>
+  <section class="panel">
+    <h3 style="margin-top:0">Vesting — your Hampton Roads seat</h3>
+    <p style="margin:0 0 4px">15 businesses activated by you: <strong>${v.byCount.have} of 15</strong></p>
+    <div class="bd-progress"><span style="width:${Math.min(100, (v.byCount.have / 15) * 100)}%"></span></div>
+    <p style="margin:10px 0 4px">Or 3 straight months of 3+ activations: <strong>month ${v.byStreak.have} of 3</strong></p>
+    <div class="bd-progress"><span style="width:${Math.min(100, (v.byStreak.have / 3) * 100)}%"></span></div>
+    ${v.vested ? `<p class="bd-pending" style="margin-top:10px">Vested ✓ — you now also earn 5% on other businesses that open in Hampton Roads, whoever brought them in.</p>` : `<p class="muted small" style="margin:10px 0 0">Vesting starts counting when Hampton Roads opens and businesses activate. Founding claims are your pipeline above — they are not vesting progress, and this screen never blurs the two.</p>`}
+  </section>`;
+}
+
+// ---------- Menu ----------
+
+function bdRenderMenu(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  const seat = u.bizdevSeat || {};
+  el.innerHTML = `
+  <h2>Menu</h2>
+  <div class="panel">
+    <p style="margin:0 0 4px"><strong>${esc(u.name || "")}</strong></p>
+    <p class="muted" style="margin:0">Biz Dev · ${esc(seat.marketName || "")} · Your code: <strong>${esc(seat.repCode || "")}</strong></p>
+    <p class="muted small">Your claim link: ${esc(location.origin)}/founding-claim?rep=${esc(seat.repCode || "")} — it goes on your printed cards, and every claim through it comes back to you.</p>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">Show Mode PIN</h3>
+    <p class="muted small">The 4 numbers that get you out of Show Mode. Set it before your first show.</p>
+    <div class="bd-pinset"><input id="bd-pin-new" inputmode="numeric" maxlength="4" placeholder="4 numbers"><button type="button" class="btn" onclick="return bdSetPin()">Save PIN</button></div>
+    <span id="bd-pin-set-msg" class="small muted"></span>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">Your other side</h3>
+    <p class="muted small">You also have a creator account. It's hidden from businesses and never shows in Show Mode — this just lets you look at it.</p>
+    <button type="button" class="btn ghost" onclick="return bdGoCreator()">My creator side</button>
+    <button type="button" class="btn ghost" onclick="return go('dashboard','Account')">Your account</button>
+    <button type="button" class="btn ghost" onclick="signOut()">Sign out</button>
+  </div>`;
+}
+async function bdSetPin() {
+  const pin = document.getElementById("bd-pin-new").value;
+  const msg = document.getElementById("bd-pin-set-msg");
+  try { await api("POST", "/bdev/pin", { pin }); msg.textContent = "PIN saved."; if (bd.home) bd.home.rep.pinSet = true; }
+  catch (e) { msg.textContent = e.message; }
+  return false;
+}
+
+// ---------- Admin: Biz Dev room (Build -155) ----------
+
+const abd = { data: null, leads: [] };
+async function loadAdminBizdev155() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading the seller system...</p>`;
+  try {
+    abd.data = await api("GET", "/admin/bdev/overview");
+    const leadsRes = await api("GET", "/admin/bdev/leads");
+    abd.leads = leadsRes.leads || [];
+    abdRender(el);
+  } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+}
+function abdRender(el) {
+  const d = abd.data;
+  if (!d) return;
+  const repName = (id) => { const r = (d.reps || []).find((x) => x.userId === id); return r ? `${r.name} (${r.repCode})` : id; };
+  const leadName = (id) => { const l = abd.leads.find((x) => x.id === id); return l ? l.name : id; };
+  el.innerHTML = `
+  <h3 style="margin-top:0">Biz Dev — the seller system</h3>
+  <p class="muted small">Reps work their own market's book in the app. Nothing counts toward money until you confirm it here. Founding confirmations to businesses go out from HQ (the business lane) — confirming here flips the record and logs it.</p>
+  ${(d.markets || []).map((m) => `
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <strong>${esc(m.marketName || m.marketId)}</strong>
+      <span><select id="abd-state-${esc(m.marketId)}">${["Building", "Ready", "Open"].map((s) => `<option ${m.state === s ? "selected" : ""}>${s}</option>`).join("")}</select>
+      <button type="button" class="btn small-btn" onclick="return abdSetState('${esc(m.marketId)}')">Save state</button></span>
+    </div>
+    <p class="small" style="margin:8px 0">Gate: <strong>${m.progress.creators} creators</strong> of ${m.progress.gateLow}–${m.progress.gateHigh} · weakest: ${Object.entries(m.progress.byBucket).sort((a, b) => a[1].count - b[1].count).map(([k, v]) => `${esc(k)} ${v.count}`).join(" · ")}</p>
+    <p class="small muted" style="margin:0">Leads ${m.loaded} · touched ${m.touched} · visited ${m.visited} · interested ${m.interested} · claimed ${m.claimed} (confirmed ${m.confirmed}) · active ${m.active}</p>
+  </div>`).join("")}
+  <div class="panel">
+    <strong>Commission liability</strong>
+    <p class="small" style="margin:8px 0">Accrued total unpaid: <strong>$${Number(d.liability.totalAccrued || 0).toLocaleString()}</strong> across ${d.liability.activations} activations. Locked math: 25% direct (30% at 25+ kept no-shrink, 35% at 75+), +3 kicker in 5+-activation months, 38% cap, 5% same-market residual post-vesting only, months 1–12 per business, clawback only on refunds inside the 3-month minimum. Blended planning value $326.50/business/mo.</p>
+    ${(d.liability.perRep || []).map((r) => `<div class="bd-logrow">${esc(repName(r.repId))} · ${esc(r.marketId)} · accrued $${Number(r.accrued).toLocaleString()} · ${r.activations} activations · ${r.vested ? "vested" : "not vested"}</div>`).join("") || `<p class="muted small" style="margin:0">No activations yet — pre-launch, liability is $0 by design.</p>`}
+  </div>
+  <div class="panel">
+    <strong>Reps</strong>
+    ${(d.reps || []).map((r) => `<div class="bd-logrow"><strong>${esc(r.name)}</strong> · ${esc(r.email)} · ${esc(r.marketName)} · code ${esc(r.repCode)} · ${esc(r.seatState)}${r.warningMonth ? ` · ⚠ warning month ${esc(r.warningMonth)}` : ""}${r.atRisk ? ` · ⚠ ${esc(r.atRisk)}` : ""}</div>`).join("") || `<p class="muted small">No seats yet.</p>`}
+    <div class="form-2col" style="margin-top:10px">
+      <div class="field"><label>Account email</label><input id="abd-seat-email" placeholder="rep@example.com"></div>
+      <div class="field"><label>Rep code</label><input id="abd-seat-code" placeholder="HR-TONY"></div>
+    </div>
+    <button type="button" class="btn small-btn" onclick="return abdAssignSeat()">Assign seat (Hampton Roads)</button>
+    <span id="abd-seat-msg" class="small muted" style="margin-left:8px"></span>
+  </div>
+  ${(d.pendingLeads || []).length ? `<div class="panel"><strong>Rep-added leads waiting for your check (${d.pendingLeads.length})</strong>
+    ${d.pendingLeads.map((l) => `<div class="bd-logrow"><strong>${esc(l.name)}</strong> · ${esc(l.category)} · ${esc(l.neighborhood || "")} · from ${esc(repName(l.assignedRepId))}
+      <span style="display:block;margin-top:6px"><button type="button" class="btn small-btn" onclick="return abdLeadAction('${l.id}','approve')">Approve — it counts</button>
+      <input id="abd-rej-${l.id}" placeholder="If not: one line back to the rep" style="width:260px">
+      <button type="button" class="btn ghost small-btn" onclick="return abdLeadAction('${l.id}','reject')">Send back</button></span></div>`).join("")}
+  </div>` : ""}
+  ${(d.unconfirmedClaims || []).length ? `<div class="panel"><strong>Founding claims waiting for HQ confirmation (${d.unconfirmedClaims.length})</strong>
+    ${d.unconfirmedClaims.map((c) => `<div class="bd-logrow"><strong>${esc(c.businessName)}</strong> · ${esc(c.contact || "")} · via ${esc(c.matchedVia || "form")} · ${esc(String(c.createdAt).slice(0, 10))}${c.leadId ? ` <button type="button" class="btn small-btn" onclick="return abdLeadAction('${c.leadId}','confirm-claim')">Confirm (then HQ emails them)</button>` : ""}</div>`).join("")}
+  </div>` : ""}
+  ${(d.escalations || []).length ? `<div class="panel"><strong>Escalations from reps (${d.escalations.length})</strong>
+    ${d.escalations.map((e) => `<div class="bd-logrow"><strong>${esc(leadName(e.leadId))}</strong> · ${esc(e.reason)}${e.note ? ` · “${esc(e.note)}”` : ""} · ${esc(repName(e.repId))} <button type="button" class="btn ghost small-btn" onclick="return abdEscClose('${e.id}')">Handled</button></div>`).join("")}
+  </div>` : ""}
+  ${(d.disputes || []).length ? `<div class="panel"><strong>Claims that need a match (${d.disputes.length})</strong>
+    ${d.disputes.map((c) => `<div class="bd-logrow"><strong>${esc(c.businessName)}</strong> · ${esc(c.contact || "")} · claimed ${esc(String(c.createdAt).slice(0, 10))}
+      <span style="display:block;margin-top:6px"><select id="abd-match-${c.id}">${abd.leads.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join("")}</select>
+      <button type="button" class="btn small-btn" onclick="return abdMatchClaim('${c.id}')">Match to this lead</button></span></div>`).join("")}
+  </div>` : ""}
+  ${(d.pendingReferrals || []).length ? `<div class="panel"><strong>Business referrals from the field (${d.pendingReferrals.length})</strong>
+    ${d.pendingReferrals.map((r) => `<div class="bd-logrow">“${esc(r.name)}” — named at ${esc(leadName(r.fromLeadId))} by ${esc(repName(r.fromRepId))}. Add it as an HQ lead from the campaign side if it's real.</div>`).join("")}
+  </div>` : ""}
+  <div class="panel">
+    <strong>Do not contact (two-way with outreach)</strong>
+    <p class="muted small">A name closed on either side is closed on both. Dashboard-originated entries are exported here for the outreach state merge.</p>
+    ${(d.dnc || []).map((r) => `<div class="bd-logrow">${esc(r.label || r.key)} <span class="muted small">· ${esc(r.source || "")} · ${esc(String(r.createdAt).slice(0, 10))}</span> <button type="button" class="linklike" onclick="return abdDncRemove('${esc(r.key)}')">remove</button></div>`).join("") || `<p class="muted small">None.</p>`}
+    <div style="margin-top:8px"><input id="abd-dnc-label" placeholder="Business name to close" style="width:260px"> <button type="button" class="btn small-btn" onclick="return abdDncAdd()">Add + lock matching leads</button></div>
+  </div>
+  <div class="panel">
+    <strong>All leads</strong>
+    <div style="margin-top:8px">${abd.leads.map((l) => `
+      <div class="bd-logrow">
+        <strong>${esc(l.name)}</strong> · ${esc(l.category)} · ${esc(l.neighborhood || "")} · ${esc(l.stage)} · ${esc(repName(l.assignedRepId))}${l.pendingApproval ? " · ⏳ waiting your check" : ""}${l.founding && l.founding.status === "Claimed" ? " · claimed, unconfirmed" : ""}${l.founding && l.founding.status === "Confirmed" ? " · claimed ✓" : ""}
+        <span style="display:block;margin-top:6px">
+          <button type="button" class="btn ghost small-btn" onclick="return abdLeadAction('${l.id}','confirm-claim')">Confirm claim</button>
+          <button type="button" class="btn ghost small-btn" onclick="return abdFlag('${l.id}','doNotContact',${!(l.flags && l.flags.doNotContact)})">${l.flags && l.flags.doNotContact ? "Clear do-not-contact" : "Set do-not-contact"}</button>
+          <button type="button" class="btn ghost small-btn" onclick="return abdFlag('${l.id}','jeffHandles',${!(l.flags && l.flags.jeffHandles)})">${l.flags && l.flags.jeffHandles ? "Clear “Jeff handles”" : "Jeff handles this one"}</button>
+          <select id="abd-reassign-${l.id}">${(d.reps || []).map((r) => `<option value="${r.userId}" ${r.userId === l.assignedRepId ? "selected" : ""}>${esc(r.repCode)}</option>`).join("")}</select>
+          <button type="button" class="btn ghost small-btn" onclick="return abdReassign('${l.id}')">Reassign</button>
+        </span>
+      </div>`).join("")}
+    </div>
+  </div>`;
+}
+async function abdRefresh() { await loadAdminBizdev155(); }
+async function abdSetState(marketId) {
+  try { await api("POST", "/admin/bdev/markets/state", { marketId, state: document.getElementById(`abd-state-${marketId}`).value }); showToast("Market state saved."); abdRefresh(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function abdAssignSeat() {
+  const msg = document.getElementById("abd-seat-msg");
+  try {
+    await api("POST", "/admin/bdev/reps/assign", { email: document.getElementById("abd-seat-email").value, repCode: document.getElementById("abd-seat-code").value, marketId: "hampton-roads", marketName: "Hampton Roads" });
+    msg.textContent = "Seat assigned.";
+    abdRefresh();
+  } catch (e) { msg.textContent = e.message; }
+  return false;
+}
+async function abdLeadAction(id, action) {
+  try {
+    const body = action === "reject" ? { line: (document.getElementById(`abd-rej-${id}`) || {}).value || "" } : {};
+    await api("POST", `/admin/bdev/leads/${id}/${action}`, body);
+    showToast("Done.");
+    abdRefresh();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function abdFlag(id, flag, val) {
+  try { await api("POST", `/admin/bdev/leads/${id}/flags`, { [flag]: val }); abdRefresh(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function abdReassign(id) {
+  try { await api("POST", `/admin/bdev/leads/${id}/reassign`, { repId: document.getElementById(`abd-reassign-${id}`).value }); showToast("Reassigned."); abdRefresh(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function abdEscClose(id) {
+  try { await api("POST", `/admin/bdev/escalations/${id}/close`, {}); abdRefresh(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function abdMatchClaim(id) {
+  try { await api("POST", `/admin/bdev/claims/${id}/match`, { leadId: document.getElementById(`abd-match-${id}`).value }); showToast("Matched."); abdRefresh(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function abdDncAdd() {
+  try { await api("POST", "/admin/bdev/dnc", { label: document.getElementById("abd-dnc-label").value }); abdRefresh(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function abdDncRemove(key) {
+  try { await api("POST", "/admin/bdev/dnc", { removeKey: key }); abdRefresh(); }
+  catch (e) { alert(e.message); }
   return false;
 }

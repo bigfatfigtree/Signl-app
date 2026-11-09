@@ -54,6 +54,7 @@ const FLAGS = [
   "learn.edit",
   "learn.publish",
   "messages.send",
+  "bizdev.view",
 ];
 
 // Plain words for the permissions grid: Jeff sets a person up in
@@ -84,6 +85,7 @@ const FLAG_LABELS = {
   "learn.edit": "Learn: write and edit article drafts",
   "learn.publish": "Learn: publish articles",
   "messages.send": "Messages: send in-app messages to segments and people",
+  "bizdev.view": "Biz Dev: the seller dashboard HQ — reps, leads, claims and commission liability",
 };
 
 // Stat subsets a stats.view grant can carry. Money is off in every
@@ -212,6 +214,7 @@ const ROOM_FLAGS = {
   "Templates": ["templates.view", "templates.edit"],
   "Team": ["team.manage"],
   "Messages": ["messages.send"],
+  "Biz Dev": ["bizdev.view"],
 };
 
 function roomAllowed(user, tab) {

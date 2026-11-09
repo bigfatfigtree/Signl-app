@@ -2150,6 +2150,7 @@ const intentLib = require("./intent");
 const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT, verifiedInMarket, computeAudienceVerification, canonicalMarketName, COUNT_PLATFORM_KEYS, PLATFORM_LABELS, MATCHED_LOCAL_PLATFORMS, normalizePlatformLocalPct, normalizePlatformLinks, localRateModel, geoBreakdownState } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
+const bizdev = require("./bizdev");
 const pilots = require("./pilots");
 const notifyLib = require("./notify");
 const ZIP_CENTROIDS = require("./zip-centroids.json");
@@ -2174,6 +2175,62 @@ recruiters.init({
   deliverEmail: (kind, user, subject, text, band, opts) => deliverEmail(kind, user, subject, text, band, opts),
   allUsers: () => allUsers(),
   testMode: () => TEST_MODE,
+});
+
+// Biz Dev Dashboard (Build -155): the module borrows the capture
+// log, the user list, and this market-creator read (gate counts +
+// the Show Mode bench). Market scoping is enforced inside the
+// module from the seat on the signed-in account.
+function bdevGateBuckets(cats) {
+  const out = new Set();
+  for (const c of cats || []) {
+    if (c === "Food & Drink") out.add("Food");
+    else if (c === "Fitness & Wellness" || c === "Sports" || c === "Health & Wellness") out.add("Fitness");
+    else if (c === "Beauty & Grooming") out.add("Beauty");
+    else if (c === "Nightlife" || c === "Attractions & Events") out.add("Going Out");
+    else out.add("Lifestyle");
+  }
+  return out;
+}
+async function bdevMarketCreators(marketId) {
+  const market = MARKETS.find((m) => m.id === marketId);
+  const canonName = market ? market.name : marketId;
+  const users = await allUsers();
+  const photoRows = await store.list("photo:");
+  const photoSet = new Set(photoRows.map((r) => r.key.slice("photo:".length)));
+  let count = 0;
+  const byBucket = {};
+  const bench = [];
+  for (const u of users) {
+    if (!u || u.role !== "creator" || isTester(u)) continue;
+    const home = canonicalMarketName(u.market);
+    const isHome = home === canonName;
+    if (isHome && u.status === "approved") {
+      count += 1;
+      for (const b of bdevGateBuckets(u.creator ? u.creator.categories : [])) byBucket[b] = (byBucket[b] || 0) + 1;
+    }
+    if (u.status !== "approved" || !profileCompleteOf(u)) continue;
+    const pct = audienceShareInMarket(u, canonName);
+    if (pct === null || (!isHome && pct < 5)) continue;
+    const handle = (u.creator && u.creator.handle) || "";
+    bench.push({
+      id: u.id,
+      name: u.name || "",
+      firstName: String(u.name || handle || "").split(" ")[0] || "",
+      handle,
+      categories: (u.creator && u.creator.categories) || [],
+      localPct: pct,
+      photoUrl: photoSet.has(u.id) ? `/api/users/${u.id}/photo` : null,
+      community: /hub|community|collective/i.test(`${u.name || ""} ${handle}`),
+    });
+  }
+  bench.sort((a, b) => (b.localPct || 0) - (a.localPct || 0));
+  return { count, byBucket, bench };
+}
+bizdev.init({
+  logCapture: (fields) => logCapture(fields),
+  allUsers: () => allUsers(),
+  marketCreators: (marketId) => bdevMarketCreators(marketId),
 });
 
 // Impact Portal (Build -77): pilot funding partners. Same init
@@ -22578,6 +22635,10 @@ async function route(event) {
     // One-time recruiter kit email: fires on the first request
     // after deploy, guarded by a claimed blob flag, never repeats.
     (async () => { try { await maybeSendRecruiterKit(); } catch (e) { /* kit email is best-effort */ } })(),
+    // One-time Biz Dev seed (Build -155): Tony Johnson's seat +
+    // the 32 Hampton Roads founding targets as his book,
+    // claimed-flag guarded; waits quietly until his account exists.
+    (async () => { try { await bizdev.maybeSeedBizdev(); } catch (e) { /* biz dev seed is best-effort */ } })(),
     // One-time profileComplete backfill, claimed-flag guarded.
     (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
     // One-time Build -61 public-page backfill, claimed-flag guarded.
@@ -22653,6 +22714,18 @@ async function route(event) {
   // recruiter or the admin (owner workspace) only.
   if (seg[0] === "recruiter") {
     return recruiters.handleRecruiterApi({ user, seg, method, event, query });
+  }
+
+  // Biz Dev Dashboard (Build -155): the rep's own API plus the
+  // public founding-claim POST. The module enforces seat + market
+  // scoping server-side on every route.
+  if (seg[0] === "bdev") {
+    return bizdev.handleBizdevApi({ user, seg, method, event, query });
+  }
+
+  // Biz Dev HQ (Build -155): Jeff's side of the seller system.
+  if (seg[0] === "admin" && seg[1] === "bdev") {
+    return bizdev.handleAdminBizdevApi({ user, seg, method, event, query });
   }
 
   // Impact Portal (Build -77): the pilot funding partner's own
@@ -22916,6 +22989,13 @@ async function route(event) {
   // (profile-meta.js); every other case, including deeper paths
   // like the proof sheet (/c/<handle>/proof), returns the
   // unmodified shell and the SPA renders exactly as before.
+  // Biz Dev founding-claim page (Build -155): the public page a
+  // business lands on from Tony's leave-behind card QR or his
+  // tracked link. Served by the function (like /c/*) so the claim
+  // form posts into the same attribution record the rep sees.
+  if (method === "GET" && seg[0] === "founding-claim" && apiIdx === -1) {
+    return bizdev.claimPageHtml(query);
+  }
   if (method === "GET" && (seg[0] === "cpage" || (seg[0] === "c" && apiIdx === -1))) {
     const shell = await loadAppShell(event);
     if (seg.length !== 2) return htmlPage(shell);
