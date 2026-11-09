@@ -1793,6 +1793,23 @@ img.maggie-char-img { object-fit: cover; }
 .abd-prewarm-body { white-space: pre-wrap; line-height: 1.55; font: inherit; font-size: 14px; margin: 6px 0 10px; }
 .abd-rollup-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .abd-rollup-table th, .abd-rollup-table td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); }
+/* Build -161: the waiting strip, the Manage expander, the
+   Manage/Sell toggle, and a phone-shaped rollup table (stacked
+   rows with word labels — never chopped columns). */
+.abd-wait { border-left: 4px solid var(--accent, #E4572E); }
+.abd-wait-clear { border-left-color: var(--line); }
+.abd-manage { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.abd-leadline { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.abd-mode { display: flex; gap: 6px; }
+@media (max-width: 768px) {
+  .abd-rollup-table thead { display: none; }
+  .abd-rollup-table, .abd-rollup-table tbody, .abd-rollup-table tr, .abd-rollup-table td { display: block; width: 100%; box-sizing: border-box; }
+  .abd-rollup-table tr { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .abd-rollup-table td { border-bottom: 0; padding: 2px 6px; }
+  .abd-rollup-table td::before { content: attr(data-label) ": "; font-weight: 600; color: var(--muted, #6B7268); }
+  .abd-rollup-table td[data-label="City"] { font-weight: 700; }
+  .abd-rollup-table td[data-label="City"]::before { content: ""; }
+}
 #abd-preview { position: fixed; inset: 0; z-index: 3000; background: #fff; overflow-y: auto; }
 .abd-pv-banner { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--accent-soft, #FFF4E8); border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 14.5px; }
 .abd-pv-frame { max-width: 430px; margin: 0 auto; padding: 16px 14px 48px; box-sizing: border-box; }

@@ -151,6 +151,31 @@ async function stampUserSeat(user, seat) {
   await store().set(`user:${user.id}`, user);
 }
 
+// Build -161: multi-market seats (Jeff's HQ seat). A seat's home
+// market stays seat.marketId; a seat that works more than one
+// market carries seat.markets = [{marketId, marketName}]. Every
+// rep read/write still derives its market from the seat — the
+// client may only ASK for one of the seat's own markets (?mkt=),
+// and the effective seat below is what the existing builders
+// consume, so per-city behaviour (day plan, queue, gate
+// progress, Show bench) comes from the same code paths.
+function seatMarkets(seat) {
+  if (seat && Array.isArray(seat.markets) && seat.markets.length) {
+    return seat.markets.map((m) => ({ marketId: m.marketId, marketName: m.marketName || m.marketId }));
+  }
+  return seat ? [{ marketId: seat.marketId, marketName: seat.marketName }] : [];
+}
+function seatHasMarket(seat, marketId) { return seatMarkets(seat).some((m) => m.marketId === marketId); }
+function effectiveSeat(seat, marketId) {
+  if (!marketId || marketId === seat.marketId) return seat;
+  const m = seatMarkets(seat).find((x) => x.marketId === marketId);
+  if (!m) return null;
+  return { ...seat, marketId: m.marketId, marketName: m.marketName };
+}
+function seatSummary(seat) {
+  return { marketId: seat.marketId, marketName: seat.marketName, markets: seatMarkets(seat), hqSeat: !!seat.hqSeat, repCode: seat.repCode };
+}
+
 function pinHashOf(pin, salt) { return crypto.createHash("sha256").update(`${salt}:${pin}`).digest("hex"); }
 
 // ---------------- leads ----------------
@@ -518,14 +543,20 @@ async function moneyFor(repId, marketId) {
 async function liability() {
   const acts = await allActivations();
   const reps = [...new Set(acts.map((a) => a.repId))];
-  let total = 0; const perRep = [];
+  let total = 0; const perRep = []; let counted = 0;
   for (const repId of reps) {
+    // Build -161: an HQ seat (Jeff's own) never accrues commission
+    // liability — he isn't paying himself. Its activations still
+    // happened; they just owe nobody anything.
+    const seatRec = await store().get(`bdevrep:${repId}`);
+    if (seatRec && seatRec.hqSeat) continue;
     const marketId = (acts.find((a) => a.repId === repId) || {}).marketId;
     const m = await moneyFor(repId, marketId);
     total += m.accrued;
+    counted += acts.filter((a) => a.repId === repId).length;
     perRep.push({ repId, marketId, accrued: m.accrued, activations: m.activations, vested: m.vesting.vested });
   }
-  return { totalAccrued: Math.round(total * 100) / 100, perRep, activations: acts.length };
+  return { totalAccrued: Math.round(total * 100) / 100, perRep, activations: counted };
 }
 
 // ---------------- Seller Kit (verbatim, spec §6) ----------------
@@ -614,23 +645,60 @@ const KIT = {
 // Build -157 practice set: Phase A's doorstep scenarios, each
 // answered with the LIVE kit's own words (never a second copy of
 // the approved text — if the kit changes, practice changes).
-function practiceAnswer157(n) {
-  const obj = (key) => { const o = KIT.objections.find((x) => x.key === key); return o ? o.a : null; };
+function practiceAnswer157(kit, n) {
+  const k = kit || KIT;
+  const obj = (key) => { const o = k.objections.find((x) => x.key === key); return o ? o.a : null; };
   switch (Number(n)) {
-    case 1: return KIT.priceAnswers[0].text;
+    case 1: return k.priceAnswers[0].text;
     case 2: return obj("Asked when it launches");
     case 3: return obj("Tried influencers before");
     case 4: return obj("No time");
     case 5: return obj("Worried about no-shows");
     case 6: return obj("Wants to know who else is on it");
-    case 7: return KIT.closing[0].text;
-    case 8: return KIT.holdingLine;
+    case 7: return k.closing[0].text;
+    case 8: return k.holdingLine;
     default: return null;
   }
 }
-const PRACTICE157 = ENRICH157 && Array.isArray(ENRICH157.practice)
-  ? ENRICH157.practice.map((p) => ({ ...p, answer: practiceAnswer157(p.n) }))
-  : [];
+function practiceFor157(kit) {
+  return ENRICH157 && Array.isArray(ENRICH157.practice)
+    ? ENRICH157.practice.map((p) => ({ ...p, answer: practiceAnswer157(kit, p.n) }))
+    : [];
+}
+const PRACTICE157 = practiceFor157(KIT);
+
+// Build -161: Jeff's own Seller Kits. Tony's KIT above stays
+// byte-for-byte his (Build -157 pins its words). Jeff sells as
+// the founder, in every city his seat holds; his kits clone the
+// approved structure and swap the name/city lines only — same
+// canon, same order, same do-not-say list. His print kit is
+// empty: the printed cards carry Tony's name and code, and Jeff
+// has none of his own yet — the Kit screen simply shows no
+// print section rather than somebody else's cards.
+const jeffKitCache161 = new Map();
+function jeffKit161(marketName) {
+  const M = marketName || "Hampton Roads";
+  if (jeffKitCache161.has(M)) return jeffKitCache161.get(M);
+  const k = JSON.parse(JSON.stringify(KIT));
+  const swap = (s) => String(s || "").split("Hampton Roads").join(M);
+  k.openers[0] = { title: "30-second opener", text: `Hey, I'm Jeff — I run Magpie. Magpie is local influencer marketing: real creators right here in ${M}, whose followers actually live here. We're putting together the founding creator list now, and when we open, local shops will use those creators to get neighbors in the door. Shops like yours are claiming founding spots before we open. Can I show you the creators for two minutes? That's it.` };
+  k.openers = k.openers.map((o, i) => (i === 0 ? o : { ...o, text: swap(o.text) }));
+  k.objections = k.objections.map((o) => ({ ...o, a: swap(o.a) }));
+  k.twoMinute = { title: k.twoMinute.title, paras: (k.twoMinute.paras || []).map((p) => swap(p)) };
+  k.faq = (k.faq || []).map((f) => {
+    if (/behind Magpie/.test(f.q)) return { q: f.q, a: `Magpie is built by Jeff Rimmer — that's me. I've spent two decades in local media and startups, and most recently I've been leading marketing for large brands and Fortune 100 companies, including influencer marketing at scale. I'm the one who looks after ${M} founding shops day to day.` };
+    if (f.q === "What does it cost?") return { q: f.q, a: String(f.a || "").split("ask Tony").join("ask me") };
+    return { ...f, a: swap(f.a) };
+  });
+  k.printKit = [];
+  k.holdingLine = "That's my call to make — and I won't guess at it standing here. Let me check it properly and come back to you with an actual answer, not my first instinct.";
+  jeffKitCache161.set(M, k);
+  return k;
+}
+function kitFor(seat) {
+  if (seat && seat.hqSeat) return jeffKit161(seat.marketName);
+  return KIT;
+}
 
 // ---------------- Show Mode bench ----------------
 
@@ -1016,10 +1084,11 @@ function weekWindow(now) {
 }
 
 const SCOREBOARD_FOLLOWUP_OUTCOMES = ["Very interested — set a follow-up", "Talked — needs to think", "Talked to staff — need the owner"];
+function scoreKey161(seat, monday) { return `bdevscore:${seat.userId}:${seat.marketId}:${monday}`; }
 async function computeScoreboard(seat, now) {
   const nowDate = now ? new Date(now) : new Date();
   const { monday, sunday } = weekWindow(nowDate);
-  const key = `bdevscore:${seat.userId}:${monday}`;
+  const key = scoreKey161(seat, monday);
   const existing = await store().get(key);
   if (existing) return existing;
   const inWindow = (iso) => { const d = String(iso || "").slice(0, 10); return d >= monday && d <= sunday; };
@@ -1054,14 +1123,157 @@ async function computeScoreboard(seat, now) {
   return rec;
 }
 
-async function latestScoreboard157(repId) {
+async function latestScoreboard157(repId, marketId) {
   const rows = (await store().list("bdevscore:")).map((r) => r.value)
-    .filter((v) => v && v.repId === repId)
+    .filter((v) => v && v.repId === repId && (!marketId || !v.marketId || v.marketId === marketId))
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   const latest = rows[0] || null;
   if (!latest) return null;
   const age = Date.now() - Date.parse(latest.createdAt);
   return Number.isFinite(age) && age <= 8 * 86400000 ? latest : null;
+}
+
+// ---------------- Build -161: Jeff's own seller seat + Nashville ----------------
+// Jeff sells too — as an extension of his admin login, never a
+// second account. One-time loader in the seed/enrich pattern;
+// every step is idempotent, so a deploy re-run converges instead
+// of duplicating:
+//   1. The super admin (Jeff) gets a real rep seat: HQ-JEFF,
+//      active, flagged hqSeat (no commission liability accrues on
+//      it — see liability()), holding two markets: Hampton Roads
+//      + Nashville.
+//   2. Hampton Roads: Jeff's book is his OWN working copy of each
+//      HR lead — same intel, playbook and research, fresh working
+//      state. Tony's records are never touched; copies link back
+//      via masterId (the master lead's id), so a lead HQ adds to
+//      Tony's book later still reaches Jeff's book on a re-run.
+//   3. Nashville: the 57 stored business targets load as Jeff's
+//      Nashville book with their -157-pattern playbooks.
+const JEFF_SEAT_FLAG = "config:bdevJeffSeat161";
+let jeffSeatDone161 = false;
+async function maybeLoadJeffSeat161() {
+  if (jeffSeatDone161) return true;
+  const seedFlag = await store().get(SEED_FLAG);
+  if (!seedFlag || !seedFlag.done) return false; // Tony's book first; HR copies read it
+  const users = deps.allUsers ? await deps.allUsers() : [];
+  const envAdmin = String(process.env.ADMIN_EMAIL || "").toLowerCase();
+  const admins = users.filter((u) => u && u.role === "admin" && (!u.adminPerms || u.adminPerms.super));
+  let jeff = admins.find((u) => envAdmin && String(u.email || "").toLowerCase() === envAdmin) || null;
+  if (!jeff && admins.length === 1) jeff = admins[0];
+  if (!jeff) return false; // ambiguous or absent — never guess whose account this is
+  const flag = (await store().get(JEFF_SEAT_FLAG)) || {};
+  if (!flag.claimedAt) await store().set(JEFF_SEAT_FLAG, { ...flag, claimedAt: nowIso() });
+
+  // 1. The seat.
+  let seat = await seatOf(jeff);
+  if (!seat || seat.repCode !== "HQ-JEFF") {
+    seat = await assignSeat({ userId: jeff.id, marketId: "hampton-roads", marketName: "Hampton Roads", repCode: "HQ-JEFF", seatState: "active" });
+  }
+  seat.markets = [
+    { marketId: "hampton-roads", marketName: "Hampton Roads" },
+    { marketId: "nashville", marketName: "Nashville" },
+  ];
+  seat.hqSeat = true;
+  seat.seatState = "active";
+  seat.active = true;
+  await store().set(`bdevrep:${jeff.id}`, seat);
+  jeff.bizdevSeat = { active: true, marketId: seat.marketId, marketName: seat.marketName, repCode: "HQ-JEFF", markets: seat.markets, hqSeat: true };
+  await store().set(`user:${jeff.id}`, jeff);
+
+  // 2. Hampton Roads working copies (idempotent on masterId).
+  const hrAll = await leadsOfMarket("hampton-roads");
+  const sources = hrAll.filter((l) => l.assignedRepId !== jeff.id);
+  const mine = hrAll.filter((l) => l.assignedRepId === jeff.id);
+  const mineByMaster = new Map(mine.map((l) => [l.masterId, l]));
+  let hrCopied = 0, hrPlaybooksFilled = 0;
+  for (const src of sources) {
+    const existing = mineByMaster.get(src.id);
+    if (existing) {
+      if (!existing.playbook && src.playbook) { existing.playbook = src.playbook; existing.updatedAt = nowIso(); await saveLead(existing); hrPlaybooksFilled++; }
+      continue;
+    }
+    const copy = JSON.parse(JSON.stringify(src));
+    copy.id = uuid();
+    copy.assignedRepId = jeff.id;
+    copy.masterId = src.id;
+    copy.source = "HQ-loaded";
+    copy.stage = "Not visited yet";
+    copy.stageHistory = [{ stage: "Not visited yet", at: nowIso(), by: "HQ — Jeff's book" }];
+    delete copy.status;
+    copy.statusHistory = [];
+    copy.founding = { status: "Not claimed", claimedAt: null, claimedVia: null, confirmedAt: null, planInterest: null };
+    copy.attribution = { repCode: "HQ-JEFF", firstTouchAt: null, source: "HQ-loaded" };
+    copy.nextAction = { type: "Visit", date: null, what: "First visit" };
+    copy.lastTouch = null;
+    copy.pendingApproval = false;
+    copy.hqDecision = null;
+    copy.isNewForRep = false;
+    copy.hasStorefrontPhoto = false;
+    copy.flags = { doNotContact: !!(src.flags && src.flags.doNotContact), jeffHandles: false, chain: !!(src.flags && src.flags.chain) };
+    copy.createdAt = nowIso();
+    copy.updatedAt = nowIso();
+    await store().set(`bdevlead:${copy.id}`, copy);
+    hrCopied++;
+  }
+
+  // 3. Nashville — the stored targets + their playbooks.
+  let nashSeed = null, nashEnrich = null;
+  try { nashSeed = require("./bizdev-seed-nashville.json"); } catch (e) { nashSeed = null; }
+  try { nashEnrich = require("./bizdev-enrich-nashville.json"); } catch (e) { nashEnrich = null; }
+  let nashLoaded = 0, nashPlaybooks = 0;
+  if (Array.isArray(nashSeed)) {
+    const pbByName = new Map((((nashEnrich && nashEnrich.leads) || [])).map((e) => [normName(e.matchName), e]));
+    const existingN = await leadsOfMarket("nashville");
+    const mineByName = new Map(existingN.filter((l) => l.assignedRepId === jeff.id).map((l) => [normName(l.name), l]));
+    for (const s of nashSeed) {
+      const entry = pbByName.get(normName(s.name));
+      const cur = mineByName.get(normName(s.name));
+      if (cur) {
+        if (!cur.playbook && entry && entry.playbook) { cur.playbook = entry.playbook; cur.updatedAt = nowIso(); await saveLead(cur); nashPlaybooks++; }
+        continue;
+      }
+      const lead = {
+        id: uuid(), marketId: "nashville", marketName: "Nashville", locationId: uuid(), masterId: null,
+        assignedRepId: jeff.id, source: "HQ-loaded", championName: null,
+        name: s.name, shortName: s.shortName || null, category: s.category, subType: s.subType || "",
+        neighborhood: s.neighborhood || "", city: s.city || "Nashville", address: s.address || null,
+        website: s.website || null, websiteNote: s.websiteNote || null,
+        dmName: s.dmName || null, dmRole: s.dmRole || null, dmRoleLabel: s.dmRoleLabel || null,
+        secondContact: s.secondContact || null, usuallyHere: s.usuallyHere || null,
+        phone1: s.phone1 || null, phone1Verify: !!s.phone1Verify, phone1Note: s.phone1Note || null,
+        phone2: s.phone2 || null, phone2Verify: !!s.phone2Verify, phone2Note: s.phone2Note || null,
+        email: s.email || null, emailNote: s.emailNote || null, emailEvidence: s.emailEvidence || null,
+        instagram: s.instagram || null, instagramNote: s.instagramNote || null,
+        hqTier: s.hqTier || "B",
+        flags: { doNotContact: false, jeffHandles: false, chain: !!s.chain },
+        stage: "Not visited yet", stageHistory: [{ stage: "Not visited yet", at: nowIso(), by: "HQ-loaded" }],
+        founding: { status: "Not claimed", claimedAt: null, claimedVia: null, confirmedAt: null, planInterest: null },
+        attribution: { repCode: "HQ-JEFF", firstTouchAt: null, source: "HQ-loaded" },
+        nextAction: { type: "Visit", date: null, what: "First visit" }, lastTouch: null,
+        pendingApproval: false, hqDecision: null, isNewForRep: false,
+        createdAt: nowIso(), updatedAt: nowIso(),
+      };
+      lead.masterId = lead.id;
+      if (entry) {
+        if (entry.playbook) { lead.playbook = entry.playbook; nashPlaybooks++; }
+        const en = entry.enrichment || {};
+        const research = {};
+        for (const k of ["note", "emailEvidence", "emailNote", "instagramSource", "instagramNote", "emailVerify"]) {
+          if (en[k] != null && en[k] !== "") research[k] = en[k];
+        }
+        if (Object.keys(research).length) lead.hqResearch = research;
+        for (const k of ["dmName", "dmRole", "dmRoleLabel", "secondContact", "usuallyHere", "phone1", "phone1Verify", "phone1Note", "phone2", "phone2Verify", "phone2Note", "email", "emailNote", "emailEvidence", "website", "websiteNote", "instagram", "instagramNote"]) {
+          if (en[k] !== undefined) lead[k] = en[k];
+        }
+      }
+      await store().set(`bdevlead:${lead.id}`, lead);
+      nashLoaded++;
+    }
+  }
+  await store().set(JEFF_SEAT_FLAG, { ...flag, done: true, doneAt: nowIso(), hrCopied, nashvilleLoaded: nashLoaded });
+  await logEvent({ type: "bdev_jeff_seat_161", actorId: jeff.id, actorRole: "admin", subjectId: jeff.id, market: "Hampton Roads", data: { hrCopied, nashvilleLoaded: nashLoaded } });
+  jeffSeatDone161 = true;
+  return true;
 }
 
 // The daily sweep (POST /admin/bdev/sweep): one alarm record per
@@ -1089,7 +1301,7 @@ async function runBizdevSweep(opts) {
     }
     if (now.getUTCDay() === 1) {
       const { monday } = weekWindow(now);
-      const existed = await store().get(`bdevscore:${seat.userId}:${monday}`);
+      const existed = await store().get(scoreKey161(seat, monday));
       await computeScoreboard(seat, now);
       if (!existed) scoreboardsWritten += 1;
     }
@@ -1128,9 +1340,9 @@ async function buildRepHome157(seat, user, opts) {
   if (!opts || opts.lazyScoreboard !== false) {
     if (new Date().getUTCDay() === 1) await computeScoreboard(seat, new Date());
   }
-  const scoreboard = await latestScoreboard157(seat.userId);
+  const scoreboard = await latestScoreboard157(seat.userId, seat.marketId);
   return {
-    rep: { firstName: String(user.name || "").split(" ")[0] || "Rep", marketName: seat.marketName, repCode: seat.repCode, seatState: seat.seatState, pinSet: !!seat.pinHash },
+    rep: { firstName: String(user.name || "").split(" ")[0] || "Rep", marketName: seat.marketName, marketId: seat.marketId, markets: seatMarkets(seat), hqSeat: !!seat.hqSeat, repCode: seat.repCode, seatState: seat.seatState, pinSet: !!seat.pinHash },
     date: today, brief,
     plan: { zoneLabel: plan.zoneLabel, stops: plan.stops, doneCount: plan.doneCount, totalCount: plan.totalCount, clusters: plan.clusters },
     followUps, newLeads, progress,
@@ -1160,6 +1372,9 @@ async function moneyPayload157(seat) {
     },
     pipeline, pipelineMonthlyIfActive: Math.round(pipelineValue * 100) / 100,
     nextTier, seatState: seat.seatState, warningMonth: seat.warningMonth || null, atRisk: seat.atRisk || null,
+    // Build -161: Jeff's HQ seat reads its own book here — the
+    // client labels it as his and drops the commission framing.
+    hqSeat: !!seat.hqSeat, marketName: seat.marketName, seat: seatSummary(seat),
   };
 }
 
@@ -1200,31 +1415,43 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
   if (error) return error;
   const b = method === "POST" ? parseBody(event) : {};
 
+  // Build -161: a multi-market seat picks its working city with
+  // ?mkt= (or body mkt), validated against the seat's own markets
+  // here in the data layer — a market the seat doesn't hold does
+  // not exist for this session. The PIN block below still uses the
+  // real seat record (one PIN per person, every city).
+  const reqMkt161 = String((query && query.mkt) || b.mkt || "");
+  let effSeat = seat;
+  if (reqMkt161 && reqMkt161 !== effSeat.marketId) {
+    effSeat = effectiveSeat(seat, reqMkt161);
+    if (!effSeat) return err(400, "That city isn't in your book.");
+  }
+
   // GET /bdev/home — the payload builder is shared with HQ's
   // read-only preview (buildRepHome157); behavior is unchanged
   // apart from the Build -157 additions (alarms, queue, scoreboard).
   if (method === "GET" && seg[1] === "home" && seg.length === 2) {
-    return json(200, await buildRepHome157(seat, user));
+    return json(200, await buildRepHome157(effSeat, user));
   }
 
   // GET /bdev/queue — the priority queue over the rep's own book.
   if (method === "GET" && seg[1] === "queue" && seg.length === 2) {
-    const book = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
-    const bench = await benchCreators157(seat.marketId);
+    const book = (await leadsOfMarket(effSeat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const bench = await benchCreators157(effSeat.marketId);
     return json(200, { queue: buildQueue157(book, bench) });
   }
 
   // GET /bdev/trips — the same actionable book, grouped into
   // drive areas (neighborhoods) so a trip never crisscrosses.
   if (method === "GET" && seg[1] === "trips" && seg.length === 2) {
-    const book = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
-    const bench = await benchCreators157(seat.marketId);
+    const book = (await leadsOfMarket(effSeat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const bench = await benchCreators157(effSeat.marketId);
     return json(200, { trips: buildTrips157(book, bench) });
   }
 
   // GET /bdev/leads?q=&filter=&city=&neighborhood=
   if (method === "GET" && seg[1] === "leads" && seg.length === 2) {
-    let leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    let leads = (await leadsOfMarket(effSeat.marketId)).filter((l) => l.assignedRepId === seat.userId);
     // Build -157: filter facets come from the rep's whole book
     // (before any filter), so the pickers never narrow themselves
     // away. City + neighborhood are plain equality filters.
@@ -1249,7 +1476,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     leads.sort((a, b) => String((a.nextAction && a.nextAction.date) || "9999").localeCompare(String((b.nextAction && b.nextAction.date) || "9999")));
     // Viewing the list clears the "new" badge.
     for (const l of leads) if (l.isNewForRep) { l.isNewForRep = false; await saveLead(l); }
-    return json(200, { leads: leads.map((l) => repLeadPayload(l)), facets });
+    return json(200, { leads: leads.map((l) => repLeadPayload(l)), facets, seat: seatSummary(effSeat) });
   }
 
   // POST /bdev/leads — rep adds a lead (work now, counts after Jeff approves)
@@ -1258,10 +1485,10 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     if (!name) return err(400, "The business needs a name.");
     if (!CATEGORIES.includes(b.category)) return err(400, "Pick the business kind from the list.");
     const candidate = {
-      marketId: seat.marketId, name, neighborhood: String(b.neighborhood || "").trim(),
+      marketId: effSeat.marketId, name, neighborhood: String(b.neighborhood || "").trim(),
       phone1: b.phone || null, instagram: b.instagram || null, email: b.email || null,
     };
-    const marketLeads = await leadsOfMarket(seat.marketId);
+    const marketLeads = await leadsOfMarket(effSeat.marketId);
     const global = await allLeads();
     const dup = await dupCheck(marketLeads, global, candidate, null);
     if (dup.hard) {
@@ -1272,7 +1499,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       return json(200, { duplicate: "soft", message: "A business with this name is already in this neighborhood. If it's the same one, open that record. If it's a different business, Jeff will check it.", existingId: dup.soft.id });
     }
     const lead = {
-      id: uuid(), marketId: seat.marketId, marketName: seat.marketName, locationId: uuid(), masterId: null,
+      id: uuid(), marketId: effSeat.marketId, marketName: effSeat.marketName, locationId: uuid(), masterId: null,
       assignedRepId: seat.userId, source: "Added by rep", championName: null,
       name, shortName: null, category: b.category, subType: String(b.subType || ""),
       neighborhood: candidate.neighborhood, city: String(b.city || ""), address: b.address || null, website: null,
@@ -1291,14 +1518,14 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     const dncHit = await dncHitFor(lead, await dncRecords());
     if (dncHit) lead.flags.doNotContact = true;
     await store().set(`bdevlead:${lead.id}`, lead);
-    await logCapture({ type: "bdev_lead_added", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: seat.marketName, data: { source: "Added by rep" } });
+    await logCapture({ type: "bdev_lead_added", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { source: "Added by rep" } });
     return json(200, { lead: repLeadPayload(lead, { full: true }) });
   }
 
   // Lead-scoped routes
   if (seg[1] === "leads" && seg.length >= 3) {
     const lead = await getLead(seg[2]);
-    if (!lead || lead.marketId !== seat.marketId) return err(404, "Not in your market — ask HQ.");
+    if (!lead || lead.marketId !== effSeat.marketId) return err(404, "Not in your market — ask HQ.");
     if (lead.assignedRepId !== seat.userId) return err(404, "That lead isn't in your book.");
 
     if (method === "GET" && seg.length === 3) {
@@ -1318,7 +1545,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     }
 
     if (method === "POST" && seg[3] === "checkin") {
-      const open = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: seat.marketId, type: "visit", visitAt: nowIso(), createdAt: nowIso(), open: true, outcome: null };
+      const open = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: effSeat.marketId, type: "visit", visitAt: nowIso(), createdAt: nowIso(), open: true, outcome: null };
       await store().set(`bdevlog:${open.id}`, open);
       return json(200, { logId: open.id, visitAt: open.visitAt });
     }
@@ -1335,7 +1562,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
         if (dupe) return json(200, { ok: true, message: "Logged.", lead: repLeadPayload(lead, { full: true }), deduped: true });
       }
       let log = logs.find((v) => v.open && v.repId === seat.userId);
-      if (!log) log = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: seat.marketId, type: "visit", visitAt: b.visitAt || nowIso(), createdAt: nowIso() };
+      if (!log) log = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: effSeat.marketId, type: "visit", visitAt: b.visitAt || nowIso(), createdAt: nowIso() };
       log.open = false;
       log.outcome = outcome;
       log.spokeWith = String(b.spokeWith);
@@ -1378,8 +1605,8 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       if (outcome === "Claimed a founding spot") {
         lead.founding = { ...(lead.founding || {}), status: lead.founding && lead.founding.status === "Confirmed" ? "Confirmed" : "Claimed", claimedAt: (lead.founding && lead.founding.claimedAt) || nowIso(), claimedVia: (lead.founding && lead.founding.claimedVia) || "In person (verbal)" };
         lead.nextAction = null;
-        await logCapture({ type: "bdev_claim", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: seat.marketName, data: { via: "verbal", repCode: seat.repCode } });
-        await logEvent({ type: "bdev_founding_claimed", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: seat.marketName, data: { business: lead.name, repCode: seat.repCode } });
+        await logCapture({ type: "bdev_claim", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { via: "verbal", repCode: seat.repCode } });
+        await logEvent({ type: "bdev_founding_claimed", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { business: lead.name, repCode: seat.repCode } });
       } else if (fuDate) {
         fuWhat = outcome === "Owner not in" ? "Try again — catch the owner" : outcome.startsWith("Very interested") ? "Follow up while it's warm" : "Follow up";
         lead.nextAction = { type: b.followUpType || "Visit", date: fuDate, what: fuWhat };
@@ -1392,36 +1619,36 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       if (outcome === "Owner said never contact again") {
         lead.flags = { ...(lead.flags || {}), doNotContact: true };
         for (const k of leadMatchKeys(lead)) await addDnc({ key: k, kind: "lead", label: lead.name, source: "Rep log: owner said never contact again" });
-        await logEvent({ type: "bdev_dnc_set_by_log", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: seat.marketName, data: { business: lead.name } });
+        await logEvent({ type: "bdev_dnc_set_by_log", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { business: lead.name } });
       }
       if (log.referral) {
         const pendId = uuid();
-        await store().set(`bdevpending:${pendId}`, { id: pendId, name: log.referral, fromLeadId: lead.id, fromRepId: seat.userId, marketId: seat.marketId, createdAt: nowIso(), status: "pending" });
+        await store().set(`bdevpending:${pendId}`, { id: pendId, name: log.referral, fromLeadId: lead.id, fromRepId: seat.userId, marketId: effSeat.marketId, createdAt: nowIso(), status: "pending" });
       }
       await saveLead(lead);
-      await logCapture({ type: "bdev_visit", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: seat.marketName, data: { outcome, objections: log.objections, catsWanted: log.catsWanted, supplyGap: log.supplyGap, competitor: log.competitor, spokeWith: log.spokeWith } });
+      await logCapture({ type: "bdev_visit", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { outcome, objections: log.objections, catsWanted: log.catsWanted, supplyGap: log.supplyGap, competitor: log.competitor, spokeWith: log.spokeWith } });
       const confirm = outcome === "Claimed a founding spot" ? "Logged. Founding spot claimed — HQ confirms it." : fuDate ? `Logged. Follow-up set for ${fuDate}.` : "Logged.";
       return json(200, { ok: true, message: confirm, lead: repLeadPayload(lead, { full: true }) });
     }
 
     if (method === "POST" && seg[3] === "escalate") {
-      const rec = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: seat.marketId, reason: String(b.reason || "Other").slice(0, 80), note: String(b.note || "").slice(0, 500), status: "open", createdAt: nowIso() };
+      const rec = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: effSeat.marketId, reason: String(b.reason || "Other").slice(0, 80), note: String(b.note || "").slice(0, 500), status: "open", createdAt: nowIso() };
       await store().set(`bdevesc:${rec.id}`, rec);
-      await logEvent({ type: "bdev_escalation", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: seat.marketName, data: { business: lead.name, reason: rec.reason } });
-      return json(200, { ok: true, holdingLine: KIT.holdingLine });
+      await logEvent({ type: "bdev_escalation", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { business: lead.name, reason: rec.reason } });
+      return json(200, { ok: true, holdingLine: kitFor(effSeat).holdingLine });
     }
 
     if (method === "POST" && seg[3] === "price-shown") {
-      const rec = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: seat.marketId, type: "price_shown", visitAt: null, createdAt: nowIso(), outcome: null };
+      const rec = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: effSeat.marketId, type: "price_shown", visitAt: null, createdAt: nowIso(), outcome: null };
       await store().set(`bdevlog:${rec.id}`, rec);
-      await logCapture({ type: "bdev_price_shown", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: seat.marketName, data: {} });
+      await logCapture({ type: "bdev_price_shown", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: {} });
       return json(200, { ok: true });
     }
 
     if (method === "POST" && seg[3] === "show-session") {
-      const rec = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: seat.marketId, type: "show_session", visitAt: null, createdAt: nowIso(), outcome: null, pages: Number(b.pages) || 0, seconds: Number(b.seconds) || 0 };
+      const rec = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: effSeat.marketId, type: "show_session", visitAt: null, createdAt: nowIso(), outcome: null, pages: Number(b.pages) || 0, seconds: Number(b.seconds) || 0 };
       await store().set(`bdevlog:${rec.id}`, rec);
-      await logCapture({ type: "bdev_show_session", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: seat.marketName, data: { pages: rec.pages, seconds: rec.seconds } });
+      await logCapture({ type: "bdev_show_session", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { pages: rec.pages, seconds: rec.seconds } });
       return json(200, { ok: true });
     }
 
@@ -1433,12 +1660,12 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
 
     if (method === "GET" && seg[3] === "show") {
       if (lead.flags && (lead.flags.doNotContact || lead.flags.jeffHandles)) return err(403, "This lead can't be shown.");
-      const show = await showBench(seat.marketId, lead.category, { neighborhood: lead.neighborhood || "", city: lead.city || "" });
-      const progress = await marketProgress(seat.marketId);
+      const show = await showBench(effSeat.marketId, lead.category, { neighborhood: lead.neighborhood || "", city: lead.city || "" });
+      const progress = await marketProgress(effSeat.marketId);
       void progress;
       return json(200, {
         lead: { id: lead.id, name: lead.name, category: lead.category },
-        marketName: seat.marketName,
+        marketName: effSeat.marketName,
         bench: show.cards,
         areaFraming: show.areaFraming,
         claimUrl: claimPath(lead),
@@ -1461,7 +1688,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
 
   // GET /bdev/kit — Build -157 adds the practice set (its answers
   // are the live kit's own words, joined at module load).
-  if (method === "GET" && seg[1] === "kit" && seg.length === 2) return json(200, { kit: KIT, practice: PRACTICE157 });
+  if (method === "GET" && seg[1] === "kit" && seg.length === 2) { const k161 = kitFor(effSeat); return json(200, { kit: k161, practice: practiceFor157(k161), seat: seatSummary(effSeat) }); }
 
   // POST /bdev/maggie/coach — kit answers only, word for word.
   // Money/terms questions NEVER get a kit-text match: they route
@@ -1469,9 +1696,12 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
   if (method === "POST" && seg[1] === "maggie" && seg[2] === "coach") {
     const q = String(b.q || "").toLowerCase();
     if (/discount|free month|cheaper|split|percent|commission|guarantee|promise|exclusive|refund|contract|sign.*today|waive/.test(q)) {
-      return json(200, { answer: `That one is Jeff's call — use the holding line, word for word: “${KIT.holdingLine}”`, title: "Ask Jeff" });
+      return json(200, effSeat.hqSeat
+        ? { answer: `That one is your call — your holding line, word for word: “${kitFor(effSeat).holdingLine}”`, title: "Your call" }
+        : { answer: `That one is Jeff's call — use the holding line, word for word: “${KIT.holdingLine}”`, title: "Ask Jeff" });
     }
-    const pool = [...KIT.objections.map((o) => ({ title: o.q, text: o.a })), ...KIT.priceAnswers.map((o) => ({ title: o.title, text: o.text }))];
+    const coachKit161 = kitFor(effSeat);
+    const pool = [...coachKit161.objections.map((o) => ({ title: o.q, text: o.a })), ...coachKit161.priceAnswers.map((o) => ({ title: o.title, text: o.text }))];
     const words = q.split(/[^a-z0-9%$]+/).filter((w) => w.length > 2);
     let best = null, bestScore = 0;
     for (const item of pool) {
@@ -1480,13 +1710,15 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       if (score > bestScore) { bestScore = score; best = item; }
     }
     if (best && bestScore >= 2) return json(200, { answer: best.text, title: best.title });
-    return json(200, { answer: `That one isn't in the Seller Kit — don't guess at it. Use the Ask Jeff line: “${KIT.holdingLine}”`, title: "Ask Jeff" });
+    return json(200, effSeat.hqSeat
+      ? { answer: `That one isn't in your Seller Kit — don't guess at it out loud. Your holding line: “${kitFor(effSeat).holdingLine}”`, title: "Your call" }
+      : { answer: `That one isn't in the Seller Kit — don't guess at it. Use the Ask Jeff line: “${KIT.holdingLine}”`, title: "Ask Jeff" });
   }
 
   // GET /bdev/money — the payload builder is shared with HQ's
   // read-only preview (moneyPayload157); behavior is unchanged.
   if (method === "GET" && seg[1] === "money" && seg.length === 2) {
-    return json(200, await moneyPayload157(seat));
+    return json(200, await moneyPayload157(effSeat));
   }
 
   // POST /bdev/pin {pin} set · POST /bdev/pin/verify {pin}
@@ -1523,14 +1755,18 @@ async function publicClaim(event) {
     seat = rows.map((r) => r.value).find((v) => v && v.active && v.repCode === repCode) || null;
   }
   let lead = leadId ? await getLead(leadId) : null;
-  if (lead && seat && lead.marketId !== seat.marketId) lead = null;
+  // Build -161: a multi-market seat's code resolves in ANY of its
+  // markets (Jeff's code works in Hampton Roads and Nashville).
+  if (lead && seat && !seatHasMarket(seat, lead.marketId)) lead = null;
   let matchedVia = lead ? "lead link" : null;
   if (!lead) {
     // No link (or a code-only claim): resolve the business by name,
     // then phone, then Instagram — inside the rep's market when a
     // code came with it, across every market when it didn't (the
     // verbal-yes hold below then does the crediting).
-    const pool = seat ? await leadsOfMarket(seat.marketId) : (await store().list("bdevlead:")).map((r) => r.value).filter(Boolean);
+    const pool = seat
+      ? (await Promise.all(seatMarkets(seat).map((m) => leadsOfMarket(m.marketId)))).flat()
+      : (await store().list("bdevlead:")).map((r) => r.value).filter(Boolean);
     lead = pool.find((l) => normName(l.name) === normName(businessName))
       || pool.find((l) => digits(l.phone1) && digits(l.phone1) === digits(contact))
       || pool.find((l) => l.instagram && normIg(l.instagram) === normIg(contact)) || null;
@@ -1548,7 +1784,7 @@ async function publicClaim(event) {
     id: uuid(), leadId: lead ? lead.id : null, businessName, contactName, contact,
     repCode: seat ? seat.repCode : (holdRepId ? "hold" : null),
     repId: seat ? seat.userId : holdRepId,
-    marketId: seat ? seat.marketId : (lead ? lead.marketId : null),
+    marketId: lead ? lead.marketId : (seat ? seat.marketId : null),
     matchedVia: matchedVia || (holdRepId ? "verbal-yes hold (log match)" : null),
     planInterest: [199, 349, 699].includes(Number(b.plan)) ? Number(b.plan) : null,
     status: "waiting HQ confirm", createdAt: nowIso(),
@@ -1593,20 +1829,20 @@ function claimPageHtml(query) {
 </style></head><body><div class="wrap">
 <img class="logo" src="/assets/logo.png" alt="Magpie">
 <h1>Claim your founding spot</h1>
-<p>Magpie is building the founding creator list for Hampton Roads right now. Shops that claim a founding spot are first in line when we open — first pick of creators, founding pricing locked, and we'll set your page up with you. There's nothing to pay today.</p>
+<p data-mkt>Magpie is building the founding creator list for Hampton Roads right now. Shops that claim a founding spot are first in line when we open — first pick of creators, founding pricing locked, and we'll set your page up with you. There's nothing to pay today.</p>
 <div class="err" id="err"></div>
 <form id="f">
  <label for="biz">Business name</label><input type="text" id="biz" autocomplete="organization" required>
  <label for="nm">Your name</label><input type="text" id="nm" autocomplete="name">
  <label for="ct">Best phone or Instagram to reach you</label><input type="text" id="ct" required>
- <div class="check"><input type="checkbox" id="yes"><span>Yes — put us on the Hampton Roads founding list.</span></div>
+ <div class="check"><input type="checkbox" id="yes"><span data-mkt>Yes — put us on the Hampton Roads founding list.</span></div>
  <button type="submit">Claim your founding spot</button>
  <p class="fine">No payment today, and no date promised — we open when the founding creator roster is full, and founding shops hear first.</p>
 </form>
 <div class="ok" id="done" style="display:none">You're on the list. We'll be in touch as the founding roster fills — and you'll hear from us before we open.</div>
 <script>
  const rep=${JSON.stringify((query && query.rep) || "")}, lead=${JSON.stringify((query && query.lead) || "")};
- if (lead) { fetch('/api/bdev/claim-info?lead=' + encodeURIComponent(lead)).then(r => r.json()).then(d => { if (d && d.businessName) document.getElementById('biz').value = d.businessName; }).catch(() => {}); }
+ if (lead) { fetch('/api/bdev/claim-info?lead=' + encodeURIComponent(lead)).then(r => r.json()).then(d => { if (d && d.businessName) document.getElementById('biz').value = d.businessName; if (d && d.marketName && d.marketName !== 'Hampton Roads') { document.querySelectorAll('[data-mkt]').forEach(function (el) { el.textContent = el.textContent.split('Hampton Roads').join(d.marketName); }); } }).catch(() => {}); }
  document.getElementById('f').addEventListener('submit', async (e) => {
    e.preventDefault();
    const err = document.getElementById('err'); err.style.display = 'none';
@@ -1764,7 +2000,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     return json(200, {
       markets: Object.values(markets),
       statusRollup, prewarm, scoreboards, alarmSummary,
-      reps: seats.map((s) => { const u = byId.get(s.userId); return { userId: s.userId, name: u ? u.name : "", email: u ? u.email : "", marketId: s.marketId, marketName: s.marketName, repCode: s.repCode, seatState: s.seatState, vestedAt: s.vestedAt || null, warningMonth: s.warningMonth || null, atRisk: s.atRisk || null }; }),
+      reps: seats.map((s) => { const u = byId.get(s.userId); return { userId: s.userId, name: u ? u.name : "", email: u ? u.email : "", marketId: s.marketId, marketName: s.marketName, repCode: s.repCode, seatState: s.seatState, vestedAt: s.vestedAt || null, warningMonth: s.warningMonth || null, atRisk: s.atRisk || null, hqSeat: !!s.hqSeat, markets: seatMarkets(s) }; }),
       unconfirmedClaims: claims.filter((c) => c.status === "waiting HQ confirm"),
       escalations, pendingLeads: pendingLeads.map(adminLeadPayload), pendingReferrals,
       disputes, liability: liabilityCalc,
@@ -1930,7 +2166,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
 }
 
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, runBizdevSweep,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, runBizdevSweep,
   claimPageHtml, seatOf, KIT,
-  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow },
+  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157 },
 };

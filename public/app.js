@@ -2323,6 +2323,20 @@ function renderBottomNav() {
   const rail = document.getElementById("rail");
   const toprow = document.getElementById("toprow");
   document.body.classList.remove("bn-on", "has-bn", "admin-on", "preview-on");
+  // Build -161: Jeff in Sell mode gets the rep shell's chrome —
+  // the same bottom bar his reps get — not the admin rail. One
+  // scoped exception, keyed on the mode he explicitly picked.
+  if (u && u.role === "admin" && !state.preview && state.shell === "bizdev" && bdShellActive()) {
+    if (rail) rail.innerHTML = "";
+    if (toprow) toprow.innerHTML = "";
+    document.body.classList.remove("rail-on");
+    document.body.classList.add("v3-on");
+    document.body.classList.remove("v3-slim");
+    renderTopBar2(true);
+    if (tabbar) tabbar.innerHTML = tabBarHtml();
+    ensureSigFab();
+    return;
+  }
   if (u && u.role === "admin" && !state.preview) {
     // Admin nav is the left rail at EVERY width (Jeff,
     // 2026-10-29, BUILD -28): -27 put a horizontally scrolling
@@ -2675,7 +2689,7 @@ function everythingGroups125() {
         R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
         R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages"),
-        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev"),
+        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
         R("building", "Partners", "Media partners and their deals", "Partners"),
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
         R("users", "Outreach", "Campaigns and sends", "Outreach"),
@@ -2924,7 +2938,7 @@ function hamburgerGroups137() {
         R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
         R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages", { badge: b.messages || 0 }),
-        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev"),
+        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
         R("users", "Creators", "Every creator, with the local numbers", "Creators"),
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
         R("building", "Partners", "Media partners and their deals", "Partners"),
@@ -3218,7 +3232,7 @@ function tabBarHtml() {
     const photo = selfAvatarUrl122(u);
     const initial = String(nm).trim().charAt(0).toUpperCase() || "S";
     const railhead = `<div class="tab-railhead"><span class="brand-lockup"><img src="/assets/logo.png" alt="Magpie"><span class="formerly-line" data-bridge="formerly-signl">formerly SIGNL</span></span><span class="trh-sub">Biz Dev</span></div>`;
-    const railfoot = `<div class="tab-railfoot"><div class="tab-user tab-user-btn" role="button" tabindex="0" title="Your account" aria-label="Your account menu" onclick="return openIdentityMenu126()">${avaHtml122("tu-ava", "tu-ava", photo, initial)}<span><span class="tu-name">${esc(nm)}</span><br><span class="tu-sub">${esc(u.bizdevSeat.marketName || "")}</span></span></div></div>`;
+    const railfoot = `<div class="tab-railfoot"><div class="tab-user tab-user-btn" role="button" tabindex="0" title="Your account" aria-label="Your account menu" onclick="return openIdentityMenu126()">${avaHtml122("tu-ava", "tu-ava", photo, initial)}<span><span class="tu-name">${esc(nm)}</span><br><span class="tu-sub">${esc(bdMktName() || u.bizdevSeat.marketName || "")}</span></span></div></div>`;
     const signout = `
     <div class="tab-more-sep" aria-hidden="true"></div>
     <button type="button" class="tab-item tab-signout" onclick="signOut()">
@@ -3745,7 +3759,7 @@ function railItems() {
     // Build -155: the Biz Dev room — reps, lead books, founding
     // claims, escalations and the commission liability, all in
     // one place (the HQ side of the seller dashboard).
-    add("a", "building", "Biz Dev", "return go('dashboard','Biz Dev')", t === "Biz Dev");
+    add("a", "building", "Biz Dev", "return go('dashboard','Biz Dev')", t === "Biz Dev", (state.waitCounts || {}).bizdevWaiting || 0);
     add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
     add("a", "users", "Creators", "return go('dashboard','Creators')", t === "Creators");
     add("a", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
@@ -3887,7 +3901,7 @@ function renderRail() {
 function syncAdminSecbar121() {
   let bar = document.getElementById("admin-secbar");
   const u = state.user;
-  const items = u && u.role === "admin" && !state.preview ? railItems() : null;
+  const items = u && u.role === "admin" && !state.preview && state.shell !== "bizdev" ? railItems() : null;
   if (!items || !items.length) { if (bar) bar.remove(); return; }
   if (!bar) {
     bar = document.createElement("nav");
@@ -11834,6 +11848,10 @@ function renderRejected() {
 function renderDashboard() {
   const u = state.user;
   if (u.role === "admin" && state.preview) return renderPreview();
+  // Build -161: Jeff's Sell mode — an admin with a rep seat who
+  // tapped Sell gets the rep shell, exactly what his reps see.
+  // Manage is one tap back (BD Menu, or the toggle in the HQ room).
+  if (u.role === "admin" && state.shell === "bizdev" && bdShellActive()) return renderBizdevDash();
   if (u.role === "admin") return renderAdmin();
   // Build -155: a biz dev seat makes Rep Home the default shell;
   // the account's own role surfaces stay one tap away (Menu →
@@ -26849,6 +26867,7 @@ async function loadAdminHome137() {
   el.innerHTML = `
     <div class="home-greet"><div class="hg-hi">${greet}${first ? `, ${esc(first)}` : ""}.</div></div>
     <div id="ah-sig">${sigHero137Html("Checking what needs you…")}</div>
+    <div id="ah-bizdev"></div>
     <div id="ah-highlights">${skelHtml("Loading your numbers…", 1)}</div>
     <div id="ah-steps"><div class="home-sec138"><div class="home-sec-t">Next steps</div><p class="small muted">Loading…</p></div></div>
     <div class="pv-tabs126" role="group" aria-label="Preview the app as another role">
@@ -26905,6 +26924,27 @@ async function loadAdminHome137() {
     // steps join the queue (a re-paint with the full picture).
     const marketsData = await pMarkets;
     if (marketsData && homeAlive()) paintSteps(apps, marketsData, partnersData, approvalQ);
+  })();
+  // Build -161: the Biz Dev waiting entry fills independently,
+  // failure-isolated like every other section. It renders ONLY
+  // when something actually waits on Jeff (claims to confirm,
+  // rep-added leads, unmatched claims, escalations) — and it
+  // feeds the same count into the menu badges, so the mobile
+  // menu and this home never disagree about what waits.
+  (async () => {
+    const ov = await grab("/admin/bdev/overview");
+    const host = document.getElementById("ah-bizdev");
+    if (!ov || !host || !homeAlive()) return;
+    const c = abdWaitingCounts(ov);
+    state.waitCounts = state.waitCounts || {};
+    state.waitCounts.bizdevWaiting = c.total;
+    if (!c.total) { host.innerHTML = ""; return; }
+    const bits = [];
+    if (c.claims) bits.push(`${c.claims} claim${c.claims === 1 ? "" : "s"} to confirm`);
+    if (c.leads) bits.push(`${c.leads} lead${c.leads === 1 ? "" : "s"} to approve`);
+    if (c.unmatched) bits.push(`${c.unmatched} claim${c.unmatched === 1 ? "" : "s"} to match`);
+    if (c.escalations) bits.push(`${c.escalations} escalation${c.escalations === 1 ? "" : "s"}`);
+    host.innerHTML = `<div class="panel abd-wait" style="margin-bottom:12px"><strong>Biz Dev — ${c.total} waiting on you</strong><p class="small muted" style="margin:4px 0 8px">${esc(bits.join(" · "))}</p><button type="button" class="btn small-btn" onclick="return go('dashboard','Biz Dev')">Open Biz Dev</button></div>`;
   })();
   // Highlights fill independently, off the totals + queue reads.
   (async () => {
@@ -33438,6 +33478,10 @@ const bd = {
   leadId: null, lead: null, logs: [],
   logDraft: null, show: null, kit: null, money: null,
   addOpen: false, nearNote: "",
+  // Build -161: multi-market seats (Jeff's). mkt is the working
+  // city; single-market seats never set it and nothing changes.
+  mkt: (() => { try { return localStorage.getItem("bd161:mkt") || ""; } catch (e) { return ""; } })(),
+  markets: [], hqSeat: false,
 };
 
 function bdShellActive() {
@@ -33446,6 +33490,45 @@ function bdShellActive() {
 }
 function bdGoShell() { state.shell = "bizdev"; state.tab = "BD Home"; renderNav(); return go("dashboard", "BD Home"); }
 function bdGoCreator() { state.shell = "creator"; state.tab = "Dashboard"; renderNav(); return go("dashboard", "Dashboard"); }
+
+// Build -161: Jeff's Manage ⇄ Sell toggle + the city switcher.
+// Sell is the rep shell itself (bdGoShell); Manage is his admin
+// Biz Dev room. One tap each way, same login.
+function bdGoSell161() { return bdGoShell(); }
+function bdGoManage161() { state.shell = "admin"; state.tab = "Biz Dev"; renderNav(); return go("dashboard", "Biz Dev"); }
+function bdIsAdminSeller161() { return !!(state.user && state.user.role === "admin" && bd.hqSeat); }
+// Every rep API call routes through bdPath: when a working city
+// is picked it rides along as ?mkt= and the server validates it
+// against the seat's own markets. PIN calls never route through
+// here (one PIN per person, every city), and neither does the
+// public claim POST (the rep code on it carries attribution).
+function bdPath(path) {
+  if (!bd.mkt) return path;
+  return path + (path.includes("?") ? "&" : "?") + "mkt=" + encodeURIComponent(bd.mkt);
+}
+function bdSyncSeat161(src) {
+  if (!src) return;
+  if (Array.isArray(src.markets) && src.markets.length) bd.markets = src.markets;
+  if (src.hqSeat != null) bd.hqSeat = !!src.hqSeat;
+  if (bd.mkt && bd.markets.length && !bd.markets.some((m) => m.marketId === bd.mkt)) bd.mkt = "";
+  if (!bd.mkt && src.marketId) bd.mkt = src.marketId;
+}
+function bdMktName() {
+  const m = (bd.markets || []).find((x) => x.marketId === bd.mkt);
+  if (m) return m.marketName;
+  return (bd.home && bd.home.rep && bd.home.rep.marketName) || "";
+}
+function bdSetMkt(marketId) {
+  if (marketId === bd.mkt) return false;
+  bd.mkt = marketId;
+  try { localStorage.setItem("bd161:mkt", marketId); } catch (e) { /* private mode */ }
+  bd.home = null; bd.leads = null; bd.leadId = null; bd.city = ""; bd.neighborhood = "";
+  return go("dashboard", state.tab);
+}
+function bdCitySwitcherHtml() {
+  if (!bd.markets || bd.markets.length < 2) return "";
+  return `<div class="chip-row" style="margin:2px 0 10px">${bd.markets.map((m) => `<button type="button" class="chip ${bd.mkt === m.marketId ? "on" : ""}" onclick="return bdSetMkt('${m.marketId}')">${esc(m.marketName)}</button>`).join("")}</div>`;
+}
 
 function bdCacheSet(key, val) { try { localStorage.setItem("bd155:" + key, JSON.stringify({ at: Date.now(), val })); } catch (e) { /* storage full/blocked */ } }
 function bdCacheGet(key) { try { const r = JSON.parse(localStorage.getItem("bd155:" + key) || "null"); return r ? r.val : null; } catch (e) { return null; } }
@@ -33520,7 +33603,7 @@ async function bdShowTrips() {
   if (!slot) return false;
   slot.innerHTML = `<p class="muted small">Finding good clusters near you...</p>`;
   try {
-    const d = await api("GET", "/bdev/trips");
+    const d = await api("GET", bdPath("/bdev/trips"));
     const trips = d.trips || [];
     if (!trips.length) { slot.innerHTML = `<div class="panel"><p class="muted" style="margin:0">No clusters right now — your book is worked through. Add a lead or check back tomorrow.</p></div>`; return false; }
     slot.innerHTML = trips.map((t) => `
@@ -33535,8 +33618,15 @@ async function bdShowTrips() {
 }
 async function bdSetStatus(status) {
   if (!bd.leadId) return false;
+  // Build -161: Declined and Closed end the conversation — a
+  // stray thumb closed a lead in QA, so those two ask first and
+  // name the business. Every other status stays one tap.
+  if ((status === "Declined" || status === "Closed") && bd.lead) {
+    const name = bd.lead.shortName || bd.lead.name || "this business";
+    if (!window.confirm(`Mark ${name} as ${status}? You can change it later, but this takes them out of your working list.`)) return false;
+  }
   try {
-    const d = await api("POST", `/bdev/leads/${bd.leadId}/status`, { status });
+    const d = await api("POST", bdPath(`/bdev/leads/${bd.leadId}/status`), { status });
     if (d.lead) bd.lead = Object.assign({}, bd.lead, d.lead);
     showToast("Saved — where things stand is updated.");
     const el = document.getElementById("tab-body");
@@ -33586,7 +33676,7 @@ async function bdLoadHome(el) {
   el = el || document.getElementById("tab-body");
   if (!el) return;
   let d = null, offline = false;
-  try { d = await api("GET", "/bdev/home"); bd.home = d; bdCacheSet("home", d); }
+  try { d = await api("GET", bdPath("/bdev/home")); bd.home = d; bdSyncSeat161(d.rep); bdCacheSet("home", d); }
   catch (e) { d = bdCacheGet("home"); offline = true; if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
   const p = d.progress;
   const pct = Math.min(100, Math.round((p.creators / p.gateLow) * 100));
@@ -33597,6 +33687,8 @@ async function bdLoadHome(el) {
   const dayLine = stops.length ? `${d.plan.doneCount} of ${d.plan.totalCount} done today` : "No visits planned today";
   el.innerHTML = `
   <div class="bd-toprow"><strong>${esc(d.rep.marketName)}</strong><span class="muted">${esc(d.rep.firstName)} · ${esc(d.date)}</span></div>
+  ${bdCitySwitcherHtml()}
+  ${bdIsAdminSeller161() ? `<p class="small" style="margin:0 0 10px">You're selling as HQ-JEFF. <button type="button" class="linklike" onclick="return bdGoManage161()">Back to Manage</button></p>` : ""}
   ${offline ? `<p class="bd-offline">You're seeing a saved copy — no signal right now. Anything you log saves on this phone and sends itself later.</p>` : ""}
   <section class="sigtop130 panel">
     <div class="sigbox130">
@@ -33652,7 +33744,7 @@ async function bdCoachSend(ev) {
   thread.hidden = false;
   thread.innerHTML = `<div class="bd-coach-q">${esc(q)}</div><p class="muted small">Maggie is checking the Seller Kit...</p>`;
   try {
-    const d = await api("POST", "/bdev/maggie/coach", { q });
+    const d = await api("POST", bdPath("/bdev/maggie/coach"), { q });
     thread.innerHTML = `<div class="bd-coach-q">${esc(q)}</div><div class="bd-coach-a"><strong>${esc(d.title || "From the Seller Kit")}</strong><p>${esc(d.answer || "")}</p></div>`;
     input.value = "";
   } catch (e) { thread.innerHTML = `<div class="bd-coach-q">${esc(q)}</div><p class="muted small">${esc(e.message)}</p>`; }
@@ -33661,10 +33753,10 @@ async function bdCoachSend(ev) {
 
 async function bdCheckin(id) {
   try {
-    await api("POST", `/bdev/leads/${id}/checkin`, {});
+    await api("POST", bdPath(`/bdev/leads/${id}/checkin`), {});
     showToast("You're checked in. The log will be waiting when you walk out.");
   } catch (e) {
-    bdQueuePost(`/bdev/leads/${id}/checkin`, {});
+    bdQueuePost(bdPath(`/bdev/leads/${id}/checkin`), {});
     showToast("Saved on this phone — it will send when you have signal.");
   }
   return false;
@@ -33680,7 +33772,7 @@ async function bdLoadLeads(el) {
   let d = null;
   const cityQ = bd.city ? `&city=${encodeURIComponent(bd.city)}` : "";
   const nbQ = bd.neighborhood ? `&neighborhood=${encodeURIComponent(bd.neighborhood)}` : "";
-  try { d = await api("GET", `/bdev/leads?filter=${encodeURIComponent(bd.filter === "near" ? "all" : bd.filter)}&q=${encodeURIComponent(bd.q)}${cityQ}${nbQ}`); bdCacheSet("leads", d); }
+  try { d = await api("GET", bdPath(`/bdev/leads?filter=${encodeURIComponent(bd.filter === "near" ? "all" : bd.filter)}&q=${encodeURIComponent(bd.q)}${cityQ}${nbQ}`)); bdCacheSet("leads", d); bdSyncSeat161(d.seat); }
   catch (e) { d = bdCacheGet("leads"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
   if (d.facets) bd.facets = d.facets;
   const facets = d.facets || bd.facets || { cities: [], neighborhoods: [] };
@@ -33688,7 +33780,8 @@ async function bdLoadLeads(el) {
   let leads = d.leads || [];
   el.innerHTML = `
   <h2>My Leads</h2>
-  <p class="muted small" style="margin:4px 0 10px">Your Hampton Roads book. Work it top to bottom — the next thing to do is always at the top.</p>
+  ${bdCitySwitcherHtml()}
+  <p class="muted small" style="margin:4px 0 10px">Your ${esc(bdMktName() || "Hampton Roads")} book. Work it top to bottom — the next thing to do is always at the top.</p>
   <div class="bd-searchrow">
     <input id="bd-q" type="search" placeholder="Find a business in my book" value="${esc(bd.q)}" oninput="bdSearchInput(this.value)">
     <button type="button" class="btn" onclick="return bdToggleAdd()">Add a Lead</button>
@@ -33742,7 +33835,7 @@ async function bdAddSubmit() {
   else if (/^@?[A-Za-z0-9._]+$/.test(contact) && !/\d{3}/.test(contact)) body.instagram = contact;
   else if (contact) body.phone = contact;
   try {
-    const d = await api("POST", "/bdev/leads", body);
+    const d = await api("POST", bdPath("/bdev/leads"), body);
     if (d.duplicate) { msg.textContent = d.message; return false; }
     bd.addOpen = false;
     showToast("Added. It's in your book — Jeff checks it before it counts.");
@@ -33759,7 +33852,7 @@ async function bdOpenLead(id) {
   if (!el) return false;
   el.innerHTML = `<p class="muted">Loading...</p>`;
   try {
-    const d = await api("GET", `/bdev/leads/${id}`);
+    const d = await api("GET", bdPath(`/bdev/leads/${id}`));
     bd.lead = d.lead; bd.logs = d.logs || [];
     bdRenderLead(el);
   } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
@@ -33840,7 +33933,7 @@ function bdRenderLead(el) {
     ${(l.statusHistory && l.statusHistory.length) ? [...l.statusHistory].reverse().map((h) => `<div class="bd-logrow"><span class="muted small">${esc(String(h.at || "").slice(0, 10))}</span> Status set to ${esc(h.status || "")}${h.by ? ` <span class="muted small">· ${esc(h.by)}</span>` : ""}</div>`).join("") : ""}
     ${(bd.logs || []).length ? [...bd.logs].reverse().map((v) => `<div class="bd-logrow"><span class="muted small">${esc(String(v.visitAt || v.createdAt || "").slice(0, 10))}</span> ${v.type === "price_shown" ? "Price was shown" : v.type === "show_session" ? `Show Mode was used (${v.pages || 0} screens)` : `<strong>${esc(v.outcome || "")}</strong>${v.spokeName ? ` — talked to ${esc(v.spokeName)}` : ""}${v.objections && v.objections.length ? `<br><span class="muted small">Pushed back on: ${esc(v.objections.join(", "))}</span>` : ""}`}</div>`).join("") : ((l.statusHistory && l.statusHistory.length) ? "" : `<p class="muted" style="margin:0">Nothing yet. The first visit starts the story.</p>`)}
   </div>`;
-  api("GET", `/bdev/leads/${l.id}/oneliner`).then((d) => {
+  api("GET", bdPath(`/bdev/leads/${l.id}/oneliner`)).then((d) => {
     const s = document.getElementById("bd-oneliner");
     if (s && d.text) s.innerHTML = `<strong>Maggie:</strong> ${esc(d.text)}`;
   }).catch(() => { const s = document.getElementById("bd-oneliner"); if (s) s.innerHTML = ""; });
@@ -33848,7 +33941,7 @@ function bdRenderLead(el) {
 
 async function bdSendClaim(id) {
   try {
-    const d = await api("POST", `/bdev/leads/${id}/send-claim`, {});
+    const d = await api("POST", bdPath(`/bdev/leads/${id}/send-claim`), {});
     const slot = document.getElementById("bd-lead-slot");
     if (slot) slot.innerHTML = `<div class="bd-pending" style="margin-top:10px">${esc(d.message)}<br><strong>${esc(d.claimUrl)}</strong></div>`;
   } catch (e) { alert(e.message); }
@@ -33869,7 +33962,7 @@ function bdEscalateOpen() {
 }
 async function bdEscalateSend() {
   try {
-    await api("POST", `/bdev/leads/${bd.leadId}/escalate`, { reason: document.getElementById("bd-esc-reason").value, note: document.getElementById("bd-esc-note").value });
+    await api("POST", bdPath(`/bdev/leads/${bd.leadId}/escalate`), { reason: document.getElementById("bd-esc-reason").value, note: document.getElementById("bd-esc-note").value });
     showToast("Sent to Jeff. Use the holding line out loud — he'll take it from there.");
     bdOpenLead(bd.leadId);
   } catch (e) { alert(e.message); }
@@ -33999,12 +34092,12 @@ async function bdLogSubmit() {
   else if (d.followUp === "pick") body.followUpDate = document.getElementById("bd-log-fudate").value || null;
   msg.textContent = "Saving...";
   try {
-    const r = await api("POST", `/bdev/leads/${bd.leadId}/log`, body);
+    const r = await api("POST", bdPath(`/bdev/leads/${bd.leadId}/log`), body);
     showToast(r.message || "Logged.");
     bd.logDraft = null;
     bdOpenLead(bd.leadId);
   } catch (e) {
-    bdQueuePost(`/bdev/leads/${bd.leadId}/log`, body);
+    bdQueuePost(bdPath(`/bdev/leads/${bd.leadId}/log`), body);
     showToast("Saved on this phone — it will send when you have signal.");
     bd.logDraft = null;
     go("dashboard", "BD Home");
@@ -34025,7 +34118,7 @@ async function bdEnsurePin() {
 async function bdShowEnter(leadId) {
   if (!await bdEnsurePin()) return false;
   try {
-    const d = await api("GET", `/bdev/leads/${leadId}/show`);
+    const d = await api("GET", bdPath(`/bdev/leads/${leadId}/show`));
     bd.show = { data: d, screen: 1, maxSeen: 1, startedAt: Date.now(), pricing: false };
     bdShowRender();
   } catch (e) { alert(e.message); }
@@ -34034,8 +34127,8 @@ async function bdShowEnter(leadId) {
 async function bdPriceEnter(leadId) {
   if (!await bdEnsurePin()) return false;
   try {
-    await api("POST", `/bdev/leads/${leadId}/price-shown`, {});
-    const d = await api("GET", `/bdev/leads/${leadId}/show`);
+    await api("POST", bdPath(`/bdev/leads/${leadId}/price-shown`), {});
+    const d = await api("GET", bdPath(`/bdev/leads/${leadId}/show`));
     bd.show = { data: d, screen: 7, maxSeen: 7, startedAt: Date.now(), pricing: true };
     bdShowRender();
   } catch (e) { alert(e.message); }
@@ -34178,7 +34271,7 @@ async function bdPinVerify() {
       const pages = s.pricing ? 1 : s.maxSeen;
       const seconds = Math.round((Date.now() - s.startedAt) / 1000);
       const leadId = s.data.lead.id;
-      api("POST", `/bdev/leads/${leadId}/show-session`, { pages, seconds }).catch(() => {});
+      api("POST", bdPath(`/bdev/leads/${leadId}/show-session`), { pages, seconds }).catch(() => {});
       const host = document.getElementById("bd-show-overlay");
       if (host) host.remove();
       bd.show = null;
@@ -34202,14 +34295,15 @@ async function bdLoadKit(el) {
   el = el || document.getElementById("tab-body");
   if (!el) return;
   let d = null;
-  try { d = await api("GET", "/bdev/kit"); bd.kit = d.kit; bdCacheSet("kit", d); }
+  try { d = await api("GET", bdPath("/bdev/kit")); bd.kit = d.kit; bdSyncSeat161(d.seat); bdCacheSet("kit", d); }
   catch (e) { d = bdCacheGet("kit"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
   const k = d.kit;
   bd.practiceItems = d.practice || k.practice || bd.practiceItems || [];
   const card = (title, text) => `<div class="card bd-kit-card"><strong>${esc(title)}</strong><p>${esc(text)}</p></div>`;
   el.innerHTML = `
   <h2>Seller Kit</h2>
-  <p class="muted small" style="margin:4px 0 10px">Every word here is approved to say out loud, word for word. If it isn't in the Kit, it goes to Jeff.</p>
+  ${bdCitySwitcherHtml()}
+  <p class="muted small" style="margin:4px 0 10px">Every word here is approved to say out loud, word for word. ${bd.hqSeat ? "This is your kit, in your voice, for the city picked above." : "If it isn't in the Kit, it goes to Jeff."}</p>
   <div class="field"><input id="bd-kit-q" type="search" placeholder="Search the kit — try “launch” or “expensive”" oninput="bdKitSearch(this.value)"></div>
   <div id="bd-kit-results"></div>
   <h3 class="bd-h">Openers</h3>
@@ -34232,12 +34326,16 @@ async function bdLoadKit(el) {
     <strong>Rules — never say these</strong>
     <ul class="bd-terms">${k.doNotSay.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
   </div>
-  <div class="card bd-kit-card">
+  ${bd.hqSeat ? `<div class="card bd-kit-card">
+    <strong>Your calls</strong>
+    <p>These are yours to decide — nobody else makes them: discounts or free months, partner or media talk, chains, anyone wanting to invest, complaints, press.</p>
+    <p><em>“${esc(k.holdingLine)}”</em></p>
+  </div>` : `<div class="card bd-kit-card">
     <strong>Help from Jeff</strong>
     <p>Some things are always Jeff's call: discounts or free months, partner or media talk, chains, anyone wanting to invest, complaints, press.</p>
     <p><em>“${esc(k.holdingLine)}”</em></p>
     <p class="muted small">Send it from the lead's page with <strong>Ask Jeff</strong> — one tap, before you leave the shop.</p>
-  </div>`;
+  </div>`}`;
   bdRenderPractice();
 }
 function bdRenderPractice() {
@@ -34279,29 +34377,30 @@ async function bdLoadMoney(el) {
   el = el || document.getElementById("tab-body");
   if (!el) return;
   let d = null;
-  try { d = await api("GET", "/bdev/money"); bd.money = d; }
+  try { d = await api("GET", bdPath("/bdev/money")); bd.money = d; bdSyncSeat161(d.seat); }
   catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
   const m = d.money;
   const v = m.vesting;
   const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   el.innerHTML = `
   <h2>My Money</h2>
+  ${bdCitySwitcherHtml()}
   <section class="panel">
     <p class="bd-money-big">Money building up: ${money(m.accrued)}</p>
-    <p class="muted" style="margin:0">This is commission you've earned on paper. Magpie isn't collecting payments yet, so commissions are paid once Hampton Roads opens for payments and businesses start paying. No payout date is promised.</p>
-    ${d.seatState === "probation" ? `<p class="bd-pending" style="margin-top:10px">Probation: 25% direct rate. Exclusivity and the 5% Hampton Roads residual vest at 15 activations, or 3 straight months of 3+.</p>` : ""}
+    ${d.hqSeat ? `<p class="muted" style="margin:0">This is your own seat — you're HQ, so no commission accrues on it and it never shows in the commission owed. The pipeline below is your book's, labelled as yours. Magpie isn't collecting payments yet, so nothing here is paid out.</p>` : `<p class="muted" style="margin:0">This is commission you've earned on paper. Magpie isn't collecting payments yet, so commissions are paid once ${esc(d.marketName || "Hampton Roads")} opens for payments and businesses start paying. No payout date is promised.</p>`}
+    ${!d.hqSeat && d.seatState === "probation" ? `<p class="bd-pending" style="margin-top:10px">Probation: 25% direct rate. Exclusivity and the 5% ${esc(d.marketName || "Hampton Roads")} residual vest at 15 activations, or 3 straight months of 3+.</p>` : ""}
     ${d.warningMonth ? `<div class="bd-banner bd-banner-warn">Warning month: ${esc(d.warningMonth)} — Jeff has put this seat on a warning month. One more failing month and the seat lapses; the book you've built keeps paying either way.</div>` : ""}
     ${d.atRisk ? `<div class="bd-banner bd-banner-warn">Heads up: ${esc(d.atRisk)}</div>` : ""}
   </section>
   <section class="panel">
     <h3 style="margin-top:0">Founding pipeline — not earned yet</h3>
     ${d.pipeline.length ? d.pipeline.map((p) => `<div class="bd-logrow"><strong>${esc(p.name)}</strong> · ${p.status === "Confirmed" ? "Claimed — confirmed ✓" : "Claimed — waiting for HQ to confirm"}${p.plan ? ` · thinking about $${p.plan}/mo` : " · no plan picked yet"}</div>`).join("") : `<p class="muted" style="margin:0">No founding spots claimed yet. The first one starts this list.</p>`}
-    ${d.pipeline.length ? `<p class="small" style="margin:10px 0 0">If they all activate ${d.pipeline.some((p) => !p.plan) ? "at a typical founding plan" : "on the plans they're thinking about"}, that's about <strong>${money(d.pipelineMonthlyIfActive)}</strong> a month in commission at your 25% rate. An estimate — it depends on businesses opening and paying.</p>` : ""}
+    ${d.pipeline.length ? `<p class="small" style="margin:10px 0 0">If they all activate ${d.pipeline.some((p) => !p.plan) ? "at a typical founding plan" : "on the plans they're thinking about"}, that's about <strong>${money(d.pipelineMonthlyIfActive)}</strong> a month ${d.hqSeat ? "across your book" : "in commission at your 25% rate"}. An estimate — it depends on businesses opening and paying.</p>` : ""}
   </section>
   <section class="panel">
     <h3 style="margin-top:0">My book</h3>
-    ${m.perBusiness.length ? m.perBusiness.map((b) => `<div class="bd-logrow"><strong>${esc(b.businessName)}</strong> · ${esc(b.lane)}${b.plan ? ` · $${b.plan}/mo` : " · plan not picked yet"}<br><span class="muted small">${b.windowStart ? `Commission window: started ${esc(b.windowStart)} (12 months)` : "Window not started — starts when this business's first payment is collected"} · Building up: ${money(b.accrued)}</span>${b.championName ? `<br><span class="muted small">Champion intro — a $250 bounty goes to the champion on activation, paid by Magpie, not from your pay.</span>` : ""}</div>`).join("") : `<p class="muted" style="margin:0">No active businesses yet — this fills when Hampton Roads opens and your founding list activates.</p>`}
-    ${m.residualCount ? `<p class="small" style="margin:10px 0 0">Other Hampton Roads openings (combined): ${m.residualCount} business${m.residualCount === 1 ? "" : "es"} — the 5% residual counts once you're vested.</p>` : ""}
+    ${m.perBusiness.length ? m.perBusiness.map((b) => `<div class="bd-logrow"><strong>${esc(b.businessName)}</strong> · ${esc(b.lane)}${b.plan ? ` · $${b.plan}/mo` : " · plan not picked yet"}<br><span class="muted small">${b.windowStart ? `Commission window: started ${esc(b.windowStart)} (12 months)` : "Window not started — starts when this business's first payment is collected"} · Building up: ${money(b.accrued)}</span>${b.championName ? `<br><span class="muted small">Champion intro — a $250 bounty goes to the champion on activation, paid by Magpie, not from your pay.</span>` : ""}</div>`).join("") : `<p class="muted" style="margin:0">No active businesses yet — this fills when ${esc(d.marketName || "Hampton Roads")} opens and your founding list activates.</p>`}
+    ${!d.hqSeat && m.residualCount ? `<p class="small" style="margin:10px 0 0">Other ${esc(d.marketName || "Hampton Roads")} openings (combined): ${m.residualCount} business${m.residualCount === 1 ? "" : "es"} — the 5% residual counts once you're vested.</p>` : ""}
   </section>
   <section class="panel">
     <h3 style="margin-top:0">Your rate</h3>
@@ -34332,22 +34431,30 @@ function bdRenderMenu(el) {
   <h2>Menu</h2>
   <div class="panel">
     <p style="margin:0 0 4px"><strong>${esc(u.name || "")}</strong></p>
-    <p class="muted" style="margin:0">Biz Dev · ${esc(seat.marketName || "")} · Your code: <strong>${esc(seat.repCode || "")}</strong></p>
+    <p class="muted" style="margin:0">Biz Dev · ${esc(bdMktName() || seat.marketName || "")} · Your code: <strong>${esc(seat.repCode || "")}</strong></p>
     <p class="muted small">Your claim link: ${esc(location.origin)}/founding-claim?rep=${esc(seat.repCode || "")} — it goes on your printed cards, and every claim through it comes back to you.</p>
   </div>
+  ${bd.markets && bd.markets.length > 1 ? `<div class="panel"><h3 style="margin-top:0">Your city</h3><p class="muted small">You sell in more than one city. Everything — home, leads, money — follows the city you pick.</p>${bdCitySwitcherHtml()}</div>` : ""}
+  ${u.role === "admin" ? `<div class="panel">
+    <h3 style="margin-top:0">Back to managing</h3>
+    <p class="muted small">This is your seller seat — what you see here is exactly what your reps see. Your HQ room is one tap back.</p>
+    <button type="button" class="btn" onclick="return bdGoManage161()">Manage — the HQ Biz Dev room</button>
+    <button type="button" class="btn ghost" onclick="return go('dashboard','Account')">Your account</button>
+    <button type="button" class="btn ghost" onclick="signOut()">Sign out</button>
+  </div>` : ""}
   <div class="panel">
     <h3 style="margin-top:0">Show Mode PIN</h3>
     <p class="muted small">The 4 numbers that get you out of Show Mode. Set it before your first show.</p>
     <div class="bd-pinset"><input id="bd-pin-new" inputmode="numeric" maxlength="4" placeholder="4 numbers"><button type="button" class="btn" onclick="return bdSetPin()">Save PIN</button></div>
     <span id="bd-pin-set-msg" class="small muted"></span>
   </div>
-  <div class="panel">
+  ${u.role === "admin" ? "" : `<div class="panel">
     <h3 style="margin-top:0">Your other side</h3>
     <p class="muted small">You also have a creator account. It's hidden from businesses and never shows in Show Mode — this just lets you look at it.</p>
     <button type="button" class="btn ghost" onclick="return bdGoCreator()">My creator side</button>
     <button type="button" class="btn ghost" onclick="return go('dashboard','Account')">Your account</button>
     <button type="button" class="btn ghost" onclick="signOut()">Sign out</button>
-  </div>`;
+  </div>`}`;
 }
 async function bdSetPin() {
   const pin = document.getElementById("bd-pin-new").value;
@@ -34359,7 +34466,7 @@ async function bdSetPin() {
 
 // ---------- Admin: Biz Dev room (Build -155) ----------
 
-const abd = { data: null, leads: [], preview: null, previewTab: "Home", previewLead: null, leadFilter: { city: "", neighborhood: "", status: "" } };
+const abd = { data: null, leads: [], preview: null, previewTab: "Home", previewLead: null, leadFilter: { city: "", neighborhood: "", status: "", rep: "" }, manageOpen: {}, prewarmOpen: {} };
 async function loadAdminBizdev155() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -34374,8 +34481,57 @@ async function loadAdminBizdev155() {
 function abdCountsChips(counts) {
   return BD_STATUSES.map((s) => `<span class="badge ${s === "Closed" ? "ok" : ""}" style="margin:0 4px 4px 0">${esc(s)}: ${Number((counts || {})[s] || 0)}</span>`).join("");
 }
-function abdCountsCell(counts) {
-  return BD_STATUSES.map((s) => { const n = Number((counts || {})[s] || 0); return n ? String(n) : "—"; }).join(" · ");
+// Build -161: what is waiting on Jeff, counted once, used by the
+// strip at the top of this room, the Admin-home entry and the
+// menu badges — one definition so the three never disagree.
+// Referrals are FYI only and deliberately not counted.
+function abdWaitingCounts(d) {
+  const c = {
+    claims: ((d && d.unconfirmedClaims) || []).length,
+    leads: ((d && d.pendingLeads) || []).length,
+    unmatched: ((d && d.disputes) || []).length,
+    escalations: ((d && d.escalations) || []).length,
+  };
+  c.total = c.claims + c.leads + c.unmatched + c.escalations;
+  return c;
+}
+function abdWaitingStripHtml(d) {
+  const c = abdWaitingCounts(d);
+  if (!c.total) return `<div class="panel abd-wait abd-wait-clear"><strong>Nothing waiting on you.</strong> <span class="muted">No claims to confirm, no leads to approve, no escalations open.</span></div>`;
+  const part = (n, label, anchor) => n ? `<button type="button" class="btn ghost small-btn" onclick="return abdJump('${anchor}')">${n} ${label}</button>` : "";
+  return `<div class="panel abd-wait"><strong>Waiting on you: ${c.total}</strong> <span style="margin-left:6px">${part(c.claims, c.claims === 1 ? "claim to confirm" : "claims to confirm", "abd-panel-claims")}${part(c.leads, c.leads === 1 ? "lead to approve" : "leads to approve", "abd-panel-leads")}${part(c.unmatched, c.unmatched === 1 ? "claim to match" : "claims to match", "abd-panel-unmatched")}${part(c.escalations, c.escalations === 1 ? "escalation" : "escalations", "abd-panel-escalations")}</span></div>`;
+}
+function abdJump(id) {
+  const t = document.getElementById(id);
+  if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
+  return false;
+}
+// Build -161: the confirm step. Confirming a claim is the tap
+// that makes it count, so it always names the business first —
+// and the button only exists (enabled) when a real claim is
+// waiting on that lead.
+function abdConfirmClaim(leadId) {
+  const l = (abd.leads || []).find((x) => x.id === leadId);
+  const name = l ? l.name : "this business";
+  if (!window.confirm(`Confirm ${name} as a founding claim? This is the tap that makes it count.`)) return false;
+  return abdLeadAction(leadId, "confirm-claim");
+}
+function abdPendingClaimFor(leadId) {
+  return ((abd.data && abd.data.unconfirmedClaims) || []).some((c) => c.leadId === leadId);
+}
+function abdToggleManage(id) {
+  abd.manageOpen[id] = !abd.manageOpen[id];
+  const host = document.getElementById("abd-lead-list");
+  if (host) host.innerHTML = abdLeadRowsHtml();
+  return false;
+}
+function abdTogglePrewarm(i) {
+  abd.prewarmOpen[i] = !abd.prewarmOpen[i];
+  const body = document.getElementById(`abd-prewarm-body-${i}`);
+  const btn = document.getElementById(`abd-prewarm-btn-${i}`);
+  if (body) body.style.display = abd.prewarmOpen[i] ? "" : "none";
+  if (btn) btn.textContent = abd.prewarmOpen[i] ? "Hide" : "Read";
+  return false;
 }
 function abdRollupHtml(d) {
   // The overview ships statusRollup as a map keyed by marketId
@@ -34387,9 +34543,10 @@ function abdRollupHtml(d) {
   const marketName = (id) => { const m = (d.markets || []).find((x) => x.marketId === id); return m ? (m.marketName || m.marketId) : id; };
   return roll.map((r) => `<div class="panel abd-rollup">
     <strong>Where things stand — ${esc(marketName(r.marketId) || r.marketId || "")}</strong>
+    <p class="muted small" style="margin:4px 0 0">How every lead in this market is doing, by status.</p>
     <div style="margin:8px 0">${abdCountsChips(r.byStatus)}</div>
-    ${(r.byCity || []).length ? `<table class="abd-rollup-table"><thead><tr><th>City</th>${BD_STATUSES.map((s) => `<th>${esc(s)}</th>`).join("")}</tr></thead><tbody>${r.byCity.map((c) => `<tr><td>${esc(c.city || "")}</td>${BD_STATUSES.map((s) => `<td>${Number((c.counts || {})[s] || 0) || "—"}</td>`).join("")}</tr>`).join("")}</tbody></table>` : ""}
-    ${(r.byNeighborhood || []).length ? `<div style="margin-top:8px">${r.byNeighborhood.map((n) => { const total = BD_STATUSES.reduce((a, s) => a + Number((n.counts || {})[s] || 0), 0); return `<div class="bd-logrow" style="font-size:13.5px"><strong>${esc(n.neighborhood || "")}</strong> <span class="muted">· ${esc(n.city || "")}</span> · ${total} total · ${esc(abdCountsCell(n.counts))}</div>`; }).join("")}</div>` : ""}
+    ${(r.byCity || []).length ? `<table class="abd-rollup-table"><thead><tr><th>City</th>${BD_STATUSES.map((s) => `<th>${esc(s)}</th>`).join("")}</tr></thead><tbody>${r.byCity.map((c) => `<tr><td data-label="City">${esc(c.city || "")}</td>${BD_STATUSES.map((s) => `<td data-label="${esc(s)}">${Number((c.counts || {})[s] || 0)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : ""}
+    ${(r.byNeighborhood || []).length ? `<div style="margin-top:10px">${r.byNeighborhood.map((n) => { const total = BD_STATUSES.reduce((a, s) => a + Number((n.counts || {})[s] || 0), 0); return `<div class="bd-logrow" style="font-size:13.5px"><strong>${esc(n.neighborhood || "")}</strong> <span class="muted">· ${esc(n.city || "")} · ${total} total</span><div style="margin-top:4px">${abdCountsChips(n.counts)}</div></div>`; }).join("")}</div>` : ""}
   </div>`).join("");
 }
 function abdPrewarmText(item) {
@@ -34411,28 +34568,42 @@ async function abdSetStatus(leadId) {
   return false;
 }
 function abdFilteredLeads() {
-  const f = abd.leadFilter || { city: "", neighborhood: "", status: "" };
-  return (abd.leads || []).filter((l) => (!f.city || l.city === f.city) && (!f.neighborhood || l.neighborhood === f.neighborhood) && (!f.status || l.status === f.status));
+  const f = abd.leadFilter || { city: "", neighborhood: "", status: "", rep: "" };
+  return (abd.leads || []).filter((l) => (!f.city || l.city === f.city) && (!f.neighborhood || l.neighborhood === f.neighborhood) && (!f.status || l.status === f.status) && (!f.rep || l.assignedRepId === f.rep));
 }
+// Build -161: compact rows. The status control stays inline in
+// the row (it's the daily job); everything heavier — the guarded
+// Confirm claim, the flags, reassign — lives behind one Manage
+// expander. Reassign renders only when a second seat exists.
 function abdLeadRowsHtml() {
   const d = abd.data;
   if (!d) return "";
   const repName = (id) => { const r = (d.reps || []).find((x) => x.userId === id); return r ? `${r.name} (${r.repCode})` : id; };
   const rows = abdFilteredLeads();
   if (!rows.length) return `<p class="muted small" style="margin:0">No leads match those filters.</p>`;
-  return rows.map((l) => `
-      <div class="bd-logrow">
-        <strong>${esc(l.name)}</strong> · ${esc(l.category)} · ${esc(l.neighborhood || "")}${l.city ? ` · ${esc(l.city)}` : ""} · ${esc(l.stage)} ${bdStatusBadge(l.status)} · ${esc(repName(l.assignedRepId))}${l.pendingApproval ? " · ⏳ waiting your check" : ""}${l.founding && l.founding.status === "Claimed" ? " · claimed, unconfirmed" : ""}${l.founding && l.founding.status === "Confirmed" ? " · claimed ✓" : ""}${l.hasPlaybook ? " · has playbook" : ""}
+  const multiRep = (d.reps || []).length > 1;
+  return rows.map((l) => {
+    const open = !!abd.manageOpen[l.id];
+    const claimWaiting = abdPendingClaimFor(l.id);
+    return `
+      <div class="bd-logrow abd-leadrow">
+        <div class="abd-leadline"><strong>${esc(l.name)}</strong> ${bdStatusBadge(l.status)}<button type="button" class="btn ghost small-btn" style="margin-left:8px" onclick="return abdToggleManage('${l.id}')">${open ? "Close" : "Manage"}</button></div>
+        <div class="muted small" style="margin-top:2px">${esc(l.category)} · ${esc(l.neighborhood || "")}${l.city ? ` · ${esc(l.city)}` : ""} · ${esc(l.stage)} · ${esc(repName(l.assignedRepId))}${l.pendingApproval ? " · ⏳ waiting your check" : ""}${l.founding && l.founding.status === "Claimed" ? " · claimed, unconfirmed" : ""}${l.founding && l.founding.status === "Confirmed" ? " · claimed ✓" : ""}${l.hasPlaybook ? " · has playbook" : ""}</div>
         <span style="display:block;margin-top:6px">
           <select id="abd-status-${l.id}" aria-label="Status for ${esc(l.name)}">${BD_STATUSES.map((s) => `<option value="${esc(s)}" ${l.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
-          <button type="button" class="btn ghost small-btn" onclick="return abdSetStatus('${l.id}')">Set</button>
-          <button type="button" class="btn ghost small-btn" onclick="return abdLeadAction('${l.id}','confirm-claim')">Confirm claim</button>
+          <button type="button" class="btn ghost small-btn" onclick="return abdSetStatus('${l.id}')">Set status</button>
+        </span>
+        ${open ? `<div class="abd-manage">
+          ${claimWaiting
+            ? `<button type="button" class="btn small-btn" onclick="return abdConfirmClaim('${l.id}')">Confirm claim</button>`
+            : `<button type="button" class="btn ghost small-btn" disabled>Confirm claim</button> <span class="muted small">No claim is waiting on this lead — nothing to confirm.</span>`}
           <button type="button" class="btn ghost small-btn" onclick="return abdFlag('${l.id}','doNotContact',${!(l.flags && l.flags.doNotContact)})">${l.flags && l.flags.doNotContact ? "Clear do-not-contact" : "Set do-not-contact"}</button>
           <button type="button" class="btn ghost small-btn" onclick="return abdFlag('${l.id}','jeffHandles',${!(l.flags && l.flags.jeffHandles)})">${l.flags && l.flags.jeffHandles ? "Clear “Jeff handles”" : "Jeff handles this one"}</button>
-          <select id="abd-reassign-${l.id}">${(d.reps || []).map((r) => `<option value="${r.userId}" ${r.userId === l.assignedRepId ? "selected" : ""}>${esc(r.repCode)}</option>`).join("")}</select>
-          <button type="button" class="btn ghost small-btn" onclick="return abdReassign('${l.id}')">Reassign</button>
-        </span>
-      </div>`).join("");
+          ${multiRep ? `<select id="abd-reassign-${l.id}" aria-label="Reassign ${esc(l.name)}">${(d.reps || []).map((r) => `<option value="${r.userId}" ${r.userId === l.assignedRepId ? "selected" : ""}>${esc(r.repCode)}</option>`).join("")}</select>
+          <button type="button" class="btn ghost small-btn" onclick="return abdReassign('${l.id}')">Reassign</button>` : ""}
+        </div>` : ""}
+      </div>`;
+  }).join("");
 }
 function abdSetLeadFilter(key, val) {
   abd.leadFilter[key] = val || "";
@@ -34615,9 +34786,14 @@ function abdRender(el) {
   if (!d) return;
   const repName = (id) => { const r = (d.reps || []).find((x) => x.userId === id); return r ? `${r.name} (${r.repCode})` : id; };
   const leadName = (id) => { const l = abd.leads.find((x) => x.id === id); return l ? l.name : id; };
+  const canSell = !!(state.user && state.user.bizdevSeat && state.user.bizdevSeat.active);
   el.innerHTML = `
-  <h3 style="margin-top:0">Biz Dev — the seller system</h3>
-  <p class="muted small">Reps work their own market's book in the app. Nothing counts toward money until you confirm it here. Founding confirmations to businesses go out from HQ (the business lane) — confirming here flips the record and logs it.</p>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+    <div><h3 style="margin:0">Biz Dev</h3>
+    <p class="muted small" style="margin:4px 0 0">Your job here: open markets, confirm claims, approve leads your reps add. Nothing counts until you confirm it.</p></div>
+    ${canSell ? `<div class="abd-mode" role="group" aria-label="Biz Dev mode"><button type="button" class="chip on">Manage</button><button type="button" class="chip" onclick="return bdGoSell161()">Sell</button></div>` : ""}
+  </div>
+  ${abdWaitingStripHtml(d)}
   ${(d.markets || []).map((m) => `
   <div class="panel">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -34625,19 +34801,24 @@ function abdRender(el) {
       <span><select id="abd-state-${esc(m.marketId)}">${["Building", "Ready", "Open"].map((s) => `<option ${m.state === s ? "selected" : ""}>${s}</option>`).join("")}</select>
       <button type="button" class="btn small-btn" onclick="return abdSetState('${esc(m.marketId)}')">Save state</button></span>
     </div>
+    <p class="muted small" style="margin:6px 0 0">Open a market when its founding creator roster is full. Flipping to Open asks you to confirm first.</p>
     <p class="small" style="margin:8px 0">Gate: <strong>${m.progress.creators} creators</strong> of ${m.progress.gateLow}–${m.progress.gateHigh} · weakest: ${Object.entries(m.progress.byBucket).sort((a, b) => a[1].count - b[1].count).map(([k, v]) => `${esc(k)} ${v.count}`).join(" · ")}</p>
     <p class="small muted" style="margin:0">Leads ${m.loaded} · touched ${m.touched} · visited ${m.visited} · interested ${m.interested} · claimed ${m.claimed} (confirmed ${m.confirmed}) · active ${m.active}</p>
   </div>`).join("")}
   ${abdRollupHtml(d)}
-  ${(d.prewarm && d.prewarm.length) ? `<div class="panel"><strong>Your pre-warm drafts — yours to send</strong><p class="muted small" style="margin:6px 0 10px">Drafts only. Tony never sees these and nothing sends from here — copy one into your own email when you're ready.</p>${d.prewarm.map((item, i) => { const dr = item.draft; const subj = dr && typeof dr === "object" ? (dr.subject || "") : ""; const body = dr && typeof dr === "object" ? (dr.body || dr.text || "") : (dr || ""); return `<div class="bd-logrow"><strong>${esc(item.business || "")}</strong>${item.toName ? ` · for ${esc(item.toName)}` : ""}${subj ? `<p style="margin:6px 0 4px"><strong>${esc(subj)}</strong></p>` : ""}<pre class="abd-prewarm-body">${esc(body)}</pre><button type="button" class="btn ghost small-btn" onclick="return abdCopyPrewarm(${i})">Copy</button></div>`; }).join("")}</div>` : ""}
+  ${(d.prewarm && d.prewarm.length) ? `<div class="panel"><strong>Your pre-warm drafts — yours to send</strong><p class="muted small" style="margin:6px 0 10px">Drafts only. Tony never sees these and nothing sends from here — copy one into your own email when you're ready.</p>${d.prewarm.map((item, i) => { const dr = item.draft; const subj = dr && typeof dr === "object" ? (dr.subject || "") : ""; const body = dr && typeof dr === "object" ? (dr.body || dr.text || "") : (dr || ""); const open = !!abd.prewarmOpen[i]; return `<div class="bd-logrow"><strong>${esc(item.business || "")}</strong>${item.toName ? ` · for ${esc(item.toName)}` : ""}${subj ? `<div style="margin:4px 0">${esc(subj)}</div>` : ""}<span style="display:block;margin-top:4px"><button type="button" class="btn ghost small-btn" id="abd-prewarm-btn-${i}" onclick="return abdTogglePrewarm(${i})">${open ? "Hide" : "Read"}</button> <button type="button" class="btn ghost small-btn" onclick="return abdCopyPrewarm(${i})">Copy</button></span><pre class="abd-prewarm-body" id="abd-prewarm-body-${i}" style="display:${open ? "" : "none"}">${esc(body)}</pre></div>`; }).join("")}</div>` : ""}
   <div class="panel">
     <strong>Commission liability</strong>
-    <p class="small" style="margin:8px 0">Accrued total unpaid: <strong>$${Number(d.liability.totalAccrued || 0).toLocaleString()}</strong> across ${d.liability.activations} activations. Locked math: 25% direct (30% at 25+ kept no-shrink, 35% at 75+), +3 kicker in 5+-activation months, 38% cap, 5% same-market residual post-vesting only, months 1–12 per business, clawback only on refunds inside the 3-month minimum. Blended planning value $326.50/business/mo.</p>
-    ${(d.liability.perRep || []).map((r) => `<div class="bd-logrow">${esc(repName(r.repId))} · ${esc(r.marketId)} · accrued $${Number(r.accrued).toLocaleString()} · ${r.activations} activations · ${r.vested ? "vested" : "not vested"}</div>`).join("") || `<p class="muted small" style="margin:0">No activations yet — pre-launch, liability is $0 by design.</p>`}
+    <p class="muted small" style="margin:4px 0 0">What Magpie owes reps so far, on paper. Your own seat never adds to this.</p>
+    <p class="bd-money-big" style="margin:8px 0 4px">$${Number(d.liability.totalAccrued || 0).toLocaleString()}</p>
+    <p class="small muted" style="margin:0">accrued, unpaid · across ${d.liability.activations} activations</p>
+    <details style="margin-top:8px"><summary class="small" style="cursor:pointer">How the commission math works</summary><p class="small" style="margin:8px 0">Locked math: 25% direct (30% at 25+ kept no-shrink, 35% at 75+), +3 kicker in 5+-activation months, 38% cap, 5% same-market residual post-vesting only, months 1–12 per business, clawback only on refunds inside the 3-month minimum. Blended planning value $326.50/business/mo.</p></details>
+    ${(d.liability.perRep || []).map((r) => `<div class="bd-logrow">${esc(repName(r.repId))} · ${esc(r.marketId)} · accrued $${Number(r.accrued).toLocaleString()} · ${r.activations} activations · ${r.vested ? "vested" : "not vested"}</div>`).join("") || `<p class="muted small" style="margin:8px 0 0">No activations yet — pre-launch, liability is $0 by design.</p>`}
   </div>
   <div class="panel">
     <strong>Reps</strong>
-    ${(d.reps || []).map((r) => { const first = String(r.name || "").trim().split(/\s+/)[0] || "rep"; const sb = (d.scoreboards || []).find((x) => x.repId === r.userId); const al = (d.alarmSummary || []).find((x) => x.repId === r.userId); return `<div class="bd-logrow"><strong>${esc(r.name)}</strong> · ${esc(r.email)} · ${esc(r.marketName)} · code ${esc(r.repCode)} · ${esc(r.seatState)}${r.warningMonth ? ` · ⚠ warning month ${esc(r.warningMonth)}` : ""}${r.atRisk ? ` · ⚠ ${esc(r.atRisk)}` : ""} <button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return abdPreviewOpen('${r.userId}')">See ${esc(first)}'s view</button>${sb ? `<div class="muted small" style="margin-top:4px">Last week: ${(sb.lines || []).map((line) => esc(line)).join(" ")}</div>` : ""}${al ? `<div class="muted small" style="margin-top:2px">Follow-up pings: ${Number(al.count || 0)} waiting (${esc(al.date || "")})</div>` : ""}</div>`; }).join("") || `<p class="muted small">No seats yet.</p>`}
+    <p class="muted small" style="margin:4px 0 8px">Your sellers. Open any seat to see exactly what that rep sees.</p>
+    ${(d.reps || []).map((r) => { const first = String(r.name || "").trim().split(/\s+/)[0] || "rep"; const sb = (d.scoreboards || []).find((x) => x.repId === r.userId); const al = (d.alarmSummary || []).find((x) => x.repId === r.userId); const isMe = state.user && r.userId === state.user.id; const marketsLine = r.hqSeat && (r.markets || []).length > 1 ? ` · sells in ${(r.markets || []).map((m) => esc(m.marketName)).join(" + ")}` : ` · ${esc(r.marketName)}`; return `<div class="bd-logrow"><strong>${esc(r.name)}</strong>${isMe ? ` <span class="badge info">That's you — HQ seat</span>` : ""} · ${esc(r.email)}${marketsLine} · code ${esc(r.repCode)} · ${esc(r.seatState)}${r.hqSeat ? ` · no commission accrues on this seat` : ""}${r.warningMonth ? ` · ⚠ warning month ${esc(r.warningMonth)}` : ""}${r.atRisk ? ` · ⚠ ${esc(r.atRisk)}` : ""} ${isMe ? `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return bdGoSell161()">Open Sell mode</button>` : `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return abdPreviewOpen('${r.userId}')">See ${esc(first)}'s view</button>`}${sb ? `<div class="muted small" style="margin-top:4px">Last week: ${(sb.lines || []).map((line) => esc(line)).join(" ")}</div>` : ""}${al ? `<div class="muted small" style="margin-top:2px">Follow-up pings: ${Number(al.count || 0)} waiting (${esc(al.date || "")})</div>` : ""}</div>`; }).join("") || `<p class="muted small">No seats yet.</p>`}
     <div class="form-2col" style="margin-top:10px">
       <div class="field"><label>Account email</label><input id="abd-seat-email" placeholder="rep@example.com"></div>
       <div class="field"><label>Rep code</label><input id="abd-seat-code" placeholder="HR-TONY"></div>
@@ -34645,19 +34826,23 @@ function abdRender(el) {
     <button type="button" class="btn small-btn" onclick="return abdAssignSeat()">Assign seat (Hampton Roads)</button>
     <span id="abd-seat-msg" class="small muted" style="margin-left:8px"></span>
   </div>
-  ${(d.pendingLeads || []).length ? `<div class="panel"><strong>Rep-added leads waiting for your check (${d.pendingLeads.length})</strong>
+  ${(d.pendingLeads || []).length ? `<div class="panel" id="abd-panel-leads"><strong>Rep-added leads waiting for your check (${d.pendingLeads.length})</strong>
+    <p class="muted small" style="margin:4px 0 8px">Leads your reps added in the field. Approve one and it counts; send it back with one line and they'll see why.</p>
     ${d.pendingLeads.map((l) => `<div class="bd-logrow"><strong>${esc(l.name)}</strong> · ${esc(l.category)} · ${esc(l.neighborhood || "")} · from ${esc(repName(l.assignedRepId))}
       <span style="display:block;margin-top:6px"><button type="button" class="btn small-btn" onclick="return abdLeadAction('${l.id}','approve')">Approve — it counts</button>
       <input id="abd-rej-${l.id}" placeholder="If not: one line back to the rep" style="width:260px">
       <button type="button" class="btn ghost small-btn" onclick="return abdLeadAction('${l.id}','reject')">Send back</button></span></div>`).join("")}
   </div>` : ""}
-  ${(d.unconfirmedClaims || []).length ? `<div class="panel"><strong>Founding claims waiting for HQ confirmation (${d.unconfirmedClaims.length})</strong>
-    ${d.unconfirmedClaims.map((c) => `<div class="bd-logrow"><strong>${esc(c.businessName)}</strong> · ${esc(c.contact || "")} · via ${esc(c.matchedVia || "form")} · ${esc(String(c.createdAt).slice(0, 10))}${c.leadId ? ` <button type="button" class="btn small-btn" onclick="return abdLeadAction('${c.leadId}','confirm-claim')">Confirm (then HQ emails them)</button>` : ""}</div>`).join("")}
+  ${(d.unconfirmedClaims || []).length ? `<div class="panel" id="abd-panel-claims"><strong>Founding claims waiting for HQ confirmation (${d.unconfirmedClaims.length})</strong>
+    <p class="muted small" style="margin:4px 0 8px">A business said yes. Confirm it here and it counts — then HQ emails them.</p>
+    ${d.unconfirmedClaims.map((c) => `<div class="bd-logrow"><strong>${esc(c.businessName)}</strong> · ${esc(c.contact || "")} · via ${esc(c.matchedVia || "form")} · ${esc(String(c.createdAt).slice(0, 10))}${c.leadId ? ` <button type="button" class="btn small-btn" onclick="return abdConfirmClaim('${c.leadId}')">Confirm (then HQ emails them)</button>` : ""}</div>`).join("")}
   </div>` : ""}
-  ${(d.escalations || []).length ? `<div class="panel"><strong>Escalations from reps (${d.escalations.length})</strong>
+  ${(d.escalations || []).length ? `<div class="panel" id="abd-panel-escalations"><strong>Escalations from reps (${d.escalations.length})</strong>
+    <p class="muted small" style="margin:4px 0 8px">A rep hit something that's your call. Handle it, then close it here.</p>
     ${d.escalations.map((e) => `<div class="bd-logrow"><strong>${esc(leadName(e.leadId))}</strong> · ${esc(e.reason)}${e.note ? ` · “${esc(e.note)}”` : ""} · ${esc(repName(e.repId))} <button type="button" class="btn ghost small-btn" onclick="return abdEscClose('${e.id}')">Handled</button></div>`).join("")}
   </div>` : ""}
-  ${(d.disputes || []).length ? `<div class="panel"><strong>Claims that need a match (${d.disputes.length})</strong>
+  ${(d.disputes || []).length ? `<div class="panel" id="abd-panel-unmatched"><strong>Claims that need a match (${d.disputes.length})</strong>
+    <p class="muted small" style="margin:4px 0 8px">A claim came in that doesn't match a lead yet. Match it to the right lead and it joins the confirm queue.</p>
     ${d.disputes.map((c) => `<div class="bd-logrow"><strong>${esc(c.businessName)}</strong> · ${esc(c.contact || "")} · claimed ${esc(String(c.createdAt).slice(0, 10))}
       <span style="display:block;margin-top:6px"><select id="abd-match-${c.id}">${abd.leads.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join("")}</select>
       <button type="button" class="btn small-btn" onclick="return abdMatchClaim('${c.id}')">Match to this lead</button></span></div>`).join("")}
@@ -34673,10 +34858,12 @@ function abdRender(el) {
   </div>
   <div class="panel">
     <strong>All leads</strong>
+    <p class="muted small" style="margin:4px 0 0">Every lead in every book. Filter it down; work a lead from its row.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
       <select onchange="abdSetLeadFilter('city',this.value)" aria-label="City filter"><option value="">All cities</option>${[...new Set(abd.leads.map((l) => l.city).filter(Boolean))].map((c) => `<option value="${esc(c)}" ${abd.leadFilter.city === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
       <select onchange="abdSetLeadFilter('neighborhood',this.value)" aria-label="Neighborhood filter"><option value="">All neighborhoods</option>${[...new Set(abd.leads.map((l) => l.neighborhood).filter(Boolean))].map((n) => `<option value="${esc(n)}" ${abd.leadFilter.neighborhood === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
       <select onchange="abdSetLeadFilter('status',this.value)" aria-label="Status filter"><option value="">All statuses</option>${BD_STATUSES.map((s) => `<option value="${esc(s)}" ${abd.leadFilter.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+      ${(d.reps || []).length > 1 ? `<select onchange="abdSetLeadFilter('rep',this.value)" aria-label="Rep filter"><option value="">All reps</option>${(d.reps || []).map((r) => `<option value="${r.userId}" ${abd.leadFilter.rep === r.userId ? "selected" : ""}>${esc(r.name)} (${esc(r.repCode)})</option>`).join("")}</select>` : ""}
     </div>
     <div id="abd-lead-list" style="margin-top:8px">${abdLeadRowsHtml()}
     </div>
@@ -34684,7 +34871,16 @@ function abdRender(el) {
 }
 async function abdRefresh() { await loadAdminBizdev155(); }
 async function abdSetState(marketId) {
-  try { await api("POST", "/admin/bdev/markets/state", { marketId, state: document.getElementById(`abd-state-${marketId}`).value }); showToast("Market state saved."); abdRefresh(); }
+  const sel = document.getElementById(`abd-state-${marketId}`);
+  const next = sel ? sel.value : "";
+  // Build -161: opening a market is a one-way-feeling door — one
+  // explicit confirm naming the market before the flip saves.
+  if (next === "Open") {
+    const m = ((abd.data && abd.data.markets) || []).find((x) => x.marketId === marketId);
+    const name = m ? (m.marketName || marketId) : marketId;
+    if (!window.confirm(`Open ${name}? This flips the market to Open — businesses there can be activated. This is the tap that makes it live.`)) { abdRefresh(); return false; }
+  }
+  try { await api("POST", "/admin/bdev/markets/state", { marketId, state: next }); showToast("Market state saved."); abdRefresh(); }
   catch (e) { alert(e.message); }
   return false;
 }

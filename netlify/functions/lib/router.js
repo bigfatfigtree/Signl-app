@@ -22876,6 +22876,11 @@ async function route(event) {
     // Williamsburg into Tony's HR book, claimed-flag guarded,
     // waits for the -155 seed.
     (async () => { try { await bizdev.maybeLoadDest20261109(); } catch (e) { /* biz dev destination load is best-effort */ } })(),
+    // Build -161: Jeff's own seller seat (HQ-JEFF) + his Hampton
+    // Roads working copies + the Nashville book. Runs after the
+    // -157 enrichment settles so the copies carry their playbooks;
+    // idempotent on re-runs.
+    (async () => { try { await bizdev.maybeEnrich157(); await bizdev.maybeLoadJeffSeat161(); } catch (e) { /* Jeff seat load is best-effort */ } })(),
     // One-time profileComplete backfill, claimed-flag guarded.
     (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
     // One-time Build -61 public-page backfill, claimed-flag guarded.
