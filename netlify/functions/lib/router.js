@@ -15553,7 +15553,7 @@ async function handleRegister(event) {
     if (!unlisted && (!city || !market.cities.includes(city))) return err(400, `Choose your home city in the ${market.name} market`);
     if (b.followerCount === undefined || b.followerCount === null || b.followerCount === "") return err(400, "Your follower count is required");
     const followers = Math.max(0, parseInt(b.followerCount, 10) || 0);
-    const categories = cleanStringList(b.categories, CREATOR_CATEGORIES, 8);
+    const categories = cleanStringList(b.categories, CREATOR_CATEGORIES, CREATOR_CATEGORIES.length);
     if (!categories.length) return err(400, "Pick at least one category you create in");
     if (b.localAudiencePct === undefined || b.localAudiencePct === null || b.localAudiencePct === "") {
       return err(400, "Your self-reported local audience percentage is required. It is always labeled Self-reported on your profile.");
@@ -23930,7 +23930,22 @@ async function route(event) {
       const got = await currentCoachingStep(user);
       const step = got ? got.step : null;
       const bf = catBackfillView(user);
-      if (bf && (!step || !step.type || step.type === "categories")) return json(200, { role: "creator", campaignPrompt: null, coaching: bf });
+      if (bf && step && step.type === "categories") return json(200, { role: "creator", campaignPrompt: null, coaching: bf });
+      if (bf && (!step || !step.type)) {
+        // Silence guards: a null step can also mean the creator
+        // snoozed a step, or is ladder-complete with a delivered
+        // booking — both are total coaching silence, and the
+        // backfill must not break either. Offer it only when
+        // neither silence holds.
+        const cs = await coachStateFor(user.id);
+        const snoozed = !!(cs && cs.snoozedUntil && Date.parse(cs.snoozedUntil) > Date.now());
+        let delivered = false;
+        if (!snoozed) {
+          const bookings = await allBookings();
+          delivered = bookings.some((b) => b.creatorId === user.id && b.post);
+        }
+        if (!snoozed && !delivered) return json(200, { role: "creator", campaignPrompt: null, coaching: bf });
+      }
       return json(200, { role: "creator", campaignPrompt: null, coaching: step });
     }
     return json(200, { role: user.role, campaignPrompt: null, coaching: null });

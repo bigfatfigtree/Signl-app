@@ -212,5 +212,37 @@ const BF_FULL = await backfillReady("bffull158", ALL12);
   check("at 12 categories: NO catbackfill", r4.status === 200 && (!r4.data.coaching || r4.data.coaching.type !== "catbackfill"), JSON.stringify(r4.data.coaching).slice(0, 160));
 }
 
+// --- F: Build -158 fix pass -------------------------------------
+console.log("== F: fix-pass guards ==");
+{
+  // Register path cap: the full form sending all 12 must store 12.
+  const REG12 = await registerCreator("Reg Twelve", "regtwelve158", "Virginia Beach", { categories: ALL12 });
+  const regStored = await store.get(`user:${REG12.id}`);
+  const regCats = (regStored && regStored.creator && regStored.creator.categories) || [];
+  check("register with all 12 categories stores all 12", JSON.stringify(regCats) === JSON.stringify(ALL12), JSON.stringify(regCats));
+
+  // Snooze silence: an incomplete-rate creator is offered the rate
+  // step, snoozes it via the coaching act, and then must see NO
+  // card at all — the backfill must not break the snooze.
+  const SNOOZED = await registerCreator("Sue Snoozed", "suesnoozed158", "Virginia Beach", { categories: ["Food & Drink", "Music", "Sports"] });
+  await approve(SNOOZED.id);
+  await tuneCreator(SNOOZED.id, { categories: ["Food & Drink", "Music", "Sports"], audienceStack: FULL_STACK, followerCount: 5000, totalAudience: 10000, localAudiencePct: 70, paidRate: null, bestWork: ["https://example.com/post"] });
+  await login(SNOOZED);
+  const s1 = await SNOOZED.client("GET", "/api/sig/prompts");
+  check("snooze fixture: the rate step is offered before snooze", s1.status === 200 && !!s1.data.coaching && s1.data.coaching.type === "rate", JSON.stringify(s1.data.coaching).slice(0, 160));
+  const sAct = await SNOOZED.client("POST", "/api/sig/coaching/act", { action: "snooze" });
+  check("snooze fixture: snooze act answers ok", sAct.status === 200, `got ${sAct.status}`);
+  const s2 = await SNOOZED.client("GET", "/api/sig/prompts");
+  check("snoozed creator with 3 categories gets NO catbackfill (no card at all)", s2.status === 200 && s2.data.coaching === null, JSON.stringify(s2.data.coaching).slice(0, 160));
+
+  // Delivered-booking silence: a ladder-complete creator (the
+  // backfillReady tuning completes every step) with a delivered
+  // booking and 3 categories must see NO card at all.
+  const DELIV = await backfillReady("bfdeliv158", ["Food & Drink", "Music", "Sports"]);
+  await store.set("booking:bkdeliv158", { id: "bkdeliv158", creatorId: DELIV.id, post: { url: "https://example.com/post", createdAt: "2026-11-08T00:00:00.000Z" } });
+  const d1 = await DELIV.client("GET", "/api/sig/prompts");
+  check("ladder-complete creator with a delivered booking and 3 categories gets NO catbackfill (no card at all)", d1.status === 200 && d1.data.coaching === null, JSON.stringify(d1.data.coaching).slice(0, 160));
+}
+
 console.log(`\nverify-build158: ${passed} passed, ${failed} failed`);
 if (failures.length) { console.log("FAILURES:\n - " + failures.join("\n - ")); process.exit(1); }
