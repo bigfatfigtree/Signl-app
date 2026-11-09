@@ -34485,9 +34485,15 @@ function abdCountsChips(counts) {
 // strip at the top of this room, the Admin-home entry and the
 // menu badges — one definition so the three never disagree.
 // Referrals are FYI only and deliberately not counted.
+function abdConfirmableClaims(d) {
+  // A claim can only be CONFIRMED once it is matched to a lead;
+  // the unmatched ones are their own waiting kind (the match
+  // panel below), never double-counted in both.
+  return ((d && d.unconfirmedClaims) || []).filter((c) => c.leadId);
+}
 function abdWaitingCounts(d) {
   const c = {
-    claims: ((d && d.unconfirmedClaims) || []).length,
+    claims: abdConfirmableClaims(d).length,
     leads: ((d && d.pendingLeads) || []).length,
     unmatched: ((d && d.disputes) || []).length,
     escalations: ((d && d.escalations) || []).length,
@@ -34833,9 +34839,9 @@ function abdRender(el) {
       <input id="abd-rej-${l.id}" placeholder="If not: one line back to the rep" style="width:260px">
       <button type="button" class="btn ghost small-btn" onclick="return abdLeadAction('${l.id}','reject')">Send back</button></span></div>`).join("")}
   </div>` : ""}
-  ${(d.unconfirmedClaims || []).length ? `<div class="panel" id="abd-panel-claims"><strong>Founding claims waiting for HQ confirmation (${d.unconfirmedClaims.length})</strong>
+  ${abdConfirmableClaims(d).length ? `<div class="panel" id="abd-panel-claims"><strong>Founding claims waiting for HQ confirmation (${abdConfirmableClaims(d).length})</strong>
     <p class="muted small" style="margin:4px 0 8px">A business said yes. Confirm it here and it counts — then HQ emails them.</p>
-    ${d.unconfirmedClaims.map((c) => `<div class="bd-logrow"><strong>${esc(c.businessName)}</strong> · ${esc(c.contact || "")} · via ${esc(c.matchedVia || "form")} · ${esc(String(c.createdAt).slice(0, 10))}${c.leadId ? ` <button type="button" class="btn small-btn" onclick="return abdConfirmClaim('${c.leadId}')">Confirm (then HQ emails them)</button>` : ""}</div>`).join("")}
+    ${abdConfirmableClaims(d).map((c) => `<div class="bd-logrow"><strong>${esc(c.businessName)}</strong> · ${esc(c.contact || "")} · via ${esc(c.matchedVia || "form")} · ${esc(String(c.createdAt).slice(0, 10))} <button type="button" class="btn small-btn" onclick="return abdConfirmClaim('${c.leadId}')">Confirm (then HQ emails them)</button></div>`).join("")}
   </div>` : ""}
   ${(d.escalations || []).length ? `<div class="panel" id="abd-panel-escalations"><strong>Escalations from reps (${d.escalations.length})</strong>
     <p class="muted small" style="margin:4px 0 8px">A rep hit something that's your call. Handle it, then close it here.</p>
