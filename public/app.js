@@ -24,7 +24,7 @@ const state = {
   view: "home",
   tab: null,
   prefill: null, // claim-link prefill: sanitized ?handle=&market=&tier=
-  claimStep: 1, // Build -85 claim flow: 1 welcome, 2 facts, 3 account, 4 done
+  claimStep: 1, // Build -85 claim flow: 1 welcome, 2 facts, 3 markets (Build -160), 4 account, 5 done
   claimDraft: null, // Build -85: the in-progress claim (memory only until Finish)
   claimDone: null, // Build -85: the done-state readout ({firstName, total, complete, under})
   claimHook: null, // Build -156: the Neighbor Number hook payload for this claim landing ({variant:"personal"|"generic", ...})
@@ -6444,7 +6444,7 @@ async function render() {
   // wall for the claim session itself ("You're on the roster").
   // It is one screen, shown once: the exits below clear the step,
   // and a returning pending creator gets the normal pending home.
-  if (state.claimStep === 4 && state.claimDone) return renderClaimDone();
+  if (state.claimStep === 5 && state.claimDone) return renderClaimDone();
   if (u.status === "pending") return u.role === "business" ? renderBusinessFoundingStatus() : renderPending();
   if (u.status === "rejected") return renderRejected();
   // Build -68: approved founding businesses route into the
@@ -6623,9 +6623,27 @@ function audienceMarketOptions(selected, homeMarket) {
 // none), rows are added and removed one at a time up to five,
 // and each row carries the claim form's search-then-pick
 // pattern instead of a bare full-list select.
-function amRowHtml(market, pct) {
+// Build -160 (Jeff, Option B): each row also carries the
+// market's own switch. Declaring a % lists nobody by itself —
+// the switch is the listing, and the travel copy sits at the
+// switch itself, naming the row's market. Stored entries with
+// no flag are legacy declarations and render ON (they were
+// listed before the switch existed); a brand-new row starts
+// OFF.
+function amTravelCopy(market) {
+  if (market) return T(`Turn this on and businesses in ${market} can find you and send you offers. Offers there mean going there — a comped visit only counts when you show up in person. Only turn this on for places you actually get to.`, `Actívalo y los negocios en ${market} podrán encontrarte y enviarte ofertas. Las ofertas allí significan ir allí: una visita con cortesía solo cuenta cuando te presentas en persona. Actívalo solo para lugares a los que realmente vas.`);
+  return T("Turn this on and businesses in the market you pick can find you and send you offers. Offers there mean going there — a comped visit only counts when you show up in person. Only turn this on for places you actually get to.", "Actívalo y los negocios en el mercado que elijas podrán encontrarte y enviarte ofertas. Las ofertas allí significan ir allí: una visita con cortesía solo cuenta cuando te presentas en persona. Actívalo solo para lugares a los que realmente vas.");
+}
+function amSyncTravel(el) {
+  const row = el && el.closest ? el.closest(".p-am-row") : null;
+  if (!row) return;
+  const sel = row.querySelector(".p-am-market");
+  const note = row.querySelector(".p-am-travel");
+  if (note) note.textContent = amTravelCopy(sel ? sel.value : "");
+}
+function amRowHtml(market, pct, on) {
   const u = state.user || {};
-  return `<div class="p-am-row"><input class="p-am-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterAmOptions(this)" style="margin-bottom:6px"><select class="p-am-market" style="width:100%">${audienceMarketOptions(market || "", u.market)}</select><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="p-am-pct" type="number" min="0" max="100" style="width:96px" placeholder="%" value="${esc(pct === undefined || pct === null ? "" : String(pct))}"><span class="small muted">${T("% of my audience", "% de mi audiencia")}</span><button type="button" class="btn small-btn ghost" onclick="return amRemoveRow(this)">${T("Remove", "Quitar")}</button></div></div>`;
+  return `<div class="p-am-row"><input class="p-am-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterAmOptions(this)" style="margin-bottom:6px"><select class="p-am-market" style="width:100%" onchange="amSyncTravel(this)">${audienceMarketOptions(market || "", u.market)}</select><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="p-am-pct" type="number" min="0" max="100" style="width:96px" placeholder="%" value="${esc(pct === undefined || pct === null ? "" : String(pct))}"><span class="small muted">${T("% of my audience", "% de mi audiencia")}</span><button type="button" class="btn small-btn ghost" onclick="return amRemoveRow(this)">${T("Remove", "Quitar")}</button></div><label class="tgl-row" style="margin-top:10px"><input type="checkbox" class="sw p-am-active" ${on ? "checked" : ""}><span><strong>${T("List me in this market", "Aparecer en este mercado")}</strong></span></label><p class="small muted p-am-travel" style="margin:4px 0 2px">${amTravelCopy(market || "")}</p></div>`;
 }
 function amRowCount() {
   return document.querySelectorAll("#p-am-rows .p-am-row").length;
@@ -9554,6 +9572,10 @@ function claimDraftInit() {
     catsSeeded: false,
     localPct: 50,
     stack: {},
+    // Build -160: the optional second-market declaration from
+    // Screen 3. Saves OFF unless the creator flips its switch
+    // on under the travel copy; empty means skipped.
+    extra: { market: "", pct: "", active: false },
   };
   return state.claimDraft;
 }
@@ -9571,7 +9593,7 @@ function claimFmtCount(n) {
   return (Math.max(0, parseInt(n, 10) || 0)).toLocaleString("en-US");
 }
 function claimDots(step) {
-  return `<div class="c85-dots" aria-hidden="true">${[1, 2, 3].map((n) => `<span class="c85-dot${n === step ? " on" : ""}"></span>`).join("")}</div>`;
+  return `<div class="c85-dots" aria-hidden="true">${[1, 2, 3, 4].map((n) => `<span class="c85-dot${n === step ? " on" : ""}"></span>`).join("")}</div>`;
 }
 
 // Resolve the link's handle against its public Instagram
@@ -9821,8 +9843,9 @@ function renderQuickClaim() {
   const step = state.claimStep === 0 ? 0 : (state.claimStep || 1);
   if (step === 0) return renderClaimHook();
   if (step === 2) return renderClaimFacts();
-  if (step === 3) return renderClaimAccount();
-  if (step === 4) return renderClaimDone();
+  if (step === 3) return renderClaimMarkets();
+  if (step === 4) return renderClaimAccount();
+  if (step === 5) return renderClaimDone();
   return renderClaimWelcome();
 }
 
@@ -10113,6 +10136,75 @@ function claimFactsGo() {
   return false;
 }
 
+// ---------- Screen 3: another market? (Build -160, Option B) ----------
+// Optional, always. A real audience in a second Magpie market
+// is worth declaring — but declaring lists nobody by itself.
+// The market saves OFF; its switch sits on this screen under
+// the same travel copy the Profile rows carry, and only a
+// creator who flips it on is listed there. Skipping costs one
+// tap and changes nothing.
+function renderClaimMarkets() {
+  const d = claimDraftInit();
+  const ex = d.extra || { market: "", pct: "", active: false };
+  app.innerHTML = `
+  <section class="c85-wrap">
+    <div class="c85-card">
+      ${claimDots(3)}
+      <h2 class="c85-h2">${T("Also have a real audience", "¿También tienes audiencia real")} <span class="c85-accent2">${T("somewhere else?", "en otro lugar?")}</span></h2>
+      <p class="muted" style="margin:0 0 14px">${T("Optional — most people skip this. If a real share of your followers lives in another Magpie market, name it here. Naming it does not list you there: the switch below stays off until you turn it on, here or later in your Profile.", "Opcional: casi todos saltan esto. Si una parte real de tus seguidores vive en otro mercado de Magpie, nómbralo aquí. Nombrarlo no te incluye allí: el interruptor de abajo queda apagado hasta que lo actives, aquí o luego en tu Perfil.")}</p>
+      <div class="field"><label>${T("The other market", "El otro mercado")}</label><input id="c85-xsearch" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimExtraOptions()" style="margin-bottom:6px"><select id="c85-xmarket" onchange="claimExtraSync()">${audienceMarketOptions(ex.market || "", d.market)}</select></div>
+      <div class="field"><label>${T("About what % of your followers live there?", "¿Como qué % de tus seguidores vive allí?")}</label><input type="number" id="c85-xpct" min="0" max="100" inputmode="numeric" placeholder="%" value="${ex.pct === "" || ex.pct === undefined || ex.pct === null ? "" : esc(String(ex.pct))}"></div>
+      <label class="tgl-row" style="margin:2px 0 6px"><input type="checkbox" class="sw" id="c85-xactive" ${ex.active ? "checked" : ""}><span><strong>${T("List me in this market", "Aparecer en este mercado")}</strong></span></label>
+      <p class="small muted" id="c85-xtravel" style="margin:0 0 14px">${amTravelCopy(ex.market || "")}</p>
+      <button class="btn" type="button" style="width:100%" onclick="return claimMarketsGo()">${T("Continue", "Continuar")}</button>
+      <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimMarketsSkip()">${T("Skip — just my home market", "Saltar: solo mi mercado principal")}</a></p>
+      <p class="small" style="margin:8px 0 0;text-align:center"><a href="#" onclick="return claimBack(2)">${T("Back", "Atrás")}</a></p>
+    </div>
+  </section>`;
+}
+function filterClaimExtraOptions() {
+  const input = document.getElementById("c85-xsearch");
+  const sel = document.getElementById("c85-xmarket");
+  if (!input || !sel) return;
+  const q = input.value.trim().toLowerCase();
+  for (const opt of sel.querySelectorAll("option")) {
+    if (!opt.value) continue;
+    opt.hidden = !!q && !opt.textContent.toLowerCase().includes(q) && !opt.value.toLowerCase().includes(q);
+  }
+  for (const grp of sel.querySelectorAll("optgroup")) {
+    grp.hidden = ![...grp.querySelectorAll("option")].some((o) => !o.hidden);
+  }
+}
+function claimExtraSync() {
+  const sel = document.getElementById("c85-xmarket");
+  const note = document.getElementById("c85-xtravel");
+  if (note) note.textContent = amTravelCopy(sel ? sel.value : "");
+}
+function claimExtraHarvest() {
+  const d = claimDraftInit();
+  const sel = document.getElementById("c85-xmarket");
+  const pctEl = document.getElementById("c85-xpct");
+  const sw = document.getElementById("c85-xactive");
+  if (!sel) return;
+  const pct = pctEl && pctEl.value !== "" ? Math.max(0, Math.min(100, parseInt(pctEl.value, 10) || 0)) : "";
+  d.extra = { market: sel.value || "", pct, active: !!(sw && sw.checked) };
+}
+function claimMarketsGo() {
+  claimExtraHarvest();
+  state.claimStep = 4;
+  render();
+  window.scrollTo(0, 0);
+  return false;
+}
+function claimMarketsSkip() {
+  const d = claimDraftInit();
+  d.extra = { market: "", pct: "", active: false };
+  state.claimStep = 4;
+  render();
+  window.scrollTo(0, 0);
+  return false;
+}
+
 function claimBack(step) {
   // Stepping back from the facts screen keeps what was typed:
   // harvest the stack before the DOM goes away.
@@ -10122,6 +10214,9 @@ function claimBack(step) {
     const slider = document.getElementById("c85-localpct");
     if (slider) d.localPct = parseInt(slider.value, 10) || 0;
   }
+  // Build -160: stepping back from the markets screen keeps
+  // the declaration and its switch exactly as left.
+  if ((state.claimStep || 1) === 3) claimExtraHarvest();
   state.claimStep = step;
   render();
   window.scrollTo(0, 0);
@@ -10134,7 +10229,7 @@ function claimBack(step) {
 // localStorage for that one trip and init restores it.
 function claimGoogleStart() {
   try {
-    localStorage.setItem("signl_claim_draft", JSON.stringify({ draft: claimDraftInit(), step: 3 }));
+    localStorage.setItem("signl_claim_draft", JSON.stringify({ draft: claimDraftInit(), step: 4 }));
   } catch (e) { /* the trip still works; the form just restarts */ }
   window.location.href = "/api/auth/google/start?mode=apply";
   return false;
@@ -10146,7 +10241,7 @@ function renderClaimAccount() {
   app.innerHTML = `
   <section class="c85-wrap">
     <div class="c85-card">
-      ${claimDots(3)}
+      ${claimDots(4)}
       <h2 class="c85-h2">${T("Make it", "Hazla")} <span class="c85-accent2">${T("yours.", "tuya.")}</span></h2>
       <p class="muted" style="margin:0 0 14px">${T("Your page is", "Tu página es")} <strong>@${esc(d.handle)}</strong> · ${esc(marketDisplayName(d.market))}</p>
       ${gp ? `<div class="notice blue" style="text-align:left">${T(`You're applying with Google: ${esc(gp.email)} is filled in from your Google account. Pick a password to finish, and Google stays linked, so signing in later is one tap.`, `Estás aplicando con Google: ${esc(gp.email)} viene de tu cuenta de Google. Elige una contraseña para terminar, y Google queda vinculado, así entrar luego es un toque.`)}</div>` : (googleConfigured123() ? `<a class="btn ghost" style="width:100%;margin-bottom:10px" href="#" onclick="return claimGoogleStart()"><strong style="margin-right:6px">G</strong> ${T("Continue with Google", "Continuar con Google")}</a><p class="small muted" style="text-align:center;margin:0 0 10px">${T("or finish with email", "o termina con tu correo")}</p>` : "")}
@@ -10157,7 +10252,7 @@ function renderClaimAccount() {
         <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on Magpie on Magpie, and I agree Magpie can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en Magpie las reservas que empiezan en Magpie, y acepto que Magpie me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
         <button class="btn" type="submit" style="width:100%">${T("Finish — join the founding roster", "Terminar: únete a la lista de fundadores")}</button>
       </form>
-      <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(2)">${T("Back", "Atrás")}</a></p>
+      <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(3)">${T("Back", "Atrás")}</a></p>
     </div>
   </section>`;
 }
@@ -10211,6 +10306,12 @@ async function doQuickClaim(e) {
     if (d.cats.length) patch.categories = d.cats.slice();
     patch.localAudiencePct = d.localPct;
     if (Object.keys(d.stack).length) patch.audienceStack = d.stack;
+    // Build -160: the Screen 3 declaration rides the same
+    // write, with its switch exactly as the creator left it
+    // (off unless they flipped it on under the travel copy).
+    // The server's audience_markets_updated event records the
+    // travel acknowledgement when it arrives switched on.
+    if (d.extra && d.extra.market && Number(d.extra.pct) > 0) patch.audienceMarkets = [{ market: d.extra.market, pct: Math.max(0, Math.min(100, Number(d.extra.pct))), active: d.extra.active === true }];
     try {
       const saved = await api("PATCH", "/me/profile", patch);
       if (saved && saved.user) state.user = saved.user;
@@ -10229,7 +10330,7 @@ async function doQuickClaim(e) {
       complete: !!(isUnlisted ? d.customCity : d.city) && d.cats.length > 0 && total >= 500,
       under: total > 0 && total < 500,
     };
-    state.claimStep = 4;
+    state.claimStep = 5;
     render();
     window.scrollTo(0, 0);
   } catch (err) {
@@ -12499,12 +12600,21 @@ function renderCreatorDash() {
 // creator is listed, from the card's server-computed
 // listedMarkets. With no extra markets yet, the line teaches
 // the setting instead of rendering nothing.
+// Build -160: a market the creator declared but left switched
+// OFF (the card's declaredMarkets) is named honestly as
+// declared/not-listed, with a pointer to the switch — never
+// folded into the listed sentence, never hidden.
 function listedMarketsLineHtml(card) {
   const others = ((card && card.listedMarkets) || []).filter((m) => !m.home);
+  const declaredOff = (card && card.declaredMarkets) || [];
+  const offLine = declaredOff.length
+    ? `<p class="small muted" style="margin:6px 0 0">You told us about ${declaredOff.map((m) => `<strong>${esc(m.market)}</strong> (${m.pct}% of your audience)`).join(" and ")}, but the switch is off, so you are not listed there yet. Flip it on under Profile, in Your audience, whenever you are ready.</p>`
+    : "";
   if (others.length) {
-    return `<p class="small" style="margin:6px 0 0">You are listed in ${others.map((m) => `<strong>${esc(m.market)}</strong> (${m.pct}% of your audience)`).join(" and ")} too: businesses there can find you, and their offers reach you.</p>`;
+    return `<p class="small" style="margin:6px 0 0">You are listed in ${others.map((m) => `<strong>${esc(m.market)}</strong> (${m.pct}% of your audience)`).join(" and ")} too: businesses there can find you, and their offers reach you.</p>${offLine}`;
   }
-  return `<p class="small muted" style="margin:6px 0 0">Audience in another city too? Add that market under Profile, in Your audience, and you are listed and ranked there as well.</p>`;
+  if (offLine) return offLine;
+  return `<p class="small muted" style="margin:6px 0 0">Audience in another city too? Add that market under Profile, in Your audience, and flip its switch on to be listed and ranked there as well.</p>`;
 }
 
 function renderFoundingHome() {
@@ -16038,8 +16148,8 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("Typical post views", "Vistas típicas por publicación")}</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
       <div class="field"><label>${T("Top audience cities", "Ciudades principales de tu audiencia")}</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="${T("Up to 5, comma separated", "Hasta 5, separadas por comas")}"><p class="small muted">${T("Free text, shown on your profile in words. The market list right below is a different thing: it is the one that actually lists you in other markets.", "Texto libre, se muestra en tu perfil en palabras. La lista de mercados justo debajo es otra cosa: es la que realmente te incluye en otros mercados.")}</p></div>
       <div class="field"><label>${T("Your audience in other markets", "Tu audiencia en otros mercados")}</label>
-        <p class="small muted" id="p-am-help">${T("Optional. If a real share of your audience lives in another Magpie market, name the market and the %. At 5% or more you are listed and ranked in that market too, and offers from its businesses reach you, not just home-market ones. Your home market is your local % in the four basics at the top, never a row here.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de Magpie, escribe el mercado y el %. Con 5% o más también apareces y te posicionas en ese mercado, y las ofertas de sus negocios te llegan, no solo las de tu mercado. Tu mercado principal es tu % local en los cuatro datos básicos de arriba, nunca una fila aquí.")}</p>
-        <div id="p-am-rows">${(() => { const rows = (c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)); return (rows.length ? rows : [{}]).slice(0, 5).map((e) => amRowHtml(e.market || "", e.pct === undefined || e.pct === null ? "" : String(e.pct))).join(""); })()}</div>
+        <p class="small muted" id="p-am-help">${T("Optional. If a real share of your audience lives in another Magpie market, name the market and the %. Naming it does not list you there by itself — flip that market's switch on when you want its businesses to find you (at 5% or more you are listed and ranked there, and its offers reach you, not just home-market ones). Your home market is your local % in the four basics at the top, never a row here.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de Magpie, escribe el mercado y el %. Nombrarlo no te incluye allí por sí solo: activa el interruptor de ese mercado cuando quieras que sus negocios te encuentren (con 5% o más apareces y te posicionas allí, y sus ofertas te llegan, no solo las de tu mercado). Tu mercado principal es tu % local en los cuatro datos básicos de arriba, nunca una fila aquí.")}</p>
+        <div id="p-am-rows">${(() => { const rows = (c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)); return (rows.length ? rows : [{}]).slice(0, 5).map((e) => amRowHtml(e.market || "", e.pct === undefined || e.pct === null ? "" : String(e.pct), e.market ? e.active !== false : false)).join(""); })()}</div>
         <button type="button" class="btn small-btn ghost" id="p-am-add" onclick="return amAddRow()"${(c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)).length >= 5 ? ' style="display:none"' : ""}>${T("Add another market", "Agregar otro mercado")}</button>
       </div>
       <div class="field"><label>${T("Your local % by platform", "Tu % local por plataforma")}</label>
@@ -16291,8 +16401,12 @@ async function doUpdateCreator(e) {
         audienceMarkets: Array.from(document.querySelectorAll("#p-am-rows .p-am-row")).map((row) => {
           const mEl = row.querySelector(".p-am-market");
           const pEl = row.querySelector(".p-am-pct");
+          const aEl = row.querySelector(".p-am-active");
           if (!mEl || !pEl || !mEl.value || pEl.value === "") return null;
-          return { market: mEl.value, pct: Number(pEl.value) };
+          // Build -160: the row's switch is the listing. A row
+          // rendered without a switch (older cached page) sends
+          // no flag and keeps the legacy read.
+          return { market: mEl.value, pct: Number(pEl.value), ...(aEl ? { active: !!aEl.checked } : {}) };
         }).filter(Boolean),
       } : {}),
       topAudienceCities: document.getElementById("p-topcities").value.split(",").map((x) => x.trim()).filter(Boolean),
@@ -22070,12 +22184,14 @@ function creatorPreviewCard() {
     },
     // Build -140: the preview's market list, from the record's
     // own shares (home first, then the saved splits at 5%+),
-    // so the geography section previews too.
+    // so the geography section previews too. Build -160: a
+    // saved split whose switch is off never previews as
+    // listed — the preview is the business eye.
     listedMarkets: (() => {
       const home = (marketSel && marketSel.value) || u.market || "";
       const out = [];
       if (home) out.push({ market: home, pct: pct === null || pct === undefined || Number.isNaN(Number(pct)) ? null : Number(pct), home: true });
-      for (const e of (c0.audienceMarkets || [])) if (e && e.market && typeof e.pct === "number" && e.pct >= 5) out.push({ market: e.market, pct: e.pct, home: false });
+      for (const e of (c0.audienceMarkets || [])) if (e && e.market && typeof e.pct === "number" && e.pct >= 5 && e.active !== false) out.push({ market: e.market, pct: e.pct, home: false });
       return out;
     })(),
     totalAudience: total,
@@ -32295,7 +32411,7 @@ function previewDashboardHtml(d) {
       try { restoredClaim = JSON.parse(localStorage.getItem("signl_claim_draft") || "null"); } catch (e) { restoredClaim = null; }
       if (restoredClaim && restoredClaim.draft && !state.user) {
         state.claimDraft = restoredClaim.draft;
-        state.claimStep = restoredClaim.step || 3;
+        state.claimStep = restoredClaim.step || 4;
         state.view = "join-creator";
       } else if (!state.user) {
         state.view = (state.bizPrefill && (state.bizPrefill.businessName || state.bizPrefill.category)) ? "join-business" : "join-creator";

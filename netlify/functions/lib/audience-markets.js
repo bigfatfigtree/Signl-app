@@ -17,7 +17,7 @@
 // only OTHER markets.
 //
 // Listing threshold: a reported share at or above
-// MULTI_MARKET_MIN_PCT lists the creator in that market
+// MULTI_MARKET_MIN_PCT is the floor for listing in that market
 // (discovery, the Local List, the open-offer board, applying and
 // accepting). 5% is the floor the codebase already treats as a
 // real local presence: below 5% at scale is the geography-
@@ -25,6 +25,18 @@
 // share is still stored (it is the creator's own number) and
 // still shows in their audience breakdown math as part of
 // "everywhere else"; it just does not open a market.
+//
+// THE SWITCH (Build -160, Jeff 2026-11-09, Option B): a declared
+// share alone lists NOBODY. Each audienceMarkets entry carries
+// an `active` flag — the creator's own per-market switch, flipped
+// only under the travel acknowledgement (offers there mean going
+// there; a comped visit counts only when they show up in
+// person). An entry lists only when its share clears the floor
+// AND active !== false. Entries written before the switch
+// existed carry no flag and read as ON, so nobody unlists
+// overnight; declarations created after this build default OFF
+// at the surfaces that create them (claim step, profile rows,
+// finish flow) until the creator flips them on.
 const { MARKETS, normalizeMarketName } = require("./markets");
 
 const MULTI_MARKET_MIN_PCT = 5;
@@ -48,6 +60,11 @@ function cleanPct(v) {
 // unknown markets, non-numbers, and zero/negative shares.
 // Duplicates keep the largest reported share. Order is by share,
 // strongest first, so every surface reads the same ranking.
+// The per-market switch (Build -160): a boolean `active` on an
+// input entry is preserved — it rides with the WINNING (largest)
+// share when duplicates merge — and is never invented: an entry
+// that carries no flag stores no flag, and every reader treats a
+// missing flag as ON (legacy declarations stay listed).
 function normalizeAudienceMarkets(input, homeMarket) {
   if (!Array.isArray(input)) return [];
   const home = canonicalMarketName(homeMarket) || normalizeMarketName(String(homeMarket || ""));
@@ -58,10 +75,19 @@ function normalizeAudienceMarkets(input, homeMarket) {
     if (!market || market === home) continue;
     const pct = cleanPct(raw.pct);
     if (pct === null || pct <= 0) continue;
-    if (!byMarket.has(market) || pct > byMarket.get(market)) byMarket.set(market, pct);
+    const prev = byMarket.get(market);
+    if (!prev || pct > prev.pct) {
+      const entry = { pct };
+      if (typeof raw.active === "boolean") entry.active = raw.active;
+      byMarket.set(market, entry);
+    }
   }
   return [...byMarket.entries()]
-    .map(([market, pct]) => ({ market, pct }))
+    .map(([market, e]) => {
+      const out = { market, pct: e.pct };
+      if (typeof e.active === "boolean") out.active = e.active;
+      return out;
+    })
     .sort((a, b) => (b.pct - a.pct) || (a.market < b.market ? -1 : 1))
     .slice(0, MAX_AUDIENCE_MARKETS);
 }
@@ -94,9 +120,11 @@ function audienceShareInMarket(user, marketName) {
 // Is this creator listed in this market? The home market always
 // lists its own roster creator (their completeness gates live
 // elsewhere); another market lists them when their reported
-// share there clears the floor. A creator with no real home
-// market (the unlisted pool) lists in their own city only, as
-// before: multi-market listing extends a market identity, it
+// share there clears the floor AND their switch for that market
+// is on (Build -160: entry.active !== false; a missing flag is a
+// legacy declaration and reads as on). A creator with no real
+// home market (the unlisted pool) lists in their own city only,
+// as before: multi-market listing extends a market identity, it
 // does not create one.
 function isListedInMarket(user, marketName) {
   if (!user || user.role !== "creator" || !user.creator) return false;
@@ -106,7 +134,9 @@ function isListedInMarket(user, marketName) {
   if (!home) return false;
   if (market === home) return true;
   const share = audienceShareInMarket(user, market);
-  return share !== null && share >= MULTI_MARKET_MIN_PCT;
+  if (share === null || share < MULTI_MARKET_MIN_PCT) return false;
+  const entry = storedAudienceMarkets(user).find((e) => e.market === market);
+  return !entry || entry.active !== false;
 }
 
 // Every market this creator is listed in, home first, then the
@@ -124,7 +154,41 @@ function listedMarketsFor(user) {
     return out;
   }
   for (const e of storedAudienceMarkets(user)) {
-    if (e.pct >= MULTI_MARKET_MIN_PCT) out.push({ market: e.market, pct: e.pct, home: false });
+    if (e.pct >= MULTI_MARKET_MIN_PCT && e.active !== false) out.push({ market: e.market, pct: e.pct, home: false });
+  }
+  return out;
+}
+
+// Markets the creator has DECLARED a share in but whose switch
+// is OFF (Build -160): stored, theirs, and honestly not listed.
+// Surfaces use this to say "you told us about {Market} — flip
+// its switch on under Profile to be listed there" instead of
+// pretending the market is listed or pretending it does not
+// exist. Strongest first, like every other market list here.
+function declaredOffMarketsFor(user) {
+  if (!user || !user.creator) return [];
+  return storedAudienceMarkets(user)
+    .filter((e) => e.active === false)
+    .map((e) => ({ market: e.market, pct: e.pct }));
+}
+
+// The markets a creator counts toward for LAUNCH-GATE supply
+// (Build -160, brief item 6): home always counts, exactly as
+// before. A non-home market counts ONLY when the creator is
+// actually listed there (switch on, share at/above the listing
+// floor) AND the market is a real supply signal for the gate:
+// their declared share there clears the gate's category floor,
+// or the market is IG-Verified for them. A switched-off or
+// thin-share declaration never inflates a gate.
+function gateMarketsFor(user, categoryFloor) {
+  if (!user || !user.creator) return [];
+  const homeName = canonicalMarketName(user.market);
+  if (!homeName) return [];
+  const floor = typeof categoryFloor === "number" && Number.isFinite(categoryFloor) ? categoryFloor : MULTI_MARKET_MIN_PCT;
+  const out = [{ market: homeName, pct: audienceShareInMarket(user, homeName), home: true }];
+  for (const e of storedAudienceMarkets(user)) {
+    if (e.pct < MULTI_MARKET_MIN_PCT || e.active === false) continue;
+    if (e.pct >= floor || verifiedInMarket(user, e.market)) out.push({ market: e.market, pct: e.pct, home: false });
   }
   return out;
 }
@@ -389,6 +453,8 @@ module.exports = {
   audienceShareInMarket,
   isListedInMarket,
   listedMarketsFor,
+  declaredOffMarketsFor,
+  gateMarketsFor,
   audienceBreakdownFor,
   verificationStatusOf,
   verifiedInMarket,

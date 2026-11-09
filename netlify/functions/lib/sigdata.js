@@ -1426,7 +1426,7 @@ function answerCreator(f, q, t) {
   }
   // Markets listed in
   if (hasPhrase(t, "markets am i", "which markets", "markets i am", "listed in", "am i listed")) {
-    if (!f.listedMarkets.length) return "Your home market is the listing on your record. Add per-market audience shares on your profile and you list in every market where your local share is 5% or more.";
+    if (!f.listedMarkets.length) return "Your home market is the listing on your record. Add per-market audience shares on your profile, then flip that market's switch on — at 5% or more with the switch on, you are listed there too.";
     return linked(`You are listed in ${f.listedMarkets.length} ${plural(f.listedMarkets.length, "market")}: ${f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}${m.home ? ", your home market" : ""}`).join("; ")}. You can receive offers from businesses in all of them.`, "Open my Profile", "cr-profile");
   }
   // Offers waiting
