@@ -632,7 +632,9 @@ body.admin-on .preview-cta .btn.ghost:hover { background: var(--hover); border-c
 .ev125-row { margin-bottom: 8px; text-decoration: none; }
 .ev125-status { margin-left: auto; font-style: normal; font-weight: 700; color: var(--accent); font-size: .86rem; }
 @media (max-width: 767.98px) {
-  .ev125-panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 88vh; border-radius: 22px 22px 0 0; padding-bottom: calc(18px + env(safe-area-inset-bottom)); animation: vxSheetUp .38s cubic-bezier(.22,.8,.3,1) both; }
+  /* Build -168: the Everything panel is a LEFT DRAWER on
+     phones now (see the Build -168 block at the file's end). */
+  .ev125-panel { position: absolute; top: 0; bottom: 0; left: 0; right: auto; width: min(84vw, 340px); max-height: none; border-radius: 0; border-right: 1px solid var(--line); box-shadow: 18px 0 44px rgba(23,21,18,.25); padding: calc(14px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom)); animation: drawerIn168 .32s cubic-bezier(.22,.8,.3,1) both; }
 }
 @media (min-width: 768px) {
   .ev125-panel { position: absolute; top: 14px; right: 14px; width: 400px; max-width: calc(100vw - 28px); max-height: calc(100vh - 28px); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 60px rgba(23,21,18,.22); }
@@ -1215,7 +1217,9 @@ img.media-contain { object-fit: contain !important; }
 .ham137-head { display: flex; align-items: center; gap: 11px; padding: 2px 2px 12px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
 .ham137-head .linklike { margin-left: auto; font-size: 1rem; }
 @media (max-width: 767.98px) {
-  .ham137-panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 88vh; border-radius: 22px 22px 0 0; padding-bottom: calc(18px + env(safe-area-inset-bottom)); animation: vxSheetUp .38s cubic-bezier(.22,.8,.3,1) both; }
+  /* Build -168: the hamburger is a LEFT DRAWER on phones
+     now (see the Build -168 block at the file's end). */
+  .ham137-panel { position: absolute; top: 0; bottom: 0; left: 0; right: auto; width: min(84vw, 340px); max-height: none; border-radius: 0; border-right: 1px solid var(--line); box-shadow: 18px 0 44px rgba(23,21,18,.25); padding: calc(14px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom)); animation: drawerIn168 .32s cubic-bezier(.22,.8,.3,1) both; }
 }
 @media (min-width: 768px) {
   .ham137-panel { position: absolute; top: 14px; right: 14px; width: 400px; max-width: calc(100vw - 28px); max-height: calc(100vh - 28px); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 60px rgba(23,21,18,.22); }
@@ -1817,4 +1821,36 @@ img.maggie-char-img { object-fit: cover; }
 @media (max-width: 480px) {
   .bd-numbers strong { font-size: 20px; }
   .bd-show-title { font-size: 26px; }
+}
+
+/* ============================================================
+   Build -168 (Jeff, 2026-11-09): the left slide-out drawer on
+   phones. "For mobile we should have the hamburger menu move
+   to the left on all dashboards — and it slides out as people
+   use it like this one" (his reference: the Fly.io console's
+   left slide-in panel, full height, close ✕ top right).
+   The panels themselves (hamburger + Everything) are placed
+   as drawers in their own sections' phone blocks above; this
+   block carries the shared pieces: the drawer head (Magpie
+   logo at the top, a clear ✕ at the drawer's top right — it
+   replaces the panels' own head ✕ buttons on phones only),
+   the slide-out close, and the scroll lock on the page
+   behind. Desktop is untouched: the head row never renders
+   there and the panels keep their top-right card.
+   ============================================================ */
+.drawer168-head { display: none; }
+body.drawer168-open { overflow: hidden; }
+@keyframes drawerIn168 { from { transform: translateX(-104%); } to { transform: translateX(0); } }
+@keyframes drawerOut168 { from { transform: translateX(0); } to { transform: translateX(-104%); } }
+@media (max-width: 767.98px) {
+  .drawer168-head { display: flex; align-items: center; gap: 10px; padding: 2px 2px 12px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .drawer168-brand img { height: 26px; width: auto; display: block; }
+  .drawer168-x { margin-left: auto; flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: #fff; color: var(--ink); font-size: 1.05rem; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .drawer168-x:active { background: var(--line); }
+  .ham137-head .linklike, .ev125-head .linklike { display: none; }
+  .ham137-overlay.drawer168-closing .ham137-panel,
+  .ev125-overlay.drawer168-closing .ev125-panel { animation: drawerOut168 .28s ease-in both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ham137-panel, .ev125-panel { animation: none !important; }
 }

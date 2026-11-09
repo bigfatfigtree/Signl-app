@@ -2816,7 +2816,11 @@ function everythingRowHtml125(r) {
   return `<button type="button" class="more-row ev125-row" onclick="closeEverything125(); ${act}">${inner}</button>`;
 }
 function openEverything125() {
-  closeEverything125();
+  // Build -168: a reopen never animates the old panel out —
+  // it is killed on the spot (the animated dismiss is for
+  // closes the person asked for).
+  const old125 = document.getElementById("everything-panel125");
+  if (old125) old125.remove();
   closeMoreSheet();
   const groups = everythingGroups125();
   if (!groups.length) return false;
@@ -2825,16 +2829,18 @@ function openEverything125() {
   el.className = "ev125-overlay";
   el.innerHTML = `
   <div class="ev125-panel" role="dialog" aria-label="Everything">
+    ${drawer168HeadHtml("closeEverything125")}
     <div class="ev125-head"><strong>Everything</strong><span class="muted small">All you can do</span><button type="button" class="linklike" onclick="closeEverything125()" aria-label="Close">✕</button></div>
     ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(everythingRowHtml125).join("")}</div>`).join("")}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeEverything125(); });
   document.body.appendChild(el);
+  drawer168Lock();
   return false;
 }
 function closeEverything125() {
   const el = document.getElementById("everything-panel125");
-  if (el) el.remove();
+  if (el) drawer168Dismiss(el); else drawer168Unlock();
   return false;
 }
 
@@ -2991,7 +2997,11 @@ function hamburgerRowHtml137(r) {
   return `<button type="button" class="more-row ev125-row" onclick="closeHamburger137(); ${act}">${inner}</button>`;
 }
 function openHamburger137() {
-  closeHamburger137();
+  // Build -168: kill any outgoing panel on the spot (see
+  // openEverything125); the animated dismiss is only for
+  // closes the person asked for.
+  const old137 = document.getElementById("hamburger137");
+  if (old137) old137.remove();
   closeEverything125();
   closeIdentityMenu126();
   closeMoreSheet();
@@ -3007,16 +3017,118 @@ function openHamburger137() {
   el.className = "ham137-overlay";
   el.innerHTML = `
   <div class="ham137-panel" role="dialog" aria-label="Menu">
+    ${drawer168HeadHtml("closeHamburger137")}
     <div class="ham137-head">${avaHtml122("idm126-ava", "idm126-ava", photo, initial)}<span class="idm126-who"><span class="idm126-name">${esc(name || "")}</span><span class="idm126-sub">${esc(roleWord)}</span></span><button type="button" class="linklike" onclick="closeHamburger137()" aria-label="Close">✕</button></div>
     ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(hamburgerRowHtml137).join("")}</div>`).join("")}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeHamburger137(); });
   document.body.appendChild(el);
+  drawer168Lock();
   return false;
 }
 function closeHamburger137() {
   const el = document.getElementById("hamburger137");
-  if (el) el.remove();
+  if (el) drawer168Dismiss(el); else drawer168Unlock();
+  return false;
+}
+
+// ---------- Build -168: the left slide-out drawer on phones ----------
+// Jeff (2026-11-09, with the Fly.io console as the reference):
+// "for mobile we should have the hamburger menu move to the
+// left on all dashboards — and it slides out as people use it
+// like this one." On phone widths the full-menu panels — the
+// hamburger (creator / business / partner / admin), the
+// Everything panel (pilot + recruiter shells) and the Biz Dev
+// shell's Menu — are LEFT DRAWERS: full height, ~84% of the
+// screen, the Magpie logo at the top with a clear ✕ at the
+// drawer's top right, a dimmed scrim behind, sliding in and
+// out on transforms. Desktop keeps the top-right card exactly
+// as it was; the bottom bars are untouched at every width.
+// The CSS lives in theme-v3.css (Build -168 block); this side
+// is the shared head row, the body scroll lock and the
+// animated dismiss (the panels' own close functions route
+// through drawer168Dismiss so every close — ✕, scrim tap, a
+// destination tap — slides out the same way).
+function drawer168Mobile() {
+  return !!(window.matchMedia && window.matchMedia("(max-width: 767.98px)").matches);
+}
+function drawer168HeadHtml(closeFn) {
+  return `<div class="drawer168-head"><span class="brand-lockup drawer168-brand"><img src="/assets/logo.png" alt="Magpie"></span><button type="button" class="drawer168-x" onclick="return ${closeFn}()" aria-label="Close menu">✕</button></div>`;
+}
+function drawer168Lock() {
+  if (drawer168Mobile()) document.body.classList.add("drawer168-open");
+}
+function drawer168Unlock() {
+  if (!document.getElementById("hamburger137") && !document.getElementById("everything-panel125") && !document.getElementById("bd-drawer168")) {
+    document.body.classList.remove("drawer168-open");
+  }
+}
+function drawer168Dismiss(el) {
+  if (!el) return;
+  if (!drawer168Mobile() || el.classList.contains("drawer168-closing")) {
+    if (!el.classList.contains("drawer168-closing")) { el.remove(); drawer168Unlock(); }
+    return;
+  }
+  el.classList.add("drawer168-closing");
+  setTimeout(() => { el.remove(); drawer168Unlock(); }, 300);
+}
+// The Biz Dev shell's Menu: on phones it opens this drawer
+// (the shell's full destination set + the seat's doors); at
+// desktop widths it keeps going to the BD Menu page exactly
+// as before (bdMenuTap168 is the one tap handler both the
+// phone bar and the rail call).
+function bdMenuTap168() {
+  if (!drawer168Mobile()) return go("dashboard", "BD Menu");
+  return bdOpenDrawer168();
+}
+function bdDrawerRowHtml168(r) {
+  const inner = `<span class="more-ic">${bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span><span class="more-chev">›</span>`;
+  return `<button type="button" class="more-row ev125-row" onclick="closeBdDrawer168(); ${r.act}">${inner}</button>`;
+}
+function bdOpenDrawer168() {
+  const old = document.getElementById("bd-drawer168");
+  if (old) old.remove();
+  closeHamburger137();
+  closeEverything125();
+  closeIdentityMenu126();
+  closeMoreSheet();
+  const u = state.user;
+  if (!u || !bdShellActive()) return false;
+  const seat = u.bizdevSeat || {};
+  const dest = (icon, label, sub, tab) => ({ icon, label, sub, act: `return go('dashboard','${tab}')` });
+  const groups = [
+    { title: "Sell", rows: [
+      dest("home", "Home", "Your day, your next best doors", "BD Home"),
+      dest("users", "My Leads", "Your book, one business at a time", "BD Leads"),
+      dest("deck", "Seller Kit", "The cards and pages you show", "BD Kit"),
+      dest("stats", "My Money", "What you have earned so far", "BD Money"),
+    ] },
+    { title: "Your seat", rows: [
+      dest("menu", "Menu & PIN", "Your claim link, your city, your Show Mode PIN", "BD Menu"),
+      { icon: "person", label: "Your account", sub: "Your settings: sign-in, email and password", act: "return go('dashboard','Account')" },
+      ...(u.role === "admin"
+        ? [{ icon: "building", label: "Manage", sub: "Back to the HQ Biz Dev room", act: "return bdGoManage161()" }]
+        : [{ icon: "person", label: "My creator side", sub: "Look at your creator account", act: "return bdGoCreator()" }]),
+      { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
+    ] },
+  ];
+  const el = document.createElement("div");
+  el.id = "bd-drawer168";
+  el.className = "ham137-overlay";
+  el.innerHTML = `
+  <div class="ham137-panel" role="dialog" aria-label="Menu">
+    ${drawer168HeadHtml("closeBdDrawer168")}
+    <div class="ham137-head">${avaHtml122("idm126-ava", "idm126-ava", selfAvatarUrl122(u), String(u.name || "").trim().charAt(0).toUpperCase() || "S")}<span class="idm126-who"><span class="idm126-name">${esc(u.name || "")}</span><span class="idm126-sub">Biz Dev${seat.repCode ? ` · ${esc(seat.repCode)}` : ""}</span></span><button type="button" class="linklike" onclick="closeBdDrawer168()" aria-label="Close">✕</button></div>
+    ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(bdDrawerRowHtml168).join("")}</div>`).join("")}
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeBdDrawer168(); });
+  document.body.appendChild(el);
+  drawer168Lock();
+  return false;
+}
+function closeBdDrawer168() {
+  const el = document.getElementById("bd-drawer168");
+  if (el) drawer168Dismiss(el); else drawer168Unlock();
   return false;
 }
 // The bar's Sig slot: on phones it opens the Sig sheet over
@@ -3229,7 +3341,7 @@ function tabBarHtml() {
       ["BD Home", "home", "Home"], ["BD Leads", "users", "My Leads"], ["BD Kit", "deck", "Seller Kit"], ["BD Money", "stats", "My Money"], ["BD Menu", "menu", "Menu"],
     ];
     const btns = items155.map(([tab, icon, label], ix) => `
-    <button type="button" class="tab-item tab-bar137 ${t === tab ? "on" : ""}" style="--bar-ord:${ix};order:${ix}" onclick="return go('dashboard','${tab}')" aria-label="${label}">
+    <button type="button" class="tab-item tab-bar137 ${t === tab ? "on" : ""}" style="--bar-ord:${ix};order:${ix}" onclick="${tab === "BD Menu" ? "return bdMenuTap168()" : `return go('dashboard','${tab}')`}" aria-label="${label}">
       <span class="tab-ic">${bnIcon(icon)}</span>
       <span class="tab-label"><span class="lbl-full">${label}</span><span class="lbl-short">${label}</span></span>
     </button>`).join("");
@@ -3799,7 +3911,7 @@ function railItems() {
     add("a", "users", "My Leads", "return go('dashboard','BD Leads')", t === "BD Leads");
     add("a", "deck", "Seller Kit", "return go('dashboard','BD Kit')", t === "BD Kit");
     add("a", "stats", "My Money", "return go('dashboard','BD Money')", t === "BD Money");
-    add("a", "menu", "Menu", "return go('dashboard','BD Menu')", t === "BD Menu");
+    add("a", "menu", "Menu", "return bdMenuTap168()", t === "BD Menu");
     return items;
   }
   if (u.status !== "approved" || isFoundingBusiness(u)) {
