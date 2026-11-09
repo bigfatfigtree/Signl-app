@@ -6915,21 +6915,50 @@ const MSG_CAMPAIGN_BACKFILLS_163 = [
     audienceLabel: "Approved creators with no second city declared",
   },
 ];
+// Build -164 repair pass over the -163 backfill. Three fixes:
+//  (a) A broadcast's copy lands in the same thread store stamped
+//      with its broadcastId (deliverTeamMessage152) — the 09:10
+//      karsen_16 broadcast carried the category copy, so the
+//      -163 cluster stamped the category entry 09:10. Broadcast
+//      copies NEVER join a segment cluster: a reconstructed
+//      entry's time is the earliest matching THREAD message in
+//      its window.
+//  (b) An entry the -163 pass already stored is REPAIRED in
+//      place (time, counts, recipients and sender recomputed
+//      from the thread messages), not skipped — the fix lands
+//      on the live record, and the entry is stamped
+//      repaired164 so the repair runs exactly once.
+//  (c) The sender label is the admin account's name — the same
+//      label segment sends and broadcasts record — never a
+//      one-off "admin session" spelling.
+// The whole scan is gated on a done-stamp (Build -164): the
+// -163 pass listed every message on EVERY campaigns read,
+// which is what left the sections below Conversations sitting
+// on "Loading…". Once the entries are built/repaired the read
+// path never scans the message store again.
+function msgCampaignCluster164(rows, spec) {
+  const matched = [];
+  for (const r of rows) {
+    const m = r.value;
+    if (!m || !m.platform || m.fromId !== PLATFORM_PEER_ID) continue;
+    if (m.broadcastId) continue; // a broadcast copy is the broadcast room's send, never a segment send
+    if (m.createdAt < spec.from || m.createdAt >= spec.to) continue;
+    if (!String(m.body || "").includes(spec.marker)) continue;
+    matched.push(m);
+  }
+  matched.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  return matched;
+}
 async function maybeBackfillMsgCampaigns163() {
+  const stateKey = "backfill:msgcampaigns-164";
+  if (await store.get(stateKey)) return; // built + repaired already; reads stay scan-free
   const rows = await store.list("message:");
+  let adminName = null;
   for (const spec of MSG_CAMPAIGN_BACKFILLS_163) {
     const key = `pmcampaign:${spec.id}`;
-    if (await store.get(key)) continue;
-    const matched = [];
-    for (const r of rows) {
-      const m = r.value;
-      if (!m || !m.platform || m.fromId !== PLATFORM_PEER_ID) continue;
-      if (m.createdAt < spec.from || m.createdAt >= spec.to) continue;
-      if (!String(m.body || "").includes(spec.marker)) continue;
-      matched.push(m);
-    }
+    const prior = await store.get(key);
+    const matched = msgCampaignCluster164(rows, spec);
     if (!matched.length) continue;
-    matched.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
     const seen = new Set();
     const recipientIds = [];
     for (const m of matched) {
@@ -6938,6 +6967,10 @@ async function maybeBackfillMsgCampaigns163() {
       recipientIds.push(m.toId);
     }
     if (recipientIds.length < 2) continue; // a mass send has many recipients; anything less is not this campaign
+    if (adminName === null) {
+      const admins = (await allUsers()).filter((u) => u.role === "admin");
+      adminName = (admins[0] && (admins[0].name || admins[0].email)) || "Magpie admin";
+    }
     await store.set(key, {
       id: spec.id,
       kind: "segment",
@@ -6945,19 +6978,21 @@ async function maybeBackfillMsgCampaigns163() {
       body: matched[0].body,
       createdAt: matched[0].createdAt,
       lastAt: matched[matched.length - 1].createdAt,
-      sentById: null,
-      sentByName: "Jeff's admin session",
+      sentById: prior && prior.sentById ? prior.sentById : null,
+      sentByName: adminName,
       market: null,
       audienceLabel: spec.audienceLabel,
       recipientIds,
       messageCount: matched.length,
-      emailSent: null,
-      emailFailed: null,
+      emailSent: prior && prior.emailSent != null ? prior.emailSent : null,
+      emailFailed: prior && prior.emailFailed != null ? prior.emailFailed : null,
       templateId: null,
       reconstructed: true,
-      source: "Rebuilt from the stored thread messages themselves (Build -163 backfill); the sends are logged in signl-campaign-run/category-message-log-2026-11-09.json and second-city-message-log-2026-11-09.json.",
+      source: "Rebuilt from the stored thread messages themselves; this send predates campaign records.",
+      repaired164: true,
     });
   }
+  await store.set(stateKey, { done: true, at: nowIso() });
 }
 
 // ---------- admin broadcasts (Build -152, reworked -153) ----------
@@ -27414,14 +27449,26 @@ async function route(event) {
       }
       const users = await allUsers();
       const usersById = new Map(users.map((u) => [u.id, u]));
+      // Build -164: a thread the team itself owns — the admin's
+      // own creator account (same email as an admin account),
+      // an admin account, or a tester account — can never be
+      // "waiting on your reply": Jeff is not going to answer
+      // himself. The thread stays listed; it just never flags.
+      const adminIds164 = new Set(users.filter((u) => u.role === "admin").map((u) => u.id));
+      const adminEmails164 = new Set(users.filter((u) => u.role === "admin").map((u) => String(u.email || "").toLowerCase()).filter(Boolean));
+      const staffPeer164 = (peer) => !!peer && (peer.role === "admin" || peer.tester === true || adminIds164.has(peer.id) || (!!peer.email && adminEmails164.has(String(peer.email).toLowerCase())));
+      // Read states fetched in parallel (Build -164): one store
+      // read per thread, but never one-at-a-time down the list.
+      const stateByPeer164 = new Map(await Promise.all([...byPeer.keys()].map(async (peerId) => [peerId, await store.get(`pmstate:${peerId}`)])));
       const threads = [];
       for (const [peerId, msgs] of byPeer.entries()) {
         const peer = usersById.get(peerId);
         if (!peer) continue;
         const sorted = msgs.slice().sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-        const state = await store.get(`pmstate:${peerId}`);
+        const state = stateByPeer164.get(peerId);
         const readAt = state && state.adminLastReadAt ? state.adminLastReadAt : "";
         const lastMessage = sorted[sorted.length - 1] || null;
+        const staffOwned = staffPeer164(peer);
         threads.push({
           peerId,
           peerName: peerDisplayName163(peer),
@@ -27437,7 +27484,8 @@ async function route(event) {
           lastAt: lastMessage ? lastMessage.createdAt : null,
           messageCount: sorted.length,
           unreadReplies: sorted.filter((m) => m.fromId === peerId && m.createdAt > readAt).length,
-          needsReply: !!lastMessage && lastMessage.fromId === peerId,
+          staffOwned,
+          needsReply: !staffOwned && !!lastMessage && lastMessage.fromId === peerId,
         });
       }
       threads.sort((a, b) => ((a.lastMessage && a.lastMessage.createdAt) < (b.lastMessage && b.lastMessage.createdAt) ? 1 : -1));
@@ -27480,7 +27528,10 @@ async function route(event) {
           sentByName: b.senderName || "Magpie admin", market: null,
           audienceLabel: b.audienceLabel || null,
           recipientCount: (b.recipientIds || []).length,
-          messageCount: null,
+          // Build -164: one delivered message per recipient, so
+          // every Sent-to-many entry can show the same
+          // "N people · M messages" shape.
+          messageCount: (b.recipientIds || []).length,
           reconstructed: false, source: null,
           recipients: (b.recipientIds || []).slice(0, 1000).map((id) => campaignPersonView163(usersById.get(id)) || { id, name: "Unknown", role: null, handle: null, org: null, market: null }),
         });

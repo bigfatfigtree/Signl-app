@@ -132,8 +132,14 @@ console.log("== A: source pins ==");
     appJs.includes("Write a broadcast") && appJs.includes("Broadcast room"), "");
   check("server: campaign record written at segment send time + campaigns route + backfill specs",
     routerJs.includes("pmcampaign:${campaignId}") && routerJs.includes('"message-campaigns"') && routerJs.includes("MSG_CAMPAIGN_BACKFILLS_163") && routerJs.includes("maybeBackfillMsgCampaigns163"), "");
-  check("server: needsReply derives from the last message being theirs",
-    routerJs.includes("needsReply: !!lastMessage && lastMessage.fromId === peerId"), "");
+  // Pin updated at Build -164 (2026-11-09): needsReply still
+  // derives from the last message being theirs, but a thread the
+  // team itself owns (the admin's own account, a tester) never
+  // flags — Jeff is not going to answer himself. Supersedes the
+  // bare derivation pin the same way earlier builds superseded
+  // theirs.
+  check("server: needsReply derives from the last message being theirs, staff-owned threads exempt (Build -164)",
+    routerJs.includes("needsReply: !staffOwned && !!lastMessage && lastMessage.fromId === peerId") && routerJs.includes("staffPeer164"), "");
 }
 
 // --- B: fixture people + seeded threads -----------------------

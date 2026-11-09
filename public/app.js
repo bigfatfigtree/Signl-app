@@ -26134,9 +26134,9 @@ function adminCampPanelHtml163() {
     return `
     <div class="admin-msg-item">
       <strong>${esc(c.title || (c.kind === "broadcast" ? "Broadcast message" : "Segment message"))}</strong> <span class="badge info">${kindLabel}</span> <span class="muted small">${fmtDate(c.createdAt)} &middot; sent by ${esc(c.sentByName || "Magpie admin")}</span>
-      <div class="small muted">${esc(c.audienceLabel || "")}${c.audienceLabel ? " &middot; " : ""}${fmtNum(c.recipientCount)} ${c.recipientCount === 1 ? "person" : "people"}${c.messageCount && c.messageCount !== c.recipientCount ? ` &middot; ${fmtNum(c.messageCount)} messages` : ""}</div>
+      <div class="small muted">${esc(c.audienceLabel || "")}${c.audienceLabel ? " &middot; " : ""}${fmtNum(c.recipientCount)} ${c.recipientCount === 1 ? "person" : "people"} &middot; ${fmtNum(c.messageCount != null ? c.messageCount : c.recipientCount)} ${(c.messageCount != null ? c.messageCount : c.recipientCount) === 1 ? "message" : "messages"}</div>
       <div class="small">${esc(String(c.body || "").slice(0, 140))}${String(c.body || "").length > 140 ? "…" : ""}</div>
-      ${c.reconstructed ? `<div class="small muted">Rebuilt from the stored messages themselves — this send predates campaign records. ${esc(c.source || "")}</div>` : ""}
+      ${c.reconstructed ? `<div class="small muted">Rebuilt from the messages in the threads themselves — this send predates campaign records.</div>` : ""}
       <details style="margin-top:6px"><summary class="small">Full message and who got it (${fmtNum(c.recipientCount)})</summary>
         <div class="small" style="white-space:pre-wrap;margin:8px 0">${esc(c.body || "")}</div>
         <div>${people || '<span class="muted small">No recipients on record.</span>'}</div>
@@ -26225,7 +26225,7 @@ async function loadAdminMessages152() {
     <h3 style="margin-top:0">Messages</h3>
     <p class="muted small" style="max-width:640px">Every conversation and every message sent to many people lives on this one screen. People reply right in their thread in the app, and their replies land in Conversations below.</p>
     <div id="admin-msg-panel"><p class="muted">Loading conversations...</p></div>
-    <div id="admin-campaigns-panel" class="mt"></div>
+    <div id="admin-campaigns-panel" class="mt"><div class="panel"><h3 style="margin-top:0">Sent to many</h3><p class="muted small">Loading the record of messages sent to many people...</p></div></div>
     <h3 class="mt">Broadcast room</h3>
     <p class="muted small" style="max-width:640px">A broadcast writes ONE new message into many people's inboxes at once — different from replying in a conversation above. Its folders below file broadcasts and the replies they drew; a reply also shows in Conversations, where you answer it.</p>
     <div id="bc153-room"><p class="muted">Loading...</p></div>`;
@@ -26349,13 +26349,14 @@ function bc153InboxHtml() {
   const rows = (adminBc153.inbox || []).filter((c) => !c.folderId);
   return `
   <div class="panel">
-    <h4 style="margin-top:0">Inbox — replies to your messages</h4>
+    <h4 style="margin-top:0">Inbox — replies to your broadcasts</h4>
+    <p class="muted small" style="margin-top:0">This folder counts replies to broadcasts only. Replies to everything else — and every conversation, wherever it started — live in Conversations at the top of this screen.</p>
     ${rows.length ? rows.map((c) => `
       <div class="admin-msg-item" onclick="bc152OpenBroadcast('${c.broadcastId}', '${c.userId}')">
         <strong>${esc(c.label)}</strong> <span class="muted small">${esc(bc153RoleWord(c.role))}${c.market ? ` &middot; ${esc(c.market)}` : ""} &middot; ${fmtDate(c.lastReplyAt)}</span>
         <div class="small muted">Re: ${esc(c.broadcastTitle)} &middot; ${fmtNum(c.replyCount)} ${c.replyCount === 1 ? "reply" : "replies"}</div>
         <div class="small">${esc(String(c.lastReplyBody || "").slice(0, 140))}</div>
-      </div>`).join("") : `<p class="muted small">No replies yet. When someone answers one of your messages, the conversation shows up here.</p>`}
+      </div>`).join("") : `<p class="muted small">No replies to a broadcast yet. When someone answers one of your broadcasts, the conversation shows up here — and in Conversations at the top of this screen, where you answer it.</p>`}
   </div>`;
 }
 
@@ -26923,7 +26924,7 @@ function bc153DetailHtml() {
           <input type="text" maxlength="2000" placeholder="Reply to ${esc(t.user.label)}" style="flex:1" required>
           <button type="submit" class="btn small-btn">Reply</button>
         </form>
-      </div>`).join("") : `<p class="muted small">No replies yet.</p>`}
+      </div>`).join("") : `<p class="muted small">No replies to this broadcast yet.</p>`}
   </div>`;
 }
 async function bc152SendThreadReply(e, broadcastId, userId) {
