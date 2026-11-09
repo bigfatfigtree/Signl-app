@@ -4090,6 +4090,44 @@ function kindOf(offer) {
   return offer.kind === "paid" ? "paid" : offer.kind === "coupon" ? "coupon" : "comp";
 }
 
+// Build -162 (Jeff, 2026-11-09): ONE fence for every creator-facing
+// offer surface — the Find offers board, the creator /offers feed,
+// Sig's counts, and apply — so they can never drift apart again.
+// The leak it closes: the demo-partner seed (ensureDemoPartner)
+// stamps its offers sample:true and its businesses tester-flagged,
+// on the assumption that "the app's existing exclusions" covered
+// them — but the offer surfaces only ever fenced the later
+// testOnly stamp, so a real founding creator in Virginia Beach
+// was shown "Sample Cafe", a walkthrough prop with no address and
+// nobody behind it who can host a visit. Three kinds of furniture
+// never reach a creator as an offer:
+//   - sample records (the demo-partner seed class);
+//   - offers owned by a tester-flagged business, whoever stamped
+//     the offer itself;
+//   - offers in a market that has not launched: a founding market
+//     shows no offers at all. Real offers cannot be open there
+//     anyway (creation forces drafts; publishing requires a live
+//     market), so anything open in one is an artifact by
+//     construction.
+// The one deliberate exception is the testOnly door (2026-11-06):
+// testOnly offers stay visible to tester-flagged creators only,
+// exactly as before, so the creator side can still be walked
+// pre-launch. Sample records are fenced for testers too, on
+// purpose: admin Preview-as-Creator rides a tester account, and
+// the preview is only honest if it shows what a real creator
+// would see.
+async function offerFencedForCreators(o, viewer) {
+  if (!o) return true;
+  if (o.testOnly) return !isTester(viewer);
+  if (o.sample) return true;
+  if (o.businessId) {
+    const biz = await store.get(`user:${o.businessId}`);
+    if (isTester(biz)) return true;
+  }
+  if (!(await isMarketLive(o.market))) return true;
+  return false;
+}
+
 // The tiers an offer may target given its comp value. Returns the
 // first (highest) tier whose dignity floor the value misses, or
 // null when every targeted tier clears its floor.
@@ -15075,8 +15113,17 @@ async function buildSigFacts(user, full) {
     const myPosts = posts.filter((p) => p.creatorId === user.id);
     // Test offers (2026-11-06): Sig's counts fence testOnly
     // offers to tester-flagged creators, exactly like the feeds.
-    const openOffers = offers.filter((o) => o.status === "open" && laneOf(o) !== "direct" && isListedInMarket(user, o.market) && (!o.testOnly || isTester(user))).length;
-    const directInvites = offers.filter((o) => o.status === "open" && laneOf(o) === "direct" && o.creatorId === user.id && (!o.testOnly || isTester(user))).length;
+    // Build -162: the counts run through the same shared fence as
+    // the feeds (offerFencedForCreators), so Sig can never again
+    // announce a "1 offer waiting" that is a sample prop.
+    let openOffers = 0;
+    let directInvites = 0;
+    for (const o of offers) {
+      if (o.status !== "open") continue;
+      if (await offerFencedForCreators(o, user)) continue;
+      if (laneOf(o) === "direct") { if (o.creatorId === user.id) directInvites += 1; }
+      else if (isListedInMarket(user, o.market)) openOffers += 1;
+    }
     const points = full && full.momentum ? full.momentum.points || 0 : 0;
     const pc = (full && full.profileCompletion) || {};
     const itemLabels = {};
@@ -15095,6 +15142,7 @@ async function buildSigFacts(user, full) {
       const ids = new Set();
       for (const o of offers) {
         if (!o || !o.businessId) continue;
+        if (o.sample) continue; // Build -162: sample props are not businesses this creator can meet
         if (laneOf(o) === "direct" ? o.creatorId === user.id : (o.status === "open" && isListedInMarket(user, o.market))) ids.add(o.businessId);
       }
       for (const b of mine) if (b && b.businessId) ids.add(b.businessId);
@@ -15102,6 +15150,7 @@ async function buildSigFacts(user, full) {
       for (const id of ids) {
         const bu = await store.get(`user:${id}`);
         if (!bu || bu.role !== "business" || !bu.business) continue;
+        if (isTester(bu)) continue; // Build -162: tester-owned businesses never surface to a real creator
         const view = standingAvailabilityView(bu.business);
         if (view) out.push({ businessId: id, businessName: bu.business.businessName || bu.name || "A business", summary: view.summary });
       }
@@ -30604,7 +30653,14 @@ async function route(event) {
         // creator (a direct invite) is personal mail: it shows
         // on address alone, without the home-market condition
         // the unaddressed open lane keeps.
-        out = out.filter((o) => o.status === "open" && (!o.testOnly || isTester(user)) && (o.creatorId === user.id || (!o.creatorId && o.market === user.market)));
+        out = out.filter((o) => o.status === "open" && (o.creatorId === user.id || (!o.creatorId && o.market === user.market)));
+        // Build -162: the shared creator fence (testOnly door for
+        // testers; sample records, tester-owned businesses and
+        // not-yet-launched markets never reach a creator's feed).
+        {
+          const fenced = await Promise.all(out.map((o) => offerFencedForCreators(o, user)));
+          out = out.filter((_, i) => !fenced[i]);
+        }
         // Charter early access (Build -31): a fresh open offer is
         // simply not in a non-Charter creator's feed yet. No
         // marker, no "you missed out" copy: it appears at +24h.
@@ -30989,7 +31045,10 @@ async function route(event) {
       // Test offers (2026-11-06): a testOnly offer does not
       // exist for a non-tester, including here — no applying
       // around the board's fence.
-      if (offer.testOnly && !isTester(user)) return err(404, "Offer not available");
+      // Build -162: the shared creator fence guards apply too —
+      // sample records, tester-owned businesses' offers and
+      // not-yet-launched markets' offers are equally unavailable.
+      if (await offerFencedForCreators(offer, user)) return err(404, "Offer not available");
       // Charter early access (Build -31): inside the window the
       // offer is not available to a non-Charter creator at all,
       // exactly as if it were not posted yet.
@@ -31069,6 +31128,11 @@ async function route(event) {
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before accepting offers: businesses can only book creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.status !== "open") return err(404, "Offer not available");
+      // Build -162: the shared creator fence — a fenced offer
+      // (sample record, tester-owned business, not-yet-launched
+      // market, or a testOnly offer for a non-tester) cannot be
+      // accepted either.
+      if (await offerFencedForCreators(offer, user)) return err(404, "Offer not available");
       if (offer.creatorId && offer.creatorId !== user.id) return err(403, "This offer was sent to a different creator");
       if (!isListedInMarket(user, offer.market)) return err(403, "This offer is in a market you are not listed in. Add your audience share for that market under Profile, in Your audience, and flip its switch on, and its offers open to you.");
       const b = parseBody(event);
@@ -31542,7 +31606,10 @@ async function route(event) {
       // ONLY to tester-flagged creators — for everyone else they
       // do not exist on this board: not listed, not counted in
       // the early-access marker, never notified.
-      if (o.testOnly && !isTester(user)) continue;
+      // Build -162: the same fence (offerFencedForCreators) also
+      // keeps sample/demo records, tester-owned businesses' offers
+      // and not-yet-launched markets' offers off this board.
+      if (await offerFencedForCreators(o, user)) continue;
       // Multi-market board (2026-11-01): the board shows offers
       // from every market the creator is LISTED in, not only
       // their home market.
