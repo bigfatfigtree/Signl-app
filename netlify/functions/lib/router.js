@@ -4880,7 +4880,15 @@ async function handleVerifyCounts(event) {
   const markets = rows.map((m) => { const o = {}; for (const f of VERIFY_COUNT_MARKET_FIELDS) o[f] = m[f]; return o; });
   const recount = verifyCountsRecount(users);
   const agree = JSON.stringify(totals) === JSON.stringify(recount.totals) && JSON.stringify(markets) === JSON.stringify(recount.markets);
-  return json(200, { totals, markets, recount, agree });
+  // Build -167: Biz Dev loader health rides the checker surface —
+  // seat/lead counts + each one-time loader's recorded state, so
+  // the daily platform-health check can see a stalled loader
+  // (the -155 seed waited silently for a nonexistent account
+  // from 2026-11-09 until this build). Best-effort: a biz dev
+  // read failure reports null, never breaks the counts.
+  let bdev167 = null;
+  try { bdev167 = await bizdev.bdevHealth(); } catch (e) { bdev167 = null; }
+  return json(200, { totals, markets, recount, agree, bdev: bdev167 });
 }
 
 // The Admin home preview tabs' targets (Build -126), resolved in

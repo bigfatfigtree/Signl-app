@@ -279,7 +279,7 @@ function repLeadPayload(lead, opts) {
   if (full) {
     out.stageHistory = lead.stageHistory || [];
     out.statusHistory = lead.statusHistory || [];
-    out.playbook = lead.playbook || null;
+    out.playbook = renderPlaybookLinks(lead);
     out.claimLink = lead.attribution && lead.attribution.repCode ? claimPath(lead) : null;
   }
   return out;
@@ -288,6 +288,33 @@ function repLeadPayload(lead, opts) {
 function claimPath(lead) {
   const code = lead.attribution && lead.attribution.repCode;
   return `/founding-claim?rep=${encodeURIComponent(code || "")}&lead=${encodeURIComponent(lead.id)}`;
+}
+
+// Build -167: the -157 playbook packs write the claim-link token
+// ({claimUrl} / {{claimUrl}}) into their email bodies — the pack
+// even declares it (claimUrlToken) — but no code ever substituted
+// it, so reps saw the literal token in every playbook email. The
+// substitution lives HERE, at payload render: every surface that
+// shows a playbook (rep lead page, HQ preview, admin lead view)
+// reads repLeadPayload(full), so one render point fixes them all
+// and the stored playbook keeps the token (a stored URL would rot
+// if the lead's book/rep ever changed). Returns a deep copy — the
+// stored record is never mutated by a read.
+const CLAIM_TOKEN_RE = /\{\{claimUrl\}\}|\{claimUrl\}/g;
+function claimUrlAbs(lead) {
+  const base = String(process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
+  return base + claimPath(lead);
+}
+function renderPlaybookLinks(lead) {
+  if (!lead || !lead.playbook) return null;
+  const url = claimUrlAbs(lead);
+  const walk = (v) => {
+    if (typeof v === "string") return v.replace(CLAIM_TOKEN_RE, url);
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") { const o = {}; for (const k of Object.keys(v)) o[k] = walk(v[k]); return o; }
+    return v;
+  };
+  return walk(lead.playbook);
 }
 
 // ---------------- DNC store (platform-canonical) ----------------
@@ -779,28 +806,137 @@ async function showBench(marketId, leadCategory, leadArea, marketName) {
   return { cards, areaFraming };
 }
 
+// ---------------- Build -167: loader status + stable-fact resolution ----------------
+// Why this exists (the -155..-164 production failure): the -155
+// seed resolved Tony's account through ONE assumed fact — an
+// email index for tjohnson23462@gmail.com, the address Jeff named
+// for the seat. Tony's real production account was created under
+// tony@langstondigital.com (@tonyjohnson374); no account ever
+// existed under the gmail address, so the seed "waited" forever.
+// Every later loader (enrich -157, destination load, Jeff's -161
+// seat) hard-gates on the seed's done flag, so the whole chain
+// never fired — and every bail was silent by design (best-effort
+// preamble catches, a waiting note written into a flag record no
+// surface reads). Two rules from here on:
+//   1. Loaders resolve people by STABLE facts — a small ordered
+//      set of the person's real identifiers (their account
+//      emails of record + their handle), never one assumed key.
+//   2. Every loader records its state (done / waiting / error,
+//      with the reason and the counts it produced) in
+//      config:bdevLoaderStatus on every exit, and the state is
+//      surfaced on the HQ overview + GET /api/verify/counts, so
+//      a stalled loader is visible the day it stalls.
+
+const LOADER_STATUS_KEY = "config:bdevLoaderStatus";
+const loaderStatusMemo = {};
+async function noteLoaderStatus(name, patch) {
+  const sig = JSON.stringify(patch);
+  if (loaderStatusMemo[name] === sig) return; // unchanged state: no write (loaders run on the request path)
+  loaderStatusMemo[name] = sig;
+  try {
+    const rec = (await store().get(LOADER_STATUS_KEY)) || {};
+    rec[name] = { ...patch, at: nowIso() };
+    rec.updatedAt = nowIso();
+    await store().set(LOADER_STATUS_KEY, rec);
+  } catch (e) { /* the status write must never kill the loader it describes */ }
+}
+async function loaderStatusRecord() {
+  try { return (await store().get(LOADER_STATUS_KEY)) || {}; } catch (e) { return {}; }
+}
+
+// The health surface: live counts through the same store reads
+// the UI uses, plus the recorded loader states.
+async function bdevHealth() {
+  const seats = (await store().list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active);
+  const leads = await allLeads();
+  const leadsByMarket = {};
+  for (const l of leads) leadsByMarket[l.marketId] = (leadsByMarket[l.marketId] || 0) + 1;
+  const bgw = await getLead("bgw-williamsburg-dest");
+  return {
+    seats: seats.length,
+    seatCodes: seats.map((s) => s.repCode).sort(),
+    leadsTotal: leads.length,
+    leadsByMarket,
+    bgwPresent: !!bgw,
+    loaderStatus: await loaderStatusRecord(),
+  };
+}
+
+// Resolve an account by stable facts: each email index in order,
+// then (for creators) a handle match. Returns { user, via } or
+// null. The order encodes intent — Jeff's designated address
+// first, the person's other identifiers as fallbacks — and the
+// caller records `via` so the resolution is auditable.
+async function findAccountStable({ emails, handle }) {
+  for (const em of emails || []) {
+    const idx = await store().get(`email:${em}`);
+    if (idx && idx.userId) {
+      const u = await store().get(`user:${idx.userId}`);
+      if (u) return { user: u, via: `email:${em}` };
+    }
+  }
+  if (handle && deps.allUsers) {
+    const users = await deps.allUsers();
+    const u = (users || []).find((x) => x && x.role === "creator" && x.creator && normIg(x.creator.handle) === normIg(handle));
+    if (u) return { user: u, via: `handle:@${normIg(handle)}` };
+  }
+  return null;
+}
+
+// In-flight memo: the router's preamble can invoke the same
+// loader from several parallel jobs; concurrent calls share one
+// run instead of racing the claimed-flag discipline. A throw is
+// recorded in the loader status before it propagates (the
+// preamble still swallows it — the status record is what makes
+// the failure visible afterwards).
+function singleFlight(fn, memo, statusName) {
+  return async function (...args) {
+    if (memo.current) return memo.current;
+    memo.current = (async () => {
+      try { return await fn(...args); }
+      catch (e) {
+        if (statusName) await noteLoaderStatus(statusName, { state: "error", detail: String((e && e.message) || e).slice(0, 240) });
+        throw e;
+      } finally { memo.current = null; }
+    })();
+    return memo.current;
+  };
+}
+
 // ---------------- one-time seed: Tony's seat + the HR book ----------------
 
 const SEED_FLAG = "config:bdevSeed155";
 let seedDone = false;
 let seedWaitingLogged = false;
-async function maybeSeedBizdev() {
+// Build -167: Tony's stable identifiers, in resolution order —
+// Jeff's designated seat address first, then the email his real
+// production account was created under, then his creator handle.
+// The -155 loader tried ONLY the first; that account never
+// existed, so the seed (and everything chained on it) never ran.
+const TONY_EMAILS = ["tjohnson23462@gmail.com", "tony@langstondigital.com"];
+const TONY_HANDLE = "tonyjohnson374";
+const seedFlight167 = {};
+const maybeSeedBizdev = singleFlight(async function () {
   if (seedDone) return true;
   const flag = await store().get(SEED_FLAG);
-  if (flag && flag.done) { seedDone = true; return true; }
-  const emailIdx = await store().get("email:tjohnson23462@gmail.com");
-  if (!emailIdx || !emailIdx.userId) {
+  if (flag && flag.done) {
+    seedDone = true;
+    await noteLoaderStatus("seed155", { state: "done", detail: "seed flag done", resolvedVia: flag.resolvedVia || null, seatUserId: flag.seatUserId || null, leadsCreated: flag.leadsCreated != null ? flag.leadsCreated : null });
+    return true;
+  }
+  const found = await findAccountStable({ emails: TONY_EMAILS, handle: TONY_HANDLE });
+  if (!found) {
     // Write the waiting note ONCE per process — a store write on
     // every request would invalidate the suggestions memo forever.
     if (!seedWaitingLogged) {
       seedWaitingLogged = true;
-      await store().set(SEED_FLAG, { claimedAt: nowIso(), done: false, waitingFor: "tjohnson23462@gmail.com signup" });
+      await store().set(SEED_FLAG, { claimedAt: nowIso(), done: false, waitingFor: "Tony Johnson account (tjohnson23462@gmail.com / tony@langstondigital.com / @tonyjohnson374)" });
     }
+    await noteLoaderStatus("seed155", { state: "waiting", detail: "no account found for Tony Johnson under tjohnson23462@gmail.com, tony@langstondigital.com, or @tonyjohnson374" });
     return false; // retry on a later request until the account exists
   }
-  await store().set(SEED_FLAG, { claimedAt: nowIso(), done: false, running: true });
-  const user = await store().get(`user:${emailIdx.userId}`);
-  if (!user) return false;
+  const user = found.user;
+  await store().set(SEED_FLAG, { claimedAt: nowIso(), done: false, running: true, resolvedVia: found.via });
   let seat = await seatOf(user);
   if (!seat) {
     seat = await assignSeat({ userId: user.id, marketId: "hampton-roads", marketName: "Hampton Roads", repCode: "HR-TONY", seatState: "probation" });
@@ -838,11 +974,12 @@ async function maybeSeedBizdev() {
   }
   const dncSeed = await dncRecords();
   void dncSeed;
-  await store().set(SEED_FLAG, { claimedAt: nowIso(), done: true, seatUserId: seat.userId, leadsCreated: created, at: nowIso() });
+  await store().set(SEED_FLAG, { claimedAt: nowIso(), done: true, seatUserId: seat.userId, leadsCreated: created, resolvedVia: found.via, at: nowIso() });
   seedDone = true;
-  await logEvent({ type: "bdev_seed_155", actorId: null, actorRole: "system", subjectId: seat.userId, market: "Hampton Roads", data: { leadsCreated: created, repCode: "HR-TONY" } });
+  await noteLoaderStatus("seed155", { state: "done", detail: "seat + HR book loaded", resolvedVia: found.via, seatUserId: seat.userId, leadsCreated: created });
+  await logEvent({ type: "bdev_seed_155", actorId: null, actorRole: "system", subjectId: seat.userId, market: "Hampton Roads", data: { leadsCreated: created, repCode: "HR-TONY", resolvedVia: found.via } });
   return true;
-}
+}, seedFlight167, "seed155");
 
 // ---------------- Build -157 Phase B: enrichment loader ----------------
 // One-time merge of the Phase A pack into the seeded HR book,
@@ -855,13 +992,19 @@ async function maybeSeedBizdev() {
 // never on a rep payload.
 const ENRICH_FLAG = "config:bdevEnrich157";
 let enrich157Done = false;
-async function maybeEnrich157() {
+const enrichFlight167 = {};
+const maybeEnrich157 = singleFlight(async function () {
   if (enrich157Done) return true;
   const flag = await store().get(ENRICH_FLAG);
-  if (flag && flag.done) { enrich157Done = true; return true; }
+  if (flag && flag.done) {
+    enrich157Done = true;
+    await noteLoaderStatus("enrich157", { state: "done", detail: "enrich flag done", leadsUpdated: flag.leadsUpdated != null ? flag.leadsUpdated : null, prewarmStored: flag.prewarmStored != null ? flag.prewarmStored : null });
+    return true;
+  }
+  await maybeSeedBizdev(); // Build -167: chain the seed so one request converges the whole ladder
   const seedFlag = await store().get(SEED_FLAG);
-  if (!seedFlag || !seedFlag.done) return false; // the -155 seed must land first; retry later
-  if (!ENRICH157 || !Array.isArray(ENRICH157.leads)) return false;
+  if (!seedFlag || !seedFlag.done) { await noteLoaderStatus("enrich157", { state: "waiting", detail: "the -155 seed has not landed yet" }); return false; }
+  if (!ENRICH157 || !Array.isArray(ENRICH157.leads)) { await noteLoaderStatus("enrich157", { state: "error", detail: "enrichment pack missing or unreadable" }); return false; }
   const leads = await leadsOfMarket("hampton-roads");
   const byName = new Map();
   for (const l of leads) { const k = normName(l.name); if (!byName.has(k)) byName.set(k, l); }
@@ -899,9 +1042,10 @@ async function maybeEnrich157() {
   const at = nowIso();
   await store().set(ENRICH_FLAG, { done: true, at, leadsUpdated, prewarmStored });
   enrich157Done = true;
+  await noteLoaderStatus("enrich157", { state: "done", detail: "playbooks + pre-warm merged into the HR book", leadsUpdated, prewarmStored });
   await logEvent({ type: "bdev_enrich_157", actorId: null, actorRole: "system", subjectId: null, market: "Hampton Roads", data: { leadsUpdated, prewarmStored } });
   return true;
-}
+}, enrichFlight167, "enrich157");
 
 // ---------------- HQ load 2026-11-09: destination targets ----------------
 // One-time, claimed-flag-guarded load of the destination pack
@@ -915,16 +1059,22 @@ async function maybeEnrich157() {
 // Waits for the -155 seed (the seat + book must exist first).
 const DEST_LOAD_FLAG = "config:bdevLoadDest20261109";
 let destLoadDone = false;
-async function maybeLoadDest20261109() {
+const destFlight167 = {};
+const maybeLoadDest20261109 = singleFlight(async function () {
   if (destLoadDone) return true;
   const flag = await store().get(DEST_LOAD_FLAG);
-  if (flag && flag.done) { destLoadDone = true; return true; }
+  if (flag && flag.done) {
+    destLoadDone = true;
+    await noteLoaderStatus("destLoad20261109", { state: "done", detail: "destination flag done", leadsCreated: flag.leadsCreated != null ? flag.leadsCreated : null });
+    return true;
+  }
+  await maybeSeedBizdev(); // Build -167: chain the seed (see maybeEnrich157)
   const seedFlag = await store().get(SEED_FLAG);
-  if (!seedFlag || !seedFlag.done) return false; // the -155 seed must land first; retry later
-  if (!DEST2026 || !Array.isArray(DEST2026.leads)) return false;
+  if (!seedFlag || !seedFlag.done) { await noteLoaderStatus("destLoad20261109", { state: "waiting", detail: "the -155 seed has not landed yet" }); return false; }
+  if (!DEST2026 || !Array.isArray(DEST2026.leads)) { await noteLoaderStatus("destLoad20261109", { state: "error", detail: "destination pack missing or unreadable" }); return false; }
   const seats = (await store().list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active && v.repCode === (DEST2026.repCode || "HR-TONY"));
   const seat = seats[0];
-  if (!seat) return false;
+  if (!seat) { await noteLoaderStatus("destLoad20261109", { state: "waiting", detail: `no active seat with rep code ${DEST2026.repCode || "HR-TONY"}` }); return false; }
   await store().set(DEST_LOAD_FLAG, { claimedAt: nowIso(), done: false, running: true });
   const existing = await leadsOfMarket("hampton-roads");
   const have = new Set(existing.map((l) => normName(l.name)));
@@ -960,9 +1110,10 @@ async function maybeLoadDest20261109() {
   }
   await store().set(DEST_LOAD_FLAG, { claimedAt: nowIso(), done: true, at: nowIso(), leadsCreated: created });
   destLoadDone = true;
+  await noteLoaderStatus("destLoad20261109", { state: "done", detail: "destination leads loaded into the HR book", leadsCreated: created });
   await logEvent({ type: "bdev_load_dest_20261109", actorId: null, actorRole: "system", subjectId: seat.userId, market: "Hampton Roads", data: { leadsCreated: created, repCode: seat.repCode || "HR-TONY" } });
   return true;
-}
+}, destFlight167, "destLoad20261109");
 
 // ---------------- Build -157: queue, trips, alarms, scoreboard ----------------
 
@@ -1151,16 +1302,47 @@ async function latestScoreboard157(repId, marketId) {
 //      Nashville book with their -157-pattern playbooks.
 const JEFF_SEAT_FLAG = "config:bdevJeffSeat161";
 let jeffSeatDone161 = false;
-async function maybeLoadJeffSeat161() {
+const jeffFlight167 = {};
+const maybeLoadJeffSeat161 = singleFlight(async function () {
   if (jeffSeatDone161) return true;
+  await maybeSeedBizdev(); // Build -167: chain the seed (see maybeEnrich157)
   const seedFlag = await store().get(SEED_FLAG);
-  if (!seedFlag || !seedFlag.done) return false; // Tony's book first; HR copies read it
+  if (!seedFlag || !seedFlag.done) { await noteLoaderStatus("jeffSeat161", { state: "waiting", detail: "the -155 seed has not landed yet" }); return false; }
+  // Build -167: settle enrichment + the destination load BEFORE
+  // copying, so Jeff's copies carry their playbooks and include
+  // Busch Gardens on the same pass (the -161 loader relied on
+  // preamble ordering it could not guarantee).
+  await maybeEnrich157();
+  await maybeLoadDest20261109();
   const users = deps.allUsers ? await deps.allUsers() : [];
+  // Build -167: resolve Jeff by STABLE facts — his admin account
+  // emails of record, in the order he actually uses them. The
+  // -161 loader matched ONLY the ADMIN_EMAIL env value and
+  // otherwise demanded exactly one super-admin record (a
+  // fixture-shaped assumption: the verify env sets ADMIN_EMAIL
+  // to Jeff's address, while the code default is
+  // jeff@magpielocal.com — the address ensureAdmin would
+  // bootstrap). Jeff's real login is jeff@joinsignl.com
+  // (confirmed by Jeff 2026-11-09: his account menu reads
+  // "Jeff Rimmer — jeff@joinsignl.com · Admin"), so it binds
+  // FIRST — if a magpielocal bootstrap-twin admin record also
+  // exists, the seat must land on the account he signs in with,
+  // never the twin. A sole admin account is the only fallback —
+  // never a guess among several.
+  const adminUsers = users.filter((u) => u && u.role === "admin");
   const envAdmin = String(process.env.ADMIN_EMAIL || "").toLowerCase();
-  const admins = users.filter((u) => u && u.role === "admin" && (!u.adminPerms || u.adminPerms.super));
-  let jeff = admins.find((u) => envAdmin && String(u.email || "").toLowerCase() === envAdmin) || null;
-  if (!jeff && admins.length === 1) jeff = admins[0];
-  if (!jeff) return false; // ambiguous or absent — never guess whose account this is
+  const jeffEmails = [...new Set(["jeff@joinsignl.com", envAdmin, "jeff@magpielocal.com"].filter(Boolean))];
+  // Candidates are tried IN ORDER (an includes() match over the
+  // user list would hand the seat to whichever admin record the
+  // store happens to sort first — with a joinsignl login and a
+  // magpielocal twin both present, that is a coin flip).
+  let jeff = null, jeffVia = null;
+  for (const em of jeffEmails) {
+    jeff = adminUsers.find((u) => String(u.email || "").toLowerCase() === em) || null;
+    if (jeff) { jeffVia = `email:${em}`; break; }
+  }
+  if (!jeff && adminUsers.length === 1) { jeff = adminUsers[0]; jeffVia = "sole admin account"; }
+  if (!jeff) { await noteLoaderStatus("jeffSeat161", { state: "waiting", detail: `no unambiguous admin account (admins: ${adminUsers.length}, emails tried: ${jeffEmails.join(", ")})` }); return false; }
   const flag = (await store().get(JEFF_SEAT_FLAG)) || {};
   if (!flag.claimedAt) await store().set(JEFF_SEAT_FLAG, { ...flag, claimedAt: nowIso() });
 
@@ -1270,11 +1452,12 @@ async function maybeLoadJeffSeat161() {
       nashLoaded++;
     }
   }
-  await store().set(JEFF_SEAT_FLAG, { ...flag, done: true, doneAt: nowIso(), hrCopied, nashvilleLoaded: nashLoaded });
-  await logEvent({ type: "bdev_jeff_seat_161", actorId: jeff.id, actorRole: "admin", subjectId: jeff.id, market: "Hampton Roads", data: { hrCopied, nashvilleLoaded: nashLoaded } });
+  await store().set(JEFF_SEAT_FLAG, { ...flag, done: true, doneAt: nowIso(), hrCopied, nashvilleLoaded: nashLoaded, resolvedVia: jeffVia });
+  await noteLoaderStatus("jeffSeat161", { state: "done", detail: "HQ-JEFF seat + HR copies + Nashville book loaded", resolvedVia: jeffVia, hrCopied, nashvilleLoaded: nashLoaded });
+  await logEvent({ type: "bdev_jeff_seat_161", actorId: jeff.id, actorRole: "admin", subjectId: jeff.id, market: "Hampton Roads", data: { hrCopied, nashvilleLoaded: nashLoaded, resolvedVia: jeffVia } });
   jeffSeatDone161 = true;
   return true;
-}
+}, jeffFlight167, "jeffSeat161");
 
 // The daily sweep (POST /admin/bdev/sweep): one alarm record per
 // rep per day while follow-ups sit overdue (same-day overwrite =
@@ -2018,6 +2201,11 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       .sort((a, b) => String(a.repId).localeCompare(String(b.repId)));
     return json(200, {
       markets: Object.values(markets),
+      // Build -167: the loader states ride the Manage view's own
+      // payload — a stalled seed/enrich/dest/Jeff-seat load is
+      // visible here (and in GET /api/verify/counts) instead of
+      // silently leaving every book empty.
+      loaderStatus: await loaderStatusRecord(),
       statusRollup, prewarm, scoreboards, alarmSummary,
       reps: seats.map((s) => { const u = byId.get(s.userId); return { userId: s.userId, name: u ? u.name : "", email: u ? u.email : "", marketId: s.marketId, marketName: s.marketName, repCode: s.repCode, seatState: s.seatState, vestedAt: s.vestedAt || null, warningMonth: s.warningMonth || null, atRisk: s.atRisk || null, hqSeat: !!s.hqSeat, markets: seatMarkets(s) }; }),
       unconfirmedClaims: claims.filter((c) => c.status === "waiting HQ confirm"),
@@ -2185,7 +2373,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
 }
 
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, runBizdevSweep,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, runBizdevSweep, bdevHealth,
   claimPageHtml, seatOf, KIT,
-  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157 },
+  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable },
 };
