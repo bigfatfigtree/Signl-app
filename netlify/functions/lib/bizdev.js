@@ -47,6 +47,11 @@ function logCapture(e) { try { if (deps.logCapture) return deps.logCapture(e); }
 let ENRICH157 = null;
 try { ENRICH157 = require("./bizdev-enrich-hr-157.json"); } catch (e) { ENRICH157 = null; }
 
+// HQ load 2026-11-09: Jeff-ordered destination (drive-market)
+// leads for Tony's book, in the same beside-the-module pattern.
+let DEST2026 = null;
+try { DEST2026 = require("./bizdev-load-dest-2026-11-09.json"); } catch (e) { DEST2026 = null; }
+
 function json(statusCode, obj) {
   return { statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) };
 }
@@ -827,6 +832,67 @@ async function maybeEnrich157() {
   await store().set(ENRICH_FLAG, { done: true, at, leadsUpdated, prewarmStored });
   enrich157Done = true;
   await logEvent({ type: "bdev_enrich_157", actorId: null, actorRole: "system", subjectId: null, market: "Hampton Roads", data: { leadsUpdated, prewarmStored } });
+  return true;
+}
+
+// ---------------- HQ load 2026-11-09: destination targets ----------------
+// One-time, claimed-flag-guarded load of the destination pack
+// (bizdev-load-dest-2026-11-09.json — Busch Gardens Williamsburg,
+// Jeff's order 2026-11-09: "Add it to his target") into Tony's HR
+// book, mirroring maybeSeedBizdev's record shape exactly. Creates
+// ONLY leads whose normalized names are not already in the market,
+// and each pack entry carries a fixed id, so a re-run can never
+// duplicate. Existing leads are never read for update here — stage,
+// logs, founding and flags of the working book stay untouched.
+// Waits for the -155 seed (the seat + book must exist first).
+const DEST_LOAD_FLAG = "config:bdevLoadDest20261109";
+let destLoadDone = false;
+async function maybeLoadDest20261109() {
+  if (destLoadDone) return true;
+  const flag = await store().get(DEST_LOAD_FLAG);
+  if (flag && flag.done) { destLoadDone = true; return true; }
+  const seedFlag = await store().get(SEED_FLAG);
+  if (!seedFlag || !seedFlag.done) return false; // the -155 seed must land first; retry later
+  if (!DEST2026 || !Array.isArray(DEST2026.leads)) return false;
+  const seats = (await store().list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active && v.repCode === (DEST2026.repCode || "HR-TONY"));
+  const seat = seats[0];
+  if (!seat) return false;
+  await store().set(DEST_LOAD_FLAG, { claimedAt: nowIso(), done: false, running: true });
+  const existing = await leadsOfMarket("hampton-roads");
+  const have = new Set(existing.map((l) => normName(l.name)));
+  let created = 0;
+  for (const s of DEST2026.leads) {
+    if (!s.id || have.has(normName(s.name))) continue;
+    const lead = {
+      id: s.id, marketId: "hampton-roads", marketName: "Hampton Roads", locationId: uuid(),
+      assignedRepId: seat.userId, source: "HQ-loaded", championName: null,
+      name: s.name, shortName: s.shortName || null, category: s.category, subType: s.subType || "",
+      neighborhood: s.neighborhood, city: s.city, address: s.address || null, website: s.website || null,
+      dmName: s.dmName || null, dmRole: s.dmRole || null, dmRoleLabel: s.dmRoleLabel || null,
+      secondContact: s.secondContact || null, usuallyHere: null,
+      phone1: s.phone1 || null, phone1Verify: !!s.phone1Verify, phone1Note: s.phone1Note || null,
+      phone2: s.phone2 || null, phone2Verify: !!s.phone2Verify, phone2Note: s.phone2Note || null,
+      email: s.email || null, instagram: s.instagram || null,
+      hqTier: s.hqTier || "B",
+      flags: { doNotContact: false, jeffHandles: false, chain: !!s.chain },
+      deskLead: !!s.deskLead,
+      stage: "Not visited yet",
+      stageHistory: [{ stage: "Not visited yet", at: nowIso(), by: "HQ load (destination)" }],
+      founding: { status: "Not claimed", claimedAt: null, claimedVia: null, confirmedAt: null, planInterest: null },
+      attribution: { repCode: seat.repCode || "HR-TONY", firstTouchAt: null, source: "HQ-loaded" },
+      nextAction: s.nextAction || { type: "Email", date: null, what: "First touch" },
+      lastTouch: null, pendingApproval: false, hqDecision: null,
+      playbook: s.playbook || null,
+      hqResearch: s.research || null,
+      createdAt: nowIso(), updatedAt: nowIso(),
+    };
+    lead.masterId = lead.id;
+    await store().set(`bdevlead:${lead.id}`, lead);
+    created += 1;
+  }
+  await store().set(DEST_LOAD_FLAG, { claimedAt: nowIso(), done: true, at: nowIso(), leadsCreated: created });
+  destLoadDone = true;
+  await logEvent({ type: "bdev_load_dest_20261109", actorId: null, actorRole: "system", subjectId: seat.userId, market: "Hampton Roads", data: { leadsCreated: created, repCode: seat.repCode || "HR-TONY" } });
   return true;
 }
 
@@ -1864,7 +1930,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
 }
 
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, runBizdevSweep,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, runBizdevSweep,
   claimPageHtml, seatOf, KIT,
   _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow },
 };
