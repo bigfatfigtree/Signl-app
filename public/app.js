@@ -29128,12 +29128,69 @@ function adminKnownTotal(u) {
 // null: a KNOWN stacked total of 1-499 on a record created
 // since the minimum took effect. Mirrors the server check so
 // the card can say so BEFORE the tap, in the server's terms.
+// Build -172: an overridden record is never "under" — the
+// mirror reads the same flag the server reads, so the
+// warnings and badges stop the moment the override lands.
 function adminUnderMinTotal(u) {
   if (!u || u.role !== "creator") return null;
+  if (u.minimumOverride) return null;
   const t = Date.parse(u.createdAt || "");
   if (!Number.isFinite(t) || t < ADMIN_MIN_RULE_SINCE) return null;
   const total = adminKnownTotal(u);
   return total > 0 && total < 500 ? total : null;
+}
+
+// ---------- Minimum override (Build -172) ----------
+// The 500 minimum is Jeff's rule; Jeff can except ONE record
+// from it, with a reason that stays on the record. The editor
+// rides the card wherever the under-minimum warning shows —
+// the review deck (prefix "deck") and the Find-a-user card
+// (prefix "srch") — in the same shape as the correct-email
+// editor: a toggle button, a reason field, one save. The
+// server does the real work (super-admin only, reason
+// required on set AND on remove, audit event); this only
+// carries the decision there and re-renders from the server.
+function adminMinOverrideHtml(u, prefix) {
+  const ov = u.minimumOverride || null;
+  if (ov) {
+    const reason = typeof ov === "object" ? String(ov.reason || "") : "";
+    return `<div class="admin-minov">
+      <button class="btn small-btn ghost" onclick="toggleMinOverride('${prefix}', '${u.id}')">Remove override</button>
+      <div id="minov-edit-${prefix}-${u.id}" style="display:none;margin-top:8px;min-width:260px">
+        <div class="field"><label>Reason for removing it (kept with the change)</label><input id="minov-reason-${prefix}-${u.id}" type="text" placeholder="Why is the exception ending?"></div>
+        <button class="btn small-btn danger" onclick="saveMinOverride('${prefix}', '${u.id}', false)">Remove the override</button>
+        <p class="small" id="minov-note-${prefix}-${u.id}" style="margin:6px 0 0"></p>
+      </div>
+    </div>`;
+  }
+  if (!adminUnderMinTotal(u)) return "";
+  return `<div class="admin-minov">
+    <button class="btn small-btn ghost" onclick="toggleMinOverride('${prefix}', '${u.id}')">Minimum override</button>
+    <div id="minov-edit-${prefix}-${u.id}" style="display:none;margin-top:8px;min-width:260px">
+      <div class="small" style="margin-bottom:6px">For a record where the counted total is wrong, or the exception is deliberate. The reason stays on the record, and approving works right away.</div>
+      <div class="field"><label>Reason (kept with the change)</label><input id="minov-reason-${prefix}-${u.id}" type="text" placeholder="Why does this record get the exception?"></div>
+      <button class="btn small-btn" onclick="saveMinOverride('${prefix}', '${u.id}', true)">Override the 500 minimum</button>
+      <p class="small" id="minov-note-${prefix}-${u.id}" style="margin:6px 0 0"></p>
+    </div>
+  </div>`;
+}
+function toggleMinOverride(prefix, userId) {
+  const d = document.getElementById(`minov-edit-${prefix}-${userId}`);
+  if (d) d.style.display = d.style.display === "none" ? "block" : "none";
+  return false;
+}
+async function saveMinOverride(prefix, userId, setting) {
+  const input = document.getElementById(`minov-reason-${prefix}-${userId}`);
+  const note = document.getElementById(`minov-note-${prefix}-${userId}`);
+  const reason = input ? input.value.trim() : "";
+  const say = (t) => { if (note) note.textContent = t; };
+  if (!reason) { say("Add the reason first: it is kept with the change."); return false; }
+  try {
+    await api("POST", `/admin/users/${userId}/minimum-override`, { override: setting, reason });
+    showToast(setting ? "Override set — approving works for this record now." : "Override removed.");
+    if (prefix === "srch") adminUserSearch(true); else loadApplications();
+  } catch (e) { say(e.message); }
+  return false;
 }
 
 function adminUserCardFactsHtml(u) {
@@ -29158,6 +29215,7 @@ function adminUserCardFactsHtml(u) {
         ? `Founding priority #${u.foundingPriority} in ${esc(marketDisplayName(u.market))}`
         : esc(marketDisplayName(u.market));
     const under = adminUnderMinTotal(u);
+    const ovr = u.minimumOverride ? (typeof u.minimumOverride === "object" ? String(u.minimumOverride.reason || "").replace(/\.\s*$/, "") : "") : null;
     return `<div class="admin-card-head">${photo}
         <div class="admin-card-title"><strong>${esc(u.name)}</strong> ${handleHtml}
           <div class="muted small">${place}${u.city ? ` &middot; ${esc(u.city)}` : ""}</div>
@@ -29166,7 +29224,8 @@ function adminUserCardFactsHtml(u) {
       </div>
       <div class="admin-card-total"><span class="admin-card-total-num">${fmtNum(total || 0)}</span> <span class="muted">total followers, all platforms stacked (as reported by the creator)</span></div>
       <div class="admin-card-plats">${plats}</div>
-      ${under ? `<p class="admin-card-warn"><strong>Under the 500 minimum:</strong> ${fmtNum(under)} total followers. Approving keeps this application pending until their audience reaches 500.</p>` : ""}
+      ${under ? `<p class="admin-card-warn"><strong>Under the 500 minimum:</strong> ${fmtNum(under)} total followers. Approving keeps this application pending until their audience reaches 500, unless the minimum is overridden for this record.</p>` : ""}
+      ${ovr !== null ? `<p class="admin-card-oknote"><strong>500 minimum overridden by admin</strong>${ovr ? ` — ${esc(ovr)}` : ""}. Approving works for this record; the reason stays on the record.</p>` : ""}
       <div class="admin-card-facts">
         <span><strong>Local audience:</strong> ${typeof c.localAudiencePct === "number" ? c.localAudiencePct + "%" : "not reported"} <span class="muted">(Self-reported)</span></span>
         <span><strong>Categories:</strong> ${(c.categories || []).map(esc).join(", ") || "none yet"}</span>
@@ -29223,6 +29282,14 @@ function adminCardActionsHtml(u, prefix) {
   if (u.role === "creator" || u.role === "business") {
     parts.push(`<button class="btn small-btn danger" onclick="adminDeleteAccountPrompt('${u.id}', '${prefix}-${u.id}')">Delete account…</button>`);
   }
+  // Build -172: the minimum-override editor rides the card's
+  // actions — except on the deck, where it sits in the
+  // under-minimum warning area itself (one editor per card,
+  // never two with the same ids).
+  if (u.role === "creator" && prefix !== "deck") {
+    const ovHtml = adminMinOverrideHtml(u, prefix);
+    if (ovHtml) parts.push("<br>" + ovHtml);
+  }
   return `<div class="admin-card-actions">${parts.join("")}</div><span id="admin-delacct-${prefix}-${u.id}"></span><div id="cardattr-edit-${prefix}-${u.id}"></div>`;
 }
 
@@ -29272,7 +29339,8 @@ function adminDeckHtml(pend) {
         <button class="btn admin-deck-btn" onclick="adminDeckDecide('${u.id}', 'approve')">Approve</button>
         <button class="btn ghost admin-deck-btn" onclick="adminDeckToggleReject('${u.id}')">Reject</button>
       </div>
-      ${under ? `<p class="muted small" style="margin:8px 0 0">Their total is under the 500 minimum, so the server will refuse the approval and keep this application pending.</p>` : ""}
+      ${under ? `<p class="muted small" style="margin:8px 0 0">Their total is under the 500 minimum, so approving will be refused and this application stays pending — unless you override the minimum for this record.</p>` : ""}
+      ${under || u.minimumOverride ? `<div style="margin-top:8px">${adminMinOverrideHtml(u, "deck")}</div>` : ""}
       <div id="admin-deck-reject"></div>
       <button class="btn ghost small-btn" style="margin-top:14px" onclick="adminDeckToggleMore()">More actions</button>
       <div id="admin-deck-actions" style="display:none">${adminCardActionsHtml(u, "deck")}</div>
@@ -29352,7 +29420,7 @@ function adminUserCardHtml(u) {
     : u.status === "rejected" ? '<span class="badge bad">Rejected</span>'
     : `<span class="badge">${esc(u.status || "")}</span>`;
   return `<div class="panel admin-user-card">
-    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum ? ' <span class="badge bad">Under the 500 minimum</span>' : ""} <span class="badge">${esc(u.role || "")}</span></div>
+    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum && !u.minimumOverride ? ' <span class="badge bad">Under the 500 minimum</span>' : ""}${u.minimumOverride ? ' <span class="badge info">500 minimum overridden</span>' : ""} <span class="badge">${esc(u.role || "")}</span></div>
     ${adminUserCardFactsHtml(u)}
     ${u.status === "pending" ? `<div class="admin-card-decide">
       <button class="btn" onclick="adminCardApprove('${u.id}')">Approve</button>

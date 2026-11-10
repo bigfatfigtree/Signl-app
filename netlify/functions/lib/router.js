@@ -4907,7 +4907,13 @@ async function handleVerifyCounts(event) {
   // first platform-messages overview read).
   let staff169 = null;
   try { staff169 = await store.get(STAFF_DIAG_KEY_169); } catch (e) { staff169 = null; }
-  return json(200, { totals, markets, recount, agree, bdev: bdev167, staff: staff169 });
+  // Build -172: the one-record count correction's diagnostic
+  // rides the same surface — what the loader found on the
+  // @chicagofoodking record and what it did about it. Null
+  // until the loader has run (first request after deploy).
+  let minfix172 = null;
+  try { minfix172 = await store.get(MIN_FIX_DIAG_KEY_172); } catch (e) { minfix172 = null; }
+  return json(200, { totals, markets, recount, agree, bdev: bdev167, staff: staff169, minfix: minfix172 });
 }
 
 // The Admin home preview tabs' targets (Build -126), resolved in
@@ -4944,13 +4950,28 @@ function audienceMinimumApplies(user) {
   const t = Date.parse((user && user.createdAt) || "");
   return Number.isFinite(t) && t >= MIN_AUDIENCE_RULE_SINCE_MS;
 }
+// Build -172: the admin override. The minimum is Jeff's rule,
+// so Jeff can except ONE record from it — per record, by a
+// super-admin only, always with a reason kept on the record
+// (minimumOverride = { by, at, reason }, set and cleared through
+// POST /admin/users/:id/minimum-override). The standard itself
+// does not move: public copy still states 500 everywhere, and
+// every other record is judged exactly as before.
+function minimumOverrideOf(user) {
+  if (!user || !user.minimumOverride) return null;
+  return user.minimumOverride === true ? { legacy: true } : user.minimumOverride;
+}
+
 // The creator's KNOWN total when it is demonstrably under the
 // minimum (some counts entered, total in 1..499), else null. A
 // total of 0 means "not stated yet", not "under": the completion
 // gate below is what enforces the minimum there, at the moment
-// the counts land.
+// the counts land. An overridden record is never "under": the
+// hold, the auto-decision and the completion gate all read
+// through this one predicate (Build -172).
 function knownUnderMinimumTotal(user) {
   if (!user || user.role !== "creator" || !user.creator) return null;
+  if (minimumOverrideOf(user)) return null;
   if (!audienceMinimumApplies(user)) return null;
   const total = audienceTotalOf(user.creator);
   return total > 0 && total < MIN_TOTAL_AUDIENCE ? total : null;
@@ -7263,6 +7284,95 @@ async function maybeMarkStaff169() {
   await store.set(STAFF_DIAG_KEY_169, diag);
   await store.set(STAFF_MARKS_KEY_169, { done: true, at: nowIso(), marked: markedId ? 1 : 0, ambiguous });
   staffMarksDone169 = true;
+}
+
+// ---------- one stored count, corrected (Build -172) ----------
+// Frank Anthony, @chicagofoodking (Chicago): the record Jeff
+// was approving by hand carries a stored Instagram count of 80,
+// which put a real creator on the under-500 hold. The verified
+// count is 15,327 — read from his live Instagram bio on
+// 2026-11-07 and stored in the expansion harvest
+// (expansion-verified-2026-11-07.json). This one-time pass
+// corrects the stored number, nothing else: it never touches
+// his status (Jeff approves him himself from the deck), never
+// touches any other record, and never guesses — the handle
+// must match exactly one creator record, and the stored
+// Instagram count must actually read low (< 500), or the pass
+// logs what it found and changes nothing. Every run writes a
+// diagnostic (config:diag172) surfaced as the `minfix` block
+// on GET /api/verify/counts, the -169 pattern.
+const MIN_FIX_KEY_172 = "config:minFix172";
+const MIN_FIX_DIAG_KEY_172 = "config:diag172";
+const MIN_FIX_HANDLE_172 = "chicagofoodking";
+const MIN_FIX_INSTAGRAM_172 = 15327;
+let minFixDone172 = false;
+async function maybeFixMin172() {
+  if (minFixDone172) return;
+  if (await store.get(MIN_FIX_KEY_172)) { minFixDone172 = true; return; }
+  const users = await allUsers();
+  const matches = users.filter((u) => u && u.role === "creator" && u.creator
+    && String(u.creator.handle || "").trim().toLowerCase().replace(/^@+/, "") === MIN_FIX_HANDLE_172);
+  const diag = {
+    at: nowIso(),
+    rule: "minfix172-v1: the one creator record whose handle is chicagofoodking gets its stored Instagram count set to the verified 15327, only when that count currently reads low (< 500); status is never changed",
+    handle: MIN_FIX_HANDLE_172,
+    verifiedInstagram: MIN_FIX_INSTAGRAM_172,
+    found: matches.length,
+    action: "none",
+    records: [],
+  };
+  if (matches.length !== 1) {
+    diag.action = matches.length === 0 ? "not_found" : "ambiguous";
+    diag.note = matches.length === 0
+      ? "no creator record carries that handle — nothing changed"
+      : "more than one creator record carries that handle — the loader never guesses, nothing changed";
+  } else {
+    const u = matches[0];
+    const c = u.creator;
+    const rawStack = c.audienceStack && typeof c.audienceStack === "object" ? c.audienceStack : null;
+    const stack = audienceStackOf(c);
+    const rec = {
+      id: u.id,
+      emailDomain: emailDomain169(u.email),
+      status: u.status || null,
+      handle: c.handle || null,
+      storedInstagram: typeof stack.instagram === "number" ? stack.instagram : null,
+      storedFollowerCount: typeof c.followerCount === "number" ? c.followerCount : null,
+      totalBefore: audienceTotalOf(c),
+      totalAfter: null,
+      changed: false,
+      note: null,
+    };
+    diag.records.push(rec);
+    const igNow = typeof stack.instagram === "number" ? stack.instagram : 0;
+    if (igNow >= MIN_TOTAL_AUDIENCE) {
+      rec.note = "stored Instagram count already reads at/over the minimum — nothing to correct";
+      diag.action = "already_ok";
+    } else if (audienceTotalOf(c) >= MIN_TOTAL_AUDIENCE) {
+      rec.note = "stacked total already at/over the minimum on other platforms — the record is not held, nothing changed";
+      diag.action = "already_ok";
+    } else {
+      // Preserve every other platform key exactly as stored;
+      // only the Instagram number moves. The stored mirrors
+      // follow the stack the way every save path keeps them
+      // (followerCount IS the Instagram count; totalAudience
+      // is the stack sum).
+      const next = { ...(rawStack || {}), instagram: MIN_FIX_INSTAGRAM_172 };
+      c.audienceStack = next;
+      c.followerCount = MIN_FIX_INSTAGRAM_172;
+      c.totalAudience = audienceTotalOf(c);
+      u.updatedAt = nowIso();
+      await store.set(`user:${u.id}`, u);
+      rec.changed = true;
+      rec.totalAfter = c.totalAudience;
+      rec.note = "stored Instagram count corrected to the verified count; status untouched";
+      diag.action = "fixed";
+      await logEvent({ type: "audience_count_corrected", actorId: null, actorRole: "system", subjectId: u.id, market: u.market || null, data: { handle: MIN_FIX_HANDLE_172, platform: "instagram", from: igNow, to: MIN_FIX_INSTAGRAM_172, source: "expansion-verified-2026-11-07 (live bio read 2026-11-07)", build: 172 } });
+    }
+  }
+  await store.set(MIN_FIX_DIAG_KEY_172, diag);
+  await store.set(MIN_FIX_KEY_172, { done: true, at: nowIso(), action: diag.action });
+  minFixDone172 = true;
 }
 
 // ---------- admin broadcasts (Build -152, reworked -153) ----------
@@ -10601,12 +10711,20 @@ function profileCompletionItems(user) {
   const workLinks = Math.min(3, (c.bestWork || []).length);
   const totalAudience = audienceTotalOf(c);
   const minApplies = audienceMinimumApplies(user);
-  const audienceDone = minApplies ? totalAudience >= MIN_TOTAL_AUDIENCE : totalAudience > 0;
+  // Build -172: an admin override completes this item at any
+  // STATED total — approval alone would otherwise leave the
+  // creator finished nowhere, invisible to businesses. A total
+  // of 0 still never completes: the override excepts the
+  // minimum, it does not invent an audience.
+  const minOverride172 = minApplies && !!minimumOverrideOf(user);
+  const audienceDone = minApplies ? (totalAudience > 0 && (totalAudience >= MIN_TOTAL_AUDIENCE || minOverride172)) : totalAudience > 0;
   const audienceDetail = !minApplies
     ? (stackCount ? `${stackCount} of 3+ platforms counted for the stack bonus` : "3+ platforms earns the stack bonus")
     : totalAudience >= MIN_TOTAL_AUDIENCE
       ? `${totalAudience.toLocaleString("en-US")} total across your platforms, past the 500 minimum${stackCount ? `; ${stackCount} of 3+ platforms counted for the stack bonus` : ""}`
-      : `${MIN_AUDIENCE_LINE} You have ${totalAudience.toLocaleString("en-US")} counted so far. Add every platform you post on; the counts add up.`;
+      : minOverride172 && totalAudience > 0
+        ? `${totalAudience.toLocaleString("en-US")} total across your platforms. The Magpie team has approved your audience as it stands, so this step is done — and you can add more platforms any time.`
+        : `${MIN_AUDIENCE_LINE} You have ${totalAudience.toLocaleString("en-US")} counted so far. Add every platform you post on; the counts add up.`;
   return [
     { id: "city", label: "Set your home city", points: null, done: !!String((user && user.city) || "").trim(), required: true },
     { id: "audience", label: "Add your audience counts", points: MOMENTUM_POINTS.profileStack, done: audienceDone, required: true, detail: audienceDetail },
@@ -23341,6 +23459,10 @@ async function route(event) {
     // identity. Chains the Jeff-seat load first; claimed-flag
     // guarded, best-effort like every loader here.
     (async () => { try { await bizdev.maybeLoadJeffSeat161(); await bizdev.maybeCleanup169(); await bizdev.maybeCleanupTony170(); } catch (e) { /* Biz Dev cleanup is best-effort */ } })(),
+    // Build -172: one-time correction of one stored audience
+    // count (@chicagofoodking's Instagram count), claimed-flag
+    // guarded, best-effort like every loader here.
+    (async () => { try { await maybeFixMin172(); } catch (e) { /* count fix is best-effort on the request path */ } })(),
     // One-time profileComplete backfill, claimed-flag guarded.
     (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
     // One-time Build -61 public-page backfill, claimed-flag guarded.
@@ -27298,6 +27420,39 @@ async function route(event) {
       await store.set(`email:${newEmail}`, { userId: target.id });
       await logEvent({ type: "admin_corrected_account_email", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { role: target.role, oldEmail, newEmail } });
       return json(200, { ok: true, email: newEmail, role: target.role });
+    }
+
+    // Minimum override (Build -172): the 500 minimum is Jeff's
+    // rule, and Jeff can except ONE creator record from it —
+    // the case that forced this: a creator whose stored count
+    // is plainly wrong (a data error) sits on hold with no way
+    // forward. Super-admin only (the same bar as /admin/review's
+    // super path), and a reason is REQUIRED on setting AND on
+    // clearing, like every sibling editor: the exception is an
+    // audited decision, never a quiet flag flip. Setting clears
+    // the under-minimum stamp, so the creator's own pending
+    // screen stops saying they are held; the approval itself
+    // still happens through /admin/review, unchanged.
+    if (seg[1] === "users" && seg.length === 4 && seg[3] === "minimum-override" && method === "POST") {
+      if (!perms138.isSuper(user)) return err(403, "Overriding the 500 minimum is Jeff's call.");
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target) return err(404, "Account not found");
+      if (target.role !== "creator") return err(400, "The 500 minimum only applies to creator accounts.");
+      const b = parseBody(event);
+      const reason = String(b.reason || "").trim();
+      if (!reason) return err(400, "Add the reason first: it is kept with the change.");
+      const setting = b.override === true;
+      const total = audienceTotalOf(target.creator || {});
+      if (setting) {
+        target.minimumOverride = { by: user.id, at: nowIso(), reason };
+        delete target.underMinimum;
+      } else {
+        delete target.minimumOverride;
+      }
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: setting ? "minimum_override_set" : "minimum_override_cleared", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { role: target.role, email: target.email, reason, totalAudience: total, minimum: MIN_TOTAL_AUDIENCE } });
+      return json(200, { ok: true, override: setting, minimumOverride: target.minimumOverride || null, totalAudience: total });
     }
 
     // Delete account (Build -132): the SAME erasure the
