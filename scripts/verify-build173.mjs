@@ -116,6 +116,14 @@ console.log("== A: source pins ==");
     && routerJs.includes('"ashtyngillespy": "Raleigh"'), "");
   check("server: the loader never overrides a post-registration market change",
     routerJs.includes("u.marketChangedAt || changedIds.has(String(u.id))") && routerJs.includes('"deliberate_move"'), "");
+  // LOADER RULE (AGENTS.md, 2026-11-09 — the -173 outage):
+  // no serial per-key loop over a store prefix in the request
+  // path, ever. The first -173 loader walked event: with one
+  // awaited store.get per key; on Netlify Blobs that blocked
+  // every API request for minutes and took production down.
+  check("server: the loader NEVER serial-scans a store prefix (the outage regression pin)",
+    !routerJs.includes('const evKeys = await store.listKeys("event:")')
+    && !/for \(const k of evKeys\) \{\s*const ev = await store\.get\(k\)/.test(routerJs), "");
 }
 
 // --- B: the parser, behaviorally ------------------------------
@@ -212,7 +220,7 @@ console.log("== D: maybeFixMarkets173 (child fixtures) ==");
     !!f && !!f.after1.b && f.after1.b.market === "Dallas" && f.after1.b.status === "approved", JSON.stringify(f && f.after1.b));
   check("loader: a record with marketChangedAt is NOT moved (deliberate later choice)",
     !!f && !!f.after1.c && f.after1.c.market === "Virginia Beach", JSON.stringify(f && f.after1.c));
-  check("loader: a record whose only trace is a market_changed event is NOT moved",
+  check("loader: a second stamped record (lixas_family shape) is NOT moved either",
     !!f && !!f.after1.g && f.after1.g.market === "Virginia Beach", JSON.stringify(f && f.after1.g));
   // Untouched is proven on the fields the loader owns —
   // market and status — plus absence from the diag and the

@@ -17,8 +17,13 @@
 //   F nc.foodbaby ×2 — listed (Raleigh), two records on one
 //     handle → ambiguous; neither moves.
 //   G lixas_family — listed (Raleigh), filed Virginia Beach,
-//     no record stamp, but a market_changed EVENT names her
-//     → deliberate move via the event trail, never moved.
+//     marketChangedAt stamped by an EARLIER build's clock
+//     format (still a stamp) → deliberate, never moved. (The
+//     loader's original event-log cross-check was removed in
+//     the same-night hotfix: a serial per-key scan of the
+//     event: prefix in the request path took production
+//     down; POST /me/market always writes this stamp, so the
+//     record field is the guard.)
 // Prints one "MARKETFIX173 {json}" line for the parent script.
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -89,15 +94,7 @@ await store.set("user:fix173-d", seedCreator("fix173-d", { handle: "919eats", ma
 await store.set("user:fix173-e", seedCreator("fix173-e", { handle: "someoneelsevb", market: "Virginia Beach" }));
 await store.set("user:fix173-f1", seedCreator("fix173-f1", { handle: "nc.foodbaby", market: "Virginia Beach" }));
 await store.set("user:fix173-f2", seedCreator("fix173-f2", { handle: "nc.foodbaby", market: "Virginia Beach" }));
-await store.set("user:fix173-g", seedCreator("fix173-g", { handle: "lixas_family", market: "Virginia Beach" }));
-// G's deliberate move exists only as an event (the shape
-// events.js writes): POST /me/market logged it after she
-// registered; the record carries no marketChangedAt stamp.
-await store.set("event:2026-11-09:seed173g", {
-  id: "seed173g", ts: "2026-11-09T14:00:00.000Z", type: "market_changed",
-  actorId: "fix173-g", actorRole: "creator", subjectId: "fix173-g", market: "Virginia Beach",
-  data: { from: "Raleigh", to: "Virginia Beach", via: "profile" },
-});
+await store.set("user:fix173-g", seedCreator("fix173-g", { handle: "lixas_family", market: "Virginia Beach", extra: { marketChangedAt: "2026-11-09T14:00:00.000Z" } }));
 
 const admin = makeClient();
 const anon = makeClient();

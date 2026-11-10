@@ -7459,18 +7459,23 @@ async function maybeFixMarkets173() {
     if (!byHandle.has(h)) byHandle.set(h, []);
     byHandle.get(h).push(u);
   }
-  // Deliberate later moves, belt and braces: the
-  // market_changed events POST /me/market logs (the record's
-  // own marketChangedAt stamp is checked per record below).
+  // Deliberate later moves: POST /me/market stamps
+  // marketChangedAt on the record itself (router.js, the
+  // /me/market handler), and that stamp is the ONLY guard —
+  // checked per record below.
+  //
+  // HOTFIX (Build -173, same night): the first version ALSO
+  // scanned the whole event: prefix with a SERIAL store.get
+  // per key to find market_changed events. On Netlify Blobs
+  // every get is an HTTPS round trip, so the scan ran for
+  // minutes inside the awaited per-request fan-out and every
+  // /api/* request timed out (production down ~22:26 ET
+  // until this fix). The scan is GONE: a prefix is never
+  // walked with a serial per-key loop in the request path
+  // (LOADER RULE, AGENTS.md 2026-11-09). The record stamp
+  // covers the same ground — /me/market always writes it.
   const changedIds = new Set();
-  let eventsReadable = true;
-  try {
-    const evKeys = await store.listKeys("event:");
-    for (const k of evKeys) {
-      const ev = await store.get(k);
-      if (ev && ev.type === "market_changed" && ev.subjectId) changedIds.add(String(ev.subjectId));
-    }
-  } catch (e) { eventsReadable = false; }
+  const eventsReadable = false;
   const diag = {
     at: nowIso(),
     rule: "marketfix173-v1: a creator record whose handle is one of the 88 emailed Raleigh / Dallas-Fort Worth claim handles AND whose stored market is Virginia Beach moves to the market its invite named (Raleigh or Dallas); a record with a post-registration market change is reported, never moved; handles not on the list are never touched",
