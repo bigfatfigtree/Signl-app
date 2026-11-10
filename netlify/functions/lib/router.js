@@ -23679,11 +23679,18 @@ async function route(event) {
     // count (@chicagofoodking's Instagram count), claimed-flag
     // guarded, best-effort like every loader here.
     (async () => { try { await maybeFixMin172(); } catch (e) { /* count fix is best-effort on the request path */ } })(),
-    // Build -173: one-time re-file of the Raleigh / Dallas-Fort
-    // Worth claim cohort the broken claim link filed under
-    // Virginia Beach, claimed-flag guarded, best-effort like
-    // every loader here.
-    (async () => { try { await maybeFixMarkets173(); } catch (e) { /* market re-file is best-effort on the request path */ } })(),
+    // Build -174 (emergency hotfix, 2026-11-09): the Build -173
+    // market re-file pass (maybeFixMarkets173) is deliberately
+    // NOT invoked here — or anywhere on the request path. Its
+    // first version sat in this fan-out and read the event log
+    // one serial store.get at a time; on Netlify Blobs (an
+    // HTTPS round trip per get) every /api/* request timed out
+    // and the app went down (~22:26 ET), and because its done
+    // flag is written only at the END of the scan, every fresh
+    // instance restarted it. The function stays in the file,
+    // uninvoked: the re-file itself is deferred to a follow-up
+    // build that runs it off the request path with the
+    // getMany/resumable design (see verify-build174).
     // One-time profileComplete backfill, claimed-flag guarded.
     (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
     // One-time Build -61 public-page backfill, claimed-flag guarded.
