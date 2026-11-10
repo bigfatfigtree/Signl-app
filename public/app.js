@@ -346,6 +346,46 @@ function normalizeHandleClient(raw) {
   return h.replace(/^@/, "").trim();
 }
 
+// Build -173: claim-link market names as the world writes
+// them. Outreach composes market names in prose shape
+// ("Raleigh/The Triangle", "Dallas-Fort Worth"); the bootstrap
+// names them canonically ("Raleigh", "Dallas"). Before this
+// build the parser kept only an exact name/id match and
+// silently dropped everything else; the claim draft then
+// defaulted to Virginia Beach, so 88 emailed creators were
+// greeted as Virginia Beach and filed there on submit. The
+// parser now normalizes a market string to a punctuation-free
+// lowercase key (so case, dash/en-dash, slash and spacing
+// variants all read the same) and resolves it against every
+// market's name AND id keys, then through the alias map for
+// the names outreach actually uses. A string that resolves to
+// nothing is NOT dropped: it comes back as marketUnrecognized
+// and the claim takes the unlisted-city path — no market ever
+// defaults again.
+const CLAIM_MARKET_ALIASES_173 = {
+  raleighthetriangle: "raleigh",
+  thetriangle: "raleigh",
+  triangle: "raleigh",
+  dallasfortworth: "dallas",
+  dfw: "dallas",
+  fortworth: "dallas",
+  hamptonroads: "hampton-roads",
+};
+function claimMarketKey173(raw) {
+  return String(raw || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+function resolveClaimMarket173(raw) {
+  if (!state.boot || !state.boot.markets) return null;
+  const key = claimMarketKey173(raw);
+  if (!key) return null;
+  const markets = state.boot.markets;
+  const direct = markets.find((x) => claimMarketKey173(x.name) === key || claimMarketKey173(x.id) === key);
+  if (direct) return direct;
+  const aliasId = CLAIM_MARKET_ALIASES_173[key];
+  if (aliasId) return markets.find((x) => x.id === aliasId) || null;
+  return null;
+}
+
 function parseClaimParams(params) {
   const out = {};
   const handle = sanitizeClaimHandle(params.get("handle"));
@@ -356,12 +396,12 @@ function parseClaimParams(params) {
   // to Instagram, exactly as every link already sent behaves.
   const platformRaw = String(params.get("platform") || "").trim().toLowerCase();
   if (PRIMARY_PLATFORMS_CLIENT.some((p) => p.id === platformRaw)) out.platform = platformRaw;
-  let marketRaw = String(params.get("market") || "").trim().slice(0, 60);
-  if (marketRaw === "Hampton Roads") marketRaw = "Virginia Beach";
+  const marketRaw = String(params.get("market") || "").trim().slice(0, 60);
   if (marketRaw && state.boot) {
-    const m = state.boot.markets.find((x) => x.name === marketRaw || x.id === marketRaw);
+    const m = resolveClaimMarket173(marketRaw);
     if (m) out.market = m.name;
     else if (marketRaw === unlistedLabel()) out.market = marketRaw;
+    else out.marketUnrecognized = marketRaw;
   }
   const tierRaw = String(params.get("tier") || "").trim().slice(0, 20);
   if (tierRaw && state.boot && state.boot.tiers.some((t) => t.id === tierRaw)) out.tier = tierRaw;
@@ -6731,7 +6771,13 @@ function marketOptions(selected, forJoin) {
       .join("");
     return `<optgroup label="${esc(country)}">${opts}</optgroup>`;
   }).join("");
-  return forJoin ? groups + `<option value="${esc(unlistedLabel())}">My city is not listed yet</option>` : groups;
+  // Build -173: the unlisted option takes `selected` when it
+  // is the requested value. It never did before — harmless
+  // while every form defaulted to a real market, but a claim
+  // whose market string resolves to the unlisted path seeds
+  // exactly this value, and an unselected select falls back
+  // to the first option (Atlanta) — a wrong pre-pick again.
+  return forJoin ? groups + `<option value="${esc(unlistedLabel())}" ${selected === unlistedLabel() ? "selected" : ""}>My city is not listed yet</option>` : groups;
 }
 
 // Options for the per-market audience share rows on the creator
@@ -6869,9 +6915,11 @@ function syncMarketChoice() {
   const unlisted = m.value === unlistedLabel();
   const cityWrap = document.getElementById("jc-city-wrap");
   const customWrap = document.getElementById("jc-custom-wrap");
-  if (cityWrap) cityWrap.style.display = unlisted ? "none" : "";
+  // Build -173: no market picked yet hides the city picker
+  // (nothing defaults; see renderJoinCreator).
+  if (cityWrap) cityWrap.style.display = unlisted || !m.value ? "none" : "";
   if (customWrap) { customWrap.style.display = unlisted ? "" : "none"; customWrap.style.gridColumn = unlisted ? "1 / -1" : ""; }
-  if (!unlisted) document.getElementById("jc-city").innerHTML = m.value === "London" ? `<option value="London" selected>London</option>` : cityOptions(m.value);
+  if (!unlisted && m.value) document.getElementById("jc-city").innerHTML = m.value === "London" ? `<option value="London" selected>London</option>` : cityOptions(m.value);
   // Build -88: for London the free-text neighborhood field is
   // replaced by the area picker (home city stays London).
   const jcAreaWrap = document.getElementById("jc-area-wrap");
@@ -9712,7 +9760,16 @@ function claimDraftInit() {
     resolving: false,
     countedNote: "",
     stackTouched: false,
-    market: pf.market || "Virginia Beach",
+    // Build -173: no parsed market = NO market. The draft used
+    // to default to "Virginia Beach" here, which greeted (and
+    // filed) Raleigh and Dallas-Fort Worth invitees as Virginia
+    // Beach whenever their link's market string missed the
+    // parser's exact match. Now: a resolved market pre-picks, an
+    // UNRECOGNIZED market string takes the unlisted-city path
+    // (the creator types her city and the sign-up counts toward
+    // opening it), and a link with no market at all starts with
+    // an empty pick the facts screen asks her to make.
+    market: pf.market || (pf.marketUnrecognized ? unlistedLabel() : ""),
     area: "",
     cats: [],
     catsSeeded: false,
@@ -9820,8 +9877,11 @@ function syncClaimMarketChoice() {
   if (customWrap) customWrap.style.display = unlisted ? "" : "none";
   const isLondon = m.value === "London";
   const cityWrap = document.getElementById("c85-city-wrap");
-  if (cityWrap) cityWrap.style.display = unlisted || isLondon ? "none" : "";
-  if (!unlisted && !isLondon) {
+  // Build -173: no market picked yet (the placeholder) hides
+  // the city picker too — there is no city's list to show
+  // until she picks, and nothing pre-fills from a default.
+  if (cityWrap) cityWrap.style.display = unlisted || isLondon || !m.value ? "none" : "";
+  if (!unlisted && !isLondon && m.value) {
     const citySel = document.getElementById("c85-city");
     if (citySel) citySel.innerHTML = cityOptions(m.value);
   }
@@ -10060,8 +10120,14 @@ function renderClaimWelcome() {
   const pf = state.prefill || {};
   const resolved = !!d.handle;
   const first = claimFirstName(d);
-  const marketLabel = marketDisplayName(pf.market || d.market);
-  const photo = claimPhotoFor(pf.market || d.market);
+  // Build -173: the invite names a market only when the link
+  // actually resolved to one. The unlisted path and a link
+  // with no market show the handle alone — never another
+  // city's name (the old draft default put "Virginia Beach"
+  // next to Raleigh and Dallas-Fort Worth invitees' names).
+  const shownMarket = pf.market || d.market;
+  const marketLabel = shownMarket && shownMarket !== unlistedLabel() ? marketDisplayName(shownMarket) : "";
+  const photo = claimPhotoFor(shownMarket);
   const initial = (first || d.handle || "S").charAt(0).toUpperCase();
   const lanes = `<div class="c85-lanes">
       <p><span class="c85-check">✓</span> ${T("Hosted visits: a local business treats you, you post honestly.", "Visitas en cortesía: un negocio local te invita y tú publicas con honestidad.")}</p>
@@ -10072,7 +10138,7 @@ function renderClaimWelcome() {
       ${d.photoUrl ? `<img class="c85-avatar" src="${esc(d.photoUrl)}" alt="" onerror="this.style.display='none'">` : `<span class="c85-avatar c85-avatar-init">${esc(initial)}</span>`}
       <div>
         ${d.displayName ? `<div class="c85-idname">${esc(d.displayName)}</div>` : ""}
-        <div class="c85-idline">@${esc(d.handle)} · ${esc(marketLabel)}</div>
+        <div class="c85-idline">@${esc(d.handle)}${marketLabel ? ` · ${esc(marketLabel)}` : ""}</div>
       </div>
     </div>` : "";
   const handleBlock = resolved ? "" : `
@@ -10094,7 +10160,11 @@ function renderClaimWelcome() {
       <div id="qc-ticket"></div>
       ${(!state.claimHook || state.claimHook.variant === "generic") ? `<p style="margin:0 0 12px"><strong>${T("On Magpie, 800 followers who live here beats 90,000 followers who don't.", "En Magpie, 800 seguidores que viven aquí valen más que 90.000 que no.")}</strong> ${T("Add your platforms in the next step and we count your neighbors.", "Agrega tus plataformas en el siguiente paso y contamos a tus vecinos.")}</p>` : ""}
       ${lanes}
-      ${resolved ? `<p class="small muted" style="margin:0 0 12px">${T("Your invite picked the market shown with your name above. If your audience is really somewhere else, you pick your real home market on the next screen, and you can change it any time later in your profile.", "Tu invitación eligió el mercado que aparece junto a tu nombre. Si tu audiencia está en otro lugar, eliges tu mercado real en la siguiente pantalla, y puedes cambiarlo cuando quieras en tu perfil.")}</p>` : ""}
+      ${!resolved ? "" : shownMarket === unlistedLabel()
+        ? `<p class="small muted" style="margin:0 0 12px">${T("Your city is not one of our listed markets yet. On the next screen you tell us your city, and your sign-up counts toward opening Magpie there — founding sign-ups go first.", "Tu ciudad aún no es uno de nuestros mercados en la lista. En la siguiente pantalla nos dices tu ciudad, y tu registro cuenta para abrir Magpie ahí: los registros fundadores van primero.")}</p>`
+        : marketLabel
+          ? `<p class="small muted" style="margin:0 0 12px">${T("Your invite picked the market shown with your name above. If your audience is really somewhere else, you pick your real home market on the next screen, and you can change it any time later in your profile.", "Tu invitación eligió el mercado que aparece junto a tu nombre. Si tu audiencia está en otro lugar, eliges tu mercado real en la siguiente pantalla, y puedes cambiarlo cuando quieras en tu perfil.")}</p>`
+          : `<p class="small muted" style="margin:0 0 12px">${T("On the next screen you pick your home market — the place where most of your followers live. You can change it any time later in your profile.", "En la siguiente pantalla eliges tu mercado principal: el lugar donde vive la mayoría de tus seguidores. Puedes cambiarlo cuando quieras en tu perfil.")}</p>`}
       ${handleBlock}
       <button class="btn" type="button" style="width:100%" onclick="return claimWelcomeGo()">${T("Claim my page", "Reclamar mi página")}</button>
       <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Free for creators. Takes a minute.", "Gratis para creadores. Toma un minuto.")}</p>
@@ -10132,7 +10202,19 @@ function claimWelcomeGo() {
 function renderClaimFacts() {
   const d = claimDraftInit();
   if (!d.catsSeeded && (state.boot.creatorCategories || []).length) { d.cats = [...state.boot.creatorCategories]; d.catsSeeded = true; }
-  const pfMarket = d.market || "Virginia Beach";
+  // Build -173: no default market. pfMarket is the parsed
+  // market, the unlisted label (unrecognized market string),
+  // or "" when the link named none — and "" renders a "Pick
+  // your market" placeholder instead of a pre-pick (the old
+  // "Virginia Beach" fallback here is what filed Raleigh and
+  // Dallas-Fort Worth invitees under Virginia Beach).
+  const pfMarket = d.market || "";
+  const marketHelp = pfMarket === unlistedLabel()
+    ? T("Your city is not listed yet. Tell us your city below and sign up anyway — your sign-up counts toward opening Magpie there. You can change it later, any time, in your profile.", "Tu ciudad aún no está en la lista. Dinos tu ciudad abajo y regístrate igual: tu registro cuenta para abrir Magpie ahí. Puedes cambiarlo después, cuando quieras, en tu perfil.")
+    : pfMarket
+      ? T("Your invite picked this market. If your audience is really somewhere else, pick the market where most of your followers live. You can change it later, any time, in your profile.", "Tu invitación eligió este mercado. Si tu audiencia está en otro lugar, elige el mercado donde vive la mayoría de tus seguidores. Puedes cambiarlo después, cuando quieras, en tu perfil.")
+      : T("Pick the market where most of your followers live. City not listed? Choose \"My city is not listed yet\" and sign up anyway — your sign-up counts toward opening Magpie there.", "Elige el mercado donde vive la mayoría de tus seguidores. ¿Tu ciudad no está en la lista? Elige «Mi ciudad aún no está en la lista» y regístrate igual: tu registro cuenta para abrir Magpie ahí.");
+  const marketOpts = (pfMarket ? "" : `<option value="" disabled selected>${T("Pick your market", "Elige tu mercado")}</option>`) + marketOptions(pfMarket, true);
   const cats = (state.boot.creatorCategories || []).map((c) => `<button type="button" class="rchip${d.cats.includes(c) ? " on" : ""}" data-cat="${esc(c)}" onclick="return claimToggleCat(this)">${esc(c)}</button>`).join("");
   const stackRows = CLAIM_STACK_PLATFORMS.map((p) => `
       <div class="c85-stackrow"><label for="c85-stack-${p.id}">${T(p.label, p.label)}</label><input type="number" id="c85-stack-${p.id}" min="0" inputmode="numeric" placeholder="0" value="${d.stack[p.id] ? esc(String(d.stack[p.id])) : ""}" oninput="claimStackSync()"></div>`).join("");
@@ -10145,8 +10227,8 @@ function renderClaimFacts() {
       <div id="c85-facts-warn"></div>
       <div class="c85-fact">
         <p class="fg-kicker">${T("Your city", "Tu ciudad")}</p>
-        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted" style="margin:6px 0 0">${T("Your invite picked this market. If your audience is really somewhere else, pick the market where most of your followers live. You can change it later, any time, in your profile.", "Tu invitación eligió este mercado. Si tu audiencia está en otro lugar, elige el mercado donde vive la mayoría de tus seguidores. Puedes cambiarlo después, cuando quieras, en tu perfil.")}</p><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and Magpie walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every Magpie post.</p></div>
-        <div class="field" id="c85-city-wrap" style="margin-bottom:0"><label>${T("Your home city", "Tu ciudad")}</label><select id="c85-city" onchange="claimLocalLabelSync()">${cityOptions(pfMarket === unlistedLabel() ? "Virginia Beach" : pfMarket)}</select></div>
+        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOpts}</select><p class="small muted" style="margin:6px 0 0">${esc(marketHelp)}</p><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and Magpie walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every Magpie post.</p></div>
+        <div class="field" id="c85-city-wrap" style="margin-bottom:0"><label>${T("Your home city", "Tu ciudad")}</label><select id="c85-city" onchange="claimLocalLabelSync()">${pfMarket && pfMarket !== unlistedLabel() ? cityOptions(pfMarket) : ""}</select></div>
         <div class="field" id="c85-area-wrap" style="display:none;margin-bottom:0"><label>${T("Your area in London", "Tu zona en Londres")}</label><input id="c85-area-search" placeholder="${T("Search areas, for example: Brixton", "Busca zonas, por ejemplo: Brixton")}" oninput="filterAreaOptions('c85-area-search','c85-area')" style="margin-bottom:6px"><select id="c85-area" onchange="claimLocalLabelSync()">${areaOptions("London")}</select><p class="small muted">${T("London is one market. Your home city stays London, and your area is saved on your record.", "Londres es un solo mercado. Tu ciudad queda como Londres y tu zona se guarda en tu registro.")}</p></div>
         <div id="c85-custom-wrap" style="display:none">
           <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="c85-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}" oninput="claimLocalLabelSync()"></div>
@@ -10243,6 +10325,9 @@ function claimFactsGo() {
     window.scrollTo(0, 0);
   };
   const marketVal = document.getElementById("c85-market").value;
+  // Build -173: an unpicked market stops here with the ask —
+  // the claim never files a creator under a default city.
+  if (!marketVal) { warn(T("Pick your market — the one where most of your followers live. If your city isn't listed, choose \"My city is not listed yet\" and sign up anyway.", "Elige tu mercado: aquel donde vive la mayoría de tus seguidores. Si tu ciudad no está en la lista, elige «Mi ciudad aún no está en la lista» y regístrate igual.")); return false; }
   d.market = marketVal;
   const isUnlisted = marketVal === unlistedLabel();
   if (isUnlisted) {
@@ -10669,7 +10754,13 @@ function renderJoinCreator() {
   const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}" checked onchange="proHintSync('jc')"> ${esc(c)}</label>`).join("");
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const pf = state.prefill || {};
-  const pfMarket = pf.market || "Virginia Beach";
+  // Build -173: same rule as the claim door — no parsed
+  // market means no pre-pick (the "Virginia Beach" default
+  // that used to sit here filed unrecognized-market arrivals
+  // under Virginia Beach); an unrecognized market string
+  // opens the form on the not-listed path.
+  const pfMarket = pf.market || (pf.marketUnrecognized ? unlistedLabel() : "");
+  const jcMarketOpts = (pfMarket ? "" : `<option value="" disabled selected>${T("Pick your market", "Elige tu mercado")}</option>`) + marketOptions(pfMarket, true);
   const hasPrefill = !!(pf.handle || pf.market || pf.tier);
   app.innerHTML = `
   <section class="panel form-panel" style="max-width:680px;margin:10px auto">
@@ -10700,8 +10791,8 @@ function renderJoinCreator() {
       <div class="fgroup">
         <p class="fg-kicker">${T("Where you are", "Dónde estás")}</p>
         <div class="form-2col">
-          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="jc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to join, and Magpie walks founding creators through it.</p><p id="jc-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to join; the label is built into every Magpie post.</p></div>
-          <div class="field" id="jc-city-wrap"><label>${T("Your home city", "Tu ciudad")}</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
+          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${jcMarketOpts}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="jc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to join, and Magpie walks founding creators through it.</p><p id="jc-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to join; the label is built into every Magpie post.</p></div>
+          <div class="field" id="jc-city-wrap"><label>${T("Your home city", "Tu ciudad")}</label><select id="jc-city">${pfMarket && pfMarket !== unlistedLabel() ? cityOptions(pfMarket) : ""}</select></div>
           <div id="jc-custom-wrap" style="display:none">
             <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="jc-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}"></div>
             <div class="field"><label>${T("Your country", "Tu país")}</label><input id="jc-country-text" placeholder="${T("For example: United States", "Por ejemplo: Estados Unidos")}"></div>
@@ -10921,6 +11012,9 @@ async function doRegisterCreator(e) {
   if (autoBand === "Headliners" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
   const topCities = document.getElementById("jc-topcities").value.split(",").map((x) => x.trim()).filter(Boolean);
   const marketVal = document.getElementById("jc-market").value;
+  // Build -173: no market picked, no submit — the form never
+  // files a creator under a default city.
+  if (!marketVal) { errBox(T("Pick your market — the one where most of your followers live. If your city isn't listed, choose \"My city is not listed yet\" and sign up anyway.", "Elige tu mercado: aquel donde vive la mayoría de tus seguidores. Si tu ciudad no está en la lista, elige «Mi ciudad aún no está en la lista» y regístrate igual.")); return false; }
   const isUnlisted = marketVal === unlistedLabel();
   const customCity = isUnlisted ? document.getElementById("jc-city-text").value.trim() : "";
   const customCountry = isUnlisted ? document.getElementById("jc-country-text").value.trim() : "";
@@ -32726,7 +32820,7 @@ function previewDashboardHtml(d) {
       state.view = "reset";
     }
     const claim = parseClaimParams(params);
-    if (claim.handle || claim.market || claim.tier || claim.platform) {
+    if (claim.handle || claim.market || claim.marketUnrecognized || claim.tier || claim.platform) {
       state.prefill = claim;
       // A claim link is an invitation to the form itself: a logged-out
       // visitor lands on the sign-up, pre-filled. Signed-in visitors

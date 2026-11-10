@@ -4913,7 +4913,13 @@ async function handleVerifyCounts(event) {
   // until the loader has run (first request after deploy).
   let minfix172 = null;
   try { minfix172 = await store.get(MIN_FIX_DIAG_KEY_172); } catch (e) { minfix172 = null; }
-  return json(200, { totals, markets, recount, agree, bdev: bdev167, staff: staff169, minfix: minfix172 });
+  // Build -173: the mis-filed-market re-file's diagnostic —
+  // how many of the 88 emailed handles hold accounts, how many
+  // moved to Raleigh/Dallas, how many were reported instead.
+  // Null until the loader has run (first request after deploy).
+  let marketfix173 = null;
+  try { marketfix173 = await store.get(MARKET_FIX_DIAG_KEY_173); } catch (e) { marketfix173 = null; }
+  return json(200, { totals, markets, recount, agree, bdev: bdev167, staff: staff169, minfix: minfix172, marketfix: marketfix173 });
 }
 
 // The Admin home preview tabs' targets (Build -126), resolved in
@@ -7373,6 +7379,158 @@ async function maybeFixMin172() {
   await store.set(MIN_FIX_DIAG_KEY_172, diag);
   await store.set(MIN_FIX_KEY_172, { done: true, at: nowIso(), action: diag.action });
   minFixDone172 = true;
+}
+
+// ---------- mis-filed markets, re-filed (Build -173) ----------
+// The server half of the claim-link fix. Before Build -173 the
+// client's claim parser kept a link's market only on an exact
+// name/id match; the Raleigh ("Raleigh/The Triangle") and
+// Dallas-Fort Worth ("Dallas-Fort Worth") outreach links
+// matched nothing, and the claim draft defaulted to Virginia
+// Beach — so a creator from those cohorts who finished a
+// claim without hand-changing the facts-screen picker was
+// FILED under Virginia Beach. This pass carries the exact 88
+// emailed handles (the campaign record, 2026-11-09): a creator
+// record whose normalized handle is on the list AND whose
+// stored market is "Virginia Beach" moves to the market its
+// invite named. The discipline, same as every loader here:
+//   - a handle NOT on the list is never touched;
+//   - a listed record whose market is anything other than
+//     Virginia Beach already stands where its owner (or the
+//     facts-screen picker) put it — left exactly as it is;
+//   - a listed record carrying a post-registration market
+//     change (marketChangedAt on the record, or a
+//     market_changed event — both written by POST /me/market)
+//     made a deliberate later choice: reported, never moved;
+//   - more than one record on a handle is ambiguous — the
+//     loader never guesses, nothing moves.
+// What moves is the market filing only: her stored city stays
+// (the admin deck shows it and she can correct it in her
+// profile), and her status is never touched. Every run writes
+// a diagnostic (config:diag173) surfaced as the `marketfix`
+// block on GET /api/verify/counts, the -169/-172 pattern.
+// Claimed-flag guarded (config:marketFix173): a one-time pass;
+// claims made after it runs arrive through the fixed client.
+const MARKET_FIX_KEY_173 = "config:marketFix173";
+const MARKET_FIX_DIAG_KEY_173 = "config:diag173";
+const MARKET_FIX_FROM_173 = "Virginia Beach";
+const MARKET_FIX_LIST_173 = {
+  "919eats": "Raleigh", "__morgannicole": "Dallas", "a1_tellem": "Dallas",
+  "accordingtoplandfw": "Dallas", "afsanehsworld": "Raleigh", "agewithstyle_": "Raleigh",
+  "alexis.crossley": "Dallas", "allthingsjeanette": "Raleigh", "alyinraleigh": "Raleigh",
+  "andreaupdyke": "Raleigh", "angiee014": "Raleigh", "ashtyngillespy": "Raleigh",
+  "bakerteddie": "Raleigh", "bdenisecole": "Raleigh", "bfitwithla": "Dallas",
+  "breshell": "Dallas", "brittanyroseblog": "Dallas", "ceebeeating": "Raleigh",
+  "cheft.carter": "Raleigh", "chris.james.kahle": "Dallas", "claireguentz": "Raleigh",
+  "coachdave.wejustwantresults_": "Raleigh", "cynthiajviola": "Raleigh", "dachbeauty": "Raleigh",
+  "dallasfoodiefix": "Dallas", "dallasfunandyum": "Dallas", "dallastx_foodies": "Dallas",
+  "dflix_videography": "Dallas", "dfwburblife": "Dallas", "dfwfeed": "Dallas",
+  "discoverwithchels": "Raleigh", "djdrizzy_": "Raleigh", "djwaukee": "Dallas",
+  "eatthisfortworth": "Dallas", "eve_rosja_music": "Dallas", "experience_raleigh": "Raleigh",
+  "farrahdreamz": "Raleigh", "foodguyjack": "Dallas", "frommaskitchen": "Raleigh",
+  "fwfoodie": "Dallas", "iamdestinyadams": "Dallas", "iamzynaejah": "Raleigh",
+  "itsmichellerobles": "Raleigh", "jazmynewimbush": "Raleigh", "jessejenningsmusic": "Dallas",
+  "joyeatsworld22": "Raleigh", "kahrijason": "Dallas", "kellysimplyeats": "Dallas",
+  "klhfloral": "Dallas", "kxosborne": "Dallas", "lauren__livinglife": "Dallas",
+  "laurenleahn": "Dallas", "lexilutheran": "Raleigh", "lifeasparisb": "Raleigh",
+  "lixas_family": "Raleigh", "magnoliamegan": "Raleigh", "maketodayahollyday": "Raleigh",
+  "marissakerins": "Raleigh", "mealssheeats": "Raleigh", "megansdesignedlife": "Raleigh",
+  "meredithquan": "Raleigh", "miryambevelle": "Raleigh", "momentsbyhibs": "Raleigh",
+  "monicadoesdallas": "Dallas", "nc.foodbaby": "Raleigh", "nceatandplay": "Raleigh",
+  "nimapatelrana": "Raleigh", "paigefoodfinds": "Dallas", "peanut_butter_kelly_eats": "Dallas",
+  "radiantbeautybyashley": "Raleigh", "raleighwanderlust": "Raleigh", "robynmneal": "Dallas",
+  "sabrinastyled": "Raleigh", "sayheyhazel": "Dallas", "sierralmiller": "Dallas",
+  "stephaniecamillee": "Dallas", "styled.bygill": "Raleigh", "styleswithnett": "Raleigh",
+  "susarlapallavi": "Raleigh", "tarshia.deshae": "Dallas", "the.bananamoon": "Raleigh",
+  "thefloraleclectic": "Dallas", "thekarnes": "Raleigh", "themoptop": "Dallas",
+  "tiffanycblackmon": "Dallas", "vanessa_amonn": "Dallas", "welcometoraleighwood": "Raleigh",
+  "wherebebe": "Dallas",
+};
+let marketFixDone173 = false;
+async function maybeFixMarkets173() {
+  if (marketFixDone173) return;
+  if (await store.get(MARKET_FIX_KEY_173)) { marketFixDone173 = true; return; }
+  const users = await allUsers();
+  const byHandle = new Map();
+  for (const u of users) {
+    if (!u || u.role !== "creator" || !u.creator) continue;
+    const h = String(u.creator.handle || "").trim().toLowerCase().replace(/^@+/, "");
+    if (!h || !Object.prototype.hasOwnProperty.call(MARKET_FIX_LIST_173, h)) continue;
+    if (!byHandle.has(h)) byHandle.set(h, []);
+    byHandle.get(h).push(u);
+  }
+  // Deliberate later moves, belt and braces: the
+  // market_changed events POST /me/market logs (the record's
+  // own marketChangedAt stamp is checked per record below).
+  const changedIds = new Set();
+  let eventsReadable = true;
+  try {
+    const evKeys = await store.listKeys("event:");
+    for (const k of evKeys) {
+      const ev = await store.get(k);
+      if (ev && ev.type === "market_changed" && ev.subjectId) changedIds.add(String(ev.subjectId));
+    }
+  } catch (e) { eventsReadable = false; }
+  const diag = {
+    at: nowIso(),
+    rule: "marketfix173-v1: a creator record whose handle is one of the 88 emailed Raleigh / Dallas-Fort Worth claim handles AND whose stored market is Virginia Beach moves to the market its invite named (Raleigh or Dallas); a record with a post-registration market change is reported, never moved; handles not on the list are never touched",
+    listed: Object.keys(MARKET_FIX_LIST_173).length,
+    accountsFound: 0,
+    moved: 0,
+    movedTo: { Raleigh: 0, Dallas: 0 },
+    alreadyRight: 0,
+    deliberateMove: 0,
+    ambiguous: 0,
+    noAccount: 0,
+    eventsReadable,
+    records: [],
+  };
+  for (const [handle, target] of Object.entries(MARKET_FIX_LIST_173)) {
+    const matches = byHandle.get(handle) || [];
+    if (!matches.length) { diag.noAccount += 1; continue; }
+    diag.accountsFound += matches.length;
+    if (matches.length > 1) {
+      diag.ambiguous += 1;
+      diag.records.push({ handle, target, found: matches.length, action: "ambiguous", note: "more than one creator record carries this handle — the loader never guesses, nothing moved" });
+      continue;
+    }
+    const u = matches[0];
+    const rec = {
+      handle, target,
+      id: u.id,
+      emailDomain: emailDomain169(u.email),
+      status: u.status || null,
+      marketBefore: u.market || null,
+      marketAfter: null,
+      action: "none",
+      note: null,
+    };
+    diag.records.push(rec);
+    if (u.market !== MARKET_FIX_FROM_173) {
+      rec.action = "already_right";
+      rec.note = `stored market is ${u.market || "(none)"}, not the broken-claim default — left exactly as it stands`;
+      diag.alreadyRight += 1;
+      continue;
+    }
+    if (u.marketChangedAt || changedIds.has(String(u.id))) {
+      rec.action = "deliberate_move";
+      rec.note = "record carries a post-registration market change (POST /me/market) — a deliberate later choice, reported and never overridden";
+      diag.deliberateMove += 1;
+      continue;
+    }
+    u.market = target;
+    u.updatedAt = nowIso();
+    await store.set(`user:${u.id}`, u);
+    rec.action = "moved";
+    rec.marketAfter = target;
+    rec.note = "filed under Virginia Beach by the broken claim link; re-filed to the market its invite named; city + status untouched";
+    diag.moved += 1;
+    diag.movedTo[target] = (diag.movedTo[target] || 0) + 1;
+    await logEvent({ type: "market_refiled_173", actorId: null, actorRole: "system", subjectId: u.id, market: target, data: { handle, from: MARKET_FIX_FROM_173, to: target, source: "claim-link market fix (Build -173): the emailed invite named this market; the pre-fix claim parser dropped it and the claim defaulted to Virginia Beach", build: 173 } });
+  }
+  await store.set(MARKET_FIX_DIAG_KEY_173, diag);
+  await store.set(MARKET_FIX_KEY_173, { done: true, at: nowIso(), moved: diag.moved, accountsFound: diag.accountsFound, alreadyRight: diag.alreadyRight, deliberateMove: diag.deliberateMove, ambiguous: diag.ambiguous, noAccount: diag.noAccount });
+  marketFixDone173 = true;
 }
 
 // ---------- admin broadcasts (Build -152, reworked -153) ----------
@@ -23463,6 +23621,11 @@ async function route(event) {
     // count (@chicagofoodking's Instagram count), claimed-flag
     // guarded, best-effort like every loader here.
     (async () => { try { await maybeFixMin172(); } catch (e) { /* count fix is best-effort on the request path */ } })(),
+    // Build -173: one-time re-file of the Raleigh / Dallas-Fort
+    // Worth claim cohort the broken claim link filed under
+    // Virginia Beach, claimed-flag guarded, best-effort like
+    // every loader here.
+    (async () => { try { await maybeFixMarkets173(); } catch (e) { /* market re-file is best-effort on the request path */ } })(),
     // One-time profileComplete backfill, claimed-flag guarded.
     (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
     // One-time Build -61 public-page backfill, claimed-flag guarded.
