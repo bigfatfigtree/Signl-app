@@ -7940,6 +7940,9 @@ function sigCreatorCardHtml(c, ti, ci) {
   // why-line replaces the fit line: one why-line per card,
   // never two stacked.
   const match = c.match && typeof c.match.score === "number" ? c.match : null;
+  // Build -175: Maggie's cards carry the same two-number reading
+  // as Find — the absolute local count big, the local % under it.
+  const people = peopleHereBits(c);
   const why = !match && c.fit && c.fit.reasons && c.fit.reasons.length ? c.fit.reasons[0] : "";
   const saved = !!c.isFavorite;
   return `<div class="sig-ccard"${c.userId ? ` data-sigprofile="${esc(c.userId)}"` : ""}>
@@ -7951,8 +7954,8 @@ function sigCreatorCardHtml(c, ti, ci) {
       </div>
       ${c.userId ? `<span class="sig-ccard-view">${ST("View profile", "Ver perfil")}</span>` : ""}
     </div>
-    <div class="sig-ccard-local">${pct === null ? `<span class="sig-ccard-nopct">${ST("Local audience not reported yet", "Audiencia local aún no reportada")}</span>` : `${pct}% <span>${ST("local audience", "audiencia local")}</span>`}</div>
-    ${pct !== null && Number(c.totalAudience) > 0 ? `<div class="sig-ccard-sub">${ST(`about ${fmtFull(Math.round((pct / 100) * Number(c.totalAudience)))} of their followers live in ${marketDisplayName(cardLocalMarket(c) || c.market || "")}`, `unas ${fmtFull(Math.round((pct / 100) * Number(c.totalAudience)))} de sus seguidoras viven en ${marketDisplayName(cardLocalMarket(c) || c.market || "")}`)}</div>` : ""}
+    <div class="sig-ccard-local">${pct === null ? `<span class="sig-ccard-nopct">${ST("Local audience not reported yet", "Audiencia local aún no reportada")}</span>` : people ? `${fmtFull(people.count)} <span>${ST(people.words, people.extrapolated ? "personas potenciales aquí" : "personas aquí")}</span>` : `${pct}% <span>${ST("local audience", "audiencia local")}</span>`}</div>
+    ${people ? `<div class="sig-ccard-sub">${ST(`${people.pct}% of their followers live in ${marketDisplayName(cardLocalMarket(c) || c.market || "")}`, `el ${people.pct}% de sus seguidoras vive en ${marketDisplayName(cardLocalMarket(c) || c.market || "")}`)}</div>` : ""}
     <div class="sig-ccard-meta">${fmtNum(c.totalAudience || 0)} ${ST("total followers", "seguidores en total")}${cats ? ` · ${esc(cats)}` : ""} · ${p.paidRate ? `$${fmtPrice(p.paidRate)} ${ST("paid rate", "tarifa pagada")}` : ST("comp visits", "visitas de cortesía")}</div>
     ${photos.length > 1 ? `<div class="sig-ccard-thumbs">${photos.slice(1, 3).map((src) => `<img src="${esc(src)}" alt="">`).join("")}</div>` : ""}
     ${match ? `<div class="sig-ccard-match"><span class="sig-ccard-match-score">Match ${match.score}</span>${match.reasons && match.reasons.length ? `<span class="sig-ccard-match-why">${esc(match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
@@ -12717,6 +12720,10 @@ function creatorCard(c, viewer, opts) {
     ? "Local audience not reported yet"
     : `${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span>`;
   const tr = c.trackRecord;
+  // Build -175: the canon local count for the cc-local block
+  // (null when no count can be formed — the block then reads
+  // exactly as it always has).
+  const localModel175 = localCountModel(c);
   const trackLine = tr
     ? (tr.isNew
       ? `<span class="badge info">New to Magpie: no visits yet</span>`
@@ -12755,7 +12762,7 @@ function creatorCard(c, viewer, opts) {
     <div class="cc-local">
       ${p.localAudiencePct === null || p.localAudiencePct === undefined
         ? `<div class="lbl">Local audience not reported yet</div>`
-        : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div>${lbarHtml119(p.localAudiencePct)}<div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
+        : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div>${lbarHtml119(p.localAudiencePct)}${localModel175.count !== null ? `<div class="cc-localcount">about ${fmtFull(localModel175.count)} ${localModel175.extrapolated ? "potential people" : "people"} here</div>` : ""}<div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
     </div>
     ${p.paidRate ? `<p class="small muted" style="margin-top:6px">Paid bookings from ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}${p.licensingFee ? ` · licenses posts at ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}` : ""}</p>` : ""}
     ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<p class="small muted" style="margin-top:6px">${p.spanishAudiencePct}% Spanish-speaking audience</p>` : ""}
@@ -21366,6 +21373,7 @@ function discActiveCount() {
   if ((state.discoverBookMode || "any") !== "any") n++;
   if ((state.discoverRate || "any") !== "any") n++;
   if (state.discoverMinLocal) n++;
+  if (state.discoverMinPeople) n++;
   if (state.discoverSpanish) n++;
   if (state.discoverMusician) n++;
   if (state.discoverUniversity) n++;
@@ -21410,6 +21418,14 @@ function discMinLocalSet(v) {
   runDiscover();
   return false;
 }
+// Build -175: the minimum local-audience floor ("people here").
+// Client-side over the canon count the cards already carry, so
+// it composes with every server filter and answers instantly.
+function discMinPeopleSet(v) {
+  state.discoverMinPeople = Number(v) || 0;
+  runDiscover();
+  return false;
+}
 let discQT138 = null;
 function discQInput() {
   clearTimeout(discQT138);
@@ -21428,6 +21444,7 @@ function discClearAll() {
   state.discoverBookMode = "any";
   state.discoverRate = "any";
   state.discoverMinLocal = "";
+  state.discoverMinPeople = 0;
   state.discoverUniversity = "";
   loadDiscover();
   return false;
@@ -21768,6 +21785,18 @@ function localCountModel(c) {
 function cardLocalCount(c) {
   return localCountModel(c).count;
 }
+// Build -175 (Jeff): the two-number reading every business-facing
+// surface shares — the absolute local count in plain words
+// ("240,000 people here") with the local % beside it ("20%
+// local"). The honesty label rides along: while any part of the
+// count is an estimate the words say "potential people here",
+// the same canon the profile hero has always used for neighbors.
+function peopleHereBits(c) {
+  const pct = cardLocalPct(c);
+  const model = localCountModel(c);
+  if (pct === null || model.count === null) return null;
+  return { pct, count: model.count, extrapolated: model.extrapolated, words: model.extrapolated ? "potential people here" : "people here" };
+}
 function shelfPriceLine(c) {
   const p = (c && c.profile) || {};
   const sym = currencySymbolForMarket(c && c.market);
@@ -21815,8 +21844,17 @@ function shelfTileHtml(c, opts) {
   const topMatch = !!(opts && opts.topMatch);
   const p = c.profile || {};
   const pct = cardLocalPct(c);
-  const count = cardLocalCount(c);
   const market = cardLocalMarket(c);
+  // Build -175: the tile leads with the absolute local count, big,
+  // in plain words, with the local % beside it — a business shops
+  // people, not percentages. The % alone (the pre--175 block) still
+  // renders when a % exists but no count can be formed.
+  const bits = peopleHereBits(c);
+  const localBlock = pct === null
+    ? `<div class="shelf-local-none">Local audience not reported yet</div>`
+    : bits
+      ? `<div class="shelf-local"><span class="shelf-count">${fmtFull(bits.count)}</span><span class="shelf-pctside">${bits.pct}% local</span></div><div class="shelf-local-tx">${bits.words} in ${esc(marketDisplayName(market))}</div><div class="shelf-bar"><span style="width:${Math.max(0, Math.min(100, bits.pct))}%"></span></div>`
+      : `<div class="shelf-local"><span class="shelf-pct">${pct}%</span><span class="shelf-local-tx">of their followers live in ${esc(marketDisplayName(market))}</span></div><div class="shelf-bar"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>`;
   const price = shelfPriceLine(c);
   const cats = (p.categories || []).slice(0, 2).join(" · ");
   const place = [c.neighborhood, c.city].filter(Boolean).join(", ");
@@ -21831,7 +21869,7 @@ function shelfTileHtml(c, opts) {
     <div class="shelf-body">
       <div class="shelf-name"${tap}>${esc(c.name || "")}</div>
       <div class="shelf-meta">${esc(place || marketDisplayName(market))}${cats ? ` · ${esc(cats)}` : ""}</div>
-      ${pct === null ? `<div class="shelf-local-none">Local audience not reported yet</div>` : `<div class="shelf-local"><span class="shelf-pct">${pct}%</span><span class="shelf-local-tx">of their followers live in ${esc(marketDisplayName(market))}</span></div><div class="shelf-bar"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>${count !== null ? `<div class="shelf-localcount">about ${fmtFull(count)} local followers</div>` : ""}`}
+      ${localBlock}
       <div class="shelf-price-row"><div class="shelf-price">${esc(price.main)}${price.sub ? ` <span>${esc(price.sub)}</span>` : ""}</div>${acceptanceHtml(c)}</div>
       ${preview && !c.trackRecord ? "" : `<div class="shelf-proof">${esc(shelfProofLine(c))}</div>`}
       ${c.match ? `<div class="shelf-match"><span class="shelf-match-score">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? `<span class="shelf-match-why" title="${esc(c.match.reasons.join(" · "))}">${esc(c.match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
@@ -21934,7 +21972,7 @@ function pdpLocalHeroHtml(c) {
   const first = (c.name || "their").trim().split(" ")[0] || "their";
   return `<div class="pdp-hero">
     <div class="pdp-hero-pct">${pct}%</div>
-    <div class="pdp-hero-tx">of ${esc(first)}&rsquo;s followers live in ${esc(marketDisplayName(market))}.${count !== null ? `<br><strong>That&rsquo;s about ${fmtFull(count)} ${model.extrapolated ? "potential neighbors" : "neighbors"}</strong> who could actually walk through your door, not strangers three states away.` : ""}</div>
+    <div class="pdp-hero-tx">of ${esc(first)}&rsquo;s followers live in ${esc(marketDisplayName(market))}.${count !== null ? `<br><strong>That&rsquo;s about <span class="pdp-hero-countnum">${fmtFull(count)}</span> ${model.extrapolated ? "potential neighbors" : "neighbors"}</strong> who could actually walk through your door, not strangers three states away.` : ""}</div>
     <div><div class="pdp-hero-src">${esc(p.localAudienceSource || "Self-reported")} · ${fmtNum(totalAudienceOf(c))} followers in total</div>
     <p class="pdp-smallprint" style="margin-top:2px">${LOCAL_BASIS_LINE}</p></div>
   </div>`;
@@ -22000,7 +22038,7 @@ function similarCreatorsHtml(c) {
   // Build -140 (Item B): this block renders at the very bottom
   // of the profile, below the booking box, behind a divider —
   // the pdp-similar-bottom class carries that treatment.
-  return `<div class="pdp-block pdp-similar-bottom"><h4>Similar creators nearby</h4><div class="pdp-similar">${ranked.map((x) => { const pct = cardLocalPct(x); return `<button type="button" class="pdp-sim" onclick="openCreatorProfile('${x.userId}')">${avatarHtml(x, "pdp-sim-img")}<span class="pdp-sim-name">${esc(x.name || "")}</span><span class="pdp-sim-meta">${pct === null ? "Local % not reported" : `${pct}% local`} · ${esc(shelfPriceLine(x).main)}</span></button>`; }).join("")}</div></div>`;
+  return `<div class="pdp-block pdp-similar-bottom"><h4>Similar creators nearby</h4><div class="pdp-similar">${ranked.map((x) => { const pct = cardLocalPct(x); const n175 = cardLocalCount(x); return `<button type="button" class="pdp-sim" onclick="openCreatorProfile('${x.userId}')">${avatarHtml(x, "pdp-sim-img")}<span class="pdp-sim-name">${esc(x.name || "")}</span><span class="pdp-sim-meta">${pct === null ? "Local % not reported" : `${n175 !== null ? `${fmtFull(n175)} people here · ` : ""}${pct}% local`} · ${esc(shelfPriceLine(x).main)}</span></button>`; }).join("")}</div></div>`;
 }
 // Build -140 (Item F): the clickable channels list, lower on
 // the profile — every platform the creator entered, as a real
@@ -22574,7 +22612,7 @@ async function loadDiscover() {
         <div class="df-label">Where &amp; sort</div>
         <div class="filters disc-top">
           <div><label>Market</label><select id="f-market-m" onchange="var m=document.getElementById('f-market'); if(m){m.value=this.value;} runDiscover()">${marketOptions(u.market)}</select></div>
-          <div><label>Sort by</label><select id="f-sort-m" onchange="var m=document.getElementById('f-sort'); if(m){m.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></div>
+          <div><label>Sort by</label><select id="f-sort-m" onchange="var m=document.getElementById('f-sort'); if(m){m.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></div>
         </div>
       </div>
       <div class="df-group">
@@ -22614,6 +22652,10 @@ async function loadDiscover() {
         <input type="hidden" id="f-minlocal" value="${esc(String(state.discoverMinLocal || ""))}">
       </div>
       <div class="df-group">
+        <div class="df-label">How many people they reach here</div>
+        ${[["", "Any number"], ["1000", "1,000+ people here"], ["10000", "10,000+ people here"], ["50000", "50,000+ people here"], ["100000", "100,000+ people here"]].map(([v, l]) => `<label class="rail-row"><input type="radio" name="disc-minpeople" value="${v}" ${String(state.discoverMinPeople || "") === v ? "checked" : ""} onchange="return discMinPeopleSet('${v}')"><span class="rr-tx">${esc(l)}</span></label>`).join("")}
+      </div>
+      <div class="df-group">
         <div class="df-label">Tier (their audience size)</div>
         <div class="filters disc-top"><div><select id="f-tier" onchange="runDiscover()"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div></div>
       </div>
@@ -22634,7 +22676,7 @@ async function loadDiscover() {
     <div class="shop-searchrow">
       <span class="sr-q"><input type="search" id="f-q" placeholder="Search name or handle" oninput="discQInput(this)"></span>
       <span class="sr-sel"><select id="f-market" aria-label="Market" onchange="var m=document.getElementById('f-market-m'); if(m){m.value=this.value;} runDiscover()">${marketOptions(u.market)}</select></span>
-      <span class="sr-sel"><select id="f-sort" aria-label="Sort by" onchange="var m=document.getElementById('f-sort-m'); if(m){m.value=this.value;} runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></span>
+      <span class="sr-sel"><select id="f-sort" aria-label="Sort by" onchange="var m=document.getElementById('f-sort-m'); if(m){m.value=this.value;} runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></span>
       <button type="button" class="btn small-btn sr-filters" id="disc-rail-btn" onclick="return shopRailToggle('disc-rail')">Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}</button>
     </div>
     <div id="lineup-slot"></div>
@@ -22850,9 +22892,28 @@ async function runDiscover() {
     syncDiscoverCatChips();
     paintDiscCatBoxes();
     syncUniversityOptions(data.universities);
+    // Build -175: the "people here" floor, applied over the canon
+    // count the returned cards already carry (no extra fetch), so
+    // it composes with every server filter in both Find modes. A
+    // roster the floor empties gets the honest filters empty
+    // state below — never the roster-building one.
+    const minPeople175 = Number(state.discoverMinPeople) || 0;
+    let peopleFilteredEmpty = false;
+    if (minPeople175 > 0) {
+      const rawCount175 = data.creators.length;
+      state.discover = data.creators.filter((c) => { const n = cardLocalCount(c); return n !== null && n >= minPeople175; });
+      peopleFilteredEmpty = rawCount175 > 0 && !state.discover.length;
+    }
     if (!data.creators.length) {
       setDiscoverCount(0);
       el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>Magpie is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
+      return;
+    }
+    if (peopleFilteredEmpty) {
+      setDiscoverCount(0);
+      const tg0 = document.getElementById("discover-toggle");
+      if (tg0) tg0.innerHTML = discoverModeToggleHtml();
+      el.innerHTML = `<div class="stk-end"><h3>No creators match those filters</h3><p class="small muted">Nobody in this market reaches that many local people yet. Lower the "people here" floor, or clear the filters and start again.</p><div class="stk-end-actions"><button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
       return;
     }
     const tg = document.getElementById("discover-toggle");
@@ -22943,11 +23004,26 @@ function renderDiscoverResults() {
     // Build -74: the deck runs in canon rank order, highest
     // local % first (unreported local % last), whatever order
     // the server returned. The grid keeps its own order.
-    const ranked = [...all].sort((a, b) => {
-      const pa = (a.profile || {}).localAudiencePct;
-      const pb = (b.profile || {}).localAudiencePct;
-      return (pb === null || pb === undefined ? -1 : pb) - (pa === null || pa === undefined ? -1 : pa);
-    });
+    // Build -175: under the "Most people here" sort the deck
+    // ranks by the absolute local count instead (ties toward
+    // the higher local share); every other sort keeps the
+    // canon %-led deck order.
+    const sortSel175 = document.getElementById("f-sort");
+    const byPeople175 = !!(sortSel175 && sortSel175.value === "people");
+    const ranked = [...all].sort(byPeople175
+      ? (a, b) => {
+          const pa = cardLocalCount(a);
+          const pb = cardLocalCount(b);
+          const va = pa === null ? -1 : pa;
+          const vb = pb === null ? -1 : pb;
+          if (vb !== va) return vb - va;
+          return (cardLocalPct(b) ?? -1) - (cardLocalPct(a) ?? -1);
+        }
+      : (a, b) => {
+          const pa = (a.profile || {}).localAudiencePct;
+          const pb = (b.profile || {}).localAudiencePct;
+          return (pb === null || pb === undefined ? -1 : pb) - (pa === null || pa === undefined ? -1 : pa);
+        });
     stackState.discover = startDeck("discover", ranked, {
       cardHtml: (c) => discoverStackCard(c),
       goLabel: "Invite",
@@ -22985,6 +23061,11 @@ function discoverListHtml(list) {
 }
 function discoverStackCard(c) {
   const p = c.profile || {};
+  // Build -175: the deck card leads with the absolute local
+  // count, big, with the local % beside it — the same two-number
+  // reading as the shelf tile. No countable audience falls back
+  // to the % alone, exactly as the card read before.
+  const bits = peopleHereBits(c);
   const initial = esc((c.name || "").trim().charAt(0).toUpperCase() || "S");
   const cats = (p.categories || []).slice(0, 3);
   const extra = (p.categories || []).length - cats.length;
@@ -23001,7 +23082,9 @@ function discoverStackCard(c) {
         <div class="dcard-handle">@${esc(p.handle || "")}</div>
         <div class="dcard-local">${p.localAudiencePct === null || p.localAudiencePct === undefined
           ? `<span class="dcard-local-na">Local reach not reported yet</span>`
-          : `<span class="dcard-pct">${p.localAudiencePct}%</span><span class="dcard-local-lbl">local reach</span>`}</div>
+          : bits
+            ? `<span class="dcard-pct">${fmtFull(bits.count)}</span><span class="dcard-local-lbl">${bits.words} · ${bits.pct}% local</span>`
+            : `<span class="dcard-pct">${p.localAudiencePct}%</span><span class="dcard-local-lbl">local reach</span>`}</div>
         <div class="dcard-rate">${rateLine}</div>
       </div>
     </div>
@@ -23024,6 +23107,11 @@ function discoverEndHtml(passed, total) {
 }
 function discoverClearFilters() {
   ["f-neighborhood", "f-q", "f-fmin", "f-fmax", "f-minlocal"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+  // Build -175: the people-here floor clears with everything else.
+  state.discoverMinPeople = 0;
+  document.querySelectorAll('input[name="disc-minpeople"]').forEach((r) => { r.checked = r.value === ""; });
+  document.querySelectorAll('input[name="disc-minlocal"]').forEach((r) => { r.checked = r.value === ""; });
+  state.discoverMinLocal = "";
   ["f-tier", "f-comp"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
   const sortEl = document.getElementById("f-sort");
   if (sortEl) sortEl.value = "local";
@@ -31861,7 +31949,8 @@ function previewDiscoverHtml() {
     <div><label>Total audience min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
     <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
     <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
-    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit</option></select></div>
+    <div><label>Min people here (their local audience)</label><select id="pvf-minpeople"><option value="">Any number</option><option value="1000">1,000+ people here</option><option value="10000">10,000+ people here</option><option value="50000">50,000+ people here</option><option value="100000">100,000+ people here</option></select></div>
+    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit</option><option value="people">Most people here</option></select></div>
     <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
     <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
   </div>
@@ -31930,6 +32019,15 @@ async function runPreviewDiscover() {
   try {
     const data = await api("GET", "/admin/preview/discover?" + params.toString());
     state.preview.creators = data.creators || [];
+    // Build -175 twin: the "people here" floor, client-side over
+    // the canon count exactly as the live Find applies it.
+    const pvMinPeople = Number(val("pvf-minpeople")) || 0;
+    state.preview.peopleFilteredEmpty = false;
+    if (pvMinPeople > 0) {
+      const pvRaw = state.preview.creators;
+      state.preview.creators = pvRaw.filter((c) => { const n = cardLocalCount(c); return n !== null && n >= pvMinPeople; });
+      state.preview.peopleFilteredEmpty = pvRaw.length > 0 && !state.preview.creators.length;
+    }
     // Facet sync, twin of syncUniversityOptions for the preview.
     const pvSel = document.getElementById("pvf-university");
     if (pvSel) {
@@ -31950,6 +32048,12 @@ function renderPreviewResults() {
   if (!el) return;
   const list = state.preview.creators || [];
   if (!list.length) {
+    // Build -175: a roster emptied by the people-here floor gets
+    // the live filters empty state, not the roster-building one.
+    if (state.preview.peopleFilteredEmpty) {
+      el.innerHTML = `<div class="stk-end"><h3>No creators match those filters</h3><p class="small muted">Nobody in this market reaches that many local people yet. Lower the "people here" floor, or clear the filters and search again.</p></div>`;
+      return;
+    }
     // The live Discover empty state, verbatim (V4.2): the
     // preview shows what a business actually sees on no match,
     // not a panel describing it.

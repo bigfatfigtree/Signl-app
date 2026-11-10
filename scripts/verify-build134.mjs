@@ -48,7 +48,7 @@ check("nav: both creator tab whitelists admit Find Offers", appJs.includes('cons
 check("nav: both creator shells dispatch Find Offers to its loader", (appJs.match(/loadFindOffers\(\)/g) || []).length >= 3 && appJs.includes('id="cr-findoffers"'));
 
 // The Shelf.
-check("shelf: the tile component exists with the local hero + spelled-out count (highlighted chip under the % block, Build -136)", appJs.includes("function shelfTileHtml(c, opts)") && appJs.includes("of their followers live in") && appJs.includes('class="shelf-localcount"') && appJs.includes("local followers</div>"));
+check("shelf: the tile component exists with the local block + spelled-out count (Build -175: the absolute count leads big, % local beside it; the % block remains the no-count fallback)", appJs.includes("function shelfTileHtml(c, opts)") && appJs.includes("of their followers live in") && appJs.includes('class="shelf-count"') && appJs.includes("${bits.words} in"));
 check("shelf: Discover defaults to the Shelf view", appJs.includes('state.discoverMode || "shelf"') && appJs.includes("setDiscoverMode('shelf')"));
 check("shelf: booking-kind + rate filters are wired", appJs.includes("function discoverBookModeSet(mode)") && appJs.includes("function discoverRateSet(v)") && appJs.includes("function shelfClientFilter(list)"));
 check("shelf: live result count renders", appJs.includes('id="discover-count"') && appJs.includes("function setDiscoverCount(n)"));

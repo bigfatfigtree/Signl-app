@@ -50,8 +50,8 @@ check("card switch: one component renders BOTH acceptances as switches (comps + 
 const tile = slice(appJs, "function shelfTileHtml", 4200);
 check("tile: the acceptance switches ride the price line (price row carries price + switches together)",
   tile.includes('class="shelf-price-row"') && tile.includes("${acceptanceHtml(c)}"));
-check("tile: the local count is a highlighted chip under the % block, not caption text",
-  tile.includes('class="shelf-localcount"') && tile.includes("local followers</div>") && !tile.includes("<br><strong>about"));
+check("tile: the local count leads the local block, big (Build -175 supersedes the -136 chip: shelf-count + shelf-pctside, % local beside the count)",
+  tile.includes('class="shelf-count"') && tile.includes('class="shelf-pctside"') && tile.includes("${bits.words} in") && !tile.includes("<br><strong>about"));
 const tray = slice(appJs, "function shelfTrayHtml", 2800);
 check("tray: the local count carries the same highlighted chip treatment",
   tray.includes('class="shelf-tray-count"') && tray.includes("local followers</div>"));

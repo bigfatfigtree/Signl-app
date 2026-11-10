@@ -799,6 +799,11 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .shelf-meta { font-size: .85rem; color: var(--ink2); }
 .shelf-local { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
 .shelf-pct { font-size: 2.3rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+/* Build -175: the tile leads with the absolute local count —
+   the same 2.3rem weight the % used to carry — with the local
+   % beside it and the plain-words line under. */
+.shelf-count { font-size: 2.3rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+.shelf-pctside { font-size: 1.02rem; font-weight: 800; color: var(--ink); }
 .shelf-local-tx { font-size: .85rem; color: var(--ink2); line-height: 1.35; }
 .shelf-local-tx strong { color: var(--ink); }
 .shelf-local-none { font-size: .9rem; color: var(--ink2); margin-top: 4px; }
@@ -1017,6 +1022,9 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
 .pdp-hero { display: flex; gap: 16px; align-items: center; background: var(--paper2); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 14px 0 4px; }
 .pdp-hero-pct { font-size: 3.6rem; font-weight: 800; line-height: .95; letter-spacing: -.03em; color: var(--ink); }
 .pdp-hero-tx { font-size: .98rem; line-height: 1.45; color: var(--ink); }
+/* Build -175: the hero's neighbor count renders big — the
+   absolute local audience is the number a business shops. */
+.pdp-hero-countnum { font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; }
 .pdp-hero-src { font-size: .78rem; color: var(--ink2); margin-top: 4px; }
 .pdp-hero-none .lbl { color: var(--ink2); }
 .pdp-block { margin: 18px 0 0; }

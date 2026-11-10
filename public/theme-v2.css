@@ -513,6 +513,8 @@ button.earn-row {
   color: var(--mint-deep);
 }
 .cc-local .lbl { font-size: .82rem; color: var(--ink2); margin-top: 5px; }
+/* Build -175: the absolute local count inside the local block. */
+.cc-localcount { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.15rem; color: var(--ink); margin-top: 7px; }
 .cc-local .src {
   font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
   color: var(--ink3); margin-top: 3px;

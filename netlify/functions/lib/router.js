@@ -9669,6 +9669,31 @@ function normalizeSourceBrief(raw) {
   return Object.values(out).some((v) => v !== null) ? out : null;
 }
 
+// Build -175: the canon local PEOPLE count for a discover card —
+// the absolute number of local followers, computed from fields the
+// card already carries (no new reads). For a card built in another
+// market it is that market's share of the stacked total; otherwise
+// it is the per-platform canon model (localRateModel: each platform
+// at its own reported rate, the rest at the follower-weighted
+// headline rate), falling back to the headline share of the total
+// for a legacy record with no per-platform rates. This mirrors the
+// client's localCountModel exactly, so the server ranking and the
+// number rendered on the card can never disagree. Display and
+// ranking only: the count is never fed into the match score.
+function cardLocalPeople(card) {
+  const p = (card && card.profile) || {};
+  const total = Number(card && card.totalAudience) || 0;
+  if (!(total > 0)) return null;
+  if (card.marketContext && card.marketContext.pct !== null && card.marketContext.pct !== undefined) {
+    return Math.round((Number(card.marketContext.pct) / 100) * total);
+  }
+  const pct = p.localAudiencePct === null || p.localAudiencePct === undefined ? null : Number(p.localAudiencePct);
+  if (pct === null || !Number.isFinite(pct)) return null;
+  const m = localRateModel(p);
+  if (m && m.neighborCount !== null && m.neighborCount !== undefined) return m.neighborCount;
+  return Math.round((pct / 100) * total);
+}
+
 // The discovery query, shared verbatim by the real business surface
 // and the admin Business Preview so both answer identically. `viewer`
 // only drives the favorite flag and the default market; every filter
@@ -9926,6 +9951,25 @@ async function discoverCards(query, viewer, opts) {
     out.sort((a, b) => ((b.pointsTotal || 0) - (a.pointsTotal || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
   } else if (query.sort === "fit") {
     out.sort((a, b) => ((b.fit ? b.fit.score : -1) - (a.fit ? a.fit.score : -1)) || (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
+  } else if (query.sort === "people") {
+    // Build -175: "Most people here" — the absolute local-audience
+    // count leads, biggest first, so a huge-but-diffuse audience
+    // (1.2M followers at 20% local = 240,000 people here) is no
+    // longer buried under a tiny-but-dense one. A creator with no
+    // countable local audience sinks; ties break toward the higher
+    // local share, then founding order. The default order, the
+    // match score, and every other sort are untouched.
+    out.sort((a, b) => {
+      const pa = cardLocalPeople(a);
+      const pb = cardLocalPeople(b);
+      const va = pa === null ? -1 : pa;
+      const vb = pb === null ? -1 : pb;
+      if (vb !== va) return vb - va;
+      const sa = Number((a.profile || {}).localAudiencePct) || 0;
+      const sb = Number((b.profile || {}).localAudiencePct) || 0;
+      if (sb !== sa) return sb - sa;
+      return a.createdAt < b.createdAt ? -1 : 1;
+    });
   } else if (query.sort === "match" && matchBrief) {
     // Best match: the brief's score leads; equal scores break
     // toward the Instagram-verified share in the browsed market,
@@ -15953,7 +15997,7 @@ function buildMaggieTools(user, facts) {
   if (user.role === "business") {
     tools.push({
       name: "find_creators",
-      description: "Find creators for this business and rank them. Give a category and/or a budget (or one of the business's own campaign ids) and the match engine scores every card: the ranked cards are shown to the business under your answer, with Match scores and reasons. Without a category or budget, creators rank by how local their audience is. Always call this when the business asks you to find creators.",
+      description: "Find creators for this business and rank them. Give a category and/or a budget (or one of the business's own campaign ids) and the match engine scores every card: the ranked cards are shown to the business under your answer, with Match scores and reasons. Without a category or budget, creators rank by how local their audience is. When the business asks who reaches the most people, who has the biggest local audience, or similar (in their market or a named one), set sort to \"people\": creators then rank by how many local people they reach, biggest first, and each returned creator carries localPeople, that absolute local count. Always call this when the business asks you to find creators.",
       parameters: {
         type: "object",
         properties: {
@@ -15961,6 +16005,7 @@ function buildMaggieTools(user, facts) {
           category: { type: "string", description: "Creator category, e.g. Food & Drink" },
           budget: { type: "number", description: "Budget in dollars for the brief, e.g. 200" },
           campaignId: { type: "string", description: "One of the business's own offer/campaign ids to match against" },
+          sort: { type: "string", description: "Set to \"people\" when the business asks who reaches the most people / has the biggest local audience; creators rank by their absolute local follower count, biggest first" },
           limit: { type: "number", description: "How many top cards to show (default 5, max 8)" },
         },
       },
@@ -15971,7 +16016,13 @@ function buildMaggieTools(user, facts) {
         if (a.category) query.category = String(a.category);
         if (a.budget) query.budget = String(a.budget);
         if (a.campaignId) query.campaignId = String(a.campaignId);
-        if (query.category || query.budget || query.campaignId) query.sort = "match";
+        // Build -175: an explicit reach question outranks the brief
+        // ranking — the business asked for the biggest local
+        // audiences, so the count leads and the match score (when a
+        // brief also resolved) rides along as information only.
+        const byPeople = a.sort === "people";
+        if (byPeople) query.sort = "people";
+        else if (query.category || query.budget || query.campaignId) query.sort = "match";
         const disc = await discoverCards(query, user);
         const lim = Math.min(Math.max(parseInt(a.limit, 10) || 5, 1), 8);
         out.cards = (disc.creators || []).slice(0, lim);
@@ -15979,10 +16030,12 @@ function buildMaggieTools(user, facts) {
         return {
           count: (disc.creators || []).length,
           shown: out.cards.length,
+          rankedBy: byPeople ? "people" : (out.matchBrief ? "match" : "local"),
           matchBrief: out.matchBrief,
           top: out.cards.map((c) => ({
             name: c.name, handle: (c.profile || {}).handle || null, market: c.market || null,
             localPct: (c.profile || {}).localAudiencePct == null ? null : Number(c.profile.localAudiencePct),
+            localPeople: cardLocalPeople(c),
             totalAudience: c.totalAudience || 0, paidRate: (c.profile || {}).paidRate || null,
             matchScore: c.matchScore != null ? c.matchScore : (c.match ? c.match.score : null),
             matchReasons: c.matchReasons || (c.match ? c.match.reasons : []),
