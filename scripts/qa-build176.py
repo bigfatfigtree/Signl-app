@@ -121,6 +121,25 @@ try:
                        allChecked: !!all && all.checked, allInd: !!all && all.indeterminate };
             }""")
 
+        def cat_layout(page):
+            # Revision (Jeff, 2026-11-10 PM): the picker must be
+            # COMPACT (2-column short rows at phone width) and carry
+            # NO green tint — the checked state rides on the box,
+            # the bold dark label and the dark border alone.
+            return page.evaluate("""() => {
+              const wrap = document.getElementById('c85-cats');
+              const rows = [...wrap.querySelectorAll('.catpick-row')];
+              const tops = [...new Set(rows.map((r) => Math.round(r.getBoundingClientRect().top)))].sort((a, b) => a - b);
+              const checked = rows.find((r) => r.querySelector('input').checked);
+              const trunc = rows.map((r) => r.querySelector('span'))
+                .filter((s) => s && s.scrollWidth > s.clientWidth + 1)
+                .map((s) => s.innerText.trim());
+              return { height: Math.round(wrap.getBoundingClientRect().height),
+                       bands: tops.length,
+                       checkedBg: checked ? getComputedStyle(checked).backgroundColor : '',
+                       truncated: trunc };
+            }""")
+
         # ---------- phone context: the full claim walk ----------
         ctx = b.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, device_scale_factor=3)
         page = ctx.new_page()
@@ -142,9 +161,15 @@ try:
         cs = cat_state(page)
         check("facts (a): 12 category boxes, all checked, Select all checked",
               cs["total"] == 12 and cs["checked"] == 12 and cs["allChecked"] and not cs["allInd"], cs)
+        lay = cat_layout(page)
+        check("facts (a): picker compact (7 row bands / 2-col grid at 390px, <=400px tall; was 13 bands / 720px)",
+              lay["bands"] == 7 and lay["height"] <= 400, lay)
+        check("facts (a): NO green tint on checked rows (white background)",
+              lay["checkedBg"] in ("rgb(255, 255, 255)", "rgba(0, 0, 0, 0)"), lay)
+        check("facts (a): no category label truncated", lay["truncated"] == [], lay)
         page.locator("#c85-cats").scroll_into_view_if_needed()
         page.wait_for_timeout(300)
-        page.screenshot(path=os.path.join(OUT, "02-cats-all-checked-390.png"))
+        page.screenshot(path=os.path.join(OUT, "02-cats-all-checked-390-v2.png"))
         f = facts(page); check("facts (a): no overflow, images loaded", not f["overflow"] and f["imgBroken"] == 0, f)
 
         # (b) untick one category
@@ -153,7 +178,7 @@ try:
         cs = cat_state(page)
         check("facts (b): one unticked -> 11 checked, Select all indeterminate",
               cs["checked"] == 11 and not cs["allChecked"] and cs["allInd"], cs)
-        page.screenshot(path=os.path.join(OUT, "03-cats-one-unticked-390.png"))
+        page.screenshot(path=os.path.join(OUT, "03-cats-one-unticked-390-v2.png"))
 
         # re-tick it -> Select all restores to checked
         page.evaluate("""() => { const b = document.querySelector('#c85-cats input[data-cat="Music"]'); b.click(); }""")
@@ -167,7 +192,7 @@ try:
         page.wait_for_timeout(300)
         cs = cat_state(page)
         check("facts (c): Select all unticked -> 0 checked", cs["checked"] == 0 and not cs["allChecked"], cs)
-        page.screenshot(path=os.path.join(OUT, "04-cats-none-390.png"))
+        page.screenshot(path=os.path.join(OUT, "04-cats-none-390-v2.png"))
         # restore all for the walk, then empty again to prove the guard
         page.evaluate("() => { document.getElementById('c85-cat-all').click(); }")
         page.wait_for_timeout(200)
@@ -180,7 +205,7 @@ try:
         check("facts (c): zero-selected Continue is blocked with the pick-at-least-one warning",
               warn_vis and "Pick at least one" in t)
         check("facts (c): still on the facts screen after the guard", page.evaluate("() => !!document.getElementById('c85-cats')"))
-        page.screenshot(path=os.path.join(OUT, "05-cats-guard-390.png"))
+        page.screenshot(path=os.path.join(OUT, "05-cats-guard-390-v2.png"))
         # restore all 12 and set the stack (facts for a real claim).
         # NOTE: the facts slider is built from the hook's ROUNDED
         # local % (Math.round(8) with step 5 lands the slider on
@@ -279,7 +304,7 @@ try:
         check("facts desktop (a): 12 checked + Select all checked", cs["total"] == 12 and cs["checked"] == 12 and cs["allChecked"], cs)
         dpage.locator("#c85-cats").scroll_into_view_if_needed()
         dpage.wait_for_timeout(300)
-        dpage.screenshot(path=os.path.join(OUT, "08-cats-all-checked-1440.png"))
+        dpage.screenshot(path=os.path.join(OUT, "08-cats-all-checked-1440-v2.png"))
         f = facts(dpage); check("facts desktop: no overflow, images loaded", not f["overflow"] and f["imgBroken"] == 0, f)
         dctx.close()
 
@@ -302,7 +327,7 @@ try:
         el = jpage.locator("#c-cat-all")
         el.scroll_into_view_if_needed()
         jpage.wait_for_timeout(300)
-        jpage.screenshot(path=os.path.join(OUT, "09-joinform-cats-1440.png"))
+        jpage.screenshot(path=os.path.join(OUT, "09-joinform-cats-1440-v2.png"))
         f = facts(jpage); check("join form: no overflow, images loaded", not f["overflow"] and f["imgBroken"] == 0, f)
         jctx.close()
 
@@ -331,7 +356,7 @@ try:
         el = ppage.locator("#p-cat-all")
         el.scroll_into_view_if_needed()
         ppage.wait_for_timeout(300)
-        ppage.screenshot(path=os.path.join(OUT, "10-profileedit-cats-1440.png"))
+        ppage.screenshot(path=os.path.join(OUT, "10-profileedit-cats-1440-v2.png"))
         f = facts(ppage); check("profile edit: no overflow, images loaded", not f["overflow"] and f["imgBroken"] == 0, f)
         pctx.close()
 
