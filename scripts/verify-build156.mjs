@@ -108,8 +108,13 @@ console.log("== A: source pins ==");
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   check("stamp 2026.11.09-156 on both asset URLs", (indexHtml.match(/2026\.11\.09-156/g) || []).length === 2, `count=${(indexHtml.match(/2026\.11\.09-156/g) || []).length}`);
   check("router carries the claim-hook route + checked set + claim-complete", routerJs.includes('"claim-hook"') && routerJs.includes("checkedNeighborSet") && routerJs.includes("claim-complete") && routerJs.includes("neighbor_stack_added"), "");
-  check("client carries the hook screen, spot CTA, live stack panel and card", appJs.includes("renderClaimHook") && appJs.includes("Claim my #") && appJs.includes("neighborStackAdd") && appJs.includes("neighborCardSave") && appJs.includes("Want to climb?"), "");
-  check("founding vs live labels are distinct in the client", appJs.includes("Founding rank") && appJs.includes("Live rank today"), "");
+  // Build -176 (Jeff, 2026-11-10): creators never see their rank
+  // or the checked set's size — the spot CTA is plain, the claim
+  // and panel carry no rank text, and the stack prompt no longer
+  // talks about climbing. The server payloads keep carrying the
+  // values (asserted below); only the client rendering changed.
+  check("client carries the hook screen, spot CTA, live stack panel and card", appJs.includes("renderClaimHook") && appJs.includes("Claim my spot") && appJs.includes("neighborStackAdd") && appJs.includes("neighborCardSave"), "");
+  check("client shows NO rank to creators (Build -176)", !appJs.includes("Founding rank") && !appJs.includes("Live rank today") && !appJs.includes("Claim my #") && !appJs.includes("Want to climb?"), "");
   check("bizdev show bench carries honest area framing only", bizJs.includes("areaFraming") && !/within 2 miles|under 2 miles/i.test(bizJs), "");
 }
 

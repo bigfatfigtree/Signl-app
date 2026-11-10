@@ -6416,8 +6416,11 @@ function createMomentum(data) {
 // Loads the full dataset once and returns a Momentum calculator.
 // Every Momentum read in a request goes through one of these so the
 // numbers can never disagree between surfaces.
-async function momentumContext() {
-  const [users, bookings, posts, reviews, bizReviews] = await Promise.all([allUsers(), allBookings(), allPosts(), allReviews(), allBizReviews()]);
+// Build -176: callers that already hold a fresh allUsers() load
+// (withFounding, the auth responses) pass it in, so one request
+// never pays the user: prefix fetch twice for the same data.
+async function momentumContext(preloadedUsers) {
+  const [users, bookings, posts, reviews, bizReviews] = await Promise.all([preloadedUsers || allUsers(), allBookings(), allPosts(), allReviews(), allBizReviews()]);
   return { users, momentum: createMomentum({ users, bookings, posts, reviews, bizReviews }) };
 }
 
@@ -6444,9 +6447,10 @@ function rosterBenefitsLines(user, place) {
 
 // Lightweight founding summary attached to auth responses for creators:
 // where they stand in their market and whether that market is live yet.
-async function foundingSummary(user) {
+// Build -176: an optional preloaded user list (see momentumContext).
+async function foundingSummary(user, preloadedUsers) {
   if (!user || user.role !== "creator") return null;
-  const users = await allUsers();
+  const users = preloadedUsers || await allUsers();
   const { approvedRank, pendingRank } = creatorRanks(users);
   const inMarket = users.filter((u) => u.role === "creator" && normalizeMarketName(u.market) === normalizeMarketName(user.market));
   return {
@@ -6639,7 +6643,14 @@ async function withFounding(user) {
     if (highlight) pub.business = { ...pub.business, highlight };
   }
   if (pub && pub.role === "creator") {
-    pub.founding = publicFounding(await foundingSummary(user));
+    // Build -176: ONE user: prefix load feeds all three consumers
+    // below (founding summary, public roster, Momentum). This
+    // payload is built on the register 201, every PATCH response
+    // and every dashboard boot; it used to fetch the whole user
+    // table THREE separate times per call — the largest single
+    // slice of the ~15s claim-submit wait Jeff hit on 2026-11-10.
+    const users = await allUsers();
+    pub.founding = publicFounding(await foundingSummary(user, users));
     // Two-step claim (Jeff, 2026-10-20): the creator's own payload
     // carries the completion checklist (items, points, what is
     // still missing) so the dashboard can run the finish-your-
@@ -6650,12 +6661,12 @@ async function withFounding(user) {
     // on (only markets that have crossed the threshold), so the
     // dashboard and Sig can say "you are on the public roster"
     // exactly when it is true, from the same predicate.
-    try { pub.publicRoster = publicRostersFor(await allUsers(), user); } catch (e) { pub.publicRoster = []; }
+    try { pub.publicRoster = publicRostersFor(users, user); } catch (e) { pub.publicRoster = []; }
     if (pub.creator) pub.creator = { ...pub.creator, profileComplete: pub.profileCompletion.complete };
     // Momentum rides on the creator's own profile payload in full
     // detail (total, ledger, ways-to-earn checklist) so the dashboard
     // can run the profile-completion incentive loop.
-    const { momentum } = await momentumContext();
+    const { momentum } = await momentumContext(users);
     pub.momentum = momentum.detailFor(user);
     pub.ladder = momentum.ladderFor(user);
     pub.badges = pub.ladder.badges;
@@ -11255,22 +11266,32 @@ function autoTestMatch(u) {
 // (every campaign email embeds the recipient's personal claim
 // link, so a sent recipient supports both rules), indexed for
 // exact lookup. The static half is lib/claim-evidence.js.
+// Build -176: memoized on the campaign-recipient: prefix via
+// memoAggP (the Build -170 discipline) — this prefix is one of
+// the biggest in the store and every registration used to fetch
+// all of it before responding. The two Maps it builds are only
+// ever READ by applyAutoDecision (never mutated), so a shared
+// cached pair is safe; any campaign-recipient write invalidates
+// the entry through the prefix version, the TTL is the
+// cross-container backstop.
 async function buildAutoEvidence() {
-  let recipients = [];
-  try {
-    const rows = await store.list("campaign-recipient:");
-    recipients = rows.map((r) => r.value).filter((r) => r && r.status === "sent");
-  } catch (e) { recipients = []; }
-  const sentByHandleEmail = new Map();
-  const sentByHandleMarket = new Map();
-  for (const r of recipients) {
-    const h = String(r.handle || "").replace(/^@/, "").trim().toLowerCase();
-    const em = String(r.email || "").trim().toLowerCase();
-    const mk = String(r.market || "").trim();
-    if (h && em) sentByHandleEmail.set(`${h}|${em}`, true);
-    if (h && mk) sentByHandleMarket.set(`${h}|${mk}`, true);
-  }
-  return { sentByHandleEmail, sentByHandleMarket };
+  return memoAggP("auto-evidence", ["campaign-recipient"], 60 * 1000, async () => {
+    let recipients = [];
+    try {
+      const rows = await store.list("campaign-recipient:");
+      recipients = rows.map((r) => r.value).filter((r) => r && r.status === "sent");
+    } catch (e) { recipients = []; }
+    const sentByHandleEmail = new Map();
+    const sentByHandleMarket = new Map();
+    for (const r of recipients) {
+      const h = String(r.handle || "").replace(/^@/, "").trim().toLowerCase();
+      const em = String(r.email || "").trim().toLowerCase();
+      const mk = String(r.market || "").trim();
+      if (h && em) sentByHandleEmail.set(`${h}|${em}`, true);
+      if (h && mk) sentByHandleMarket.set(`${h}|${mk}`, true);
+    }
+    return { sentByHandleEmail, sentByHandleMarket };
+  });
 }
 
 // Which rule, if any, a pending creator claim matches:
@@ -16621,6 +16642,7 @@ async function handleRegister(event) {
 
   await store.set(`user:${id}`, user);
   await store.set(`email:${email}`, { userId: id });
+  if (role === "creator") invalidateCheckedSets(); // Build -176: a new creator can join a market's checked set
   // Staff recruiter credit (Build -70): a creator who signs up
   // through a recruiter's link, or whose handle matches a prospect
   // on that recruiter's list, credits the recruiter exactly once.
@@ -18226,7 +18248,40 @@ function addProspectToCheckedSet(rec, source, byKey) {
     extrapolated: nb.extrapolated, localPct: pct, source, userId: null,
   }));
 }
-async function checkedNeighborSet(marketName) {
+// Build -176: the checked set for a market is the same for
+// every reader inside a short window, and rebuilding it costs a
+// full user: fetch + a full prospect: fetch + a full
+// outprospect: fetch — paid on EVERY claim landing, every
+// /neighbor/me read and every claim-complete. Entries are fresh
+// plain objects built per compute and consumers never mutate
+// them, so a per-market memo is safe; the 30s TTL is the
+// cross-container backstop (the same discipline as the aggMemo
+// note above: a number up to 30s old on a dashboard). The one
+// decision that must never ride a stale set is the claim-time
+// FOUNDING LOCK: the claim-complete handler passes { fresh: true }
+// whenever the creator's entry is missing from the memoized set
+// while her own record counts neighbors, so the lock is always
+// decided from a live compute (see the handler).
+const checkedSetMemo = new Map();
+const CHECKED_SET_TTL_MS = 30 * 1000;
+// Write-side invalidation: any write that can change a market's
+// checked set (a creator registering, a profile save that moves
+// a stack or a %, a claim completing) clears the memo outright,
+// so a growth event is visible on the very next read — the memo
+// only ever bridges reads between writes. The map holds one
+// entry per active market, so clearing it whole is cheap; the
+// next read pays one fresh compute, exactly the pre-176 cost.
+function invalidateCheckedSets() { checkedSetMemo.clear(); }
+async function checkedNeighborSet(marketName, opts) {
+  if (!opts || !opts.fresh) {
+    const hit = checkedSetMemo.get(marketName);
+    if (hit && Date.now() - hit.at < CHECKED_SET_TTL_MS) return hit.val;
+  }
+  const val = await computeCheckedNeighborSet(marketName);
+  checkedSetMemo.set(marketName, { at: Date.now(), val });
+  return val;
+}
+async function computeCheckedNeighborSet(marketName) {
   const byKey = new Map();
   const users = await allUsers();
   for (const u of users) {
@@ -25545,8 +25600,18 @@ async function route(event) {
     // logs the hook conversion exactly once.
     if (method === "POST" && seg[1] === "claim-complete" && seg.length === 2) {
       const b = parseBody(event);
-      const entries = await checkedNeighborSet(marketName);
-      const entry = entries.find((e) => e.userId === fresh.id);
+      let entries = await checkedNeighborSet(marketName);
+      let entry = entries.find((e) => e.userId === fresh.id);
+      // Build -176: the founding lock is a DATA outcome, so it is
+      // never decided from a memoized set that predates this
+      // creator's own facts. When her entry is missing from the
+      // set but her freshly-read record counts neighbors, force
+      // one live compute before deciding — the lock lands exactly
+      // as it would have with no memo at all.
+      if (!entry && neighborCountFor(fresh.creator || {}).count > 0) {
+        entries = await checkedNeighborSet(marketName, { fresh: true });
+        entry = entries.find((e) => e.userId === fresh.id);
+      }
       let view = neighborViewForUser(fresh, entries, entry || null);
       if (entry && !fresh.creator.foundingNeighbor) {
         const r = neighborRankOf(entries, entry);
@@ -25557,6 +25622,7 @@ async function route(event) {
         };
         fresh.updatedAt = nowIso();
         await store.set(`user:${fresh.id}`, fresh);
+        invalidateCheckedSets(); // Build -176: the lock write changes this creator's checked-set entry
         view = neighborViewForUser(fresh, entries, entry);
       }
       if (!fresh.creator.neighborConversionLoggedAt) {
@@ -26088,6 +26154,7 @@ async function route(event) {
       if (!nowComplete) c.profileCompletedAt = null;
       user.updatedAt = ts;
       await store.set(`user:${user.id}`, user);
+      invalidateCheckedSets(); // Build -176: a stack/% save can move this creator inside the checked set
       await logEvent({ type: "profile_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { changes } });
       await logAudienceUpdated(user, audienceBefore, "profile_save");
       if (nowComplete && !wasComplete) {
