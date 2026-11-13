@@ -176,14 +176,20 @@ const tonyBook = allLeads.filter((l) => l.assignedRepId === TONY.id);
 const jeffBook = allLeads.filter((l) => l.assignedRepId === JEFF_ID);
 const jeffHR = jeffBook.filter((l) => l.marketId === "hampton-roads");
 const jeffNash = jeffBook.filter((l) => l.marketId === "nashville");
-check("Tony's HR book = 32 seed + Busch Gardens", tonyBook.length === 33, `got ${tonyBook.length}`);
+// HQ load 2026-11-12 (Jeff's order): Tony gained a Nashville
+// book of his own (57, via maybeLoadTonyNashville20261112), so
+// his HR pins scope to the HR market and the Nashville market
+// totals doubled. Full assertions live in
+// scripts/verify-tonynashville20261112.mjs.
+const tonyHR = tonyBook.filter((l) => l.marketId === "hampton-roads");
+check("Tony's HR book = 32 seed + Busch Gardens", tonyHR.length === 33, `got ${tonyHR.length}`);
 const bgw = tonyBook.find((l) => l.id === "bgw-williamsburg-dest");
 check("Busch Gardens Williamsburg is in Tony's book", !!(bgw && bgw.name === "Busch Gardens Williamsburg" && bgw.playbook), bgw ? bgw.name : "missing");
-check("all 32 seeded leads carry enriched playbooks", tonyBook.filter((l) => l.id !== "bgw-williamsburg-dest" && l.playbook).length === 32, `got ${tonyBook.filter((l) => l.playbook).length} with playbooks`);
+check("all 32 seeded leads carry enriched playbooks", tonyHR.filter((l) => l.id !== "bgw-williamsburg-dest" && l.playbook).length === 32, `got ${tonyHR.filter((l) => l.playbook).length} with playbooks`);
 check("Jeff's HR copies = 33 (incl. the BGW copy)", jeffHR.length === 33 && jeffHR.some((l) => l.masterId === "bgw-williamsburg-dest"), `got ${jeffHR.length}`);
 check("Jeff's Nashville book = 57 targets", jeffNash.length === 57, `got ${jeffNash.length}`);
 check("every Nashville lead carries its playbook", jeffNash.filter((l) => l.playbook).length === 57, `got ${jeffNash.filter((l) => l.playbook).length}`);
-check("total lead records = 123", allLeads.length === 123, `got ${allLeads.length}`);
+check("total lead records = 180 (123 + Tony's 57 Nashville, HQ load 2026-11-12)", allLeads.length === 180, `got ${allLeads.length}`);
 
 const jeffSeat = await store.get(`bdevrep:${JEFF_ID}`);
 check("HQ-JEFF seat sits on Jeff's joinsignl admin", !!(jeffSeat && jeffSeat.active && jeffSeat.repCode === "HQ-JEFF" && jeffSeat.hqSeat === true), JSON.stringify(jeffSeat).slice(0, 160));
@@ -222,7 +228,7 @@ check("Tony's login payload shows his active seat", !!(tonyLogin.data.user && to
   check("overview lists both seats", ov.status === 200 && ov.data.reps.length === 2 && ov.data.reps.map((s) => s.repCode).sort().join(",") === "HQ-JEFF,HR-TONY", JSON.stringify(ov.data.reps || []).slice(0, 200));
   const hr = (ov.data.markets || []).find((m) => m.marketId === "hampton-roads");
   const na = (ov.data.markets || []).find((m) => m.marketId === "nashville");
-  check("overview counts: Hampton Roads 66 loaded, Nashville 57", !!(hr && hr.loaded === 66 && na && na.loaded === 57), `hr=${hr && hr.loaded} na=${na && na.loaded}`);
+  check("overview counts: Hampton Roads 66 loaded, Nashville 114 (both books, HQ load 2026-11-12)", !!(hr && hr.loaded === 66 && na && na.loaded === 114), `hr=${hr && hr.loaded} na=${na && na.loaded}`);
   const ls = ov.data.loaderStatus || {};
   check("overview surfaces all four loaders done", ["seed155", "enrich157", "destLoad20261109", "jeffSeat161"].every((k) => ls[k] && ls[k].state === "done"), JSON.stringify(ls).slice(0, 300));
   check("Jeff loader recorded its binding (jeff@joinsignl.com)", ls.jeffSeat161 && ls.jeffSeat161.resolvedVia === "email:jeff@joinsignl.com", `via=${ls.jeffSeat161 && ls.jeffSeat161.resolvedVia}`);
@@ -231,7 +237,7 @@ check("Tony's login payload shows his active seat", !!(tonyLogin.data.user && to
   const vc = await anon("GET", "/api/verify/counts", null, { headers: { "x-signl-verify-token": "fixture-verify-token-167" } });
   check("verify/counts carries the bdev health block", vc.status === 200 && !!vc.data.bdev, `got ${vc.status}`);
   check("health: 2 seats, BGW present", vc.data.bdev && vc.data.bdev.seats === 2 && vc.data.bdev.bgwPresent === true, JSON.stringify(vc.data.bdev).slice(0, 200));
-  check("health: lead counts by market", vc.data.bdev && vc.data.bdev.leadsByMarket["hampton-roads"] === 66 && vc.data.bdev.leadsByMarket["nashville"] === 57, JSON.stringify(vc.data.bdev && vc.data.bdev.leadsByMarket));
+  check("health: lead counts by market", vc.data.bdev && vc.data.bdev.leadsByMarket["hampton-roads"] === 66 && vc.data.bdev.leadsByMarket["nashville"] === 114, JSON.stringify(vc.data.bdev && vc.data.bdev.leadsByMarket));
   check("health: loader states all done", vc.data.bdev && ["seed155", "enrich157", "destLoad20261109", "jeffSeat161"].every((k) => vc.data.bdev.loaderStatus[k] && vc.data.bdev.loaderStatus[k].state === "done"), "");
 }
 {
@@ -270,9 +276,9 @@ console.log(JSON.stringify({ seats: seats.length, codes: seats.map((s) => s.repC
   const out = execFileSync(process.execPath, [child], { env: { ...process.env }, encoding: "utf8" });
   const snap = JSON.parse(out.trim().split("\n").pop());
   check("re-run: still 2 seats with the same codes", snap.seats === 2 && snap.codes.join(",") === "HQ-JEFF,HR-TONY", JSON.stringify(snap));
-  check("re-run: still 123 leads, no duplicates", snap.leads === 123, `got ${snap.leads}`);
+  check("re-run: still 180 leads, no duplicates", snap.leads === 180, `got ${snap.leads}`);
   check("re-run: exactly one BGW original + one Jeff copy", snap.bgw === 1 && snap.bgwCopies === 2, JSON.stringify(snap));
-  check("re-run: per-book counts unchanged (Tony 33, Jeff 90)", snap.byAssignee[TONY.id] === 33 && snap.byAssignee[JEFF_ID] === 90, JSON.stringify(snap.byAssignee));
+  check("re-run: per-book counts unchanged (Tony 90 incl. his Nashville book, Jeff 90)", snap.byAssignee[TONY.id] === 90 && snap.byAssignee[JEFF_ID] === 90, JSON.stringify(snap.byAssignee));
   fs.unlinkSync(child);
 }
 

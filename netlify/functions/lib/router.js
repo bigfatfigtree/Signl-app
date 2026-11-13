@@ -23665,6 +23665,11 @@ async function route(event) {
     // Williamsburg into Tony's HR book, claimed-flag guarded,
     // waits for the -155 seed.
     (async () => { try { await bizdev.maybeLoadDest20261109(); } catch (e) { /* biz dev destination load is best-effort */ } })(),
+    // HQ load 2026-11-12 (Jeff's order): the 57 Nashville
+    // activation-list targets as Tony's second book + Nashville
+    // added to his seat markets, claimed-flag guarded; chains
+    // the seed/Jeff-seat/cleanup ladder first.
+    (async () => { try { await bizdev.maybeLoadTonyNashville20261112(); } catch (e) { /* Tony Nashville load is best-effort */ } })(),
     // Build -161: Jeff's own seller seat (HQ-JEFF) + his Hampton
     // Roads working copies + the Nashville book. Runs after the
     // -157 enrichment settles so the copies carry their playbooks;

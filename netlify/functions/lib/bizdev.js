@@ -1893,6 +1893,186 @@ const maybeCleanupTony170 = singleFlight(async function () {
   return true;
 }, cleanupTonyFlight170, "cleanupTony170");
 
+// ---------------- HQ load 2026-11-12: Tony's Nashville book ----------------
+// Jeff's order (2026-11-12): "add to Tony's biz dev Nashville —
+// so he can access that and start calling and emailing on it
+// tomorrow." Until now the 57 Nashville targets existed ONLY in
+// Jeff's own book (the -161 loader loaded them for HQ-JEFF) and
+// Tony's seat held Hampton Roads alone, so Nashville did not
+// exist for his login. This one-time loader, in the seed / dest
+// pattern (claimed-flag guarded, single-flight, best-effort from
+// the preamble):
+//   1. Adds Nashville to Tony's seat markets (his home market
+//      stays Hampton Roads) and re-stamps his user record, the
+//      -161 multi-market shape — his Sell view gains the city
+//      switcher and Nashville becomes his second book.
+//   2. Creates the 57 Nashville leads in Tony's book from the
+//      same stored seed + enrichment the -161 loader used for
+//      Jeff's copies — same contacts, same research notes, same
+//      tiering (hqTier), list order stamped on hqOrder (1-57 in
+//      activation-list order, so the first 15 read back in
+//      order). Jeff's own book is NEVER touched; the two books
+//      are independent working copies, exactly like Hampton
+//      Roads (Tony's originals + Jeff's copies).
+//   3. Playbooks: the stored Nashville pack is written in
+//      Jeff's first person (it was built for Jeff's book), so
+//      each playbook is mechanically re-voiced to Tony at load
+//      time ("I'm Jeff — I run Magpie" -> "I'm Tony — I'm with
+//      Magpie", "Jeff Rimmer / Founder, Magpie" -> "Tony
+//      Johnson / Magpie — Nashville"; "waits for Jeff's go"
+//      is an HQ instruction and stays). A playbook that still
+//      names Jeff anywhere else after the pass is DROPPED
+//      (loaded as null and counted), never handed to Tony with
+//      the wrong name in it.
+//   4. Category holds: the activation list holds 4 entries
+//      until their creators land — Forza Pilates, Native
+//      Pilates and Grow Yoga & Movement (fitness) and Hot
+//      Ticket Lounge (nightlife). They load flagged
+//      (flags.categoryHold) with the hold as the lead's next
+//      action text and in the playbook's before-you-go (the
+//      pack already carries it), so the hold is visible on the
+//      card and in the guide — not silently dropped, and not
+//      disguised as a do-not-contact (it is a sequencing hold,
+//      not a refusal).
+// Dedupe: a seed business already in Tony's Nashville book —
+// by business identity (normalized name + city, the -169 /
+// -170 key) or by normalized name — is skipped and counted, so
+// re-runs and partial runs converge with zero duplicates.
+// Store cost (the -173 loader rule): two bounded list reads —
+// the nashville lead prefix and the seat prefix — plus one
+// flag get and one user get; writes happen once ever, behind
+// the done flag. No serial per-key scans.
+const TONY_NASHVILLE_FLAG = "config:bdevTonyNashville20261112";
+let tonyNashvilleDone = false;
+const tonyNashvilleFlight = {};
+const TONY_NASH_CATEGORY_HOLDS = ["forza pilates", "native pilates", "grow yoga movement", "hot ticket lounge"];
+function revoicePlaybookForTony(pb) {
+  if (!pb || typeof pb !== "object") return null;
+  const GO = "\u0001JEFFSGO\u0001";
+  const swap = (s) => s
+    .split("Jeff's go").join(GO)
+    .split("this is Jeff Rimmer — I run Magpie").join("this is Tony Johnson — I'm with Magpie")
+    .split("I'm Jeff — I run Magpie").join("I'm Tony — I'm with Magpie")
+    .split("Hi, this is Jeff with Magpie").join("Hi, this is Tony with Magpie")
+    .split("Jeff here, I run Magpie").join("Tony here, I'm with Magpie")
+    .split("Jeff Rimmer\nFounder, Magpie").join("Tony Johnson\nMagpie — Nashville")
+    .split("Jeff Rimmer").join("Tony Johnson")
+    .split("— Jeff").join("— Tony")
+    .split(GO).join("Jeff's go");
+  const walk = (v) => {
+    if (typeof v === "string") return swap(v);
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") { const o = {}; for (const k of Object.keys(v)) o[k] = walk(v[k]); return o; }
+    return v;
+  };
+  const out = walk(JSON.parse(JSON.stringify(pb)));
+  // Validation: outside the protected "Jeff's go" HQ phrase, no
+  // "Jeff" may survive; and the re-voice must actually have
+  // landed (Tony named somewhere) — otherwise drop the pack.
+  const scrubbed = JSON.stringify(out).split("Jeff's go").join("");
+  if (/Jeff/.test(scrubbed) || !/Tony/.test(scrubbed)) return null;
+  return out;
+}
+const maybeLoadTonyNashville20261112 = singleFlight(async function () {
+  if (tonyNashvilleDone) return true;
+  const flag = await store().get(TONY_NASHVILLE_FLAG);
+  if (flag && flag.done) {
+    tonyNashvilleDone = true;
+    await noteLoaderStatus("tonyNashville20261112", { state: "done", detail: "Tony Nashville flag done", leadsCreated: flag.leadsCreated != null ? flag.leadsCreated : null, skippedExisting: flag.skippedExisting != null ? flag.skippedExisting : null });
+    return true;
+  }
+  await maybeLoadJeffSeat161(); // chains seed/enrich/dest first; Tony's seat + HR book and Jeff's books must exist
+  await maybeCleanup169();      // flag-gated no-ops once done
+  await maybeCleanupTony170();
+  const seatRows = (await store().list("bdevrep:")).map((r) => r.value).filter(Boolean);
+  const seat = seatRows.filter((s) => s.active && s.repCode === "HR-TONY")
+    .sort((a, b) => String(a.assignedAt || "").localeCompare(String(b.assignedAt || "")))[0];
+  if (!seat) { await noteLoaderStatus("tonyNashville20261112", { state: "waiting", detail: "no active HR-TONY seat yet" }); return false; }
+  let nashSeed = null, nashEnrich = null;
+  try { nashSeed = require("./bizdev-seed-nashville.json"); } catch (e) { nashSeed = null; }
+  try { nashEnrich = require("./bizdev-enrich-nashville.json"); } catch (e) { nashEnrich = null; }
+  if (!Array.isArray(nashSeed)) { await noteLoaderStatus("tonyNashville20261112", { state: "error", detail: "Nashville seed pack missing or unreadable" }); return false; }
+  await store().set(TONY_NASHVILLE_FLAG, { claimedAt: nowIso(), done: false, running: true });
+
+  // 1. The seat gains Nashville as its second market.
+  const markets = seatMarkets(seat);
+  if (!markets.some((m) => m.marketId === "nashville")) {
+    seat.markets = [...markets, { marketId: "nashville", marketName: "Nashville" }];
+    await store().set(`bdevrep:${seat.userId}`, seat);
+    const user = await store().get(`user:${seat.userId}`);
+    if (user) {
+      user.bizdevSeat = { active: true, marketId: seat.marketId, marketName: seat.marketName, repCode: seat.repCode, markets: seat.markets };
+      await store().set(`user:${seat.userId}`, user);
+    }
+  }
+
+  // 2. The leads (deduped against Tony's existing Nashville book).
+  const pbByName = new Map((((nashEnrich && nashEnrich.leads) || [])).map((e) => [normName(e.matchName), e]));
+  const existingN = await leadsOfMarket("nashville");
+  const mine = existingN.filter((l) => l.assignedRepId === seat.userId);
+  const mineIdentity = new Set(mine.map((l) => `${normName(l.name)}||${normName(l.city || "")}`));
+  const mineNames = new Set(mine.map((l) => normName(l.name)));
+  let created = 0, skippedExisting = 0, playbooksAttached = 0, playbooksDropped = 0, holdsFlagged = 0;
+  let order = 0;
+  for (const s of nashSeed) {
+    order += 1;
+    const identity = `${normName(s.name)}||${normName(s.city || "")}`;
+    if (mineIdentity.has(identity) || mineNames.has(normName(s.name))) { skippedExisting += 1; continue; }
+    mineIdentity.add(identity); mineNames.add(normName(s.name));
+    const entry = pbByName.get(normName(s.name));
+    const hold = TONY_NASH_CATEGORY_HOLDS.includes(normName(s.name));
+    const lead = {
+      id: uuid(), marketId: "nashville", marketName: "Nashville", locationId: uuid(), masterId: null,
+      assignedRepId: seat.userId, source: "HQ-loaded", championName: null,
+      name: s.name, shortName: s.shortName || null, category: s.category, subType: s.subType || "",
+      neighborhood: s.neighborhood || "", city: s.city || "Nashville", address: s.address || null,
+      website: s.website || null, websiteNote: s.websiteNote || null,
+      dmName: s.dmName || null, dmRole: s.dmRole || null, dmRoleLabel: s.dmRoleLabel || null,
+      secondContact: s.secondContact || null, usuallyHere: s.usuallyHere || null,
+      phone1: s.phone1 || null, phone1Verify: !!s.phone1Verify, phone1Note: s.phone1Note || null,
+      phone2: s.phone2 || null, phone2Verify: !!s.phone2Verify, phone2Note: s.phone2Note || null,
+      email: s.email || null, emailNote: s.emailNote || null, emailEvidence: s.emailEvidence || null,
+      instagram: s.instagram || null, instagramNote: s.instagramNote || null,
+      hqTier: s.hqTier || "B", hqOrder: order,
+      flags: { doNotContact: false, jeffHandles: false, chain: !!s.chain, ...(hold ? { categoryHold: true } : {}) },
+      stage: "Not visited yet", stageHistory: [{ stage: "Not visited yet", at: nowIso(), by: "HQ load (Tony Nashville)" }],
+      founding: { status: "Not claimed", claimedAt: null, claimedVia: null, confirmedAt: null, planInterest: null },
+      attribution: { repCode: seat.repCode || "HR-TONY", firstTouchAt: null, source: "HQ-loaded" },
+      nextAction: hold
+        ? { type: "Visit", date: null, what: "CATEGORY HOLD — do not approach yet: this category's creators are still landing, and this one waits for Jeff's go (2026-11-07 activation list hold)" }
+        : { type: "Visit", date: null, what: "First visit" },
+      lastTouch: null, pendingApproval: false, hqDecision: null, isNewForRep: true,
+      createdAt: nowIso(), updatedAt: nowIso(),
+    };
+    lead.masterId = lead.id;
+    if (entry) {
+      const en = entry.enrichment || {};
+      const research = {};
+      for (const k of ["note", "emailEvidence", "emailNote", "instagramSource", "instagramNote", "emailVerify"]) {
+        if (en[k] != null && en[k] !== "") research[k] = en[k];
+      }
+      if (Object.keys(research).length) lead.hqResearch = research;
+      for (const k of ["dmName", "dmRole", "dmRoleLabel", "secondContact", "usuallyHere", "phone1", "phone1Verify", "phone1Note", "phone2", "phone2Verify", "phone2Note", "email", "emailNote", "emailEvidence", "website", "websiteNote", "instagram", "instagramNote"]) {
+        if (en[k] !== undefined) lead[k] = en[k];
+      }
+      if (entry.playbook) {
+        const revoiced = revoicePlaybookForTony(entry.playbook);
+        if (revoiced) { lead.playbook = revoiced; playbooksAttached += 1; }
+        else playbooksDropped += 1;
+      }
+    }
+    if (hold) holdsFlagged += 1;
+    await store().set(`bdevlead:${lead.id}`, lead);
+    created += 1;
+  }
+  const counts = { leadsCreated: created, skippedExisting, playbooksAttached, playbooksDropped, holdsFlagged };
+  await store().set(TONY_NASHVILLE_FLAG, { claimedAt: nowIso(), done: true, at: nowIso(), seatUserId: seat.userId, ...counts });
+  tonyNashvilleDone = true;
+  await noteLoaderStatus("tonyNashville20261112", { state: "done", detail: "Nashville loaded as Tony's second book (57 activation-list targets)", seatUserId: seat.userId, ...counts });
+  await logEvent({ type: "bdev_tony_nashville_20261112", actorId: null, actorRole: "system", subjectId: seat.userId, market: "Nashville", data: counts });
+  return true;
+}, tonyNashvilleFlight, "tonyNashville20261112");
+
 // The daily sweep (POST /admin/bdev/sweep): one alarm record per
 // rep per day while follow-ups sit overdue (same-day overwrite =
 // idempotent), plus Monday scoreboards for the week just ended.
@@ -2898,7 +3078,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
 }
 
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, runBizdevSweep, bdevHealth,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, maybeLoadTonyNashville20261112, runBizdevSweep, bdevHealth,
   claimPageHtml, seatOf, KIT,
   _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable },
 };
