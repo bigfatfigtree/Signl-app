@@ -103,7 +103,11 @@ console.log("== A: source pins ==");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   check("loader exists, flag-guarded, exported", bizJs.includes("config:bdevTonyNashville20261112") && bizJs.includes("maybeLoadTonyNashville20261112") && bizJs.includes("revoicePlaybookForTony"), "");
   check("router preamble invokes it best-effort", routerJs.includes("bizdev.maybeLoadTonyNashville20261112()"), "");
-  const loaderBody = bizJs.slice(bizJs.indexOf("maybeLoadTonyNashville20261112 = singleFlight"), bizJs.indexOf("The daily sweep (POST"));
+  // Slice ends at the shared-books unification banner: that
+  // loader sits between this one and the daily sweep now, and
+  // it carries its own LOADER-RULE pin in
+  // scripts/verify-sharedbooks20261112.mjs (section A).
+  const loaderBody = bizJs.slice(bizJs.indexOf("maybeLoadTonyNashville20261112 = singleFlight"), bizJs.indexOf("HQ load 2026-11-12: SHARED BOOKS unification"));
   check("loader reads via bounded lists, not a serial per-key scan (LOADER RULE)", loaderBody.includes('leadsOfMarket("nashville")') && loaderBody.includes('store().list("bdevrep:")') && (loaderBody.split("store().get(").length - 1) <= 2, `gets=${loaderBody.split("store().get(").length - 1}`);
 }
 
@@ -153,20 +157,27 @@ await bizdev.maybeLoadTonyNashville20261112();
 // --- C: the load itself --------------------------------------
 console.log("== C: Tony's Nashville book ==");
 const allLeads = (await store.list("bdevlead:")).map((r) => r.value);
+// SHARED BOOKS (HQ load 2026-11-12, later the same night): the
+// unification runs on the same traffic that fires this load,
+// so by the time these lines read the store, the two men's
+// Nashville + Hampton Roads records have folded into ONE
+// shared record set per business (57 + 33 = 90). The load's
+// own truth — 57 created in Tony's book, holds flagged — is
+// pinned on its flag below; record-level pins here assert the
+// SHARED truth. Full shared-book assertions live in
+// scripts/verify-sharedbooks20261112.mjs.
 const tonyAll = allLeads.filter((l) => l.assignedRepId === TONY.id);
 const tonyHR = tonyAll.filter((l) => l.marketId === "hampton-roads");
-const tonyNash = tonyAll.filter((l) => l.marketId === "nashville");
-const jeffAll = allLeads.filter((l) => l.assignedRepId === JEFF_ID);
-const jeffNash = jeffAll.filter((l) => l.marketId === "nashville");
-const jeffHR = jeffAll.filter((l) => l.marketId === "hampton-roads");
+const tonyNash = allLeads.filter((l) => l.marketId === "nashville");
+const jeffNash = tonyNash;
 
 const flag = await store.get("config:bdevTonyNashville20261112");
 check("loader flag done with the full counts", !!(flag && flag.done && flag.leadsCreated === 57 && flag.skippedExisting === 0 && flag.holdsFlagged === 4), JSON.stringify(flag).slice(0, 240));
-check("Tony's Hampton Roads book unchanged (32 seed + Busch Gardens)", tonyHR.length === 33, `got ${tonyHR.length}`);
-check("Tony's Nashville book = 57", tonyNash.length === 57, `got ${tonyNash.length}`);
-check("no duplicate business identities in Tony's Nashville book", new Set(tonyNash.map((l) => `${l.name.toLowerCase()}||${(l.city || "").toLowerCase()}`)).size === 57, "");
-check("Jeff's books untouched (HR 33 copies, Nashville 57)", jeffHR.length === 33 && jeffNash.length === 57, `jeffHR=${jeffHR.length} jeffNash=${jeffNash.length}`);
-check("total leads = 180 (66 HR + 114 Nashville)", allLeads.length === 180, `got ${allLeads.length}`);
+check("Tony's Hampton Roads originals all survive as keepers (32 seed + Busch Gardens)", tonyHR.length === 33, `got ${tonyHR.length}`);
+check("Nashville = 57 records total after the shared-books fold", tonyNash.length === 57, `got ${tonyNash.length}`);
+check("no duplicate business identities in the Nashville book", new Set(tonyNash.map((l) => `${l.name.toLowerCase()}||${(l.city || "").toLowerCase()}`)).size === 57, "");
+check("every Nashville + HR record is flagged sharedBook (the unification landed)", allLeads.every((l) => l.sharedBook === true), "");
+check("total leads = 90 after the fold (33 HR + 57 Nashville, one record per business)", allLeads.length === 90, `got ${allLeads.length}`);
 
 const byOrder = [...tonyNash].sort((a, b) => (a.hqOrder || 0) - (b.hqOrder || 0));
 check("hqOrder runs 1-57 with no gaps", byOrder.every((l, i) => l.hqOrder === i + 1), byOrder.map((l) => l.hqOrder).slice(0, 8).join(","));
@@ -185,8 +196,11 @@ check("no Tony playbook names Jeff outside the protected HQ phrase", jeffLeak.le
 check("every Tony playbook is in Tony's voice", tonyNash.every((l) => JSON.stringify(l.playbook || {}).includes("Tony")), "");
 const cafe = tonyNash.find((l) => l.name === "Cafe Roze");
 check("Cafe Roze intro email signs as Tony Johnson, Magpie — Nashville", ((cafe.playbook.introEmail || {}).body || "").includes("Tony Johnson\nMagpie — Nashville"), ((cafe.playbook.introEmail || {}).body || "").slice(-80));
-const jeffCafe = jeffNash.find((l) => l.name === "Cafe Roze");
-check("Jeff's own Cafe Roze playbook still speaks as Jeff (his book untouched)", ((jeffCafe.playbook.introEmail || {}).body || "").includes("Jeff Rimmer"), "");
+// Shared books: there is no second Cafe Roze for Jeff anymore
+// — ONE shared record, and it keeps Tony's voiced playbook
+// (Tony is the book's primary field seller). What Jeff keeps
+// is his own claim LINK: his detail read of this same record
+// renders rep=HQ-JEFF (asserted in verify-sharedbooks20261112).
 
 const seat = await store.get(`bdevrep:${TONY.id}`);
 check("Tony's seat now holds both markets (home stays Hampton Roads)", !!(seat && seat.marketId === "hampton-roads" && Array.isArray(seat.markets) && seat.markets.map((m) => m.marketId).join(",") === "hampton-roads,nashville"), JSON.stringify(seat && seat.markets));
@@ -239,13 +253,18 @@ await bizdev.maybeCleanup169();
 await bizdev.maybeCleanupTony170();
 await bizdev.maybeLoadTonyNashville20261112();
 await bizdev.maybeLoadTonyNashville20261112();
+await bizdev.maybeUnifySharedBooks20261112();
+await bizdev.maybeUnifySharedBooks20261112();
 const leads = (await store.list("bdevlead:")).map((r) => r.value);
 const flag2 = await store.get("config:bdevTonyNashville20261112");
 console.log(JSON.stringify({ total: leads.length, flagCreated: flag2 && flag2.leadsCreated }));
 `);
   const out = execFileSync(process.execPath, [child], { env: { ...process.env }, encoding: "utf8" });
   const snap = JSON.parse(out.trim().split("\n").pop());
-  check("re-run: still 180 leads, no duplicates created", snap.total === 180, JSON.stringify(snap));
+  // 90, not 180: the shared-books fold (same night) leaves one
+  // record per business, and the -161 guard keeps its copy
+  // steps from resurrecting Jeff's copies in this fresh process.
+  check("re-run: still 90 leads, no duplicates created, no copies resurrected", snap.total === 90, JSON.stringify(snap));
   check("re-run: the done flag makes the loader a no-op (created stays 57)", snap.flagCreated === 57, JSON.stringify(snap));
   fs.unlinkSync(child);
 }

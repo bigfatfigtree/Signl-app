@@ -34057,6 +34057,10 @@ function bdSyncSeat161(src) {
   if (!src) return;
   if (Array.isArray(src.markets) && src.markets.length) bd.markets = src.markets;
   if (src.hqSeat != null) bd.hqSeat = !!src.hqSeat;
+  // Shared books (2026-11-12): remember my own rep code so the
+  // work-claim badge can tell "you're working this one" from
+  // "Tony / Jeff is working this one".
+  if (src.repCode) bd.repCode = src.repCode;
   if (bd.mkt && bd.markets.length && !bd.markets.some((m) => m.marketId === bd.mkt)) bd.mkt = "";
   if (!bd.mkt && src.marketId) bd.mkt = src.marketId;
 }
@@ -34131,6 +34135,42 @@ function bdStatusBadge(status) {
   const kind = status === "Closed" ? "ok" : status === "Declined" ? "bd-status-muted" : "";
   return `<span class="badge ${kind} bd-status-badge">${esc(status)}</span>`;
 }
+// Shared books (2026-11-12): the work-claim badge — BADGE, NOT
+// HIDE. A claimed business stays on both men's lists; the badge
+// just says whose hands it is in. nameOnly renders the factual
+// form (Jeff's Manage view + the read-only preview, where "you"
+// would point at the wrong person).
+function bdWorkClaimBadge(l, opts) {
+  const wc = l && l.workClaim;
+  if (!wc || !wc.byRepCode) return "";
+  const first = String(wc.byName || wc.byRepCode).trim().split(/\s+/)[0] || wc.byRepCode;
+  if (!(opts && opts.nameOnly) && bd.repCode && wc.byRepCode === bd.repCode) {
+    return `<span class="badge ok">You're working this one</span>`;
+  }
+  return `<span class="badge info">${esc(first)} is working this one</span>`;
+}
+async function bdWorkClaim() {
+  if (!bd.leadId) return false;
+  try {
+    const d = await api("POST", bdPath(`/bdev/leads/${bd.leadId}/work-claim`), {});
+    if (d.lead) bd.lead = Object.assign({}, bd.lead, d.lead);
+    showToast("Claimed — Tony and Jeff both see you're working this one.");
+    const el = document.getElementById("tab-body");
+    if (el) bdRenderLead(el);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function bdWorkRelease() {
+  if (!bd.leadId) return false;
+  try {
+    const d = await api("POST", bdPath(`/bdev/leads/${bd.leadId}/work-release`), {});
+    if (d.lead) bd.lead = Object.assign({}, bd.lead, d.lead);
+    showToast("Released — this one is open for either of you.");
+    const el = document.getElementById("tab-body");
+    if (el) bdRenderLead(el);
+  } catch (e) { alert(e.message); }
+  return false;
+}
 function bdQueueBadge(label) {
   const kind = label === "Start here" ? "bd-qbadge-start" : label === "Next up" ? "bd-qbadge-next" : "bd-qbadge-later";
   return `<span class="badge ${kind}">${esc(label || "Later")}</span>`;
@@ -34140,7 +34180,7 @@ function bdQueueCard(item) {
   if (!l) return "";
   return `<div class="card bd-lead-card">
     ${bdFlagBanners(l)}
-    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdQueueBadge(item.label)}${l.status ? bdStatusBadge(l.status) : ""}${l.stage ? bdStageBadge(l.stage) : ""}</span></div>
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdQueueBadge(item.label)}${l.status ? bdStatusBadge(l.status) : ""}${l.stage ? bdStageBadge(l.stage) : ""}${bdWorkClaimBadge(l)}</span></div>
     <div class="muted small">${esc(l.category || "")}${l.neighborhood ? ` · ${esc(l.neighborhood)}` : ""}</div>
     ${item.why ? `<p style="margin:8px 0 0">${esc(item.why)}</p>` : ""}
     ${bdNextLine(l)}
@@ -34222,7 +34262,7 @@ function bdLeadCard(l, opts) {
   const o = opts || {};
   return `<div class="card bd-lead-card" ${o.big ? 'style="padding:18px"' : ""}>
     ${bdFlagBanners(l)}
-    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${bdStageBadge(l.stage)}</span></div>
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${bdStageBadge(l.stage)}${bdWorkClaimBadge(l)}</span></div>
     <div class="muted small">${esc(l.category)}${l.subType ? ` · ${esc(l.subType)}` : ""} · ${esc(l.neighborhood || "")}</div>
     ${bdContactLine(l)}
     ${l.pendingApproval ? `<div class="bd-pending">Waiting for Jeff to check — you can work it now; it counts once he approves it.</div>` : ""}
@@ -34612,6 +34652,16 @@ function bdRenderLead(el) {
   const l = bd.lead;
   if (!l) return;
   const locked = bdLocked(l);
+  // Shared books (2026-11-12): the work-claim control — claim an
+  // unclaimed business, release your own, or see whose it is.
+  const wc = l.workClaim || null;
+  const wcMine = !!(wc && bd.repCode && wc.byRepCode === bd.repCode);
+  const wcFirst = wc ? (String(wc.byName || wc.byRepCode).trim().split(/\s+/)[0] || wc.byRepCode) : "";
+  const wcButton = !wc
+    ? `<button type="button" class="btn ghost" onclick="return bdWorkClaim()">Claim this business</button>`
+    : wcMine
+      ? `<button type="button" class="btn ghost" onclick="return bdWorkRelease()">Release my claim</button>`
+      : `<button type="button" class="btn ghost" disabled>${esc(wcFirst)} is working this one</button>`;
   const routes = [];
   if (l.phone1) routes.push(`<a class="btn ghost small-btn" href="tel:${esc(l.phone1.replace(/[^0-9+]/g, ""))}">Call ${esc(l.phone1)}</a>`);
   if (l.phone2) routes.push(`<a class="btn ghost small-btn" href="tel:${esc(l.phone2.replace(/[^0-9+]/g, ""))}">Call ${esc(l.phone2)}</a>`);
@@ -34622,7 +34672,7 @@ function bdRenderLead(el) {
   <button type="button" class="linklike" onclick="return go('dashboard','BD Leads')">← My Leads</button>
   <div class="card" style="margin-top:8px">
     ${bdFlagBanners(l)}
-    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${bdStageBadge(l.stage)}</span></div>
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${bdStageBadge(l.stage)}${bdWorkClaimBadge(l)}</span></div>
     <p class="muted" style="margin:4px 0">${esc(l.category)}${l.subType ? ` · ${esc(l.subType)}` : ""} · ${esc(l.neighborhood || "")}${l.address ? `<br>${esc(l.address)}` : ""}</p>
     ${l.pendingApproval ? `<div class="bd-pending">Waiting for Jeff to check — you can work it now; it counts once he approves it.</div>` : ""}
     ${l.championName ? `<p class="small">Introduced by Champion — ${esc(l.championName)}</p>` : ""}
@@ -34642,6 +34692,7 @@ function bdRenderLead(el) {
       <button type="button" class="btn ghost" ${locked ? "disabled" : ""} onclick="return bdShowEnter('${l.id}')">Show</button>
       <button type="button" class="btn ghost" ${locked ? "disabled" : ""} onclick="return bdPriceEnter('${l.id}')">Asked about price — show plans</button>
       <button type="button" class="btn ghost" onclick="return bdSendClaim('${l.id}')">Send them their claim link</button>
+      ${wcButton}
       <button type="button" class="btn ghost" onclick="return bdEscalateOpen()">Ask Jeff</button>
     </div>
     <div id="bd-lead-slot"></div>
@@ -35359,7 +35410,7 @@ function abdLeadRowsHtml() {
     return `
       <div class="bd-logrow abd-leadrow">
         <div class="abd-leadline"><strong>${esc(l.name)}</strong> ${bdStatusBadge(l.status)}<button type="button" class="btn ghost small-btn" style="margin-left:8px" onclick="return abdToggleManage('${l.id}')">${open ? "Close" : "Manage"}</button></div>
-        <div class="muted small" style="margin-top:2px">${esc(l.category)} · ${esc(l.neighborhood || "")}${l.city ? ` · ${esc(l.city)}` : ""} · ${esc(l.stage)} · ${esc(repName(l.assignedRepId))}${l.source === "Added by rep" ? " · added by the rep" : ""}${l.pendingApproval ? " · ⏳ waiting your check" : ""}${l.founding && l.founding.status === "Claimed" ? " · claimed, unconfirmed" : ""}${l.founding && l.founding.status === "Confirmed" ? " · claimed ✓" : ""}${l.hasPlaybook ? " · has playbook" : ""}</div>
+        <div class="muted small" style="margin-top:2px">${esc(l.category)} · ${esc(l.neighborhood || "")}${l.city ? ` · ${esc(l.city)}` : ""} · ${esc(l.stage)} · ${esc(repName(l.assignedRepId))}${l.source === "Added by rep" ? " · added by the rep" : ""}${l.pendingApproval ? " · ⏳ waiting your check" : ""}${l.founding && l.founding.status === "Claimed" ? " · claimed, unconfirmed" : ""}${l.founding && l.founding.status === "Confirmed" ? " · claimed ✓" : ""}${l.hasPlaybook ? " · has playbook" : ""}${l.workClaim ? ` · ${esc(String(l.workClaim.byName || l.workClaim.byRepCode).trim().split(/\s+/)[0] || l.workClaim.byRepCode)} is working it` : ""}</div>
         ${bdContactLine(l)}
         <span style="display:block;margin-top:6px">
           <select id="abd-status-${l.id}" aria-label="Status for ${esc(l.name)}">${BD_STATUSES.map((s) => `<option value="${esc(s)}" ${l.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
@@ -35424,7 +35475,7 @@ function abdPvLeadsList() {
 }
 function abdPvLeadCard(l) {
   return `<div class="card bd-lead-card">
-    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${l.stage ? bdStageBadge(l.stage) : ""}</span></div>
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${l.stage ? bdStageBadge(l.stage) : ""}${bdWorkClaimBadge(l, { nameOnly: true })}</span></div>
     <div class="muted small">${esc(l.category || "")}${l.neighborhood ? ` · ${esc(l.neighborhood)}` : ""}</div>
     ${bdNextLine(l)}
     <div class="bd-card-btns"><button type="button" class="btn" onclick="return abdPvOpenLead('${l.id}')">Open</button></div>
@@ -35434,7 +35485,7 @@ function abdPvQueueCard(item) {
   const l = item.lead || item;
   if (!l) return "";
   return `<div class="card bd-lead-card">
-    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdQueueBadge(item.label)}${bdStatusBadge(l.status)}${l.stage ? bdStageBadge(l.stage) : ""}</span></div>
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.shortName || l.name)}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdQueueBadge(item.label)}${bdStatusBadge(l.status)}${l.stage ? bdStageBadge(l.stage) : ""}${bdWorkClaimBadge(l, { nameOnly: true })}</span></div>
     <div class="muted small">${esc(l.category || "")}${l.neighborhood ? ` · ${esc(l.neighborhood)}` : ""}</div>
     ${item.why ? `<p style="margin:8px 0 0">${esc(item.why)}</p>` : ""}
     <div class="bd-card-btns"><button type="button" class="btn" onclick="return abdPvOpenLead('${l.id}')">Open</button></div>
@@ -35522,7 +35573,7 @@ function abdPvLeadDetailHtml() {
   const logs = wrap.logs || [];
   return `<button type="button" class="linklike" onclick="return abdPvBackToList()">← Back</button>
   <div class="card" style="margin-top:8px">
-    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.name || "")}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${l.stage ? bdStageBadge(l.stage) : ""}</span></div>
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(l.name || "")}</strong><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bdStatusBadge(l.status)}${l.stage ? bdStageBadge(l.stage) : ""}${bdWorkClaimBadge(l, { nameOnly: true })}</span></div>
     <p class="muted" style="margin:4px 0">${esc(l.category || "")}${l.subType ? ` · ${esc(l.subType)}` : ""} · ${esc(l.neighborhood || "")}${l.address ? `<br>${esc(l.address)}` : ""}</p>
     ${l.dmName ? `<p style="margin:8px 0"><strong>Who runs it:</strong> ${esc(l.dmName)}${l.dmRoleLabel ? ` — ${esc(l.dmRoleLabel)}` : ""}</p>` : ""}
     ${l.founding ? `<p style="margin:8px 0"><strong>Founding spot:</strong> ${esc(l.founding.status || "Not claimed yet")}</p>` : ""}

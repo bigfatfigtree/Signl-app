@@ -173,23 +173,25 @@ check("Tony's user record carries the seat stamp (his shell flips)", !!(tonyUser
 
 const allLeads = (await store.list("bdevlead:")).map((r) => r.value);
 const tonyBook = allLeads.filter((l) => l.assignedRepId === TONY.id);
-const jeffBook = allLeads.filter((l) => l.assignedRepId === JEFF_ID);
-const jeffHR = jeffBook.filter((l) => l.marketId === "hampton-roads");
-const jeffNash = jeffBook.filter((l) => l.marketId === "nashville");
-// HQ load 2026-11-12 (Jeff's order): Tony gained a Nashville
-// book of his own (57, via maybeLoadTonyNashville20261112), so
-// his HR pins scope to the HR market and the Nashville market
-// totals doubled. Full assertions live in
-// scripts/verify-tonynashville20261112.mjs.
+// SHARED BOOKS (HQ load 2026-11-12, later the same night): the
+// unification folds Jeff's and Tony's Nashville + Hampton
+// Roads copies into ONE shared record set per business, so the
+// per-assignee pins below became market-level pins. HR keepers
+// are Tony's originals (Jeff's copies pointed at them as
+// masters); Nashville keepers split by record richness. Full
+// shared-book assertions live in
+// scripts/verify-sharedbooks20261112.mjs.
+const hrAll = allLeads.filter((l) => l.marketId === "hampton-roads");
+const nashAll = allLeads.filter((l) => l.marketId === "nashville");
 const tonyHR = tonyBook.filter((l) => l.marketId === "hampton-roads");
-check("Tony's HR book = 32 seed + Busch Gardens", tonyHR.length === 33, `got ${tonyHR.length}`);
+check("Tony's HR originals all survive as the shared keepers (32 seed + Busch Gardens)", tonyHR.length === 33, `got ${tonyHR.length}`);
 const bgw = tonyBook.find((l) => l.id === "bgw-williamsburg-dest");
 check("Busch Gardens Williamsburg is in Tony's book", !!(bgw && bgw.name === "Busch Gardens Williamsburg" && bgw.playbook), bgw ? bgw.name : "missing");
 check("all 32 seeded leads carry enriched playbooks", tonyHR.filter((l) => l.id !== "bgw-williamsburg-dest" && l.playbook).length === 32, `got ${tonyHR.filter((l) => l.playbook).length} with playbooks`);
-check("Jeff's HR copies = 33 (incl. the BGW copy)", jeffHR.length === 33 && jeffHR.some((l) => l.masterId === "bgw-williamsburg-dest"), `got ${jeffHR.length}`);
-check("Jeff's Nashville book = 57 targets", jeffNash.length === 57, `got ${jeffNash.length}`);
-check("every Nashville lead carries its playbook", jeffNash.filter((l) => l.playbook).length === 57, `got ${jeffNash.filter((l) => l.playbook).length}`);
-check("total lead records = 180 (123 + Tony's 57 Nashville, HQ load 2026-11-12)", allLeads.length === 180, `got ${allLeads.length}`);
+check("Hampton Roads = 33 shared records, Busch Gardens exactly once", hrAll.length === 33 && hrAll.every((l) => l.sharedBook === true) && hrAll.filter((l) => l.id === "bgw-williamsburg-dest").length === 1, `got ${hrAll.length}`);
+check("Nashville = 57 shared records (the two 57-books folded)", nashAll.length === 57 && nashAll.every((l) => l.sharedBook === true), `got ${nashAll.length}`);
+check("every Nashville lead carries its playbook", nashAll.filter((l) => l.playbook).length === 57, `got ${nashAll.filter((l) => l.playbook).length}`);
+check("total lead records = 90 after the shared-books fold (was 180 across two books)", allLeads.length === 90, `got ${allLeads.length}`);
 
 const jeffSeat = await store.get(`bdevrep:${JEFF_ID}`);
 check("HQ-JEFF seat sits on Jeff's joinsignl admin", !!(jeffSeat && jeffSeat.active && jeffSeat.repCode === "HQ-JEFF" && jeffSeat.hqSeat === true), JSON.stringify(jeffSeat).slice(0, 160));
@@ -228,17 +230,19 @@ check("Tony's login payload shows his active seat", !!(tonyLogin.data.user && to
   check("overview lists both seats", ov.status === 200 && ov.data.reps.length === 2 && ov.data.reps.map((s) => s.repCode).sort().join(",") === "HQ-JEFF,HR-TONY", JSON.stringify(ov.data.reps || []).slice(0, 200));
   const hr = (ov.data.markets || []).find((m) => m.marketId === "hampton-roads");
   const na = (ov.data.markets || []).find((m) => m.marketId === "nashville");
-  check("overview counts: Hampton Roads 66 loaded, Nashville 114 (both books, HQ load 2026-11-12)", !!(hr && hr.loaded === 66 && na && na.loaded === 114), `hr=${hr && hr.loaded} na=${na && na.loaded}`);
+  // Shared books: one record per business now, so the loaded
+  // counts are the unified 33 / 57, not the two-book 66 / 114.
+  check("overview counts: Hampton Roads 33 loaded, Nashville 57 (shared books, HQ load 2026-11-12)", !!(hr && hr.loaded === 33 && na && na.loaded === 57), `hr=${hr && hr.loaded} na=${na && na.loaded}`);
   const ls = ov.data.loaderStatus || {};
-  check("overview surfaces all four loaders done", ["seed155", "enrich157", "destLoad20261109", "jeffSeat161"].every((k) => ls[k] && ls[k].state === "done"), JSON.stringify(ls).slice(0, 300));
+  check("overview surfaces all six loaders done", ["seed155", "enrich157", "destLoad20261109", "jeffSeat161", "tonyNashville20261112", "sharedBooks20261112"].every((k) => ls[k] && ls[k].state === "done"), JSON.stringify(ls).slice(0, 300));
   check("Jeff loader recorded its binding (jeff@joinsignl.com)", ls.jeffSeat161 && ls.jeffSeat161.resolvedVia === "email:jeff@joinsignl.com", `via=${ls.jeffSeat161 && ls.jeffSeat161.resolvedVia}`);
 }
 {
   const vc = await anon("GET", "/api/verify/counts", null, { headers: { "x-signl-verify-token": "fixture-verify-token-167" } });
   check("verify/counts carries the bdev health block", vc.status === 200 && !!vc.data.bdev, `got ${vc.status}`);
   check("health: 2 seats, BGW present", vc.data.bdev && vc.data.bdev.seats === 2 && vc.data.bdev.bgwPresent === true, JSON.stringify(vc.data.bdev).slice(0, 200));
-  check("health: lead counts by market", vc.data.bdev && vc.data.bdev.leadsByMarket["hampton-roads"] === 66 && vc.data.bdev.leadsByMarket["nashville"] === 114, JSON.stringify(vc.data.bdev && vc.data.bdev.leadsByMarket));
-  check("health: loader states all done", vc.data.bdev && ["seed155", "enrich157", "destLoad20261109", "jeffSeat161"].every((k) => vc.data.bdev.loaderStatus[k] && vc.data.bdev.loaderStatus[k].state === "done"), "");
+  check("health: lead counts by market (shared totals 33 / 57)", vc.data.bdev && vc.data.bdev.leadsByMarket["hampton-roads"] === 33 && vc.data.bdev.leadsByMarket["nashville"] === 57, JSON.stringify(vc.data.bdev && vc.data.bdev.leadsByMarket));
+  check("health: loader states all done", vc.data.bdev && ["seed155", "enrich157", "destLoad20261109", "jeffSeat161", "tonyNashville20261112", "sharedBooks20261112"].every((k) => vc.data.bdev.loaderStatus[k] && vc.data.bdev.loaderStatus[k].state === "done"), "");
 }
 {
   // Jeff's own Sell view of Nashville, through the rep API his
@@ -265,20 +269,28 @@ await bizdev.maybeSeedBizdev();
 await bizdev.maybeEnrich157();
 await bizdev.maybeLoadDest20261109();
 await bizdev.maybeLoadJeffSeat161();
+await bizdev.maybeCleanup169();
+await bizdev.maybeCleanupTony170();
+await bizdev.maybeLoadTonyNashville20261112();
+await bizdev.maybeUnifySharedBooks20261112();
 await bizdev.maybeSeedBizdev();
 await bizdev.maybeLoadJeffSeat161();
+await bizdev.maybeUnifySharedBooks20261112();
 const seats = (await store.list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active);
 const leads = (await store.list("bdevlead:")).map((r) => r.value);
-const byAssignee = {};
-for (const l of leads) byAssignee[l.assignedRepId] = (byAssignee[l.assignedRepId] || 0) + 1;
-console.log(JSON.stringify({ seats: seats.length, codes: seats.map((s) => s.repCode).sort(), leads: leads.length, byAssignee, bgwCopies: leads.filter((l) => l.masterId === "bgw-williamsburg-dest").length, bgw: leads.filter((l) => l.id === "bgw-williamsburg-dest").length }));
+const byMarket = {};
+for (const l of leads) byMarket[l.marketId] = (byMarket[l.marketId] || 0) + 1;
+console.log(JSON.stringify({ seats: seats.length, codes: seats.map((s) => s.repCode).sort(), leads: leads.length, byMarket, shared: leads.filter((l) => l.sharedBook === true).length, bgwSelfMastered: leads.filter((l) => l.masterId === "bgw-williamsburg-dest").length, bgw: leads.filter((l) => l.id === "bgw-williamsburg-dest").length }));
 `);
   const out = execFileSync(process.execPath, [child], { env: { ...process.env }, encoding: "utf8" });
   const snap = JSON.parse(out.trim().split("\n").pop());
   check("re-run: still 2 seats with the same codes", snap.seats === 2 && snap.codes.join(",") === "HQ-JEFF,HR-TONY", JSON.stringify(snap));
-  check("re-run: still 180 leads, no duplicates", snap.leads === 180, `got ${snap.leads}`);
-  check("re-run: exactly one BGW original + one Jeff copy", snap.bgw === 1 && snap.bgwCopies === 2, JSON.stringify(snap));
-  check("re-run: per-book counts unchanged (Tony 90 incl. his Nashville book, Jeff 90)", snap.byAssignee[TONY.id] === 90 && snap.byAssignee[JEFF_ID] === 90, JSON.stringify(snap.byAssignee));
+  // 90, not 180: the shared-books fold leaves one record per
+  // business, and the -161 guard stops its copy steps from
+  // resurrecting Jeff's copies in this fresh process.
+  check("re-run: still 90 leads, no duplicates, no resurrected copies", snap.leads === 90, `got ${snap.leads}`);
+  check("re-run: exactly one BGW record, self-mastered (Jeff's copy folded into it)", snap.bgw === 1 && snap.bgwSelfMastered === 1, JSON.stringify(snap));
+  check("re-run: market counts unchanged and every record still shared", snap.byMarket["hampton-roads"] === 33 && snap.byMarket["nashville"] === 57 && snap.shared === 90, JSON.stringify(snap));
   fs.unlinkSync(child);
 }
 

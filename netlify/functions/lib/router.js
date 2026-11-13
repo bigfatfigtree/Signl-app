@@ -23670,6 +23670,12 @@ async function route(event) {
     // added to his seat markets, claimed-flag guarded; chains
     // the seed/Jeff-seat/cleanup ladder first.
     (async () => { try { await bizdev.maybeLoadTonyNashville20261112(); } catch (e) { /* Tony Nashville load is best-effort */ } })(),
+    // HQ load 2026-11-12 (Jeff's order): SHARED BOOKS — Nashville
+    // + Hampton Roads unify into one record set per business,
+    // worked by both Jeff and Tony with a badge-not-hide work
+    // claim. Claimed-flag guarded, single-flight, chains the
+    // whole Biz Dev ladder first; best-effort like every loader.
+    (async () => { try { await bizdev.maybeUnifySharedBooks20261112(); } catch (e) { /* shared books unification is best-effort */ } })(),
     // Build -161: Jeff's own seller seat (HQ-JEFF) + his Hampton
     // Roads working copies + the Nashville book. Runs after the
     // -157 enrichment settles so the copies carry their playbooks;

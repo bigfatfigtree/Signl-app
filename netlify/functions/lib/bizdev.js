@@ -173,10 +173,50 @@ function effectiveSeat(seat, marketId) {
   return { ...seat, marketId: m.marketId, marketName: m.marketName };
 }
 function seatSummary(seat) {
-  return { marketId: seat.marketId, marketName: seat.marketName, markets: seatMarkets(seat), hqSeat: !!seat.hqSeat, repCode: seat.repCode };
+  return { marketId: seat.marketId, marketName: seat.marketName, markets: seatMarkets(seat), hqSeat: !!seat.hqSeat, repCode: seat.repCode, sharedBook: !!seat.sharedBook };
 }
 
 function pinHashOf(pin, salt) { return crypto.createHash("sha256").update(`${salt}:${pin}`).digest("hex"); }
+
+// ---------------- HQ load 2026-11-12: SHARED books ----------------
+// Jeff's order (2026-11-12 22:46 ET): "can I work Nashville list
+// too and my notes update in his as well and vice versa so he can
+// see I claimed that business and working that one" — approved
+// design: BADGE, NOT HIDE. Nashville + Hampton Roads stop being
+// per-seat copies: ONE record set per business, read and written
+// by BOTH seats (HQ-JEFF + HR-TONY). A lead joins the shared book
+// by carrying sharedBook/sharedGroup; a seat joins by carrying
+// sharedBook on its seat record. The migration
+// (maybeUnifySharedBooks20261112, below) sets both, once. Every
+// other market and every other seat keeps the per-seat book it
+// has always had — leadInSeatBook is the ONLY door, and it opens
+// only when lead AND seat both carry the mark for a shared
+// market the seat actually holds.
+const SHARED_BOOKS_FLAG = "config:bdevSharedBooks20261112";
+const SHARED_MARKETS = ["hampton-roads", "nashville"];
+const SHARED_GROUP = "hq";
+let sharedBooksDoneLatch = false;
+async function sharedBooksAreDone() {
+  if (sharedBooksDoneLatch) return true;
+  const flag = await store().get(SHARED_BOOKS_FLAG);
+  if (flag && flag.done) { sharedBooksDoneLatch = true; return true; }
+  return false;
+}
+function leadInSeatBook(lead, seat) {
+  if (!lead || !seat) return false;
+  if (lead.assignedRepId === seat.userId) return true;
+  return !!(lead.sharedBook && seat.sharedBook
+    && SHARED_MARKETS.includes(lead.marketId)
+    && seatHasMarket(seat, lead.marketId));
+}
+// The rep-facing work claim (distinct from a business's founding
+// claim): who on the team has staked this business. Lives on the
+// lead as workClaim { byUserId, byName, byRepCode, at } | null.
+function workClaimOf(lead) {
+  const wc = lead && lead.workClaim;
+  if (!wc || !wc.byUserId) return null;
+  return { byUserId: wc.byUserId, byName: wc.byName || "", byRepCode: wc.byRepCode || "", at: wc.at || null };
+}
 
 // ---------------- leads ----------------
 
@@ -235,12 +275,17 @@ async function allLeads(opts) {
 // secondContact — the fields the enrichment load-in fills);
 // contacts a seller adds by hand live in bdevcontact: records
 // they own. ownerUserId null = every book (the HQ view).
-async function rolodexEntries170(ownerUserId) {
+// ownerUserId null = every book (the HQ view). A seat may be
+// passed as the second arg (shared books, 2026-11-12): the
+// rolodex then covers the seat's whole book — for Jeff + Tony
+// in Nashville / Hampton Roads that is the one shared record
+// set, so a contact either man works shows in both rolodexes.
+async function rolodexEntries170(ownerUserId, seat) {
   const users = await allUsers170();
   const nameOf = (uid) => { const u = users.find((x) => x.id === uid); return u ? (u.name || u.email || uid) : uid; };
   const out = [];
   for (const l of await allLeads()) {
-    if (ownerUserId && l.assignedRepId !== ownerUserId) continue;
+    if (ownerUserId && (seat ? !leadInSeatBook(l, seat) : l.assignedRepId !== ownerUserId)) continue;
     if (!(l.dmName || l.email || l.phone1 || l.phone2)) continue;
     out.push({
       id: "lead:" + l.id, source: "lead", leadId: l.id,
@@ -372,12 +417,27 @@ function repLeadPayload(lead, opts) {
     nextLate: lead.nextAction && lead.nextAction.date ? daysLateWords(lead.nextAction.date) : null,
     lastTouch: lead.lastTouch || null,
     createdAt: lead.createdAt,
+    // Shared books (2026-11-12): the team work claim rides every
+    // payload — list cards badge it, the detail page works it.
+    sharedBook: !!lead.sharedBook,
+    workClaim: (() => { const wc = workClaimOf(lead); return wc ? { byName: wc.byName, byRepCode: wc.byRepCode, at: wc.at } : null; })(),
   };
   if (full) {
     out.stageHistory = lead.stageHistory || [];
     out.statusHistory = lead.statusHistory || [];
-    out.playbook = renderPlaybookLinks(lead);
-    out.claimLink = lead.attribution && lead.attribution.repCode ? claimPath(lead) : null;
+    // Shared books: the claim link inside a playbook (and the
+    // payload's own claimLink) must carry the VIEWER's rep code
+    // — on one shared record, the stored attribution belongs to
+    // whoever's copy won the merge, and handing Jeff Tony's link
+    // (or Tony Jeff's) would credit the wrong man. The stored
+    // record is never mutated by a read: the render walks a
+    // shallow copy, the same discipline as renderPlaybookLinks.
+    let viewLead = lead;
+    if (lead.sharedBook && opts && opts.viewerRepCode && lead.attribution && lead.attribution.repCode !== opts.viewerRepCode) {
+      viewLead = { ...lead, attribution: { ...lead.attribution, repCode: opts.viewerRepCode } };
+    }
+    out.playbook = renderPlaybookLinks(viewLead);
+    out.claimLink = viewLead.attribution && viewLead.attribution.repCode ? claimPath(viewLead) : null;
   }
   return out;
 }
@@ -494,7 +554,7 @@ function clusterLeads(leads) {
 function todayStr() { return nowIso().slice(0, 10); }
 
 async function dayPlan(seat) {
-  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => leadInSeatBook(l, seat));
   const today = todayStr();
   const due = leads.filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today && l.stage !== STAGE_CLAIMED && l.stage !== "Said no" && l.stage !== "Not a fit")
     .sort((a, b) => String(a.nextAction.date).localeCompare(String(b.nextAction.date)));
@@ -952,16 +1012,19 @@ async function bdevHealth() {
   // shows each rep's book directly (Jeff's Hampton Roads count
   // after the cleanup, and how many Busch Gardens records sit
   // in it) instead of market totals alone.
-  const codeByUser = new Map(seats.map((s) => [s.userId, s.repCode]));
+  // Shared books (2026-11-12): a shared lead counts in EVERY
+  // sharing seat's book — the book is the team's one record
+  // set, so Jeff's and Tony's counts both include it.
   const books = {};
   for (const l of leads) {
-    const code = codeByUser.get(l.assignedRepId);
-    if (!code) continue;
-    books[code] = books[code] || {};
-    books[code][l.marketId] = (books[code][l.marketId] || 0) + 1;
+    for (const s of seats) {
+      if (!leadInSeatBook(l, s)) continue;
+      books[s.repCode] = books[s.repCode] || {};
+      books[s.repCode][l.marketId] = (books[s.repCode][l.marketId] || 0) + 1;
+    }
   }
   const hq = seats.find((s) => s.repCode === "HQ-JEFF");
-  const bgwInJeffBook = hq ? leads.filter((l) => l.assignedRepId === hq.userId && l.marketId === "hampton-roads" && normName(l.name) === "busch gardens williamsburg").length : null;
+  const bgwInJeffBook = hq ? leads.filter((l) => leadInSeatBook(l, hq) && l.marketId === "hampton-roads" && normName(l.name) === "busch gardens williamsburg").length : null;
   return {
     seats: seats.length,
     seatCodes: seats.map((s) => s.repCode).sort(),
@@ -1359,7 +1422,11 @@ async function computeScoreboard(seat, now) {
     .filter((v) => v && v.repId === seat.userId && v.outcome && inWindow(v.visitAt || v.createdAt));
   const visits = logs.length;
   const followUpsSet = logs.filter((v) => SCOREBOARD_FOLLOWUP_OUTCOMES.includes(v.outcome)).length;
-  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+  // Shared books (2026-11-12): the scoreboard reads the seat's
+  // whole book — for the shared markets that is the team's one
+  // record set, so the claims line is a BOOK line (the visits
+  // line above stays personal: it counts this rep's own logs).
+  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => leadInSeatBook(l, seat));
   const claims = leads.filter((l) => l.founding && l.founding.claimedAt && inWindow(l.founding.claimedAt)).length;
   const today = nowDate.toISOString().slice(0, 10);
   const overdueNow = leads.filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date < today
@@ -1473,6 +1540,22 @@ const maybeLoadJeffSeat161 = singleFlight(async function () {
   await store().set(`bdevrep:${jeff.id}`, seat);
   jeff.bizdevSeat = { active: true, marketId: seat.marketId, marketName: seat.marketName, repCode: "HQ-JEFF", markets: seat.markets, hqSeat: true };
   await store().set(`user:${jeff.id}`, jeff);
+
+  // Shared books (HQ load 2026-11-12): once Nashville + Hampton
+  // Roads are unified into ONE record set per business, the
+  // per-seat copies steps below must NEVER run again — this
+  // loader has no done-flag early return (it re-runs its body
+  // every fresh process), and its only guards are the copies'
+  // existence, which the unification deliberately removes.
+  // Without this check the loader would resurrect Jeff's copies
+  // on the next cold start and silently un-share the books.
+  // The seat step above stays (it is idempotent and harmless);
+  // the copy steps and the Nashville load are what stop.
+  if (await sharedBooksAreDone()) {
+    jeffSeatDone161 = true;
+    await noteLoaderStatus("jeffSeat161", { state: "done", detail: "HQ-JEFF seat live; per-seat copy steps retired by the shared-books unification", resolvedVia: jeffVia });
+    return true;
+  }
 
   // 2. Hampton Roads working copies (idempotent on masterId).
   const hrAll = await leadsOfMarket("hampton-roads");
@@ -2073,6 +2156,301 @@ const maybeLoadTonyNashville20261112 = singleFlight(async function () {
   return true;
 }, tonyNashvilleFlight, "tonyNashville20261112");
 
+// ---------------- HQ load 2026-11-12: SHARED BOOKS unification ----------------
+// Jeff's order (2026-11-12 22:46 ET), approved design BADGE NOT
+// HIDE: Nashville + Hampton Roads become ONE record set per
+// business, worked by both Jeff (HQ-JEFF) and Tony (HR-TONY).
+// Until now each market existed twice — Jeff's Nashville 57
+// (Build -161) beside Tony's Nashville 57 (tonight's load), and
+// Jeff's Hampton Roads copies beside Tony's originals — so a
+// note, a status, or a claim on one copy was invisible on the
+// other, and the two men could walk into the same shop blind.
+// This one-time migration, in the established loader pattern
+// (claimed-flag guarded, single-flight, chained after the whole
+// ladder, loader status recorded on every exit):
+//   1. Marks both seats sharedBook (and their user stamps), so
+//      leadInSeatBook opens the shared door for exactly these
+//      two seats in exactly these two markets.
+//   2. Per market, groups the two men's records by business
+//      identity (normalized name + city — the -169/-170 key)
+//      and folds each pair into ONE keeper: the richer record
+//      (richness169), with a cover bonus for the record the
+//      other book's copies point at via masterId (Hampton
+//      Roads: Tony's originals) and for carrying hqOrder
+//      (Nashville: Tony's copies). Singles are simply flagged
+//      shared. Records belonging to ANY other seat, and every
+//      other market, are never read for update and never
+//      written.
+//   3. Merge rules for a divergent pair:
+//      - Contact/intel fields fill from the loser (the -170
+//        FILL list); hqResearch merges section by section.
+//      - NOTES SURVIVE FROM BOTH SIDES: repNotes concatenate
+//        as two attributed blocks (author name + that copy's
+//        updated date). Identical notes collapse to one.
+//      - WORKING STATE (stage + explicit status) comes from
+//        the side furthest along: a founding-claimed stage
+//        never un-happens; a lone advanced side wins; a
+//        completed "Said no / Not a fit" beats an open
+//        conversation neither side finished; otherwise the
+//        most recent lastTouch wins, then stage depth
+//        (Visited < Talked-think < Talked-followup). Stage and
+//        status HISTORIES merge from both, chronological and
+//        de-duplicated. FOUNDING is a business fact, taken
+//        from whichever side is more advanced (Confirmed >
+//        Claimed > Not claimed) regardless of the stage unit.
+//      - nextAction: the winning side's, unless it carries no
+//        date and the other side's does (the -169 rule).
+//        lastTouch: the later of the two.
+//      - FLAGS union (doNotContact / jeffHandles / chain /
+//        categoryHold — a hold or a lock on either copy holds
+//        the shared record). hqTier: the stronger tier.
+//        hqOrder: whichever copy carries it.
+//      - WORK CLAIM: if either copy carries one, the merged
+//        record is claimed by that person (both: the earlier).
+//      - PLAYBOOK: Hampton Roads packs are one pack (copied),
+//        so they section-merge keeper-first like -170.
+//        Nashville keeps TONY'S voiced playbook whole: Tony is
+//        that book's primary field seller (tonight's load was
+//        built so he can work it tomorrow), the re-voiced pack
+//        passed a strict no-Jeff validation, and Jeff's own
+//        first-person Nashville scripts live on in the stored
+//        enrichment pack + his scripts document. If Tony's
+//        copy has none, Jeff's fills in.
+//      - The merge is audited on the keeper (sharedMerges) and
+//        every related record — visit logs, founding claims,
+//        escalations, activations, pre-warm drafts, storefront
+//        photos — is re-pointed from the loser onto the keeper
+//        before the loser record is deleted; masterId links
+//        anywhere that pointed at a loser re-point too.
+//   4. Records the before/after inventory per market in the
+//      flag + loader status, so the unification is visible on
+//      the HQ overview and GET /api/verify/counts.
+// Store cost (the -173 loader rule): six bounded prefix lists
+// (leads, logs, claims, escalations, activations, seats) plus
+// a handful of single gets — NO serial per-key scans; writes
+// happen once ever, behind the done flag, and re-runs are
+// no-ops. The -161 guard above retires the copy steps that
+// would otherwise resurrect the duplicates this removes.
+const sharedBooksFlight = {};
+const STAGE_RANK_SHARED = { "Visited — owner not in": 1, "Talked — needs to think": 2, "Talked — wants a follow-up": 3 };
+function foundingRankShared(f) {
+  if (!f || !f.status || f.status === "Not claimed") return 0;
+  return f.status === "Confirmed" ? 2 : 1;
+}
+function mergeHistoriesShared(a, b) {
+  const seen = new Set(); const out = [];
+  for (const e of [...(a || []), ...(b || [])]) {
+    if (!e) continue;
+    const k = `${e.at || ""}|${e.status || e.stage || ""}|${e.by || ""}`;
+    if (seen.has(k)) continue; seen.add(k); out.push(e);
+  }
+  return out.sort((x, y) => String((x && x.at) || "").localeCompare(String((y && y.at) || "")));
+}
+function workingSideShared(k, l) {
+  const ks = k.stage || "Not visited yet", ls = l.stage || "Not visited yet";
+  if (ks === STAGE_CLAIMED || ls === STAGE_CLAIMED) return ks === STAGE_CLAIMED ? k : l;
+  const kAdv = ks !== "Not visited yet", lAdv = ls !== "Not visited yet";
+  if (kAdv !== lAdv) return kAdv ? k : l;
+  if (!kAdv) return k;
+  const kTerm = ks === "Said no" || ks === "Not a fit", lTerm = ls === "Said no" || ls === "Not a fit";
+  if (kTerm !== lTerm) return kTerm ? k : l;
+  const kt = k.lastTouch && k.lastTouch.at ? String(k.lastTouch.at) : "";
+  const lt = l.lastTouch && l.lastTouch.at ? String(l.lastTouch.at) : "";
+  if (kt !== lt) return kt > lt ? k : l;
+  return (STAGE_RANK_SHARED[ks] || 0) >= (STAGE_RANK_SHARED[ls] || 0) ? k : l;
+}
+function mergeSharedNotes(keeper, loser, nameOf) {
+  const a = String(keeper.repNotes || "").trim();
+  const b = String(loser.repNotes || "").trim();
+  if (!a && !b) return keeper.repNotes || null;
+  if (!a) return loser.repNotes;
+  if (!b || a === b) return keeper.repNotes;
+  const aWhen = String(keeper.updatedAt || "").slice(0, 10);
+  const bWhen = String(loser.updatedAt || "").slice(0, 10);
+  return `${nameOf(keeper.assignedRepId)}'s notes${aWhen ? ` (their copy, updated ${aWhen})` : ""}:\n${a}\n\n${nameOf(loser.assignedRepId)}'s notes${bWhen ? ` (their copy, updated ${bWhen})` : ""}:\n${b}`;
+}
+function mergeSharedPairInto(keeper, loser, ctx) {
+  const FILL_FIELDS = ["shortName", "subType", "neighborhood", "address", "website", "websiteNote", "dmName", "dmRole", "dmRoleLabel", "secondContact", "usuallyHere", "phone1", "phone1Note", "phone2", "phone2Note", "email", "emailNote", "emailEvidence", "instagram", "instagramNote", "deskLead", "championName", "notFitReason"];
+  for (const k of FILL_FIELDS) {
+    if ((keeper[k] == null || keeper[k] === "") && loser[k] != null && loser[k] !== "") keeper[k] = loser[k];
+  }
+  // Playbook — Nashville: Tony's voiced pack wins whole (see
+  // the header). Everywhere else: fill, then section-merge
+  // keeper-first so no written section is lost.
+  if (keeper.marketId === "nashville") {
+    const tonyCopy = keeper.assignedRepId === ctx.tonyId ? keeper : (loser.assignedRepId === ctx.tonyId ? loser : null);
+    if (tonyCopy && tonyCopy.playbook) keeper.playbook = tonyCopy.playbook;
+    else if (!keeper.playbook && loser.playbook) keeper.playbook = loser.playbook;
+  } else {
+    if (!keeper.playbook && loser.playbook) keeper.playbook = loser.playbook;
+    else if (keeper.playbook && loser.playbook && typeof keeper.playbook === "object" && typeof loser.playbook === "object") {
+      keeper.playbook = { ...loser.playbook, ...keeper.playbook };
+    }
+  }
+  if (!keeper.hqResearch && loser.hqResearch) keeper.hqResearch = loser.hqResearch;
+  else if (keeper.hqResearch && loser.hqResearch && typeof keeper.hqResearch === "object" && typeof loser.hqResearch === "object") {
+    keeper.hqResearch = { ...loser.hqResearch, ...keeper.hqResearch };
+  }
+  keeper.repNotes = mergeSharedNotes(keeper, loser, ctx.nameOf);
+  // Working state: the furthest-along side's unit, both
+  // histories preserved.
+  const win = workingSideShared(keeper, loser);
+  const lose = win === keeper ? loser : keeper;
+  keeper.stage = win.stage || keeper.stage;
+  keeper.stageHistory = mergeHistoriesShared(keeper.stageHistory, loser.stageHistory);
+  const mergedStatus = win.status || lose.status || null;
+  if (mergedStatus) keeper.status = mergedStatus; else delete keeper.status;
+  keeper.statusHistory = mergeHistoriesShared(keeper.statusHistory, loser.statusHistory);
+  if (foundingRankShared(loser.founding) > foundingRankShared(keeper.founding)) keeper.founding = loser.founding;
+  if (win.nextAction && (win.nextAction.date || !lose.nextAction)) keeper.nextAction = win.nextAction;
+  else if (lose.nextAction && lose.nextAction.date) keeper.nextAction = lose.nextAction;
+  const kTouch = keeper.lastTouch && keeper.lastTouch.at ? String(keeper.lastTouch.at) : "";
+  const lTouch = loser.lastTouch && loser.lastTouch.at ? String(loser.lastTouch.at) : "";
+  if (lTouch > kTouch) keeper.lastTouch = loser.lastTouch;
+  // Flags union — a hold or a lock on either copy holds.
+  const flags = {};
+  for (const key of new Set([...Object.keys(keeper.flags || {}), ...Object.keys(loser.flags || {})])) {
+    flags[key] = !!((keeper.flags && keeper.flags[key]) || (loser.flags && loser.flags[key]));
+  }
+  keeper.flags = flags;
+  // Tier: the stronger letter wins. Order: whichever carries it.
+  const tierRank = { A: 3, B: 2, C: 1 };
+  if ((tierRank[loser.hqTier] || 0) > (tierRank[keeper.hqTier] || 0)) keeper.hqTier = loser.hqTier;
+  if (keeper.hqOrder == null && loser.hqOrder != null) keeper.hqOrder = loser.hqOrder;
+  // Work claim: either side's survives; both — the earlier.
+  const kw = workClaimOf(keeper), lw = workClaimOf(loser);
+  if (lw && (!kw || String(lw.at || "") < String(kw.at || ""))) keeper.workClaim = loser.workClaim;
+  if (!keeper.hqDecision && loser.hqDecision) keeper.hqDecision = loser.hqDecision;
+  if (loser.pendingApproval && !keeper.hqDecision) keeper.pendingApproval = true;
+  keeper.isNewForRep = !!(keeper.isNewForRep || loser.isNewForRep);
+  keeper.hasStorefrontPhoto = !!(keeper.hasStorefrontPhoto || loser.hasStorefrontPhoto);
+  const firsts = [keeper.attribution && keeper.attribution.firstTouchAt, loser.attribution && loser.attribution.firstTouchAt].filter(Boolean).sort();
+  keeper.attribution = { ...(keeper.attribution || {}), firstTouchAt: firsts[0] || null };
+  if (keeper.masterId === loser.id) {
+    keeper.masterId = loser.masterId && loser.masterId !== loser.id ? loser.masterId : keeper.id;
+  }
+  keeper.sharedMerges = [...(keeper.sharedMerges || []), { fromId: loser.id, fromOwner: loser.assignedRepId || null, at: nowIso() }];
+  return keeper;
+}
+async function repointSharedRelated(loserId, keeperId, rowSets) {
+  let moved = 0;
+  for (const rows of rowSets) {
+    for (const r of rows) {
+      const v = r.value;
+      if (v && v.leadId === loserId) { v.leadId = keeperId; await store().set(r.key, v); moved += 1; }
+    }
+  }
+  // Pre-warm drafts + storefront photos are keyed BY lead id.
+  for (const prefix of ["bdevprewarm:", "bdevphoto:"]) {
+    const rec = await store().get(prefix + loserId);
+    if (!rec) continue;
+    const existing = await store().get(prefix + keeperId);
+    if (!existing) await store().set(prefix + keeperId, prefix === "bdevprewarm:" ? { ...rec, leadId: keeperId } : rec);
+    await store().del(prefix + loserId);
+    moved += 1;
+  }
+  return moved;
+}
+const maybeUnifySharedBooks20261112 = singleFlight(async function () {
+  if (sharedBooksDoneLatch) return true;
+  const flag0 = await store().get(SHARED_BOOKS_FLAG);
+  if (flag0 && flag0.done) {
+    sharedBooksDoneLatch = true;
+    await noteLoaderStatus("sharedBooks20261112", { state: "done", detail: "shared books flag done", markets: flag0.markets || null });
+    return true;
+  }
+  await maybeLoadTonyNashville20261112(); // chains the whole ladder first (seed -> enrich -> dest -> Jeff seat -> cleanups -> Tony Nashville)
+  const seatRows = (await store().list("bdevrep:")).map((r) => r.value).filter(Boolean);
+  const byCode = (code) => seatRows.filter((s) => s.active && s.repCode === code)
+    .sort((a, b) => String(a.assignedAt || "").localeCompare(String(b.assignedAt || "")))[0];
+  const jeffSeat = byCode("HQ-JEFF");
+  const tonySeat = byCode("HR-TONY");
+  if (!jeffSeat || !tonySeat) {
+    await noteLoaderStatus("sharedBooks20261112", { state: "waiting", detail: `seats not ready (HQ-JEFF: ${!!jeffSeat}, HR-TONY: ${!!tonySeat})` });
+    return false;
+  }
+  await store().set(SHARED_BOOKS_FLAG, { claimedAt: nowIso(), done: false, running: true });
+
+  // 1. Both seats (and their user stamps) join the shared book.
+  const users = deps.allUsers ? await deps.allUsers() : [];
+  const userById = new Map((users || []).map((u) => [u.id, u]));
+  const nameOf = (uid) => { const u = userById.get(uid); return u ? (u.name || u.email || uid) : uid; };
+  for (const s of [jeffSeat, tonySeat]) {
+    if (!s.sharedBook) { s.sharedBook = true; await store().set(`bdevrep:${s.userId}`, s); }
+    const u = userById.get(s.userId) || (await store().get(`user:${s.userId}`));
+    if (u && u.bizdevSeat && u.bizdevSeat.active && u.bizdevSeat.sharedBook !== true) {
+      u.bizdevSeat = { ...u.bizdevSeat, sharedBook: true };
+      await store().set(`user:${u.id}`, u);
+    }
+  }
+
+  // 2. Bounded bulk reads — the whole working set in six lists.
+  const leads = await allLeads({ fresh: true });
+  const logRows = await store().list("bdevlog:");
+  const rowSets = [logRows, await store().list("bdevclaim:"), await store().list("bdevesc:"), await store().list("bdevact:")];
+  const logCounts = new Map();
+  for (const r of logRows) { const v = r.value; if (v && v.leadId) logCounts.set(v.leadId, (logCounts.get(v.leadId) || 0) + 1); }
+  const referenced = new Set();
+  for (const l of leads) if (l.masterId && l.masterId !== l.id) referenced.add(l.masterId);
+  const ctx = { tonyId: tonySeat.userId, nameOf };
+  const loserToKeeper = new Map();
+  const perMarket = {};
+  let relatedMoved = 0;
+  for (const marketId of SHARED_MARKETS) {
+    const mine = leads.filter((l) => l.marketId === marketId && (l.assignedRepId === jeffSeat.userId || l.assignedRepId === tonySeat.userId));
+    const before = {
+      jeff: mine.filter((l) => l.assignedRepId === jeffSeat.userId).length,
+      tony: mine.filter((l) => l.assignedRepId === tonySeat.userId).length,
+    };
+    const groups = new Map();
+    for (const l of mine) {
+      const k = `${normName(l.name)}||${normName(l.city || "")}`;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(l);
+    }
+    let mergedPairs = 0, singlesFlagged = 0;
+    for (const group of groups.values()) {
+      if (group.length === 1) {
+        const l = group[0];
+        if (!l.sharedBook) { l.sharedBook = true; l.sharedGroup = SHARED_GROUP; await saveLead(l); singlesFlagged += 1; }
+        continue;
+      }
+      const scored = group.map((l) => ({ l, score: (referenced.has(l.id) ? 100 : 0) + (l.hqOrder ? 25 : 0) + richness169(l, logCounts) }))
+        .sort((a, b) => (b.score - a.score)
+          || String(a.l.createdAt || "").localeCompare(String(b.l.createdAt || ""))
+          || String(a.l.id).localeCompare(String(b.l.id)));
+      const keeper = scored[0].l;
+      for (const { l: loser } of scored.slice(1)) {
+        mergeSharedPairInto(keeper, loser, ctx);
+        relatedMoved += await repointSharedRelated(loser.id, keeper.id, rowSets);
+        loserToKeeper.set(loser.id, keeper.id);
+        await store().del(`bdevlead:${loser.id}`);
+        mergedPairs += 1;
+      }
+      keeper.sharedBook = true;
+      keeper.sharedGroup = SHARED_GROUP;
+      await saveLead(keeper);
+    }
+    const after = (await leadsOfMarket(marketId, { fresh: true }))
+      .filter((l) => l.assignedRepId === jeffSeat.userId || l.assignedRepId === tonySeat.userId).length;
+    perMarket[marketId] = { jeffBefore: before.jeff, tonyBefore: before.tony, mergedPairs, singlesFlagged, after };
+  }
+  // 3. masterId links anywhere that pointed at a deleted loser
+  // now point at its keeper.
+  if (loserToKeeper.size) {
+    const all = await allLeads({ fresh: true });
+    for (const l of all) {
+      if (l.masterId && loserToKeeper.has(l.masterId)) { l.masterId = loserToKeeper.get(l.masterId); await saveLead(l); }
+    }
+  }
+  const counts = { markets: perMarket, relatedMoved };
+  await store().set(SHARED_BOOKS_FLAG, { claimedAt: nowIso(), done: true, at: nowIso(), ...counts });
+  sharedBooksDoneLatch = true;
+  await noteLoaderStatus("sharedBooks20261112", { state: "done", detail: "Nashville + Hampton Roads unified into one shared record set per business (HQ-JEFF + HR-TONY)", ...counts });
+  await logEvent({ type: "bdev_shared_books_20261112", actorId: null, actorRole: "system", subjectId: null, market: null, data: counts });
+  return true;
+}, sharedBooksFlight, "sharedBooks20261112");
+
 // The daily sweep (POST /admin/bdev/sweep): one alarm record per
 // rep per day while follow-ups sit overdue (same-day overwrite =
 // idempotent), plus Monday scoreboards for the week just ended.
@@ -2082,7 +2460,7 @@ async function runBizdevSweep(opts) {
   const seats = (await listPrefix170("bdevrep:")).filter((v) => v && v.active);
   let alarmsWritten = 0, scoreboardsWritten = 0;
   for (const seat of seats) {
-    const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const leads = (await leadsOfMarket(seat.marketId)).filter((l) => leadInSeatBook(l, seat));
     const overdue = leads
       .filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date < today
         && !QUEUE_CLOSED_STAGES.includes(l.stage)
@@ -2118,7 +2496,7 @@ async function buildRepHome157(seat, user, opts) {
   const [plan, progress, leads] = await Promise.all([
     dayPlan(seat),
     marketProgress(seat.marketId),
-    leadsOfMarket(seat.marketId).then((rows) => rows.filter((l) => l.assignedRepId === seat.userId)),
+    leadsOfMarket(seat.marketId).then((rows) => rows.filter((l) => leadInSeatBook(l, seat))),
   ]);
   const today = todayStr();
   const followUps = leads
@@ -2158,7 +2536,7 @@ async function buildRepHome157(seat, user, opts) {
 // preview-reuse reason as buildRepHome157. Read-only.
 async function moneyPayload157(seat) {
   const money = await moneyFor(seat.userId, seat.marketId);
-  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+  const leads = (await leadsOfMarket(seat.marketId)).filter((l) => leadInSeatBook(l, seat));
   const pipeline = leads.filter((l) => (l.founding && (l.founding.status === "Claimed" || l.founding.status === "Confirmed")) || (l.stage || "").startsWith("Very interested"))
     .map((l) => ({ name: l.name, status: l.founding && l.founding.status !== "Not claimed" ? l.founding.status : "Interested", plan: (l.founding && l.founding.planInterest) || null, claimedAt: (l.founding && l.founding.claimedAt) || null }));
   const pipelineValue = pipeline.reduce((n, p) => n + (p.plan || BLENDED_MONTHLY) * 0.25, 0);
@@ -2253,7 +2631,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
 
   // GET /bdev/queue — the priority queue over the rep's own book.
   if (method === "GET" && seg[1] === "queue" && seg.length === 2) {
-    const book = (await leadsOfMarket(effSeat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const book = (await leadsOfMarket(effSeat.marketId)).filter((l) => leadInSeatBook(l, seat));
     const bench = await benchCreators157(effSeat.marketId);
     return json(200, { queue: buildQueue157(book, bench) });
   }
@@ -2261,14 +2639,14 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
   // GET /bdev/trips — the same actionable book, grouped into
   // drive areas (neighborhoods) so a trip never crisscrosses.
   if (method === "GET" && seg[1] === "trips" && seg.length === 2) {
-    const book = (await leadsOfMarket(effSeat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const book = (await leadsOfMarket(effSeat.marketId)).filter((l) => leadInSeatBook(l, seat));
     const bench = await benchCreators157(effSeat.marketId);
     return json(200, { trips: buildTrips157(book, bench) });
   }
 
   // GET /bdev/leads?q=&filter=&city=&neighborhood=
   if (method === "GET" && seg[1] === "leads" && seg.length === 2) {
-    let leads = (await leadsOfMarket(effSeat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    let leads = (await leadsOfMarket(effSeat.marketId)).filter((l) => leadInSeatBook(l, seat));
     // Build -157: filter facets come from the rep's whole book
     // (before any filter), so the pickers never narrow themselves
     // away. City + neighborhood are plain equality filters.
@@ -2318,7 +2696,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     const global = await allLeads({ fresh: true });
     const dup = await dupCheck(marketLeads, global, candidate, null);
     if (dup.hard) {
-      if (dup.inMarket && dup.hard.assignedRepId === seat.userId) return json(200, { duplicate: "own", leadId: dup.hard.id, message: "This business is already in your book." });
+      if (dup.inMarket && leadInSeatBook(dup.hard, seat)) return json(200, { duplicate: "own", leadId: dup.hard.id, message: "This business is already in your book." });
       return json(200, { duplicate: "taken", message: "This business is already on Magpie — Jeff's team has it." });
     }
     if (dup.soft) {
@@ -2339,6 +2717,10 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       attribution: { repCode: seat.repCode, firstTouchAt: null, source: "Added by rep" },
       nextAction: { type: "Visit", date: null, what: "First visit" }, lastTouch: null,
       pendingApproval: true, hqDecision: null, isNewForRep: false,
+      // Shared books (2026-11-12): a lead either man adds by
+      // hand in a shared market joins the shared book at birth,
+      // so the other sees it in his list the same moment.
+      ...(seat.sharedBook && SHARED_MARKETS.includes(effSeat.marketId) ? { sharedBook: true, sharedGroup: SHARED_GROUP } : {}),
       createdAt: nowIso(), updatedAt: nowIso(),
     };
     lead.masterId = lead.id;
@@ -2346,14 +2728,14 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     if (dncHit) lead.flags.doNotContact = true;
     await store().set(`bdevlead:${lead.id}`, lead);
     await logCapture({ type: "bdev_lead_added", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { source: "Added by rep" } });
-    return json(200, { lead: repLeadPayload(lead, { full: true }) });
+    return json(200, { lead: repLeadPayload(lead, { full: true, viewerRepCode: seat.repCode }) });
   }
 
   // Build -170 CRM: the rolodex (contacts) — lead contacts read
   // from the lead records plus contacts the seller adds by hand.
   if (seg[1] === "contacts" && seg.length === 2) {
     if (method === "GET") {
-      const all = await rolodexEntries170(seat.userId);
+      const all = await rolodexEntries170(seat.userId, seat);
       const cities = [...new Set(all.map((c) => c.city).filter(Boolean))].sort();
       const q = String((query && query.q) || "").toLowerCase();
       const cityF = String((query && query.city) || "");
@@ -2414,11 +2796,41 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
   if (seg[1] === "leads" && seg.length >= 3) {
     const lead = await getLead(seg[2]);
     if (!lead || lead.marketId !== effSeat.marketId) return err(404, "Not in your market — ask HQ.");
-    if (lead.assignedRepId !== seat.userId) return err(404, "That lead isn't in your book.");
+    if (!leadInSeatBook(lead, seat)) return err(404, "That lead isn't in your book.");
 
     if (method === "GET" && seg.length === 3) {
       const logs = await allLogs(lead.id);
-      return json(200, { lead: repLeadPayload(lead, { full: true }), logs: logs.filter((v) => v.outcome || v.type === "price_shown" || v.type === "show_session").slice(-20) });
+      return json(200, { lead: repLeadPayload(lead, { full: true, viewerRepCode: seat.repCode }), logs: logs.filter((v) => v.outcome || v.type === "price_shown" || v.type === "show_session").slice(-20) });
+    }
+
+    // POST /bdev/leads/:id/work-claim + /work-release — the
+    // shared-book work claim (2026-11-12): either man stakes an
+    // unclaimed business with one action; the badge (claimedBy +
+    // claimedAt) is on the shared record, so the other sees it
+    // in list and detail the moment it lands. Claiming NEVER
+    // hides the business from the other — both keep full read
+    // and write. Only the claimer can release their own claim.
+    if (method === "POST" && seg[3] === "work-claim") {
+      const wc = workClaimOf(lead);
+      if (wc && wc.byUserId !== seat.userId) {
+        return json(409, { error: `${wc.byName || wc.byRepCode} is already working this one.`, workClaim: { byName: wc.byName, byRepCode: wc.byRepCode, at: wc.at } });
+      }
+      if (!wc) {
+        lead.workClaim = { byUserId: seat.userId, byName: String(user.name || "").trim() || seat.repCode, byRepCode: seat.repCode, at: nowIso() };
+        await saveLead(lead);
+        await logEvent({ type: "bdev_work_claimed", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { business: lead.name, repCode: seat.repCode } });
+      }
+      return json(200, { ok: true, lead: repLeadPayload(lead, { full: true, viewerRepCode: seat.repCode }) });
+    }
+    if (method === "POST" && seg[3] === "work-release") {
+      const wc = workClaimOf(lead);
+      if (wc && wc.byUserId !== seat.userId) return err(403, `Only ${wc.byName || wc.byRepCode} can release their claim on this one.`);
+      if (wc) {
+        lead.workClaim = null;
+        await saveLead(lead);
+        await logEvent({ type: "bdev_work_released", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { business: lead.name, repCode: seat.repCode } });
+      }
+      return json(200, { ok: true, lead: repLeadPayload(lead, { full: true, viewerRepCode: seat.repCode }) });
     }
 
     // POST /bdev/leads/:id/status — the official status control
@@ -2433,7 +2845,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       // the -161 rendered QA). Older entries already carrying
       // an id are hidden client-side.
       await setLeadStatus(lead, status, String(user.name || "").trim() || seat.repCode || "Rep");
-      return json(200, { ok: true, lead: repLeadPayload(lead, { full: true }) });
+      return json(200, { ok: true, lead: repLeadPayload(lead, { full: true, viewerRepCode: seat.repCode }) });
     }
 
     if (method === "POST" && seg[3] === "checkin") {
@@ -2451,7 +2863,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       // landed is returned, never doubled.
       if (b.clientUid) {
         const dupe = logs.find((v) => v.clientUid === String(b.clientUid) && v.repId === seat.userId);
-        if (dupe) return json(200, { ok: true, message: "Logged.", lead: repLeadPayload(lead, { full: true }), deduped: true });
+        if (dupe) return json(200, { ok: true, message: "Logged.", lead: repLeadPayload(lead, { full: true, viewerRepCode: seat.repCode }), deduped: true });
       }
       let log = logs.find((v) => v.open && v.repId === seat.userId);
       if (!log) log = { id: uuid(), leadId: lead.id, repId: seat.userId, marketId: effSeat.marketId, type: "visit", visitAt: b.visitAt || nowIso(), createdAt: nowIso() };
@@ -2520,7 +2932,7 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       await saveLead(lead);
       await logCapture({ type: "bdev_visit", actorId: user.id, actorRole: "bizdev", subjectId: lead.id, market: effSeat.marketName, data: { outcome, objections: log.objections, catsWanted: log.catsWanted, supplyGap: log.supplyGap, competitor: log.competitor, spokeWith: log.spokeWith } });
       const confirm = outcome === "Claimed a founding spot" ? "Logged. Founding spot claimed — HQ confirms it." : fuDate ? `Logged. Follow-up set for ${fuDate}.` : "Logged.";
-      return json(200, { ok: true, message: confirm, lead: repLeadPayload(lead, { full: true }) });
+      return json(200, { ok: true, message: confirm, lead: repLeadPayload(lead, { full: true, viewerRepCode: seat.repCode }) });
     }
 
     if (method === "POST" && seg[3] === "escalate") {
@@ -2547,7 +2959,8 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     if (method === "POST" && seg[3] === "send-claim") {
       lead.nextAction = { type: "Wait", date: addDaysStr(todayStr(), 2), what: "Said yes — claim link not finished" };
       await saveLead(lead);
-      return json(200, { ok: true, claimUrl: `${process.env.APP_URL || ""}${claimPath(lead)}`, message: "Send them this link — it carries your code, so the claim comes back to you." });
+      const myLead = lead.sharedBook && lead.attribution ? { ...lead, attribution: { ...lead.attribution, repCode: seat.repCode } } : lead;
+      return json(200, { ok: true, claimUrl: `${process.env.APP_URL || ""}${claimPath(myLead)}`, message: "Send them this link — it carries your code, so the claim comes back to you." });
     }
 
     if (method === "GET" && seg[3] === "show") {
@@ -2560,7 +2973,9 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
         marketName: effSeat.marketName,
         bench: show.cards,
         areaFraming: show.areaFraming,
-        claimUrl: claimPath(lead),
+        // Shared books: Show Mode's claim link carries the
+        // SHOWING rep's code, never the record owner's.
+        claimUrl: claimPath(lead.sharedBook && lead.attribution ? { ...lead, attribution: { ...lead.attribution, repCode: seat.repCode } } : lead),
         repFirstName: String(user.name || "").split(" ")[0] || "",
       });
     }
@@ -2789,7 +3204,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     if (!seat) return err(404, "That rep seat isn't active.");
     const targetUser = await userRecord157(seat.userId);
     const home = await buildRepHome157(seat, targetUser, { lazyScoreboard: false });
-    const book = (await leadsOfMarket(seat.marketId)).filter((l) => l.assignedRepId === seat.userId);
+    const book = (await leadsOfMarket(seat.marketId)).filter((l) => leadInSeatBook(l, seat));
     const bench = await benchCreators157(seat.marketId);
     return json(200, {
       preview: true,
@@ -2800,7 +3215,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       money: await moneyPayload157(seat),
       queue: buildQueue157(book, bench),
       trips: buildTrips157(book, bench),
-      contacts: await rolodexEntries170(seat.userId),
+      contacts: await rolodexEntries170(seat.userId, seat),
       orders: await ordersOf170(seat.userId),
     });
   }
@@ -2811,20 +3226,22 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     const seat = await previewSeat157(repId);
     if (!seat) return err(404, "That rep seat isn't active.");
     const lead = await getLead(String(qp.lead || ""));
-    if (!lead || lead.marketId !== seat.marketId || lead.assignedRepId !== repId) return err(404, "That lead isn't in this rep's book.");
+    if (!lead || lead.marketId !== seat.marketId || !leadInSeatBook(lead, seat)) return err(404, "That lead isn't in this rep's book.");
     const targetUser = await userRecord157(seat.userId);
     const logs = await allLogs(lead.id);
     const show = await showBench(seat.marketId, lead.category, { neighborhood: lead.neighborhood || "", city: lead.city || "" }, seat.marketName);
     return json(200, {
       preview: true,
-      lead: repLeadPayload(lead, { full: true }),
+      lead: repLeadPayload(lead, { full: true, viewerRepCode: seat.repCode }),
       logs: logs.filter((v) => v.outcome || v.type === "price_shown" || v.type === "show_session").slice(-20),
       show: {
         lead: { id: lead.id, name: lead.name, category: lead.category },
         marketName: seat.marketName,
         bench: show.cards,
         areaFraming: show.areaFraming,
-        claimUrl: claimPath(lead),
+        // Shared books: the preview shows the claim link as the
+        // PREVIEWED rep's own — same viewer rule as the payload.
+        claimUrl: claimPath(lead.sharedBook && lead.attribution ? { ...lead, attribution: { ...lead.attribution, repCode: seat.repCode } } : lead),
         repFirstName: String(targetUser.name || "").split(" ")[0] || "",
       },
     });
@@ -3022,7 +3439,12 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       if (state !== "Open") return err(409, "This market isn't open for payments — activation stays dormant until Jeff opens it.");
       const plan = [199, 349, 699].includes(Number(b.plan)) ? Number(b.plan) : null;
       const act = {
-        id: uuid(), repId: lead.assignedRepId, marketId: lead.marketId, leadId: lead.id,
+        // Shared books (2026-11-12): on a shared lead the
+        // record's assignedRepId is just whichever copy won
+        // the merge — credit follows the WORK CLAIM instead
+        // (the man who staked and worked the business), and
+        // falls back to the record owner when nobody claimed it.
+        id: uuid(), repId: (lead.sharedBook && workClaimOf(lead)) ? workClaimOf(lead).byUserId : lead.assignedRepId, marketId: lead.marketId, leadId: lead.id,
         businessName: lead.name, direct: true, plan,
         championName: lead.attribution && lead.attribution.championName ? lead.attribution.championName : null,
         activatedAt: nowIso(), windowStart: monthOf(nowIso()), months: [],
@@ -3078,7 +3500,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
 }
 
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, maybeLoadTonyNashville20261112, runBizdevSweep, bdevHealth,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, maybeLoadTonyNashville20261112, maybeUnifySharedBooks20261112, runBizdevSweep, bdevHealth,
   claimPageHtml, seatOf, KIT,
-  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable },
+  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable, leadInSeatBook, workClaimOf, SHARED_MARKETS },
 };
