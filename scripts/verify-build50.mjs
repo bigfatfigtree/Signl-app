@@ -184,8 +184,19 @@ try {
   const aMsgs1 = await platformMessages(A.client);
   check("sequence: touch 1 lands in the platform thread with both lanes",
     aMsgs1.length === 1 && aMsgs1[0].body.includes("no business can book you") && aMsgs1[0].body.includes("comped visit") && aMsgs1[0].body.includes("keep 97%"), JSON.stringify(aMsgs1).slice(0, 240));
+  // EMAIL-DEDUPE pin update (2026-11-13, Jeff's lifecycle
+  // de-duplication ruling): this suite compresses time — the
+  // sweep clock is fake (+3 days) but event timestamps are real,
+  // so A's approval email is only minutes old in the log when
+  // touch 1 fires, and the 4-hour guard correctly holds the
+  // ping. In production the day-3 touch lands three days after
+  // approval, outside the window, and pings as before. What the
+  // suite proves now: the touch lands in-thread (checked above)
+  // and the held ping is logged, not silent.
   const aPings = (await eventsOf(admin, "platform_message_email_sent")).filter((e) => e.data && e.data.to === A.email);
-  check("sequence: touch 1 carries the -40 email ping", aPings.length >= 1, `${aPings.length}`);
+  const aSupp = (await eventsOf(admin, "platform_message_email_suppressed")).filter((e) => e.subjectId === A.id);
+  check("sequence: touch 1's ping is held by the dedupe guard (suite's compressed clock) and the hold is logged",
+    aPings.length === 0 && aSupp.length >= 1 && aSupp[0].data.lifecycleKind === "approval", `pings=${aPings.length} holds=${aSupp.length}`);
   const s3b = await sweepAt(3.1);
   check("sequence: a repeat sweep inside the spacing sends nothing new", !!s3b && s3b.touch1 === 0 && s3b.touch2 === 0, JSON.stringify(s3b));
 

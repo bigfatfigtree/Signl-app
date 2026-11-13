@@ -6881,8 +6881,35 @@ const MESSAGE_TEMPLATES = [
 function platformThreadId(creatorId) {
   return [String(creatorId), PLATFORM_PEER_ID].sort().join("__");
 }
+const PLATFORM_MESSAGE_PREVIEW_MAX = 120;
+// The notification excerpt. The old shape sliced the RAW body at
+// exactly 120 chars and collapsed whitespace afterwards, which
+// severed whatever word straddled the cut and glued the next
+// line's first word onto the end as a dangling fragment (Jeff's
+// 2026-11-13 screenshot: ".../c/demecia What"). The excerpt now
+// takes the body's first block (up to the first blank line) when
+// that block says something on its own — a stub opener falls
+// back to the whole flattened body — and when even that runs
+// past the cap it cuts at a word boundary and marks the cut
+// with an ellipsis. It never ends mid-word and never appends a
+// severed fragment.
+function platformMessagePreview(body) {
+  const raw = String(body || "").trim();
+  if (!raw) return "";
+  const whole = raw.replace(/\s+/g, " ");
+  const firstBlock = (raw.split(/\n\s*\n/)[0] || "").replace(/\s+/g, " ").trim();
+  const base = firstBlock.length >= 40 ? firstBlock : whole;
+  if (base.length <= PLATFORM_MESSAGE_PREVIEW_MAX) {
+    const more = base !== whole;
+    return more && !/[.!?…]$/.test(base) ? `${base}…` : base;
+  }
+  const cut = base.slice(0, PLATFORM_MESSAGE_PREVIEW_MAX);
+  const lastSpace = cut.lastIndexOf(" ");
+  const head = (lastSpace >= 40 ? cut.slice(0, lastSpace) : cut).replace(/[\s.,;:!?()-]+$/, "");
+  return `${head}…`;
+}
 function platformMessageEmail(creator, body) {
-  const preview = String(body || "").trim().slice(0, 120).replace(/\s+/g, " ");
+  const preview = platformMessagePreview(body);
   const base = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
   return {
     subject: "You have a new message on Magpie",
@@ -6897,6 +6924,42 @@ function platformMessageEmail(creator, body) {
       "This email is only a notification; the conversation lives in Magpie.",
     ].join("\n"),
   };
+}
+// Lifecycle-email dedupe (Jeff, 2026-11-13): one milestone, one
+// email. A platform message's email ping is suppressed when a
+// lifecycle email (claim confirmation / signup confirmation,
+// approval, sign-in link, or a welcome) was SENT to the same
+// user within the prior 4 hours — the Demecia case: the claim
+// email at 5:48 already carried the booking-page news, so the
+// finish moment's 5:49 ping only repeated it in worse shape.
+// The in-app message always lands; only the ping is held, and
+// every hold is logged as platform_message_email_suppressed so
+// it is auditable in the Event Log, never a silent drop. The
+// read is the subject-scoped event walk (bounded, newest
+// first): a suppressing send is by construction among the
+// user's most recent events. If a pathological log ever pushed
+// it past the scan cap the guard fails open and the ping sends
+// — the safe direction, and never the reverse.
+const PLATFORM_PING_SUPPRESS_WINDOW_MS = 4 * 60 * 60 * 1000;
+const LIFECYCLE_EMAIL_SENT_TYPES = new Set([
+  "signup_confirmation_email_sent",
+  "approval_email_sent",
+  "signin_link_email_sent",
+  "recruiter_welcome_email_sent",
+  "partner_welcome_email_sent",
+  "team_welcome_email_sent",
+]);
+async function recentLifecycleEmail(userId, windowMs) {
+  const cutoff = Date.now() - windowMs;
+  const { events } = await listEventsForSubject(userId, { limit: 30 });
+  let latest = null;
+  for (const e of events) {
+    if (!e || !LIFECYCLE_EMAIL_SENT_TYPES.has(e.type)) continue;
+    const ts = Date.parse(e.ts);
+    if (!Number.isFinite(ts) || ts < cutoff) continue;
+    if (!latest || ts > latest.ts) latest = { kind: e.type.replace(/_email_sent$/, ""), at: e.ts, ts };
+  }
+  return latest;
 }
 async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   const threadId = platformThreadId(creator.id);
@@ -6933,10 +6996,23 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   // the message standing: the ping is a knock, not the delivery.
   let emailResult;
   try {
-    const mail = platformMessageEmail(creator, body);
-    emailResult = await deliverEmail("platform_message", creator, mail.subject, mail.text, null);
-    if (!emailResult.sent) {
-      console.error(`Magpie platform message email not sent: to=${creator.email} reason=${emailResult.reason || "unknown"}`);
+    const recent = await recentLifecycleEmail(creator.id, PLATFORM_PING_SUPPRESS_WINDOW_MS);
+    if (recent) {
+      await logEvent({
+        type: "platform_message_email_suppressed",
+        actorId: adminUser ? adminUser.id : null,
+        actorRole: adminUser ? "admin" : "system",
+        subjectId: creator.id,
+        market: creator.market || null,
+        data: { reason: "recent_lifecycle_email", lifecycleKind: recent.kind, lifecycleAt: recent.at, windowHours: PLATFORM_PING_SUPPRESS_WINDOW_MS / 3600000, messageId: msg.id, engine: meta.engine || null, scope: meta.scope || "single" },
+      });
+      emailResult = { sent: false, suppressed: true, reason: "recent_lifecycle_email" };
+    } else {
+      const mail = platformMessageEmail(creator, body);
+      emailResult = await deliverEmail("platform_message", creator, mail.subject, mail.text, null);
+      if (!emailResult.sent) {
+        console.error(`Magpie platform message email not sent: to=${creator.email} reason=${emailResult.reason || "unknown"}`);
+      }
     }
   } catch (e) {
     console.error(`Magpie platform message email failed: to=${creator.email}:`, e);
@@ -7877,6 +7953,22 @@ function greetingName(user) {
   const first = ((user && user.name) || "").trim().split(/\s+/)[0] || "";
   if (!first || first.includes("@") || (user.email && first.toLowerCase() === String(user.email).toLowerCase())) return "there";
   return first;
+}
+
+// Display case for the greeting name: the stored name keeps
+// the case the creator typed ("demecia tatum"), but a message
+// that addresses the creator by name must not inherit a
+// lowercase first letter (Jeff, 2026-11-13: the finish moment
+// opened "demecia, you finished."). Used by the Finish Engine
+// surfaces — the {firstName} template slot and the concierge
+// opener — where Maggie speaks to the creator by name at the
+// head of a message. The lifecycle email greetings ("Hi
+// {first}," in the claim / approval / sign-in mail) still use
+// greetingName as stored; that wider change is Jeff's call.
+function greetingNameCapitalized(user) {
+  const first = greetingName(user);
+  if (!first || first === "there") return first;
+  return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
 function paidCampaignLine(user) {
@@ -12299,7 +12391,7 @@ async function saveFinishEngineRaw(patch, actorId) {
 function fillFinishTemplate(tpl, user, extra = {}) {
   const c = (user && user.creator) || {};
   const slots = {
-    "{firstName}": greetingName(user),
+    "{firstName}": greetingNameCapitalized(user),
     "{market}": marketTalkName(user.market),
     "{city}": user.city || "",
     "{handle}": c.handle ? `@${c.handle}` : "",
@@ -12569,7 +12661,7 @@ async function startFinishConcierge(adminUser, creatorId, via) {
   rec.updatedAt = nowIso();
   await store.set(`user:${rec.id}`, rec);
   await logEvent({ type: "sig_concierge_started", actorId: adminUser ? adminUser.id : null, actorRole: adminUser ? "admin" : "system", subjectId: rec.id, market: rec.market, data: { via, currentField: missing[0] } });
-  const body = `Hi ${greetingName(rec)}, Maggie from the Magpie team. I can finish your profile with you right here, one question at a time. Every answer saves straight to your profile, and you can stop any time.\n\nFirst one: ${conciergeQuestionFor(rec, missing[0])}`;
+  const body = `Hi ${greetingNameCapitalized(rec)}, Maggie from the Magpie team. I can finish your profile with you right here, one question at a time. Every answer saves straight to your profile, and you can stop any time.\n\nFirst one: ${conciergeQuestionFor(rec, missing[0])}`;
   await sendPlatformMessage(adminUser, rec, body, { engine: "sig_concierge" });
   return { ok: true };
 }
@@ -23497,7 +23589,7 @@ async function marketingSendPlatform138(campaign, senderAdmin) {
       const text = templatesLib.substitute(campaign.text, automationTokenValues138(u, campaign.text));
       const r = await sendPlatformMessage(senderAdmin, u, text, { scope: "segment", segmentMarket: segmentLabel });
       sent += 1;
-      await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u.email, channel: "platform", status: "sent", sentAt: nowIso(), emailPing: r && r.email ? (r.email.sent ? "sent" : "not_sent") : "unknown" });
+      await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u.email, channel: "platform", status: "sent", sentAt: nowIso(), emailPing: r && r.email ? (r.email.sent ? "sent" : r.email.suppressed ? "suppressed" : "not_sent") : "unknown" });
     } catch (e) {
       failed += 1;
       failures.push({ email: u.email, reason: String(e && e.message || e).slice(0, 120) });
@@ -28302,9 +28394,12 @@ async function route(event) {
       }
       let emailSent = 0;
       let emailFailed = 0;
+      let emailSuppressed = 0;
       for (const creator of recipients) {
         const sent = await sendPlatformMessage(user, creator, body, { scope, segmentMarket, templateId });
-        if (sent.email && sent.email.sent) emailSent += 1; else emailFailed += 1;
+        if (sent.email && sent.email.sent) emailSent += 1;
+        else if (sent.email && sent.email.suppressed) emailSuppressed += 1;
+        else emailFailed += 1;
       }
       if (scope === "segment") {
         // Build -163: the campaign receipt — one store record
@@ -28326,13 +28421,14 @@ async function route(event) {
           messageCount: recipients.length,
           emailSent,
           emailFailed,
+          emailSuppressed,
           templateId,
           reconstructed: false,
           source: null,
         });
-        await logEvent({ type: "platform_message_segment", actorId: user.id, actorRole: "admin", subjectId: null, market: segmentMarket, data: { market: segmentMarket, recipients: recipients.length, emailSent, emailFailed, templateId } });
+        await logEvent({ type: "platform_message_segment", actorId: user.id, actorRole: "admin", subjectId: null, market: segmentMarket, data: { market: segmentMarket, recipients: recipients.length, emailSent, emailFailed, emailSuppressed, templateId } });
       }
-      return json(201, { sent: recipients.length, recipients: recipients.map((u) => u.id), emailSent, emailFailed, scope, market: segmentMarket });
+      return json(201, { sent: recipients.length, recipients: recipients.map((u) => u.id), emailSent, emailFailed, emailSuppressed, scope, market: segmentMarket });
     }
     // Admin Messages room (Build -152): broadcasts to segments
     // or named people, delivered into each person's own

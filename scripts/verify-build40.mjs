@@ -140,8 +140,14 @@ try {
   // (1) Single send: thread, sender identity, email ping, event log.
   const bodyA = "Quick one. When you finished your SIGNL profile you got two Golden Tickets, founding seats you can hand to two creators by name. The seat is held for them until Nashville launches, and when they finish, it earns you 100 points.";
   const send1 = await admin("POST", "/api/admin/platform-messages", { creatorId: nashA.id, body: bodyA, templateId: "golden_ticket" });
-  check("(1) single send reports one recipient, email sent, none failed",
-    send1.status === 201 && send1.data.sent === 1 && send1.data.emailSent === 1 && send1.data.emailFailed === 0,
+  // EMAIL-DEDUPE pin update (2026-11-13, Jeff's lifecycle
+  // de-duplication ruling): nashA was approved minutes earlier
+  // in this suite, so the approval email holds this message's
+  // ping under the 4-hour lifecycle guard — the send reports
+  // emailSuppressed 1 instead of emailSent 1. The in-app
+  // message itself still lands (asserted below).
+  check("(1) single send reports one recipient, ping held by the fresh approval email, none failed",
+    send1.status === 201 && send1.data.sent === 1 && send1.data.emailSent === 0 && send1.data.emailSuppressed === 1 && send1.data.emailFailed === 0,
     `${send1.status} ${JSON.stringify(send1.data)}`);
   const listA = await nashA.client("GET", "/api/messages");
   const threadA = (listA.data.threads || []).find((t) => t.platform);
@@ -210,8 +216,14 @@ try {
   check("(4) the segment reaches exactly the market's finished creators",
     seg.status === 201 && seg.data.sent === 2 && JSON.stringify(segIds) === JSON.stringify([nashA.id, nashB.id].sort()),
     `${seg.status} ${JSON.stringify(seg.data)}`);
-  check("(4) the segment reports its own email outcomes (one sent, one stub-failed)",
-    seg.data.emailSent === 1 && seg.data.emailFailed === 1, JSON.stringify(seg.data));
+  // EMAIL-DEDUPE pin update (2026-11-13): inside the segment,
+  // nashA's ping is held by his fresh approval email (suppressed)
+  // while nashB's is attempted and stub-fails — nashB's own
+  // approval email never sent (stub-fail address), so nothing
+  // held his. Suppression is per-recipient, keyed on sends that
+  // actually happened.
+  check("(4) the segment reports its own email outcomes (one held by dedupe, one stub-failed)",
+    seg.data.emailSent === 0 && seg.data.emailSuppressed === 1 && seg.data.emailFailed === 1, JSON.stringify(seg.data));
   const convoA2 = await nashA.client("GET", "/api/messages?with=signl-team");
   const convoB2 = await nashB.client("GET", "/api/messages?with=signl-team");
   // BUILD -50 pin update: both threads open with the creator's
