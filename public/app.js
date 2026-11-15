@@ -370,6 +370,8 @@ const CLAIM_MARKET_ALIASES_173 = {
   dfw: "dallas",
   fortworth: "dallas",
   hamptonroads: "hampton-roads",
+  nyc: "new-york-city",
+  newyork: "new-york-city",
 };
 function claimMarketKey173(raw) {
   return String(raw || "").toLowerCase().replace(/[^a-z0-9]+/g, "");

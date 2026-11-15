@@ -168,6 +168,29 @@ const MARKETS = [
     cities: ["Los Angeles", "Long Beach", "Santa Monica", "Pasadena", "Glendale", "Burbank", "Inglewood", "Torrance", "Pomona", "Downey", "West Covina", "El Monte", "Whittier", "Alhambra", "Culver City", "Beverly Hills", "Manhattan Beach", "Redondo Beach", "Compton", "Lakewood", "Norwalk", "Carson", "Santa Clarita", "Arcadia", "Monterey Park"],
   },
   {
+    // NYC (Jeff, 2026-11-15): New York City joins the roster as a
+    // core market. ONE market containing the five boroughs plus
+    // the typed forms people actually use (bare "New York",
+    // "Bronx" without "The") and the closest metro towns in the
+    // market's area (Westchester's southern tier and the Hudson
+    // waterfront: Yonkers, Mount Vernon, New Rochelle, White
+    // Plains, Jersey City, Hoboken) — the -52 rule: a sign-up
+    // typing a place inside the area files into this market.
+    // "Brooklyn" also sits in Wellington's list (the Wellington
+    // suburb of the same name): the shared-name tie is the
+    // designed outcome, with the state/country hint breaking it
+    // at intake, the same shape as the other pinned two-metro
+    // names documented above. Like every unlaunched market NYC
+    // starts NOT live (the live-flag default lives in router.js):
+    // it files and counts, it does not launch itself. The roster
+    // is 46 markets; the country set is unchanged.
+    id: "new-york-city",
+    name: "New York City",
+    label: "New York City, New York",
+    country: "United States",
+    cities: ["New York City", "New York", "Manhattan", "Brooklyn", "Queens", "The Bronx", "Bronx", "Staten Island", "Harlem", "Astoria", "Flushing", "Long Island City", "Jamaica", "Yonkers", "Mount Vernon", "New Rochelle", "White Plains", "Jersey City", "Hoboken"],
+  },
+  {
     id: "san-diego",
     name: "San Diego",
     label: "San Diego, California",
@@ -1202,6 +1225,7 @@ const MARKET_STATES = {
   dallas: ["TX"],
   chicago: ["IL", "IN"],
   "los-angeles": ["CA"],
+  "new-york-city": ["NY", "NJ"],
   "san-diego": ["CA"],
   seattle: ["WA"],
   tampa: ["FL"],
