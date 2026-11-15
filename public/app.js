@@ -10637,7 +10637,7 @@ function renderClaimDone() {
 // number? Add your TikTok"). Every added platform saves through
 // the same profile write as always, then the number recomputes
 // on screen. The FOUNDING rank locked at claim never moves, but
-// the panel shows only its band ("in the first 100") — the exact
+// the panel shows only its band ("in the first 100"): the exact
 // rank and the market's checked count are never displayed, and
 // no live merit rank is shown either: a creator sees her own
 // numbers only, never her position against other creators
@@ -14402,7 +14402,7 @@ async function loadTicketBanner() {
 // number comes from GET /me/founding's buzz object, computed
 // server-side from stored records. Nothing here invents a
 // figure, and no line promises money. No rank is shown: Jeff,
-// 2026-11-15 (Build -177) — a creator sees her own numbers
+// 2026-11-15 (Build -177): a creator sees her own numbers
 // (her local %, her band), never her position against others.
 function creatorBuzzHtml(u, card, f, buzz) {
   if (!buzz) return "";
@@ -14456,12 +14456,12 @@ function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
   const pct = p.localAudiencePct === null || p.localAudiencePct === undefined ? null : p.localAudiencePct;
   const complete = !!(u.profileCompletion && u.profileCompletion.complete);
   // Build -177 (Jeff, 2026-11-15): the live merit rank that used
-  // to headline this card is gone — "remove that for now too."
+  // to headline this card is gone: "remove that for now too."
   // The line keeps the same motivations (set your local %,
   // finish your profile) with her own standing only: her local
   // reach is the number businesses see first, full stop.
   const rankLine = pct === null
-    ? "Set your local % — it is the first number businesses see here"
+    ? "Set your local %: it is the first number businesses see here"
     : (!complete ? "Finish your profile so businesses here can find you" : "Your local reach is the first number businesses see here");
   const bits = [`I am a founding creator on Magpie in ${placeRaw}.`];
   if (pct !== null) bits.push(`${pct}% of my audience is local.`);

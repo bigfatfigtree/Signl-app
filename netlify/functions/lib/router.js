@@ -6514,13 +6514,13 @@ function publicFoundingNeighbor(fn) {
 // Creator excitement layer (Jeff, 2026-10-29): the numbers a
 // founding creator's home celebrates with, computed live from
 // stored records only. Two pieces:
-//   (Removed 2026-11-15, Build -177: localRank — the creator's
+//   (Removed 2026-11-15, Build -177: localRank, the creator's
 //     live merit rank in their market BY LOCAL REACH, among
 //     approved, profile-complete creators with a local % on
 //     file. Jeff: "remove that for now too." The payload no
 //     longer carries any rank; the stat card shows her own
 //     local % and her founding band only. Nothing was stored
-//     from the computation — it was derived per read from the
+//     from the computation: it was derived per read from the
 //     same records, so it can be restored at launch by
 //     recomputing it here.)
 //   unlock: the market's founding progress toward the launch bar:
@@ -18416,8 +18416,8 @@ function neighborViewForUser(user, entries, entry) {
   const pct = neighborPctOf(c);
   // Build -177 (Jeff, 2026-11-15): no liveRank in this payload.
   // The live merit rank (neighborRankOf against the checked set)
-  // is still computed server-side where the record needs it —
-  // the founding lock at claim conversion and the event log —
+  // is still computed server-side where the record needs it:
+  // the founding lock at claim conversion and the event log,
   // but it never rides the payload to the creator's browser.
   return {
     market: normalizeMarketName(user.market || ""),
@@ -25663,7 +25663,7 @@ async function route(event) {
   if (seg[0] === "neighbor" && user && user.role === "creator") {
     const fresh = (await store.get(`user:${user.id}`)) || user;
     const marketName = normalizeMarketName(fresh.market || "");
-    // GET /neighbor/me — the live view: today's count, beside
+    // GET /neighbor/me: the live view: today's count, beside
     // the founding record locked at claim (sent to the client
     // as its band projection only). No rank rides this payload:
     // the live merit rank is computed server-side only where

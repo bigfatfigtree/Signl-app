@@ -178,27 +178,24 @@ try {
 
   // ================================================================
   // Part B: creator excitement layer (Jeff, 2026-10-29).
-  // GET /me/founding carries buzz: the creator's rank in their
-  // market BY LOCAL REACH plus the market's unlock progress,
-  // computed from the same three Richmond fixtures Part A seeded.
+  // GET /me/founding carries buzz: the market's unlock progress
+  // plus Charter status, computed from the same three Richmond
+  // fixtures Part A seeded. Build -177 (Jeff, 2026-11-15): the
+  // buzz payload no longer carries localRank at all; a creator
+  // sees her own numbers, never her position against others.
   // ================================================================
-  // Build -47 (audit C16): rank claims now gate on a field of
-  // 10 finished creators, so seven more Richmond creators (all
-  // below the original three on local %) join before the rank
-  // reads; the original three keep ranks 1, 2, 3 in a field of 10.
+  // Seven more Richmond creators join so the unlock counts read
+  // a field of 10 finished creators (the old rank field gate).
   for (let i = 0; i < 7; i++) {
     await makeCreator(admin, { name: "Rank Extra " + (i + 1), email: `extra${i + 1}@fixtures.dev`, handle: `rankextra${i + 1}`, followers: 1200 + i * 100, localPct: 35 - i });
   }
   const qFounding = await cHigh.client("GET", "/api/me/founding");
   check("creator founding payload carries the buzz object", qFounding.status === 200 && !!(qFounding.data && qFounding.data.buzz), JSON.stringify(qFounding.data).slice(0, 200));
-  const qRank = qFounding.data && qFounding.data.buzz ? qFounding.data.buzz.localRank : null;
-  check("local rank is by local reach: 90% ranks #1 of 10", !!qRank && qRank.rank === 1 && qRank.field === 10 && qRank.localAudiencePct === 90, JSON.stringify(qRank));
+  check("buzz carries no localRank for the 90% creator (Build -177: rank removed from the payload)", !!(qFounding.data && qFounding.data.buzz) && !("localRank" in qFounding.data.buzz), JSON.stringify(qFounding.data && qFounding.data.buzz));
   const rFounding = await cMid.client("GET", "/api/me/founding");
-  const rRank = rFounding.data && rFounding.data.buzz ? rFounding.data.buzz.localRank : null;
-  check("70% local ranks #2: follower count (6,000 vs 900) does not move the rank", !!rRank && rRank.rank === 2 && rRank.localAudiencePct === 70, JSON.stringify(rRank));
+  check("buzz carries no localRank for the 70% creator (Build -177)", !!(rFounding.data && rFounding.data.buzz) && !("localRank" in rFounding.data.buzz), JSON.stringify(rFounding.data && rFounding.data.buzz));
   const pFounding = await cLow.client("GET", "/api/me/founding");
-  const pRank = pFounding.data && pFounding.data.buzz ? pFounding.data.buzz.localRank : null;
-  check("40% local (8,000 followers) ranks #3: reach beats audience size", !!pRank && pRank.rank === 3, JSON.stringify(pRank));
+  check("buzz carries no localRank for the 40% creator (Build -177)", !!(pFounding.data && pFounding.data.buzz) && !("localRank" in pFounding.data.buzz), JSON.stringify(pFounding.data && pFounding.data.buzz));
   const qUnlock = qFounding.data && qFounding.data.buzz ? qFounding.data.buzz.unlock : null;
   check("unlock meter carries real counts against the launch bar", !!qUnlock && qUnlock.approved === 10 && qUnlock.complete === 10 && qUnlock.launchBar === 25 && qUnlock.marketLive === false, JSON.stringify(qUnlock));
   const bizFounding = await biz.client("GET", "/api/me/founding");

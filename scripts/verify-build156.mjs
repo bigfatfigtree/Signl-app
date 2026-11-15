@@ -108,8 +108,8 @@ console.log("== A: source pins ==");
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   check("stamp 2026.11.09-156 on both asset URLs", (indexHtml.match(/2026\.11\.09-156/g) || []).length === 2, `count=${(indexHtml.match(/2026\.11\.09-156/g) || []).length}`);
   check("router carries the claim-hook route + checked set + claim-complete", routerJs.includes('"claim-hook"') && routerJs.includes("checkedNeighborSet") && routerJs.includes("claim-complete") && routerJs.includes("neighbor_stack_added"), "");
-  check("client carries the hook screen, spot CTA, live stack panel and card", appJs.includes("renderClaimHook") && appJs.includes("Claim my #") && appJs.includes("neighborStackAdd") && appJs.includes("neighborCardSave") && appJs.includes("Want to climb?"), "");
-  check("founding vs live labels are distinct in the client", appJs.includes("Founding rank") && appJs.includes("Live rank today"), "");
+  check("client carries the hook screen, spot CTA, live stack panel and card", appJs.includes("renderClaimHook") && appJs.includes("Claim my founding spot") && appJs.includes("neighborStackAdd") && appJs.includes("neighborCardSave") && appJs.includes("Want a bigger number?"), "");
+  check("client shows the founding band and no rank labels (Build -177)", appJs.includes("You are in the first") && !appJs.includes("Founding rank") && !appJs.includes("Live rank today"), "");
   check("bizdev show bench carries honest area framing only", bizJs.includes("areaFraming") && !/within 2 miles|under 2 miles/i.test(bizJs), "");
 }
 
@@ -143,13 +143,13 @@ console.log("== B: personal hook ==");
   check("neighbor math: 12,000 x 85% = 10,200", h.neighborCount === 10200, `got ${h.neighborCount}`);
   check("local % rides along (85)", h.localPct === 85, `got ${h.localPct}`);
   check("local % in plain words (9 out of 10)", h.localWords === "9 out of 10 of your followers live here", h.localWords);
-  check("rank is by neighbors, not followers: #1", h.rank === 1, `got ${h.rank}`);
-  check("denominator is the truthful checked count (3)", h.checkedCount === 3, `got ${h.checkedCount}`);
-  check("rank line states its scope", h.rankLine === "#1 of the 3 Nashville creators we've checked so far", h.rankLine);
+  check("rank never reaches the browser (Build -177: logged server-side, then stripped)", h.rank === undefined, `got ${h.rank}`);
+  check("the checked count never reaches the browser (Build -177)", h.checkedCount === undefined, `got ${h.checkedCount}`);
+  check("no rank line reaches the browser (Build -177)", h.rankLine === undefined, `got ${h.rankLine}`);
   check("inversion names the real bigger-follower / fewer-neighbor account", !!h.inversion && h.inversion.handle === "bigfamous" && h.inversion.followers === 90000 && h.inversion.neighborCount === 9000, JSON.stringify(h.inversion || {}));
   check("no extrapolation on a single-rate record", h.extrapolated === false, "");
   const hero = await anon("GET", "/api/claim-hook?handle=localhero&market=Nashville");
-  check("hero ranks #3 by neighbors despite 10k followers", hero.data.hook.rank === 3 && hero.data.hook.neighborCount === 8000, JSON.stringify(hero.data.hook || {}));
+  check("hero hook carries her number (8,000 neighbors) and no rank (Build -177)", hero.data.hook.rank === undefined && hero.data.hook.neighborCount === 8000, JSON.stringify(hero.data.hook || {}));
   check("no inversion for the hero (nobody bigger has fewer neighbors... except Big: 90k followers, 9,000 neighbors is MORE)", hero.data.hook.inversion === null, JSON.stringify(hero.data.hook.inversion));
 }
 
@@ -178,11 +178,12 @@ console.log("== D: extrapolation ==");
   const h = r.data.hook || {};
   check("hero count extrapolates the confirmed 50% across the unrated platform (2,000 x 50% = 1,000)", h.neighborCount === 1000, `got ${h.neighborCount}`);
   check("any extrapolated part flags the count as potential", h.extrapolated === true, "");
-  check("a one-creator checked set reads #1 of 1", h.rank === 1 && h.checkedCount === 1, JSON.stringify(h));
+  check("a one-creator checked set still carries no rank or count (Build -177)", h.rank === undefined && h.checkedCount === undefined, JSON.stringify(h));
 }
 
-// --- E: claim locks the founding rank; the live rank moves -----
-console.log("== E: claim + founding lock + live rank ==");
+// --- E: claim locks the founding rank server-side; the payload
+// carries only its band projection and no live rank (Build -177) -
+console.log("== E: claim + founding lock (payload carries the band, never a rank) ==");
 let tara;
 {
   const c = makeClient();
@@ -197,18 +198,19 @@ let tara;
   const nb = done.data.neighbor || {};
   tara = { client: c, id: reg.data.user.id };
   check("claim-complete returns her number (10,200)", nb.neighborCount === 10200, `got ${nb.neighborCount}`);
-  check("founding rank locks at #1 of 3", !!nb.founding && nb.founding.rank === 1 && nb.founding.checkedCount === 3, JSON.stringify(nb.founding || {}));
-  check("live rank starts at the same place", nb.liveRank === 1 && nb.liveCheckedCount === 3, JSON.stringify(nb));
+  check("claim-complete returns the founding band projection, never the rank (Build -177)", !!nb.founding && nb.founding.band === 100 && !("rank" in nb.founding) && !("checkedCount" in nb.founding), JSON.stringify(nb.founding || {}));
+  check("the live view carries no live rank (Build -177)", !("liveRank" in nb) && !("liveCheckedCount" in nb), JSON.stringify(nb));
   const conv = await eventsOf("claim_hook_converted");
   check("the conversion is captured once, personal variant", conv.filter((e) => e.subjectId === tara.id).length === 1 && conv[0].data.variant === "personal", `got ${conv.length}`);
   const done2 = await c("POST", "/api/neighbor/claim-complete", { variant: "personal" });
-  check("a second claim-complete never re-locks or double-logs", done2.data.neighbor.founding.rank === 1 && (await eventsOf("claim_hook_converted")).filter((e) => e.subjectId === tara.id).length === 1, "");
-  // A bigger neighbor arrives: the live rank must move, the founding rank must not.
+  check("a second claim-complete never re-locks or double-logs", done2.data.neighbor.founding.band === 100 && (await eventsOf("claim_hook_converted")).filter((e) => e.subjectId === tara.id).length === 1, "");
+  // A bigger neighbor arrives: the founding lock must not move,
+  // and the payload still shows no rank of either kind.
   await registerCreator("New Neighbor", "newneighbor", "Nashville", { followers: 20000, pct: 90 });
   const me = await c("GET", "/api/neighbor/me");
   const mv = me.data.neighbor || {};
-  check("live rank moves as the checked set grows (#2 of 4)", mv.liveRank === 2 && mv.liveCheckedCount === 4, JSON.stringify(mv));
-  check("founding rank stays locked (#1 of 3)", !!mv.founding && mv.founding.rank === 1 && mv.founding.checkedCount === 3, JSON.stringify(mv.founding || {}));
+  check("the live view still carries no rank as the checked set grows (Build -177)", !("liveRank" in mv) && !("liveCheckedCount" in mv), JSON.stringify(mv));
+  check("founding projection stays the locked band as the set grows (Build -177)", !!mv.founding && mv.founding.band === 100 && !("rank" in mv.founding) && !("checkedCount" in mv.founding), JSON.stringify(mv.founding || {}));
 }
 
 // --- F: stack adds + card captures ------------------------------
