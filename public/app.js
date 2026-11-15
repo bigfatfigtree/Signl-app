@@ -495,7 +495,7 @@ function applyProfileShareShell(p, place) {
   // including the multi-market line (2026-11-01), so the
   // in-app head and the server-rendered head never disagree.
   const alsoList = (p.listedMarkets || []).filter((m) => !m.home && typeof m.pct === "number").slice(0, 2);
-  const also = alsoList.length ? ` Also ranked in ${alsoList.map((m) => `${m.market} (${m.pct}% of their audience)`).join(" and ")}.` : "";
+  const also = alsoList.length ? ` Also listed in ${alsoList.map((m) => `${m.market} (${m.pct}% of their audience)`).join(" and ")}.` : "";
   const desc = `${p.name} is a founding creator on Magpie in ${place || "their market"}${p.tierBand ? ` (${p.tierBand} tier)` : ""}.${typeof p.localAudiencePct === "number" ? ` ${p.localAudiencePct}% of their audience is local.` : ""}${also} Local businesses comp creators for honest posts.`;
   setShareCanonical(`https://app.magpielocal.com/c/${p.handle}`);
   setShareMeta("og:title", "property", document.title);
@@ -864,7 +864,7 @@ async function renderPublicProfile() {
         ${p.tierBand ? `<span class="cc-chip">${esc(p.tierBand)}</span>` : ""}
         ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
         ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
-        ${(p.listedMarkets || []).filter((m) => m.market !== view.market).map((m) => { const cnt = followersForPct(m.pct, total); return `<span class="cc-chip">Also ranked in ${esc(m.market)} &middot; ${m.pct}%${cnt ? ` &middot; ${cnt} followers` : " of followers"}</span>`; }).join("")}
+        ${(p.listedMarkets || []).filter((m) => m.market !== view.market).map((m) => { const cnt = followersForPct(m.pct, total); return `<span class="cc-chip">Also listed in ${esc(m.market)} &middot; ${m.pct}%${cnt ? ` &middot; ${cnt} followers` : " of followers"}</span>`; }).join("")}
       </div>
       ${p.pitchLine ? `<p class="bookme-pitch" style="font-size:1.05rem;margin:10px 0 0"><em>${esc(p.pitchLine)}</em></p>` : ""}
       ${p.bio ? `<p class="bookme-bio">${esc(p.bio)}</p>` : ""}
@@ -10633,13 +10633,15 @@ function renderClaimDone() {
 }
 
 // ---------- Build -156: the live stack moment + Neighbor Card ----------
-// On the done screen Maggie prompts the stack ("Want to climb?
-// Add your TikTok"). Every added platform saves through the same
-// profile write as always, then the number and the LIVE rank
-// recompute on screen. The FOUNDING rank locked at claim never
-// moves, but the panel shows only its band ("in the first 100")
-// — the exact rank and the market's checked count are never
-// displayed (Jeff, 2026-11-15).
+// On the done screen Maggie prompts the stack ("Want a bigger
+// number? Add your TikTok"). Every added platform saves through
+// the same profile write as always, then the number recomputes
+// on screen. The FOUNDING rank locked at claim never moves, but
+// the panel shows only its band ("in the first 100") — the exact
+// rank and the market's checked count are never displayed, and
+// no live merit rank is shown either: a creator sees her own
+// numbers only, never her position against other creators
+// (Jeff, 2026-11-15, Build -177).
 function neighborMissingPlatforms() {
   const stack = (state.user && state.user.creator && state.user.creator.audienceStack) || {};
   return CLAIM_STACK_PLATFORMS.filter((p) => !(Number(stack[p.id]) > 0));
@@ -10656,9 +10658,9 @@ function neighborPanelHtml() {
     <p style="font-size:32px;font-weight:800;margin:0" id="nb-big">${claimFmtCount(nb.neighborCount)}</p>
     <p class="muted" style="margin:0 0 8px" id="nb-big-label">${nb.extrapolated ? T(`total potential neighbors in ${marketLabel}`, `vecinos potenciales en total en ${marketLabel}`) : T(`neighbors in ${marketLabel}`, `vecinos en ${marketLabel}`)}${nb.localWords ? ` · ${esc(nb.localWords)}` : ""}</p>
     ${f && f.band ? `<p class="small" style="margin:0 0 4px"><strong>${T(`You are in the first ${f.band} founding creators in ${nb.market}.`, `Estás en los primeros ${f.band} creadores fundadores de ${nb.market}.`)}</strong> ${T("Your founding spot is locked in; it never changes.", "Tu lugar fundador queda fijo; nunca cambia.")}</p>` : ""}
-    ${nb.liveRank ? `<p class="small" style="margin:0 0 10px"><strong>${T("Live rank today", "Rango en vivo hoy")} #${nb.liveRank}</strong> ${T(`in ${nb.market} by neighbors counted. This one moves as more creators are checked.`, `en ${nb.market} por vecinos contados. Este se mueve cuando revisamos a más creadores.`)}</p>` : ""}
+    <p class="small" style="margin:0 0 10px">${T("Your Neighbor Number is live: it is your own count, and it updates every time your profile does.", "Tu Número de Vecinos está en vivo: es tu propia cuenta, y se actualiza cada vez que tu perfil se actualiza.")}</p>
     ${nextPlat ? `<div class="notice blue" style="text-align:left">
-      <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Want to climb? Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Every platform you add recounts your neighbors and your live rank, right here.`, `¿Quieres subir? Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Cada plataforma que agregas vuelve a contar tus vecinos y tu rango en vivo, aquí mismo.`)}</p>
+      <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Want a bigger number? Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Every platform you add recounts your neighbors, right here.`, `¿Quieres un número más grande? Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Cada plataforma que agregas vuelve a contar tus vecinos, aquí mismo.`)}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
         <div class="field" style="margin:0"><label>${T("Platform", "Plataforma")}</label><select id="nb-plat">${missing.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join("")}</select></div>
         <div class="field" style="margin:0"><label>${T("Followers", "Seguidores")}</label><input type="number" id="nb-plat-count" min="1" inputmode="numeric" placeholder="0" style="width:130px"></div>
@@ -10710,7 +10712,7 @@ function neighborCardSave() {
   const name = u.name || "";
   const handle = (u.creator && u.creator.handle) || "";
   const photoAbs = u.creator.hasPhoto ? `${location.origin}/api/users/${u.id}/photo` : "";
-  const rankLine = f && f.band ? `Founding creator · first ${f.band} in ${marketLabel}` : (nb.liveRank ? `#${nb.liveRank} in ${marketLabel} by neighbors counted` : marketLabel);
+  const rankLine = f && f.band ? `Founding creator · first ${f.band} in ${marketLabel}` : marketLabel;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><circle cx="540" cy="215" r="85" fill="#E3F5EA"/><text x="540" y="245" font-family="Arial, sans-serif" font-size="72" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc((name || handle || "M").trim().charAt(0).toUpperCase())}</text>${photoAbs ? `<image href="${esc(photoAbs)}" x="455" y="130" width="170" height="170" preserveAspectRatio="xMidYMid slice"/>` : ""}<text x="540" y="380" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(name)}</text><text x="540" y="435" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">@${esc(handle)} · ${esc(marketLabel)}</text><text x="540" y="620" font-family="Arial, sans-serif" font-size="130" font-weight="800" fill="#0B0D0C" text-anchor="middle">${claimFmtCount(nb.neighborCount)}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">${nb.extrapolated ? "total potential neighbors" : "neighbors"}</text>${nb.localWords ? `<text x="540" y="745" font-family="Arial, sans-serif" font-size="34" fill="#5F7265" text-anchor="middle">${esc(nb.localWords)}</text>` : ""}<text x="540" y="830" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(rankLine)}</text><text x="540" y="950" font-family="Arial, sans-serif" font-size="32" fill="#5F7265" text-anchor="middle">Magpie · Local beats famous</text></svg>`;
   const blob = new Blob([svg], { type: "image/svg+xml" });
   api("POST", "/neighbor/card-event", { action: "generated" }).catch(() => {});
@@ -14395,11 +14397,13 @@ async function loadTicketBanner() {
 
 // ---------- creator excitement layer (Jeff, 2026-10-29) ----------
 // Rendered on the founding home the moment a creator is approved:
-// their rank by local reach, a shareable founding stat card, their
-// city's unlock meter, and the plain statement of what Momentum
-// actually does. Every number comes from GET /me/founding's buzz
-// object, computed server-side from stored records. Nothing here
-// invents a figure, and no line promises money.
+// a shareable founding stat card, their city's unlock meter, and
+// the plain statement of what Momentum actually does. Every
+// number comes from GET /me/founding's buzz object, computed
+// server-side from stored records. Nothing here invents a
+// figure, and no line promises money. No rank is shown: Jeff,
+// 2026-11-15 (Build -177) — a creator sees her own numbers
+// (her local %, her band), never her position against others.
 function creatorBuzzHtml(u, card, f, buzz) {
   if (!buzz) return "";
   const placeRaw = f.unlisted ? (f.city || "your city") : marketTalkNameClient(f.market);
@@ -14449,14 +14453,18 @@ function creatorCharterCardHtml(u, card, f, buzz, placeRaw) {
 
 function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
   const p = card.profile || {};
-  const rank = buzz.localRank;
   const pct = p.localAudiencePct === null || p.localAudiencePct === undefined ? null : p.localAudiencePct;
   const complete = !!(u.profileCompletion && u.profileCompletion.complete);
-  const rankLine = rank
-    ? `#${rank.rank} in ${placeRaw} by local reach`
-    : (pct === null ? "Set your local % to get your rank" : (!complete ? "Finish your profile to take your rank" : "Your rank shows once the founding class here fills in"));
+  // Build -177 (Jeff, 2026-11-15): the live merit rank that used
+  // to headline this card is gone — "remove that for now too."
+  // The line keeps the same motivations (set your local %,
+  // finish your profile) with her own standing only: her local
+  // reach is the number businesses see first, full stop.
+  const rankLine = pct === null
+    ? "Set your local % — it is the first number businesses see here"
+    : (!complete ? "Finish your profile so businesses here can find you" : "Your local reach is the first number businesses see here");
   const bits = [`I am a founding creator on Magpie in ${placeRaw}.`];
-  if (pct !== null) bits.push(`${pct}% of my audience is local${rank ? `, and I rank #${rank.rank} here by local reach` : ""}.`);
+  if (pct !== null) bits.push(`${pct}% of my audience is local.`);
   bits.push("Magpie ranks creators by local reach, not follower count. Local businesses book us for comped visits or paid bookings at our own rates.");
   const link = inviteUrlFor(u);
   if (link) bits.push(`Creators: join through my link: ${link}`);

@@ -6514,13 +6514,15 @@ function publicFoundingNeighbor(fn) {
 // Creator excitement layer (Jeff, 2026-10-29): the numbers a
 // founding creator's home celebrates with, computed live from
 // stored records only. Two pieces:
-//   localRank: the creator's rank in their market BY LOCAL REACH
-//     (the ordering Magpie sells), among approved, profile-complete
-//     creators who have reported a local %. Ties break by founding
-//     order (earliest sign-up first), the platform's standing
-//     fairness rule. Null until the creator is approved, complete,
-//     and has a local % on file: there is no rank to show before
-//     the profile businesses would rank exists.
+//   (Removed 2026-11-15, Build -177: localRank — the creator's
+//     live merit rank in their market BY LOCAL REACH, among
+//     approved, profile-complete creators with a local % on
+//     file. Jeff: "remove that for now too." The payload no
+//     longer carries any rank; the stat card shows her own
+//     local % and her founding band only. Nothing was stored
+//     from the computation — it was derived per read from the
+//     same records, so it can be restored at launch by
+//     recomputing it here.)
 //   unlock: the market's founding progress toward the launch bar:
 //     approved count, finished-profile count, the bar, and the
 //     live flag. The counts ride the payload because the meter's
@@ -6596,12 +6598,6 @@ async function creatorBuzz(user) {
   const inMarket = users.filter((x) => x.role === "creator" && !isTester(x) && normalizeMarketName(x.market) === normalizeMarketName(user.market));
   const approved = inMarket.filter((x) => x.status === "approved");
   const complete = approved.filter((x) => profileCompleteOf(x));
-  const ranked = complete
-    .filter((x) => x.creator && typeof x.creator.localAudiencePct === "number")
-    // Verified tiebreak (Build -108): equal local shares break
-    // toward the Instagram-verified creator, then founding order.
-    .sort((a, b) => (b.creator.localAudiencePct - a.creator.localAudiencePct) || ((verifiedInMarket(b, user.market) ? 1 : 0) - (verifiedInMarket(a, user.market) ? 1 : 0)) || (a.createdAt < b.createdAt ? -1 : 1));
-  const idx = ranked.findIndex((x) => x.id === user.id);
   const marketLive = await isMarketLive(user.market);
   let charter = null;
   const storedCharterAt = (user.creator && user.creator.charterAt) || null;
@@ -6641,12 +6637,10 @@ async function creatorBuzz(user) {
     }
   }
   return {
-    // Rank claims gate on a meaningful field (Build -47, audit
-    // C16): below double digits there is no rank to claim, the
-    // same instinct as the unlock meter below: "#1" of two is a
-    // public promise of depth that is not there. The local %
-    // itself still rides the card payloads; only the rank goes.
-    localRank: idx > -1 && ranked.length >= 10 ? { rank: idx + 1, field: ranked.length, localAudiencePct: ranked[idx].creator.localAudiencePct } : null,
+    // No localRank field (Build -177, Jeff, 2026-11-15): the
+    // live merit rank and its field count no longer ride this
+    // payload at all. Her local % itself still rides the card
+    // payloads; only the rank is gone.
     unlock: user.market === UNLISTED ? null : {
       approved: approved.length,
       complete: complete.length,
@@ -18420,13 +18414,16 @@ function neighborViewForUser(user, entries, entry) {
   const c = (user && user.creator) || {};
   const nb = neighborCountFor(c);
   const pct = neighborPctOf(c);
-  const r = entry ? neighborRankOf(entries, entry) : null;
+  // Build -177 (Jeff, 2026-11-15): no liveRank in this payload.
+  // The live merit rank (neighborRankOf against the checked set)
+  // is still computed server-side where the record needs it —
+  // the founding lock at claim conversion and the event log —
+  // but it never rides the payload to the creator's browser.
   return {
     market: normalizeMarketName(user.market || ""),
     neighborCount: nb.count, extrapolated: nb.extrapolated,
     localPct: pct === null ? null : Math.round(pct * 10) / 10,
     localWords: pct === null ? null : neighborLocalWords(pct),
-    liveRank: r ? r.rank : null,
     founding: publicFoundingNeighbor(c.foundingNeighbor),
   };
 }
@@ -25666,10 +25663,11 @@ async function route(event) {
   if (seg[0] === "neighbor" && user && user.role === "creator") {
     const fresh = (await store.get(`user:${user.id}`)) || user;
     const marketName = normalizeMarketName(fresh.market || "");
-    // GET /neighbor/me — the live view: today's count and live
-    // rank (recomputed from the checked set on every read),
-    // beside the founding rank locked at claim. The two are
-    // labelled separately everywhere they print.
+    // GET /neighbor/me — the live view: today's count, beside
+    // the founding record locked at claim (sent to the client
+    // as its band projection only). No rank rides this payload:
+    // the live merit rank is computed server-side only where
+    // the record needs it (Build -177, Jeff, 2026-11-15).
     if (method === "GET" && seg[1] === "me" && seg.length === 2) {
       const entries = await checkedNeighborSet(marketName);
       const entry = entries.find((e) => e.userId === fresh.id);
