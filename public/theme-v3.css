@@ -1377,31 +1377,24 @@ table { max-width: 100%; }
    (min-width 0, wrapping lines) still hold everything else in. */
 .shelf-tray-col.top-match { overflow: visible; }
 
-/* Magpie flip — "formerly SIGNL" bridge line (flip package item 4.7; removal is item 5.6:
-   delete every .formerly-line span (marked data-bridge="formerly-signl"), unwrap .brand-lockup, drop this block).
-   The spans live in: public/app.js (railhead, renderTopBar2, renderTopRow) and
-   public/index.html — the .topbar lockup there is the LOGGED-OUT header shared by
-   sign-in, the logged-out landing, forgot/reset, join and staff screens (Jeff,
-   2026-11-07: it was missing there — the span existed but this block colored it
-   near-white from the topbar's old black era, and the v3 topbar is paper, so it
-   rendered invisible; the .topbar rule below is what makes it show). Dropping
-   this block + deleting the index.html span in the same pass restores the bare
-   logged-out logo with everything else. */
+/* Magpie flip — the bridge line under the logo was retired 2026-11-15
+   (Jeff's order; flip package item 5.6): every bridge-line span is deleted
+   from public/app.js (railhead, renderTopBar2, renderTopRow) and
+   public/index.html, and its rules are dropped. .brand-lockup stays as the
+   wrapper around the bare logo. */
 .brand-lockup{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px;line-height:1}
-.formerly-line{font-size:11px;font-weight:700;letter-spacing:.16em;color:var(--ink2);white-space:nowrap}
-.topbar .formerly-line{color:var(--ink2)}
 
 /* Logged-in phone top bars — BRIDGE-ERA LAYOUT (Jeff, 2026-11-07,
    revised 12:12 ET; temporary — it comes down with the bridge
    removal, item 5.6). While the bridge lives, the phone bar reads:
-   the Magpie lockup with "formerly SIGNL" under it at the FAR LEFT,
+   the Magpie lockup with the bridge line under it at the FAR LEFT,
    and one icon row aligned RIGHT — profile circle, help (?), then
    the bar's own right icons (messages + hamburger on the .tb2
    shells; stats + hamburger on the admin .tr row, whose help
    already rides on the right). The person's NAME is out of the bar
    entirely: .tb2-name / .tr-name are display:none ONLY inside this
    block's phone query. The lockup is the existing .brand-lockup +
-   .formerly-line span, rendered as .mbrand inside renderTopBar2
+   bridge-line span, rendered as .mbrand inside renderTopBar2
    (creator / business / partner / recruiter) and renderTopRow
    (admin) — same artwork and bridge styling, only placed. The
    phone rules live in the phone query below; a desktop query
