@@ -5819,6 +5819,15 @@ function publicUser(u) {
       missing: p && Array.isArray(p.missing) ? p.missing : [],
       updatedAt: p && p.updatedAt ? p.updatedAt : null,
     };
+    // The founding-neighbor lock (Build -156) stores the exact
+    // founding rank and the market's checked count. Jeff,
+    // 2026-11-15: those numbers never ride a client payload.
+    // The client gets the band projection; admin serializers
+    // re-add the exact record from the raw record, like the
+    // other server-side-only fields above.
+    if (rest.creator.foundingNeighbor) {
+      rest.creator.foundingNeighbor = publicFoundingNeighbor(rest.creator.foundingNeighbor);
+    }
   }
   if (rest.role === "partner" && rest.partner) {
     rest.partner = publicPartner(rest.partner);
@@ -6480,6 +6489,25 @@ function publicFounding(summary) {
     ...rest,
     priorityBand: foundingBand(priorityPosition),
     queueBand: foundingBand(queuePosition),
+  };
+}
+
+// Creator-facing projection of the locked founding-neighbor record
+// (Build -156 stores the exact founding rank and the market's
+// checked count at claim). Jeff, 2026-11-15: the exact rank and
+// the count never reach a creator — "it tells on us." Creators
+// see the band ("in the first 100") and their own numbers only.
+// The stored record keeps the exact rank for admin surfaces and
+// the event log, which read the raw record server-side.
+function publicFoundingNeighbor(fn) {
+  if (!fn) return null;
+  return {
+    market: fn.market || null,
+    band: foundingBand(fn.rank),
+    neighborCount: fn.neighborCount != null ? fn.neighborCount : null,
+    localPct: fn.localPct != null ? fn.localPct : null,
+    extrapolated: !!fn.extrapolated,
+    lockedAt: fn.lockedAt || null,
   };
 }
 
@@ -18398,8 +18426,8 @@ function neighborViewForUser(user, entries, entry) {
     neighborCount: nb.count, extrapolated: nb.extrapolated,
     localPct: pct === null ? null : Math.round(pct * 10) / 10,
     localWords: pct === null ? null : neighborLocalWords(pct),
-    liveRank: r ? r.rank : null, liveCheckedCount: r ? r.checkedCount : null,
-    founding: c.foundingNeighbor || null,
+    liveRank: r ? r.rank : null,
+    founding: publicFoundingNeighbor(c.foundingNeighbor),
   };
 }
 // Regulars: the counted customers ONE creator brought through
@@ -24138,7 +24166,12 @@ async function route(event) {
   if (method === "GET" && seg[0] === "claim-hook" && seg.length === 1) {
     const hook = await claimHookFor(query.handle || "", query.market || "");
     await logCapture({ type: "claim_hook_view", actorId: null, actorRole: "creator", subjectId: null, market: hook.market || null, data: { variant: hook.variant, handle: hook.handle || null, neighborCount: hook.neighborCount || null, rank: hook.rank || null, checkedCount: hook.checkedCount || null } });
-    return json(200, { hook });
+    // Jeff, 2026-11-15: the exact rank and the market's checked
+    // count are logged above for the record and then stripped —
+    // they never reach the creator's browser. The hook screen
+    // shows her founding spot, not the numbers behind it.
+    const { rank: _hookRank, checkedCount: _hookCheckedCount, rankLine: _hookRankLine, ...clientHook } = hook;
+    return json(200, { hook: clientHook });
   }
 
   // App sitemap (SEO, 2026-11-01): every FINISHED, public
@@ -25665,7 +25698,7 @@ async function route(event) {
       if (!fresh.creator.neighborConversionLoggedAt) {
         fresh.creator.neighborConversionLoggedAt = nowIso();
         await store.set(`user:${fresh.id}`, fresh);
-        await logCapture({ type: "claim_hook_converted", actorId: fresh.id, actorRole: "creator", subjectId: fresh.id, market: marketName, data: { variant: b.variant === "personal" ? "personal" : "generic", foundingRank: view.founding ? view.founding.rank : null, neighborCount: view.neighborCount } });
+        await logCapture({ type: "claim_hook_converted", actorId: fresh.id, actorRole: "creator", subjectId: fresh.id, market: marketName, data: { variant: b.variant === "personal" ? "personal" : "generic", foundingRank: fresh.creator.foundingNeighbor ? fresh.creator.foundingNeighbor.rank : null, neighborCount: view.neighborCount } });
       }
       return json(200, { neighbor: view });
     }

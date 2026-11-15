@@ -10063,7 +10063,8 @@ function renderQuickClaim() {
 // ---------- Screen 0: the Neighbor Number (Build -156) ----------
 // Shown BEFORE any form when a checked record carries this
 // creator's own numbers: her counted neighbors, her local % in
-// plain words, her founding rank with its honest scope, and —
+// plain words, her founding spot (never the exact rank or the
+// market's checked count — Jeff, 2026-11-15), and —
 // only when a real checked creator in her market has more
 // followers but fewer neighbors — that inversion, naming the
 // real account. The server computes all of it; nothing here is
@@ -10095,13 +10096,13 @@ function renderClaimHook() {
       <p style="font-size:34px;font-weight:800;margin:0 0 2px" id="nb-hook-count">${claimFmtCount(h.neighborCount)}</p>
       <p class="muted" style="margin:0 0 12px">${h.extrapolated ? T(`total potential neighbors in ${marketLabel}`, `vecinos potenciales en total en ${marketLabel}`) : T(`neighbors in ${marketLabel}`, `vecinos en ${marketLabel}`)}</p>
       ${h.localWords ? `<p style="margin:0 0 8px"><strong>${esc(h.localWords)}.</strong></p>` : ""}
-      <p style="margin:0 0 8px">${T("Your founding spot:", "Tu lugar de fundadora:")} <strong>#${h.rank}</strong> ${T(`of the ${h.checkedCount} ${h.market} creators we've checked so far`, `de los ${h.checkedCount} creadores de ${h.market} que hemos revisado hasta ahora`)}.</p>
+      <p style="margin:0 0 8px">${T("Your founding spot in", "Tu lugar de fundadora en")} <strong>${esc(marketLabel)}</strong> ${T("is waiting. Founding creators are recorded in founding order, and founding creators see offers first.", "te está esperando. Los creadores fundadores quedan registrados en orden de llegada, y ven las ofertas primero.")}</p>
       ${h.inversion ? `<p class="small" style="margin:0 0 12px">@${esc(h.inversion.handle)} ${T(`has more followers than you (${claimFmtCount(h.inversion.followers)} in total), but fewer neighbors in ${marketLabel}. Local beats famous here.`, `tiene más seguidores que tú (${claimFmtCount(h.inversion.followers)} en total), pero menos vecinos en ${marketLabel}. Aquí lo local le gana a lo famoso.`)}</p>` : ""}
       <div class="c85-lanes">
         <p><span class="c85-check">✓</span> ${T("Hosted visits: a local business treats you, you post honestly.", "Visitas en cortesía: un negocio local te invita y tú publicas con honestidad.")}</p>
         <p><span class="c85-check">✓</span> ${T("Paid bookings at your rate. You keep 97%.", "Reservas pagadas a tu tarifa. Te quedas con el 97%.")}</p>
       </div>
-      <button class="btn" type="button" style="width:100%" onclick="return claimHookGo()">${T(`Claim my #${h.rank} spot`, `Reclamar mi lugar #${h.rank}`)}</button>
+      <button class="btn" type="button" style="width:100%" onclick="return claimHookGo()">${T("Claim my founding spot", "Reclamar mi lugar de fundadora")}</button>
       <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Free for creators. Takes a minute.", "Gratis para creadores. Toma un minuto.")}</p>
     </div>
   </section>`;
@@ -10636,8 +10637,9 @@ function renderClaimDone() {
 // Add your TikTok"). Every added platform saves through the same
 // profile write as always, then the number and the LIVE rank
 // recompute on screen. The FOUNDING rank locked at claim never
-// moves; the two are labelled so they can never read as a
-// contradiction.
+// moves, but the panel shows only its band ("in the first 100")
+// — the exact rank and the market's checked count are never
+// displayed (Jeff, 2026-11-15).
 function neighborMissingPlatforms() {
   const stack = (state.user && state.user.creator && state.user.creator.audienceStack) || {};
   return CLAIM_STACK_PLATFORMS.filter((p) => !(Number(stack[p.id]) > 0));
@@ -10653,8 +10655,8 @@ function neighborPanelHtml() {
     <p style="margin:0 0 4px"><strong>${T("Your Neighbor Number", "Tu Número de Vecinos")}</strong></p>
     <p style="font-size:32px;font-weight:800;margin:0" id="nb-big">${claimFmtCount(nb.neighborCount)}</p>
     <p class="muted" style="margin:0 0 8px" id="nb-big-label">${nb.extrapolated ? T(`total potential neighbors in ${marketLabel}`, `vecinos potenciales en total en ${marketLabel}`) : T(`neighbors in ${marketLabel}`, `vecinos en ${marketLabel}`)}${nb.localWords ? ` · ${esc(nb.localWords)}` : ""}</p>
-    ${f ? `<p class="small" style="margin:0 0 4px"><strong>${T("Founding rank", "Rango fundador")} #${f.rank}</strong> ${T(`of the ${f.checkedCount} ${nb.market} creators checked when you claimed. This one is locked in; it never changes.`, `de los ${f.checkedCount} creadores de ${nb.market} revisados cuando reclamaste. Este queda fijo; nunca cambia.`)}</p>` : ""}
-    ${nb.liveRank ? `<p class="small" style="margin:0 0 10px"><strong>${T("Live rank today", "Rango en vivo hoy")} #${nb.liveRank}</strong> ${T(`of the ${nb.liveCheckedCount} ${nb.market} creators we've checked so far. This one moves as more creators are checked.`, `de los ${nb.liveCheckedCount} creadores de ${nb.market} que hemos revisado hasta ahora. Este se mueve cuando revisamos a más creadores.`)}</p>` : ""}
+    ${f && f.band ? `<p class="small" style="margin:0 0 4px"><strong>${T(`You are in the first ${f.band} founding creators in ${nb.market}.`, `Estás en los primeros ${f.band} creadores fundadores de ${nb.market}.`)}</strong> ${T("Your founding spot is locked in; it never changes.", "Tu lugar fundador queda fijo; nunca cambia.")}</p>` : ""}
+    ${nb.liveRank ? `<p class="small" style="margin:0 0 10px"><strong>${T("Live rank today", "Rango en vivo hoy")} #${nb.liveRank}</strong> ${T(`in ${nb.market} by neighbors counted. This one moves as more creators are checked.`, `en ${nb.market} por vecinos contados. Este se mueve cuando revisamos a más creadores.`)}</p>` : ""}
     ${nextPlat ? `<div class="notice blue" style="text-align:left">
       <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Want to climb? Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Every platform you add recounts your neighbors and your live rank, right here.`, `¿Quieres subir? Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Cada plataforma que agregas vuelve a contar tus vecinos y tu rango en vivo, aquí mismo.`)}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
@@ -10708,7 +10710,7 @@ function neighborCardSave() {
   const name = u.name || "";
   const handle = (u.creator && u.creator.handle) || "";
   const photoAbs = u.creator.hasPhoto ? `${location.origin}/api/users/${u.id}/photo` : "";
-  const rankLine = f.rank ? `Founding #${f.rank} of ${f.checkedCount} ${marketLabel} creators checked` : (nb.liveRank ? `#${nb.liveRank} of ${nb.liveCheckedCount} ${marketLabel} creators checked` : marketLabel);
+  const rankLine = f && f.band ? `Founding creator · first ${f.band} in ${marketLabel}` : (nb.liveRank ? `#${nb.liveRank} in ${marketLabel} by neighbors counted` : marketLabel);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><circle cx="540" cy="215" r="85" fill="#E3F5EA"/><text x="540" y="245" font-family="Arial, sans-serif" font-size="72" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc((name || handle || "M").trim().charAt(0).toUpperCase())}</text>${photoAbs ? `<image href="${esc(photoAbs)}" x="455" y="130" width="170" height="170" preserveAspectRatio="xMidYMid slice"/>` : ""}<text x="540" y="380" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(name)}</text><text x="540" y="435" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">@${esc(handle)} · ${esc(marketLabel)}</text><text x="540" y="620" font-family="Arial, sans-serif" font-size="130" font-weight="800" fill="#0B0D0C" text-anchor="middle">${claimFmtCount(nb.neighborCount)}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">${nb.extrapolated ? "total potential neighbors" : "neighbors"}</text>${nb.localWords ? `<text x="540" y="745" font-family="Arial, sans-serif" font-size="34" fill="#5F7265" text-anchor="middle">${esc(nb.localWords)}</text>` : ""}<text x="540" y="830" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(rankLine)}</text><text x="540" y="950" font-family="Arial, sans-serif" font-size="32" fill="#5F7265" text-anchor="middle">Magpie · Local beats famous</text></svg>`;
   const blob = new Blob([svg], { type: "image/svg+xml" });
   api("POST", "/neighbor/card-event", { action: "generated" }).catch(() => {});
