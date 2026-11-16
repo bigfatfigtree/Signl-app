@@ -191,6 +191,31 @@ const MARKETS = [
     cities: ["New York City", "New York", "Manhattan", "Brooklyn", "Queens", "The Bronx", "Bronx", "Staten Island", "Harlem", "Astoria", "Flushing", "Long Island City", "Jamaica", "Yonkers", "Mount Vernon", "New Rochelle", "White Plains", "Jersey City", "Hoboken"],
   },
   {
+    // Boston (Jeff, 2026-11-16): Boston joins the roster after a
+    // Boston creator signed up and filed as "not listed" — Jeff
+    // ordered the market added and the creator placed in it. ONE
+    // market containing Boston plus the inner-core metro towns in
+    // the market's area (Cambridge, Somerville, Brookline, Quincy,
+    // Newton and the rest of the ring) — the -52 rule: a sign-up
+    // typing a place inside the area files into this market. A few
+    // names here also sit in other markets' lists (Arlington in
+    // Dallas and Washington DC, Chelsea in London, Everett in
+    // Seattle, Milton in Toronto, Winchester in Las Vegas, Belmont
+    // in Charlotte): each such name resolves ambiguous rather than
+    // mis-filing, and the shared-name tie is the designed outcome,
+    // with the state/country hint breaking it at intake, the same
+    // shape as the other pinned two-metro names documented above.
+    // Like every unlaunched market Boston starts
+    // NOT live (the live-flag default lives in router.js): it files
+    // and counts, it does not launch itself. The roster is 47
+    // markets; the country set is unchanged.
+    id: "boston",
+    name: "Boston",
+    label: "Boston, Massachusetts",
+    country: "United States",
+    cities: ["Boston", "Cambridge", "Somerville", "Brookline", "Quincy", "Newton", "Medford", "Malden", "Waltham", "Arlington", "Watertown", "Belmont", "Chelsea", "Everett", "Revere", "Winthrop", "Milton", "Dedham", "Needham", "Wellesley", "Lexington", "Winchester"],
+  },
+  {
     id: "san-diego",
     name: "San Diego",
     label: "San Diego, California",
@@ -1226,6 +1251,7 @@ const MARKET_STATES = {
   chicago: ["IL", "IN"],
   "los-angeles": ["CA"],
   "new-york-city": ["NY", "NJ"],
+  boston: ["MA"],
   "san-diego": ["CA"],
   seattle: ["WA"],
   tampa: ["FL"],
