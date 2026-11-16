@@ -2534,7 +2534,7 @@ function tabItemsFor() {
       { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
       { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
-      ...extraIn137(railRows, ["Campaign Setup", "My Offers", "Visits & Posts", "Profile", ...(isNat178 ? [] : ["Plan"]), "Analytics", "Regulars", "Content", "Favorites", "Messages", "Settings", "Help"], ["Home", "Sig", "Discover"]),
+      ...extraIn137(railRows, ["Campaign Setup", "My Offers", "Visits & Posts", "Profile", ...(isNat178 ? [] : ["Plan"]), "Analytics", ...(isNat178 ? [] : ["Regulars"]), "Content", "Favorites", "Messages", "Settings", "Help"], ["Home", "Sig", "Discover"]),
     ];
   }
   if (u.role === "creator") {
@@ -2612,7 +2612,10 @@ function moreRowsFor() {
       { icon: "notice", label: "Start a campaign", sub: "Build a new campaign, step by step or with Maggie.", tab: "Campaign Setup" },
       { icon: "bars", label: "Your campaigns", sub: "Current and past campaigns, who applied, and what they did.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
       { icon: "calendar", label: "Visits", sub: "Visits and posts. The counter is inside.", tab: "Visits & Posts", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
-      { icon: "users", label: "My Regulars", sub: "Creators who visited you. Book them again.", tab: "Regulars" },
+      // Build -178 fix pass: a national account has no visits, so
+      // it has no Regulars — the row never appears in its menus
+      // (market businesses keep it).
+      ...(u.business && u.business.scope === "national" ? [] : [{ icon: "users", label: "My Regulars", sub: "Creators who visited you. Book them again.", tab: "Regulars" }]),
       { icon: "heart", label: "Saved creators", sub: "Your shortlist.", tab: "Favorites" },
       { icon: "bars", label: "Stats", sub: "What your campaigns did.", tab: "Analytics" },
       { icon: "play", label: "Posts & licenses", sub: "Every post about you, and the ones you can reuse.", tab: "Content" },
@@ -2811,7 +2814,7 @@ function everythingGroups125() {
       { title: "Grow", rows: [
         R("notice", "Start a campaign", "Build a new campaign", "Campaign Setup"),
         R("heart", "Saved creators", "Your shortlist", "Favorites", { badge: wc.bizSaved || 0 }),
-        R("users", "My Regulars", "Creators who visited you", "Regulars"),
+        ...(u.business && u.business.scope === "national" ? [] : [R("users", "My Regulars", "Creators who visited you", "Regulars")]),
         R("play", "License library", "Posts you can reuse", "Content"),
         R("bars", "Results", "What your campaigns did", "Analytics"),
       ] },
@@ -2952,7 +2955,7 @@ function hamburgerGroups137() {
       ] },
       { title: "Run", rows: [
         R("calendar", "Visits", "Visits and posts. The counter is inside", "Visits & Posts", { badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) }),
-        R("users", "My Regulars", "Creators who visited you. Book them again", "Regulars"),
+        ...(u.business && u.business.scope === "national" ? [] : [R("users", "My Regulars", "Creators who visited you. Book them again", "Regulars")]),
         R("play", "Posts & licenses", "Every post about you, and the ones you can reuse", "Content"),
         R("bubble", "Messages", "Talk to a creator about a visit or an offer", "Messages", { badge: b.messages || 0 }),
       ] },
@@ -35874,6 +35877,9 @@ function renderNationalLane() {
     <div class="mirror-grid">${list.map((c) => nationalCampaignCardHtml(c)).join("")}</div>`;
 }
 
+// Counted nouns on national surfaces decline properly: "1 hand",
+// never "1 hands" (Build -178 fix pass).
+function natNoun(n, one) { const v = n || 0; return `${v} ${one}${v === 1 ? "" : "s"}`; }
 function nationalBrandChipHtml(c) {
   if (c.logoUrl) return `<img src="${esc(c.logoUrl)}" alt="" style="width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar-initial',textContent:'${esc(c.initial || "M")}',style:'width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.02rem;flex:none'}))">`;
   return `<span class="avatar-initial" style="width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.02rem;flex:none" aria-hidden="true">${esc(c.initial || "M")}</span>`;
@@ -35892,10 +35898,11 @@ function nationalCampaignCardHtml(c) {
     <h4 style="margin:10px 0 4px">${esc(c.title)}</h4>
     <p style="margin:0 0 4px"><strong>What you get:</strong> ${esc(c.whatYouGet)}</p>
     <p class="small" style="margin:0 0 4px"><strong>What they ask:</strong> ${esc(c.whatWeAsk)}</p>
-    <p class="small muted" style="margin:0 0 8px">The brand picks ${c.picksCount} creator${c.picksCount === 1 ? "" : "s"} from everyone who raises a hand by ${esc(fmtDay(c.raiseByAt))}. ${esc(c.raiseExplainer)}</p>
+    <p class="small muted" style="margin:0 0 4px">The brand picks ${c.picksCount} creator${c.picksCount === 1 ? "" : "s"} from everyone who raises a hand by ${esc(fmtDay(c.raiseByAt))}. ${esc(c.raiseExplainer)}</p>
+    <p class="small" style="margin:0 0 8px">${esc(c.pickedLine || "If you are picked, Magpie messages you here with the details and next steps.")}</p>
     ${hand.status === "raised" ? `<p class="small" style="margin:0 0 8px">${esc(hand.line)}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small-btn" onclick="return openNationalCampaign('${c.id}')">See the campaign</button><button type="button" class="btn ghost small-btn" onclick="return natWithdraw('${c.id}')">Take my hand back</button></div>`
-    : hand.status === "picked" ? `<p class="small" style="margin:0 0 8px"><strong>You were picked.</strong> ${esc(hand.line)}</p>
+    : hand.status === "picked" ? `<p class="small" style="margin:0 0 8px">${esc(hand.line)}</p>
       <button type="button" class="btn small-btn" onclick="return openNationalCampaign('${c.id}')">Open the campaign</button>`
     : hand.status === "not_picked" ? `<p class="small" style="margin:0 0 8px">${esc(hand.line)}</p>
       <button type="button" class="btn ghost small-btn" onclick="return openNationalCampaign('${c.id}')">See the campaign</button>`
@@ -35948,7 +35955,7 @@ async function renderNationalCampaignPage() {
     ${hand.status === "none" ? `<button type="button" class="btn" onclick="return natRaise('${c.id}')">Raise your hand</button>` : ""}
     ${hand.status === "raised" ? `<p>${esc(hand.line)}</p><button type="button" class="btn ghost" onclick="return natWithdraw('${c.id}')">Take my hand back</button>` : ""}
     ${hand.status === "withdrawn" ? `<p>${esc(hand.line)}</p><button type="button" class="btn" onclick="return natRaise('${c.id}')">Raise your hand</button>` : ""}
-    ${hand.status === "picked" ? `<p><strong>You were picked.</strong> ${esc(hand.line)}</p>` : ""}
+    ${hand.status === "picked" ? `<p>${esc(hand.line)}</p>` : ""}
     ${hand.status === "not_picked" ? `<p>${esc(hand.line)}</p>` : ""}
     </div>
   </section>
@@ -35997,7 +36004,7 @@ async function renderBrandProfilePage() {
   app.innerHTML = `<div class="wrap" style="max-width:720px">
   <p><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Find Offers')">← Back</button></p>
   <div style="display:flex;gap:12px;align-items:center;margin-top:6px">
-    ${b.logoUrl ? `<img src="${esc(b.logoUrl)}" alt="" style="width:56px;height:56px;border-radius:50%;object-fit:cover">` : `<span class="avatar-initial" style="width:56px;height:56px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.3rem">${esc(b.initial)}</span>`}
+    ${b.logoUrl ? `<img src="${esc(b.logoUrl)}" alt="" style="width:56px;height:56px;border-radius:50%;object-fit:cover" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar-initial',textContent:'${esc(b.initial || "M")}',style:'width:56px;height:56px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.3rem'}))">` : `<span class="avatar-initial" style="width:56px;height:56px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.3rem">${esc(b.initial)}</span>`}
     <div>
       <h2 style="margin:0">${esc(b.brandName)}</h2>
       ${b.scope === "national" ? `<span class="badge info">National brand</span>` : ""}
@@ -36030,7 +36037,12 @@ function renderNationalBusinessDash() {
   // them onto the national surfaces so every destination lands
   // somewhere true for a national account. No plan surface exists
   // here at all: a national account has no plan to show.
-  const map = { "Campaign Setup": "NatNew", "My Offers": "NatCampaigns", "Discover": "NatDiscover", "Favorites": "NatDiscover", "Analytics": "NatReports", "Profile": "NatBrand", "Plan": "NatBrand", "Counter": "Home", "Visits & Posts": "NatCampaigns", "Regulars": "Home", "Content": "NatCampaigns" };
+  // "Regulars" is not a national destination (removed from the
+  // national nav in the -178 fix pass: a national account has no
+  // visits, so no Regulars). A stale link here lands on Find
+  // creators, where the account's shortlist — its saved creators —
+  // actually lives, never on a silent Home.
+  const map = { "Campaign Setup": "NatNew", "My Offers": "NatCampaigns", "Discover": "NatDiscover", "Favorites": "NatDiscover", "Analytics": "NatReports", "Profile": "NatBrand", "Plan": "NatBrand", "Counter": "Home", "Visits & Posts": "NatCampaigns", "Regulars": "NatDiscover", "Content": "NatCampaigns" };
   if (map[tab]) tab = map[tab];
   if (![...NAT_TABS, "Sig", "Settings", "Help", "Messages"].includes(tab)) tab = "Home";
   state.tab = tab;
@@ -36050,8 +36062,9 @@ function renderNationalBusinessDash() {
 }
 function natHeadHtml(u) {
   const bz = u.business || {};
+  const initial = (bz.brandName || bz.businessName || "N").charAt(0).toUpperCase();
   return `<div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px">
-    ${bz.logoUrl ? `<img src="${esc(bz.logoUrl)}" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover">` : `<span class="avatar-initial" style="width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem">${esc((bz.brandName || bz.businessName || "N").charAt(0).toUpperCase())}</span>`}
+    ${bz.logoUrl ? `<img src="${esc(bz.logoUrl)}" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar-initial',textContent:'${esc(initial)}',style:'width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem'}))">` : `<span class="avatar-initial" style="width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem">${esc(initial)}</span>`}
     <div>
       <h2 style="margin:0">${esc(bz.brandName || bz.businessName || "Your brand")}</h2>
       <div class="small muted">National account — your account can reach creators in every Magpie market, not just one city. ${bz.verifiedAt ? `<span style="color:var(--mint-deep)">Verified by Magpie</span>` : `Not verified yet: Magpie checks your website and store before your campaigns can go out.`}</div>
@@ -36063,7 +36076,7 @@ function natCampaignRowHtml(c) {
   return `<div class="panel" style="margin-top:10px">
     <div class="flex-between"><strong>${esc(c.title || "Untitled campaign")}</strong><span class="badge ${c.status === "open" ? "ok" : "info"}">${esc(statusLabel)}</span></div>
     <p class="small" style="margin:6px 0"><strong>What creators get:</strong> ${esc(c.whatYouGet || "")}<br><strong>What you ask:</strong> ${esc(c.whatWeAsk || "")}</p>
-    <p class="small muted" style="margin:0 0 8px">${c.handCount || 0} hands raised · ${c.pickedCount || 0} of ${c.picksCount || 0} picked · hand-raise deadline ${c.raiseByAt ? esc(fmtDay(c.raiseByAt)) : "not set"}</p>
+    <p class="small muted" style="margin:0 0 8px">${natNoun(c.handCount, "hand")} raised · ${c.pickedCount || 0} of ${c.picksCount || 0} picked · hand-raise deadline ${c.raiseByAt ? esc(fmtDay(c.raiseByAt)) : "not set"}</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="btn small-btn" onclick="return natOpenRaisers('${c.id}')">See who raised a hand</button>
       ${c.status === "draft" ? `<button type="button" class="btn small-btn ghost" onclick="return natEditCampaign('${c.id}')">Edit</button><button type="button" class="btn small-btn ghost" onclick="return natPublish('${c.id}')">Publish</button>` : ""}
@@ -36085,7 +36098,7 @@ async function loadNatHome() {
       ${!a.verified ? `<div class="panel" style="margin-top:10px"><strong>One step before campaigns can go out: brand verification.</strong><p class="small" style="margin:6px 0 0">Magpie checks that your website is really yours and that a real store sits behind it. Creators see the Verified by Magpie mark, and your campaigns open up once it is on.</p></div>` : ""}
       <div class="panel" style="margin-top:10px">
         <div class="flex-between"><strong>Your campaigns</strong><button type="button" class="btn small-btn" onclick="go('dashboard','NatNew')">New campaign</button></div>
-        <p class="small muted" style="margin:6px 0 0">${d.counts.open} open · ${d.counts.draft} drafts · ${d.counts.hands} hands raised across your campaigns · ${d.counts.picksToMake} picks still to make</p>
+        <p class="small muted" style="margin:6px 0 0">${d.counts.open} open · ${natNoun(d.counts.draft, "draft")} · ${natNoun(d.counts.hands, "hand")} raised across your campaigns · ${natNoun(d.counts.picksToMake, "pick")} still to make</p>
       </div>
       ${(d.campaigns || []).map((c) => natCampaignRowHtml(c)).join("") || `<p class="muted" style="margin-top:12px">No campaigns yet. Your first one takes a few minutes: say what creators get, what you ask, and how many you will pick.</p>`}`;
   } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
@@ -36274,12 +36287,12 @@ async function loadNatReports() {
     host.innerHTML = `
       <p class="small muted" style="margin:10px 0">${esc(d.resultsLabel)}</p>
       ${(d.campaigns || []).map((c) => `<div class="panel" style="margin-top:10px"><strong>${esc(c.title)}</strong>
-        <p class="small" style="margin:6px 0 0">${c.hands} hands raised · ${c.picks} of ${c.picksCount} picked · gifts: ${Object.entries(c.fulfillmentStates || {}).map(([k, v]) => `${esc(natFulfillLabel(k))} ${v}`).join(", ") || "none yet"}${c.attributed && c.attributed.orders ? `<br>${c.attributed.orders} orders, $${Number(c.attributed.revenue || 0).toLocaleString("en-US")} in sales — ${esc(c.attributed.source)}` : ""}</p></div>`).join("") || `<p class="muted">No campaigns yet, so no reports yet.</p>`}
+        <p class="small" style="margin:6px 0 0">${natNoun(c.hands, "hand")} raised · ${c.picks} of ${c.picksCount} picked · gifts: ${Object.entries(c.fulfillmentStates || {}).map(([k, v]) => `${esc(natFulfillLabel(k))} ${v}`).join(", ") || "none yet"}${c.attributed && c.attributed.orders ? `<br>${c.attributed.orders} orders, $${Number(c.attributed.revenue || 0).toLocaleString("en-US")} in sales — ${esc(c.attributed.source)}` : ""}</p></div>`).join("") || `<p class="muted">No campaigns yet, so no reports yet.</p>`}
       <div class="panel" style="margin-top:14px"><strong>${esc(d.homeMarketLabel)}</strong>
-        ${(d.byHomeMarket || []).map((r) => `<div class="ui-row"><span class="k">${esc(r.market)}</span><span class="v">${r.hands} hands · ${r.picks} picks</span></div>`).join("") || `<p class="small muted">No hands yet.</p>`}
+        ${(d.byHomeMarket || []).map((r) => `<div class="ui-row"><span class="k">${esc(r.market)}</span><span class="v">${natNoun(r.hands, "hand")} · ${natNoun(r.picks, "pick")}</span></div>`).join("") || `<p class="small muted">No hands yet.</p>`}
       </div>
       <div class="panel" style="margin-top:10px"><strong>${esc(d.listedMarketLabel)}</strong>
-        ${(d.byListedMarket || []).map((r) => `<div class="ui-row"><span class="k">${esc(r.market)}</span><span class="v">${r.hands} hands · ${r.picks} picks</span></div>`).join("") || `<p class="small muted">No hands yet.</p>`}
+        ${(d.byListedMarket || []).map((r) => `<div class="ui-row"><span class="k">${esc(r.market)}</span><span class="v">${natNoun(r.hands, "hand")} · ${natNoun(r.picks, "pick")}</span></div>`).join("") || `<p class="small muted">No hands yet.</p>`}
       </div>`;
   } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
 }
@@ -36333,8 +36346,8 @@ async function loadAdminNational178() {
     el.innerHTML = `
     <h3 style="margin-top:4px">National accounts</h3>
     <p class="small muted">Brands that reach creators in every market. These numbers live here only — national accounts never count toward any market's launch numbers.</p>
-    <div class="panel"><strong>Roll-up:</strong> ${r.accounts || 0} accounts (${r.verifiedAccounts || 0} verified) · ${r.campaigns || 0} campaigns (${Object.entries(r.campaignsByStatus || {}).map(([k, v]) => `${esc(k)} ${v}`).join(", ") || "none"}) · ${r.hands || 0} hands · ${r.picks || 0} picks</div>
-    ${(r.staleNoPicks || []).length ? `<div class="panel" style="margin-top:10px"><strong>Needs a close-out:</strong> ${r.staleNoPicks.map((s) => `${esc(s.title)} — deadline passed 14+ days ago, ${s.handsWaiting} hands still waiting. <button type="button" class="btn small-btn ghost" onclick="return adminNatCloseCampaign('${s.campaignId}')">Close it</button>`).join("<br>")}</div>` : ""}
+    <div class="panel"><strong>Roll-up:</strong> ${natNoun(r.accounts, "account")} (${r.verifiedAccounts || 0} verified) · ${natNoun(r.campaigns, "campaign")} (${Object.entries(r.campaignsByStatus || {}).map(([k, v]) => `${esc(k)} ${v}`).join(", ") || "none"}) · ${natNoun(r.hands, "hand")} · ${natNoun(r.picks, "pick")}</div>
+    ${(r.staleNoPicks || []).length ? `<div class="panel" style="margin-top:10px"><strong>Needs a close-out:</strong> ${r.staleNoPicks.map((s) => `${esc(s.title)} — deadline passed 14+ days ago, ${natNoun(s.handsWaiting, "hand")} still waiting. <button type="button" class="btn small-btn ghost" onclick="return adminNatCloseCampaign('${s.campaignId}')">Close it</button>`).join("<br>")}</div>` : ""}
     <div class="panel" style="margin-top:14px">
       <h4 style="margin-top:0">Create a national account</h4>
       <form onsubmit="return adminNatCreate(event)">
@@ -36366,7 +36379,7 @@ async function loadAdminNational178() {
     <h4 style="margin:18px 0 6px">Campaigns</h4>
     ${(d.campaigns || []).map((c) => `<div class="panel" style="margin-top:8px">
       <div class="flex-between"><strong>${esc(c.title || "Untitled")}</strong><span class="badge info">${esc(c.status)}</span></div>
-      <p class="small" style="margin:6px 0">${esc(c.brandName || "")}${c.verified ? " · verified" : " · NOT verified"} · ${c.handCount || 0} hands · ${c.pickedCount || 0}/${c.picksCount || 0} picked</p>
+      <p class="small" style="margin:6px 0">${esc(c.brandName || "")}${c.verified ? " · verified" : " · NOT verified"} · ${natNoun(c.handCount, "hand")} · ${c.pickedCount || 0}/${c.picksCount || 0} picked</p>
       ${c.status !== "closed" && c.status !== "completed" && c.status !== "cancelled" ? `<button type="button" class="btn small-btn ghost" onclick="return adminNatCloseCampaign('${c.id}')">Close campaign</button>` : ""}
       <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:8px"><input id="anr-creator-${c.id}" placeholder="Creator id" style="max-width:150px"><input id="anr-orders-${c.id}" type="number" min="0" placeholder="Orders" style="max-width:90px"><input id="anr-rev-${c.id}" type="number" min="0" step="0.01" placeholder="Revenue" style="max-width:100px"><button type="button" class="btn small-btn ghost" onclick="return adminNatResults('${c.id}')">Enter store-reported results</button></span>
     </div>`).join("") || `<p class="muted">No national campaigns yet.</p>`}`;

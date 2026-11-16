@@ -701,7 +701,7 @@ function factsLines(role, f) {
       const n = f.national;
       lines.push(`Their business is ${n.brandName || f.businessName}, a NATIONAL account: it reaches creators in every Magpie market, not one city. It has no home market, and no market needs to open for its campaigns to run. It has no plan and no billing: Magpie has not set national pricing, and nothing is charged. The brand is ${n.verified ? "verified by Magpie" : "not verified yet, so its campaigns cannot go out until Magpie verifies the brand"}.`);
       lines.push(n.campaigns && n.campaigns.length
-        ? `Their national campaigns: ${n.campaigns.map((c) => `"${c.title}" (${c.status}, ${fmt(c.hands)} hands raised, ${fmt(c.picks)} of ${fmt(c.picksCount)} picks made${c.raiseByAt ? `, hand-raise deadline ${String(c.raiseByAt).slice(0, 10)}` : ""})`).join("; ")}.`
+        ? `Their national campaigns: ${n.campaigns.map((c) => `"${c.title}" (${c.status}, ${fmt(c.hands)} ${plural(c.hands, "hand")} raised, ${fmt(c.picks)} of ${fmt(c.picksCount)} picks made${c.raiseByAt ? `, hand-raise deadline ${String(c.raiseByAt).slice(0, 10)}` : ""})`).join("; ")}.`
         : "They have no national campaigns yet. A campaign asks creators across every market to raise a hand; the brand then picks the creators it wants and Magpie tracks the gift fulfillment.");
       lines.push("Everything above is this business's own record only. Never quote another business's campaigns, another creator's private details, or platform totals to this business.");
       return lines;
@@ -1103,6 +1103,35 @@ function answerAdmin(f, q, t) {
 
 // ---------- BUSINESS ----------
 function answerBusiness(f, q, t) {
+  // National campaigns (Build -178 fix pass): a national
+  // business has no market offers at all, so a campaign-status
+  // question ("How are my national campaigns doing?", "How many
+  // hands do I have?", "How many picks do I still need to
+  // make?") must answer from its national facts — campaigns by
+  // status, hands, picks still to make — never from the generic
+  // market-business offers line below, which would report its
+  // (nonexistent) offers and mislead. Composer how-to questions
+  // keep their own branches further down.
+  if (f.scope === "national" && f.national) {
+    const setupAsk = hasPhrase(t, "set up a campaign", "setup a campaign", "new campaign", "start a campaign", "create a campaign", "make a campaign", "build a campaign", "first campaign");
+    const processAsk = hasPhrase(t, "how does picking work", "how do picks work", "how picking works", "how do i pick", "how does the picking");
+    const statusAsk = hasWord(t, "campaign", "campaigns", "hand", "hands", "pick", "picks")
+      || hasPhrase(t, "how am i doing", "my numbers", "my stats", "campaign status");
+    if (statusAsk && !setupAsk && !processAsk) {
+      const n = f.national;
+      const camps = n.campaigns || [];
+      if (!camps.length) return linked("You have no national campaigns yet. A national campaign asks creators in every market to raise a hand; you pick the creators you want from everyone who raises one, and Magpie tracks the gift fulfillment. Your campaigns live under Campaigns in your dashboard.", "Start a campaign", "biz-setup");
+      const byStatus = {};
+      for (const c of camps) byStatus[c.status] = (byStatus[c.status] || 0) + 1;
+      const statusBits = Object.entries(byStatus).map(([k, v]) => `${fmt(v)} ${k}`).join(", ");
+      const totalHands = camps.reduce((s, c) => s + (c.hands || 0), 0);
+      const toMake = camps
+        .filter((c) => c.status === "open" || c.status === "closed")
+        .reduce((s, c) => s + Math.max(0, (c.picksCount || 0) - (c.picks || 0)), 0);
+      const lines = camps.map((c) => `"${c.title}" (${c.status}): ${fmt(c.hands)} ${plural(c.hands, "hand")} raised, ${fmt(c.picks)} of ${fmt(c.picksCount)} picks made${c.raiseByAt ? `, hand-raise deadline ${String(c.raiseByAt).slice(0, 10)}` : ""}`).join("; ");
+      return linked(`Your national campaigns: ${fmt(camps.length)} in total (${statusBits}), ${fmt(totalHands)} ${plural(totalHands, "hand")} raised across them, and ${fmt(toMake)} ${plural(toMake, "pick")} still to make. ${lines}.`, "See your campaigns", "biz-offers");
+    }
+  }
   // London ad label (Phase B, Build -111): a London visit whose
   // post is live but not delivered is almost always this
   // blocker. The fix is the creator's, on their visit card;
@@ -1744,6 +1773,44 @@ function sigPrivacyScreen(role, facts, question) {
     if (hasPhrase(t, "another creator", "another business", "another partner", "other creator", "other business", "other partner", "someone else", "somebody else") && dataNoun) return privacyRefusal(role, "other");
     if (hasPhrase(t, "email address", "email for", "email of", "phone number", "contact info", "contact details")
         && !firstPerson && !hasPhrase(t, "your email", "magpie email", "support", "hello")) return privacyRefusal(role, "other");
+  }
+  // 6. National-campaign probes (Build -178 fix pass): another
+  //    brand's campaign, a named creator's hand on a campaign,
+  //    and total hand counts are not the asker's own data. The
+  //    sections above miss these because "hand" and "campaign"
+  //    are not data nouns there, so they fell through to the
+  //    model and the refusal was model-dependent; here it is
+  //    deterministic. The asker's OWN campaign status never
+  //    matches: it carries no other-account signal, no one
+  //    else's handle or name, and a creator's own hand is
+  //    first-person.
+  {
+    const handContext = hasWord(t, "hand", "hands") || hasPhrase(t, "raise a hand", "raised a hand", "got picked", "was picked", "been picked", "get picked");
+    const campaignContext = hasWord(t, "campaign", "campaigns");
+    if (handContext || campaignContext) {
+      if (hasPhrase(t, "another brand", "another business", "another campaign", "another creator", "other brand", "other business", "other campaign", "other creator", "other creators", "their campaign", "their campaigns", "someone else", "somebody else")) return privacyRefusal(role, "other");
+      const handleNat = raw.match(/@([a-z0-9._]{2,})/i);
+      const ownHandleNat = facts && facts.handle ? String(facts.handle).toLowerCase().replace(/^@/, "") : null;
+      if (handleNat && (!ownHandleNat || handleNat[1].toLowerCase() !== ownHandleNat)) return privacyRefusal(role, role === "business" ? "creator" : "other");
+      const ownNames = [facts && facts.businessName, facts && facts.national && facts.national.brandName].filter(Boolean).map((s) => String(s).toLowerCase());
+      const possNat = raw.match(/([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)'s\s+(campaign|hand|hands|picks)/);
+      if (possNat && !ownNames.includes(possNat[1].toLowerCase())) return privacyRefusal(role, "other");
+      const nameNat = raw.match(/\b([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})\b/g) || [];
+      const alienNameNat = nameNat.some((n) => {
+        const first = n.split(" ")[0].toLowerCase();
+        if (NAME_STOPWORDS.has(first)) return false;
+        if (raw.indexOf(n) === 0) return false;
+        if (ownNames.includes(n.toLowerCase())) return false;
+        return true;
+      });
+      if (alienNameNat && !firstPerson && hasPhrase(t, " does ", " did ", " has ", " have ", " get ", " got ", " is ", " was ")) return privacyRefusal(role, role === "business" && handContext ? "creator" : "other");
+      if (hasPhrase(t, "did she", "did he", "did they", "she raised", "he raised", "they raised", "she was picked", "he was picked", "was she picked", "was he picked", "who else", "who got picked", "who was picked", "who raised a hand")) return privacyRefusal(role, "other");
+      if (handContext && (/\b(?:did|has|was|is)\s+[A-Z][a-z]{2,}\s+(?:raise|raised|get|got|picked)\b/.test(raw) || /\b[A-Z][a-z]{2,}\s+(?:raised|raise)\s+a\s+hand\b/.test(raw))) return privacyRefusal(role, role === "business" ? "creator" : "other");
+      const countAskNat = hasPhrase(t, "how many", "total", "in total", "altogether");
+      if (role === "creator" && countAskNat && handContext && !hasPhrase(t, "my hand")) return privacyRefusal(role, "other");
+      if (role === "business" && countAskNat && handContext && !hasPhrase(t, " my ")
+          && hasPhrase(t, "in total", "all campaigns", "every campaign", "on the platform", "across magpie", "across all")) return privacyRefusal(role, "other");
+    }
   }
   return null;
 }
