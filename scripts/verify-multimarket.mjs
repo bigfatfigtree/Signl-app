@@ -132,7 +132,7 @@ const metaHtml = buildProfilePageHtml(SHELL, {
   origin: "https://app.joinsignl.com",
 });
 check("meta: finished page flips robots to index, follow", metaHtml.includes("index, follow"));
-check("meta: description names the other ranked market", metaHtml.includes("Also ranked in Austin (20% of their audience)"));
+check("meta: description names the other listed market", metaHtml.includes("Also listed in Austin (20% of their audience)"));
 const ldMatch = metaHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
 let ld = null;
 try { ld = ldMatch ? JSON.parse(ldMatch[1]) : null; } catch (e) { ld = null; }
@@ -340,7 +340,7 @@ try {
   const pageRes = await fetch(BASE + "/c/miamulti");
   const pageHtml = await pageRes.text();
   check("served page is indexable (index, follow baked in)", pageHtml.includes("index, follow"));
-  check("served page names the second market in its meta description", pageHtml.includes("Also ranked in Austin"));
+  check("served page names the second market in its meta description", pageHtml.includes("Also listed in Austin"));
   const pageLdMatch = pageHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
   let pageLd = null;
   try { pageLd = pageLdMatch ? JSON.parse(pageLdMatch[1]) : null; } catch (e) { pageLd = null; }

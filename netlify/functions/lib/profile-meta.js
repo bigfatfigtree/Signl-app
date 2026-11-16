@@ -28,15 +28,17 @@ function profilePageMeta(profile) {
   const title = `${profile.name} (@${profile.handle}) on Magpie${place ? ` | ${place}` : ""}`;
   const pct = typeof profile.localAudiencePct === "number" ? profile.localAudiencePct : null;
   // Multi-market (2026-11-01): the other markets the creator is
-  // ranked in ride the description when they are real (the
+  // listed in ride the description when they are real (the
   // router only passes listed markets: home plus shares at or
   // above the listing floor). At most two are named, strongest
   // first (listedMarketsFor already orders them that way).
+  // Wording is "listed", never "ranked" (Jeff, 2026-11-15,
+  // Build -177: no rank language on creator-facing surfaces).
   const others = (Array.isArray(profile.listedMarkets) ? profile.listedMarkets : [])
     .filter((e) => e && !e.home && typeof e.pct === "number")
     .slice(0, 2);
   const also = others.length
-    ? ` Also ranked in ${others.map((e) => `${e.market} (${e.pct}% of their audience)`).join(" and ")}.`
+    ? ` Also listed in ${others.map((e) => `${e.market} (${e.pct}% of their audience)`).join(" and ")}.`
     : "";
   const description = `${profile.name} is a founding creator on Magpie in ${place || "their market"}${profile.tierBand ? ` (${profile.tierBand} tier)` : ""}.${pct !== null ? ` ${pct}% of their audience is local.` : ""}${also} Local businesses comp creators for honest posts.`;
   return { title, description };
@@ -347,7 +349,7 @@ function profileBodyHtml(p, place) {
         ${p.tierBand ? `<span class="cc-chip">${escHtml(p.tierBand)}</span>` : ""}
         ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
         ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
-        ${(Array.isArray(p.listedMarkets) ? p.listedMarkets : []).filter((m) => m.market !== profileViewOf(p).market).map((m) => { const cnt = followersForPct(m.pct, p.totalAudience); return `<span class="cc-chip">Also ranked in ${escHtml(m.market)} &middot; ${Number(m.pct) || 0}%${cnt ? ` &middot; ${cnt} followers` : " of followers"}</span>`; }).join("")}
+        ${(Array.isArray(p.listedMarkets) ? p.listedMarkets : []).filter((m) => m.market !== profileViewOf(p).market).map((m) => { const cnt = followersForPct(m.pct, p.totalAudience); return `<span class="cc-chip">Also listed in ${escHtml(m.market)} &middot; ${Number(m.pct) || 0}%${cnt ? ` &middot; ${cnt} followers` : " of followers"}</span>`; }).join("")}
       </div>
       ${p.pitchLine ? `<p class="bookme-pitch" style="font-size:1.05rem;margin:10px 0 0"><em>${escHtml(p.pitchLine)}</em></p>` : ""}
       ${p.bio ? `<p class="bookme-bio">${escHtml(p.bio)}</p>` : ""}

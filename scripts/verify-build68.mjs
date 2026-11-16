@@ -367,11 +367,11 @@ let directDraftId = null;
   check("server page: first name + pronouns in the header", page.text.includes("LaToya · she/her"), page.text.slice(page.text.indexOf("bookme-name"), page.text.indexOf("bookme-name") + 120));
   check("server page: header stat carries the count", page.text.includes("5K followers"), "");
   check("server page: card names the home market", page.text.includes("of their audience is local to Richmond"), "");
-  check("server page: DC chip carries its count", page.text.includes("Also ranked in Washington DC &middot; 47% &middot; 4.7K followers"), "");
+  check("server page: DC chip carries its count", page.text.includes("Also listed in Washington DC &middot; 47% &middot; 4.7K followers"), "");
   check("server page: breakdown line carries counts", page.text.includes("Washington DC 47% &middot; 4.7K followers"), "");
   const dc = await anon.raw("/c/latoyafixture68?market=Washington%20DC");
   check("server page ?market=DC: headline swaps to 47%", dc.text.includes('<span class="bm-num">47%</span>') && dc.text.includes("of their audience is local to Washington DC"), "");
-  check("server page ?market=DC: home joins the chips with its count", dc.text.includes("Also ranked in Richmond &middot; 50% &middot; 5K followers") && !dc.text.includes("Also ranked in Washington DC &middot;"), "");
+  check("server page ?market=DC: home joins the chips with its count", dc.text.includes("Also listed in Richmond &middot; 50% &middot; 5K followers") && !dc.text.includes("Also listed in Washington DC &middot;"), "");
 }
 
 server.kill("SIGTERM");
