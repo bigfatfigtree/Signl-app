@@ -2526,11 +2526,15 @@ function tabItemsFor() {
     // Build -137 rail order: Home · Sig · Find creators ·
     // Start a campaign · Your campaigns · Visits · Business
     // profile · Wallet · Stats · the rest in natural order.
+    // Build -178: a national account has no plan, so the Plan
+    // destination never appears in its rail at all.
+    const isNat178 = u.business && u.business.scope === "national";
+    const railRows = isNat178 ? rows.filter((r) => r.tab !== "Plan") : rows;
     return [
       { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
       { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
-      ...extraIn137(rows, ["Campaign Setup", "My Offers", "Visits & Posts", "Profile", "Plan", "Analytics", "Regulars", "Content", "Favorites", "Messages", "Settings", "Help"], ["Home", "Sig", "Discover"]),
+      ...extraIn137(railRows, ["Campaign Setup", "My Offers", "Visits & Posts", "Profile", ...(isNat178 ? [] : ["Plan"]), "Analytics", "Regulars", "Content", "Favorites", "Messages", "Settings", "Help"], ["Home", "Sig", "Discover"]),
     ];
   }
   if (u.role === "creator") {
@@ -2612,7 +2616,9 @@ function moreRowsFor() {
       { icon: "heart", label: "Saved creators", sub: "Your shortlist.", tab: "Favorites" },
       { icon: "bars", label: "Stats", sub: "What your campaigns did.", tab: "Analytics" },
       { icon: "play", label: "Posts & licenses", sub: "Every post about you, and the ones you can reuse.", tab: "Content" },
-      { icon: "receipt", label: "Plan & billing", sub: "Your plan, your visits, your billing.", tab: "Plan" },
+      // Build -178: a national account has no plan — the row
+      // never appears in its menus.
+      ...(u.business && u.business.scope === "national" ? [] : [{ icon: "receipt", label: "Plan & billing", sub: "Your plan, your visits, your billing.", tab: "Plan" }]),
       { icon: "person", label: "Your business page", sub: "How creators see your business.", tab: "Profile" },
       { icon: "bubble", label: "Messages", sub: "Talk to a creator about a visit or an offer.", tab: "Messages", badge: b.messages || 0 },
       { icon: "sliders", label: "Settings", sub: "Account, staff PIN, notifications.", tab: "Settings" },
@@ -2742,6 +2748,7 @@ function everythingGroups125() {
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
         R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages"),
         R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
+        R("building", "National", "National brand accounts, verification and campaigns", "National"),
         R("building", "Partners", "Media partners and their deals", "Partners"),
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
         R("users", "Outreach", "Campaigns and sends", "Outreach"),
@@ -2809,7 +2816,7 @@ function everythingGroups125() {
         R("bars", "Results", "What your campaigns did", "Analytics"),
       ] },
       { title: "Account", rows: [
-        R("receipt", "Plan & billing", "In Wallet", "Plan"),
+        ...(u.business && u.business.scope === "national" ? [] : [R("receipt", "Plan & billing", "In Wallet", "Plan")]),
         R("bubble", "Messages", "Talk to a creator about a visit or an offer", "Messages", { badge: b.messages || 0 }),
         R("sliders", "Settings", "Account, staff PIN, notifications", "Settings"),
         R("help", "Help", "How Magpie works, in plain words", "Help"),
@@ -2951,7 +2958,7 @@ function hamburgerGroups137() {
       ] },
       { title: "Account", rows: [
         R("person", "Business profile", "What creators see", "Profile"),
-        R("receipt", "Wallet", "Your plan, your visits, your billing", "Plan"),
+        ...(u.business && u.business.scope === "national" ? [] : [R("receipt", "Wallet", "Your plan, your visits, your billing", "Plan")]),
         R("bars", "Stats", "What your campaigns did", "Analytics"),
         R("sliders", "Settings", "Account, staff PIN, notifications", "Settings"),
         R("help", "Help", "How Magpie works, in plain words", "Help"),
@@ -2997,6 +3004,7 @@ function hamburgerGroups137() {
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
         R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages", { badge: b.messages || 0 }),
         R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
+        R("building", "National", "National brand accounts, verification and campaigns", "National"),
         R("users", "Creators", "Every creator, with the local numbers", "Creators"),
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
         R("building", "Partners", "Media partners and their deals", "Partners"),
@@ -3891,7 +3899,7 @@ function adminTabsAllowed138() {
     "Social": ["social.view", "social.draft", "social.approve"],
     "Automations": ["connections.view", "automations.manage"],
     "Templates": ["templates.view", "templates.edit"], "Team": ["team.manage"],
-    "Messages": ["messages.send"], "Biz Dev": ["bizdev.view"],
+    "Messages": ["messages.send"], "Biz Dev": ["bizdev.view"], "National": ["approvals"],
   };
   return (label) => { const need = ROOMS[label]; if (!need) return true; return need.some(has); };
 }
@@ -3926,6 +3934,9 @@ function railItems() {
     // claims, escalations and the commission liability, all in
     // one place (the HQ side of the seller dashboard).
     add("a", "building", "Biz Dev", "return go('dashboard','Biz Dev')", t === "Biz Dev", (state.waitCounts || {}).bizdevWaiting || 0);
+    // Build -178: the National room — national business accounts,
+    // brand verification, campaign moderation.
+    add("a", "building", "National", "return go('dashboard','National')", t === "National");
     add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
     add("a", "users", "Creators", "return go('dashboard','Creators')", t === "Creators");
     add("a", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
@@ -3993,7 +4004,8 @@ function railItems() {
     add("c", "image", "Content", "return go('dashboard','Content')", t === "Content");
     add("c", "list", "Visits & Posts", "return go('dashboard','Visits & Posts')", t === "Visits & Posts");
     add("c", "visits", "Counter", "return go('dashboard','Counter')", t === "Counter");
-    add("c", "wallet", "Plan", "return go('dashboard','Plan')", t === "Plan");
+    // Build -178: a national account has no plan — no Plan stop.
+    if (!(u.business && u.business.scope === "national")) add("c", "wallet", "Plan", "return go('dashboard','Plan')", t === "Plan");
     return items;
   }
   return null;
@@ -5658,7 +5670,10 @@ function sigCtx() {
   // never from the generic plan table.
   if (biz) {
     ctx.founding = !live;
-    const plan = ((state.boot && state.boot.plans) || []).find((p) => p.id === (u.business || {}).plan) || null;
+    // Build -178: a national account has no plan. The Sig bank
+    // must never quote it a local founding plan or a price.
+    ctx.national = !!(u.business && u.business.scope === "national");
+    const plan = ctx.national ? null : (((state.boot && state.boot.plans) || []).find((p) => p.id === (u.business || {}).plan) || null);
     ctx.planName = (u.business && u.business.planName) || (plan ? plan.name : "");
     ctx.planPrice = plan ? plan.priceMonthly : null;
     ctx.planVisits = plan ? plan.visitsPerMonth : null;
@@ -5676,11 +5691,14 @@ function sigCtx() {
 function sigBankFor(biz) {
   if (biz) return [
     { id: "cost", q: "What does Magpie cost?", ph: ["how much does it cost", "what does it cost", "how much is it", "how much is", "per month", "cost", "price", "pricing"], g: [["plan", "subscription", "month"], ["cost", "price", "much", "pay"]], s: ["cost", "pricing"],
-      a: "Founding plans: Self-Service is $199 a month for 5 creators a month, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month, so $99, $249, or $599, and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire." },
+      a: (c) => c.national
+        ? "Your national account has no plan and no price yet. Magpie has not set national pricing, and nothing is charged: the Magpie team will share plan options before anything is ever billed."
+        : "Founding plans: Self-Service is $199 a month for 5 creators a month, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month, so $99, $249, or $599, and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire." },
     { id: "plans", q: "What is the difference between the plans?", ph: ["difference between", "which plan", "compare plans", "growth plan", "managed plan"], g: [["growth", "managed", "self-service", "self service", "tiers"], ["difference", "which", "compare", "best", "include", "get"]], s: ["growth", "managed"],
       a: "The difference is volume and how much is done for you. Self-Service is $199 a month for 5 creators and you run it yourself. Growth is $349 for 10, built for businesses doing paid work and reusing posts, with the license library and renewal tracking. Managed is $699 for 20, the most done for you. Paid bookings and licensing are available on every plan." },
     { id: "myplan", q: "What does my plan include?", ph: ["what does my plan include", "what is in my plan", "my plan include", "what do i get with my plan", "what do i get"], g: [["plan"], ["include", "get", "come", "have"]], s: [],
       a: (c) => {
+        if (c.national) return "Your national account has no plan: Magpie has not set national pricing yet, and nothing is charged. What your account does is campaigns: you post what creators get and what you ask, creators across every market raise a hand, and you pick the ones you want.";
         const head = c.planName ? `Your plan is ${c.planName}${c.planPrice ? `, $${c.planPrice} a month` : ""}${c.planVisits ? `, with ${c.planVisits} creator visits a month` : ""}.` : "Your founding plan is under Plan & billing, with the exact visits it carries.";
         if (c.founding) return `${head} Your $${c.planCredit} founding credit is banked for your first month, and your founding rate holds while your plan stays active. Nothing is due and nothing is charged while your market is founding. When ${c.market || "your market"} opens, your plan starts: unused visits roll one month, then expire, and the minimum is 3 months.`;
         return `${head} Your founding rate holds while your plan stays active. Unused visits roll one month, then expire, and the minimum is 3 months. Paid bookings and licensing are on every plan.`;
@@ -6611,6 +6629,10 @@ async function render() {
       || (state.user.role === "creator" && state.tab === "Find Offers")));
   if (state.view === "public-profile") return renderPublicProfile();
   if (state.view === "public-proof") return renderPublicProof();
+  // Build -178: the national campaign page + the brand profile a
+  // creator opens from a campaign card.
+  if (state.view === "national-campaign") return renderNationalCampaignPage();
+  if (state.view === "brand-profile") return renderBrandProfilePage();
   clearShareShell();
   if (state.view === "staff") return renderStaff();
   const u = state.user;
@@ -11439,6 +11461,28 @@ function selectPlan(id) {
 function renderBusinessFoundingStatus() {
   const u = state.user;
   const bz = u.business || {};
+  // Build -178: a national account's founding page carries no
+  // market framing and no plan: it is not waiting for a city to
+  // open, and it has no plan yet (spec §5.1).
+  if (bz.scope === "national") {
+    app.innerHTML = `<div class="wrap" style="max-width:680px">
+  ${wsHead("Status", { sub: "Where your national account stands." })}
+  <section class="wcard" style="margin-top:14px">
+    <p><span class="badge info">Application in review</span> <span class="badge">National account</span></p>
+    <h2 style="margin-top:8px">${esc(bz.brandName || bz.businessName || "Your brand")} is on the founding list</h2>
+    <p>Your account can reach creators in every Magpie market, not just one city. Your application is in review, and every founding application gets a decision or a clear status within 2 business days.</p>
+    <h3 class="mt">What happens next</h3>
+    <ol style="padding-left:20px">
+      <li>Magpie reviews your application. You will get a decision or a clear status within 2 business days.</li>
+      <li>When your application is approved, Magpie checks your website and your store. That check earns the Verified brand mark creators look for.</li>
+      <li>When Magpie activates your account, you can post campaigns that creators across the country can raise a hand for.</li>
+    </ol>
+    <p class="muted small">Sign back in any time to check your status. Questions: hello@magpielocal.com</p>
+    <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
+  </section>
+  <div id="fbz-account">${accountHtml(u)}</div></div>`;
+    return;
+  }
   const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
   app.innerHTML = `<div class="wrap" style="max-width:680px">
   ${wsHead("Status", { sub: "Where your founding enrollment stands." })}
@@ -12095,6 +12139,10 @@ function renderDashboard() {
   if (u.role === "partner") return renderPartnerDash();
   if (u.role === "recruiter") return renderRecruiterDash();
   if (u.role === "pilot_partner") return renderPilotDash();
+  // Build -178: a national business gets the national dashboard —
+  // same shell, national content. Its market-business surfaces
+  // (plan, market offers, visits) never render for it.
+  if (u.role === "business" && u.business && u.business.scope === "national") return renderNationalBusinessDash();
   return renderBusinessDash();
 }
 
@@ -22276,6 +22324,10 @@ async function loadFindOffers() {
     state.openOffers = data.offers || [];
     state.findOffersEarly = data.earlyAccess || null;
     renderFindOffers();
+    // Build -178: the national lane rides the same board as its
+    // own section — its own feed, its own fence, never mixed into
+    // the market offer list above.
+    loadNationalLane();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -22383,6 +22435,7 @@ function renderFindOffers() {
     ${ea && ea.opensAt ? `<p class="small" style="margin:0 0 10px">A new offer just posted in your market. Charter creators, the founding class (creators approved before their market launched), see new offers first; this one opens to everyone ${esc(fmtDay(ea.opensAt))}.</p>` : ""}
     ${list.length ? `<div class="mirror-grid">${list.map((o, i) => mirrorOfferCardHtml(o, i === 0 ? { lead: true } : undefined)).join("")}</div>` : `<div class="empty-state"><h3>No open visits match</h3><p>Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets.</p></div>`}
     ${applied.length ? `<h3 style="margin:22px 0 10px">You applied</h3><div class="mirror-grid">${applied.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : ""}
+    <div id="cr-national-lane"></div>
     ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3><div class="mirror-grid">${q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })).join("")}</div>` : ""}
     </div>
   </div>`;
@@ -22390,6 +22443,8 @@ function renderFindOffers() {
     const qi = document.getElementById("fo-q");
     if (qi) { qi.focus(); try { qi.setSelectionRange(qi.value.length, qi.value.length); } catch (e) { /* no-op */ } }
   }
+  // Build -178: repaint the national lane section from state.
+  renderNationalLane();
 }
 async function findOffersGrab(id) { await applyToOffer(id); loadFindOffers(); }
 function findOffersLater(id) { pileLater("offers", id); renderFindOffers(); return false; }
@@ -27501,6 +27556,8 @@ function renderAdmin() {
   if (tab === "Messages") loadAdminMessages152();
   // Build -155 room.
   if (tab === "Biz Dev") loadAdminBizdev155();
+  // Build -178 room.
+  if (tab === "National") loadAdminNational178();
 }
 
 // Admin "Your account" (Build -126): Jeff had no Settings
@@ -35780,5 +35837,602 @@ async function abdDncAdd() {
 async function abdDncRemove(key) {
   try { await api("POST", "/admin/bdev/dnc", { removeKey: key }); abdRefresh(); }
   catch (e) { alert(e.message); }
+  return false;
+}
+
+// =====================================================================
+// Build -178: NATIONAL BUSINESS ACCOUNTS — client surfaces.
+//
+// Creator side: a national lane on the Find offers board (its own
+// feed + fence server-side), a campaign page, and the brand
+// profile a creator can open. Business side: a national dashboard
+// (campaigns, composer, raisers + picks, fulfillment, cross-market
+// discovery + shortlist, reports, brand profile editor) rendered
+// inside the same business shell. Admin side: the National room.
+// Copy rule for every string below: plain words, no insider terms
+// unexplained, no "pilot/test/beta" on creator surfaces.
+// =====================================================================
+
+// ---------- creator: the national lane on Find offers ----------
+async function loadNationalLane() {
+  if (!state.user || state.user.role !== "creator") return;
+  try {
+    const d = await api("GET", "/national/feed");
+    state.nationalFeed = d.campaigns || [];
+  } catch (e) { state.nationalFeed = []; }
+  renderNationalLane();
+}
+
+function renderNationalLane() {
+  const host = document.getElementById("cr-national-lane");
+  if (!host) return;
+  const list = state.nationalFeed || [];
+  if (!list.length) { host.innerHTML = ""; return; }
+  host.innerHTML = `
+    <h3 style="margin:26px 0 4px">National brands</h3>
+    <p class="small muted" style="margin:0 0 10px">Brands that ship across the country. Raise your hand if you want in — the brand picks from everyone who raises a hand.</p>
+    <div class="mirror-grid">${list.map((c) => nationalCampaignCardHtml(c)).join("")}</div>`;
+}
+
+function nationalBrandChipHtml(c) {
+  if (c.logoUrl) return `<img src="${esc(c.logoUrl)}" alt="" style="width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar-initial',textContent:'${esc(c.initial || "M")}',style:'width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.02rem;flex:none'}))">`;
+  return `<span class="avatar-initial" style="width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.02rem;flex:none" aria-hidden="true">${esc(c.initial || "M")}</span>`;
+}
+
+function nationalCampaignCardHtml(c) {
+  const hand = c.myHand || { status: "none", line: "" };
+  return `<article class="mirror-card" style="text-align:left">
+    <div style="display:flex;gap:10px;align-items:center">
+      ${nationalBrandChipHtml(c)}
+      <div style="min-width:0">
+        <div style="font-weight:700">${esc(c.brandName)} <span class="badge info">National brand</span></div>
+        ${c.verified ? `<div class="small" style="color:var(--mint-deep)">Verified by Magpie</div>` : ""}
+      </div>
+    </div>
+    <h4 style="margin:10px 0 4px">${esc(c.title)}</h4>
+    <p style="margin:0 0 4px"><strong>What you get:</strong> ${esc(c.whatYouGet)}</p>
+    <p class="small" style="margin:0 0 4px"><strong>What they ask:</strong> ${esc(c.whatWeAsk)}</p>
+    <p class="small muted" style="margin:0 0 8px">The brand picks ${c.picksCount} creator${c.picksCount === 1 ? "" : "s"} from everyone who raises a hand by ${esc(fmtDay(c.raiseByAt))}. ${esc(c.raiseExplainer)}</p>
+    ${hand.status === "raised" ? `<p class="small" style="margin:0 0 8px">${esc(hand.line)}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small-btn" onclick="return openNationalCampaign('${c.id}')">See the campaign</button><button type="button" class="btn ghost small-btn" onclick="return natWithdraw('${c.id}')">Take my hand back</button></div>`
+    : hand.status === "picked" ? `<p class="small" style="margin:0 0 8px"><strong>You were picked.</strong> ${esc(hand.line)}</p>
+      <button type="button" class="btn small-btn" onclick="return openNationalCampaign('${c.id}')">Open the campaign</button>`
+    : hand.status === "not_picked" ? `<p class="small" style="margin:0 0 8px">${esc(hand.line)}</p>
+      <button type="button" class="btn ghost small-btn" onclick="return openNationalCampaign('${c.id}')">See the campaign</button>`
+    : `<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small-btn" onclick="return natRaise('${c.id}')">Raise your hand</button><button type="button" class="btn ghost small-btn" onclick="return openNationalCampaign('${c.id}')">See the campaign</button></div>`}
+  </article>`;
+}
+
+async function natRaise(id) {
+  try { await api("POST", `/national/campaigns/${id}/raise`, {}); await loadNationalLane(); if (state.view === "national-campaign") renderNationalCampaignPage(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function natWithdraw(id) {
+  try { await api("POST", `/national/campaigns/${id}/withdraw`, {}); await loadNationalLane(); if (state.view === "national-campaign") renderNationalCampaignPage(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---------- creator: the campaign page ----------
+function openNationalCampaign(id) { state.nationalCampaignId = id; return go("national-campaign"); }
+async function renderNationalCampaignPage() {
+  const id = state.nationalCampaignId;
+  app.innerHTML = `<div class="wrap" style="max-width:720px"><p class="muted">Loading...</p></div>`;
+  let d;
+  try { d = await api("GET", `/national/campaigns/${id}`); }
+  catch (e) { app.innerHTML = `<div class="wrap" style="max-width:720px"><div class="error-box">${esc(e.message)}</div><p><button type="button" class="btn ghost" onclick="return go('dashboard','Find Offers')">Back to Find offers</button></p></div>`; return; }
+  const c = d.campaign;
+  const brand = d.brand;
+  const hand = c.myHand || { status: "none", line: "" };
+  const f = d.fulfillment;
+  app.innerHTML = `<div class="wrap" style="max-width:720px">
+  <p><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Find Offers')">← Back to Find offers</button></p>
+  <div style="display:flex;gap:12px;align-items:center;margin-top:6px">
+    ${nationalBrandChipHtml(c)}
+    <div>
+      <h2 style="margin:0">${esc(c.brandName)} <span class="badge info">National brand</span></h2>
+      ${brand.verified ? `<div class="small" style="color:var(--mint-deep)">Verified by Magpie — Magpie checked that this is the real brand behind this campaign.</div>` : ""}
+    </div>
+  </div>
+  <p class="small"><button type="button" class="tlink" onclick="return openBrandProfile('${c.businessId}')">See the brand's profile</button></p>
+  <section class="wcard" style="margin-top:10px">
+    <h3 style="margin-top:0">${esc(c.title)}</h3>
+    <p><strong>What you get:</strong> ${esc(c.whatYouGet)}</p>
+    <p><strong>What they ask:</strong> ${esc(c.whatWeAsk)}</p>
+    <p><strong>How picking works:</strong> ${esc(c.pickLine)} ${esc(c.raiseExplainer)}</p>
+    <p><strong>If you are picked:</strong> Magpie messages you here with the details and next steps.</p>
+    ${c.details ? `<p>${esc(c.details)}</p>` : ""}
+    <div class="panel" style="margin-top:12px"><strong>How your results are counted</strong><p class="small" style="margin:6px 0 0">${esc(c.trackingNote)}</p></div>
+    <div style="margin-top:14px">
+    ${hand.status === "none" ? `<button type="button" class="btn" onclick="return natRaise('${c.id}')">Raise your hand</button>` : ""}
+    ${hand.status === "raised" ? `<p>${esc(hand.line)}</p><button type="button" class="btn ghost" onclick="return natWithdraw('${c.id}')">Take my hand back</button>` : ""}
+    ${hand.status === "withdrawn" ? `<p>${esc(hand.line)}</p><button type="button" class="btn" onclick="return natRaise('${c.id}')">Raise your hand</button>` : ""}
+    ${hand.status === "picked" ? `<p><strong>You were picked.</strong> ${esc(hand.line)}</p>` : ""}
+    ${hand.status === "not_picked" ? `<p>${esc(hand.line)}</p>` : ""}
+    </div>
+  </section>
+  ${hand.status === "picked" ? `<section class="wcard" style="margin-top:14px">
+    <h3 style="margin-top:0">Your gift</h3>
+    <p class="small muted">Status: ${esc(natFulfillLabel(f ? f.status : "pending"))}${f && f.trackingNumber ? ` · Tracking: ${esc(f.trackingNumber)}` : ""}</p>
+    <form onsubmit="return natSaveFulfillment(event, '${c.id}')">
+      <label class="fld"><span>What you would like (from what the brand offers)</span><input id="nf-picks" value="${esc((f && (f.productPicks || []).join(", ")) || "")}" placeholder="Product names, separated by commas"></label>
+      <label class="fld"><span>Your name for shipping</span><input id="nf-name" value="${esc((f && f.shippingName) || "")}"></label>
+      <label class="fld"><span>Shipping address</span><textarea id="nf-address" rows="2">${esc((f && f.shippingAddress) || "")}</textarea></label>
+      <label class="fld"><span>Phone (for the delivery company)</span><input id="nf-phone" value="${esc((f && f.phone) || "")}"></label>
+      ${f && f.status === "delivered" ? `<label class="fld"><span>Your post links (paste them once your posts are up)</span><input id="nf-posts" value="${esc((f.postLinks || []).join(", "))}" placeholder="Links, separated by commas"></label>` : ""}
+      <button type="submit" class="btn">Save</button>
+    </form>
+    <p style="margin-top:10px"><button type="button" class="btn ghost small-btn" onclick="return natWithdraw('${c.id}')">Withdraw from this campaign</button></p>
+  </section>` : ""}
+  </div>`;
+}
+function natFulfillLabel(s) {
+  return { pending: "Getting ready to ship", shipped: "Shipped", delivered: "Delivered", posted: "Posted", reported: "Results reported by the brand's store", withdrawn: "Withdrawn" }[s] || s;
+}
+async function natSaveFulfillment(ev, id) {
+  ev.preventDefault();
+  const body = {
+    productPicks: (document.getElementById("nf-picks").value || "").split(","),
+    shippingName: document.getElementById("nf-name").value,
+    shippingAddress: document.getElementById("nf-address").value,
+    phone: document.getElementById("nf-phone").value,
+  };
+  const posts = document.getElementById("nf-posts");
+  if (posts) body.postLinks = (posts.value || "").split(",");
+  try { await api("POST", `/national/campaigns/${id}/fulfillment`, body); renderNationalCampaignPage(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---------- the brand profile a creator opens (spec §2.1) ----------
+function openBrandProfile(id) { state.brandProfileId = id; return go("brand-profile"); }
+async function renderBrandProfilePage() {
+  const id = state.brandProfileId;
+  app.innerHTML = `<div class="wrap" style="max-width:720px"><p class="muted">Loading...</p></div>`;
+  let d;
+  try { d = await api("GET", `/national/brands/${id}`); }
+  catch (e) { app.innerHTML = `<div class="wrap" style="max-width:720px"><div class="error-box">${esc(e.message)}</div></div>`; return; }
+  const b = d.brand;
+  app.innerHTML = `<div class="wrap" style="max-width:720px">
+  <p><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Find Offers')">← Back</button></p>
+  <div style="display:flex;gap:12px;align-items:center;margin-top:6px">
+    ${b.logoUrl ? `<img src="${esc(b.logoUrl)}" alt="" style="width:56px;height:56px;border-radius:50%;object-fit:cover">` : `<span class="avatar-initial" style="width:56px;height:56px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.3rem">${esc(b.initial)}</span>`}
+    <div>
+      <h2 style="margin:0">${esc(b.brandName)}</h2>
+      ${b.scope === "national" ? `<span class="badge info">National brand</span>` : ""}
+      ${b.verified ? `<div class="small" style="color:var(--mint-deep)">Verified by Magpie<br><span class="muted">Magpie checked that this is the real brand behind this campaign.</span></div>` : ""}
+    </div>
+  </div>
+  <section class="wcard" style="margin-top:14px">
+    ${b.about ? `<p><strong>What they sell:</strong> ${esc(b.about)}</p>` : ""}
+    ${b.website ? `<p><strong>Their website:</strong> <a href="${esc(b.website)}" target="_blank" rel="noopener">${esc(b.websiteHost || b.website)}</a></p>` : ""}
+    ${b.basedIn ? `<p>${esc(b.basedIn)}</p>` : ""}
+    ${b.nationalLine ? `<p>${esc(b.nationalLine)}</p>` : ""}
+    ${b.market ? `<p class="small muted">A local business in ${esc(b.market)}.</p>` : ""}
+  </section>
+  ${b.openCampaigns && b.openCampaigns.length ? `<section class="wcard" style="margin-top:14px"><h3 style="margin-top:0">Their open campaigns on Magpie</h3>
+    ${b.openCampaigns.map((c) => `<p style="margin:6px 0"><button type="button" class="tlink" onclick="return openNationalCampaign('${c.id}')">${esc(c.title)}</button><br><span class="small muted">${esc(c.whatYouGet)} · raise a hand by ${esc(fmtDay(c.raiseByAt))}</span></p>`).join("")}
+  </section>` : ""}
+  </div>`;
+}
+
+// ---------- business: the national dashboard ----------
+const NAT_TABS = ["Home", "NatCampaigns", "NatNew", "NatDiscover", "NatReports", "NatBrand"];
+function natTabsHtml(active) {
+  const item = (tab, label) => `<button class="${tab === active ? "active" : ""}" onclick="go('dashboard','${tab}')">${label}</button>`;
+  return `<div class="tabs">${item("Home", "Home")}${item("NatCampaigns", "Campaigns")}${item("NatNew", "New campaign")}${item("NatDiscover", "Find creators")}${item("NatReports", "Reports")}${item("NatBrand", "Brand profile")}</div>`;
+}
+function renderNationalBusinessDash() {
+  const u = state.user;
+  let tab = state.tab || "Home";
+  // The shared business rail points at the market tab names; map
+  // them onto the national surfaces so every destination lands
+  // somewhere true for a national account. No plan surface exists
+  // here at all: a national account has no plan to show.
+  const map = { "Campaign Setup": "NatNew", "My Offers": "NatCampaigns", "Discover": "NatDiscover", "Favorites": "NatDiscover", "Analytics": "NatReports", "Profile": "NatBrand", "Plan": "NatBrand", "Counter": "Home", "Visits & Posts": "NatCampaigns", "Regulars": "Home", "Content": "NatCampaigns" };
+  if (map[tab]) tab = map[tab];
+  if (![...NAT_TABS, "Sig", "Settings", "Help", "Messages"].includes(tab)) tab = "Home";
+  state.tab = tab;
+  app.innerHTML = `<div class="wrap"><div id="tab-body"></div></div>`;
+  if (tab === "Sig") return renderSigTab();
+  if (tab === "Settings") return renderSettingsTab();
+  if (tab === "Help") return renderHelpTab();
+  if (tab === "Messages") return loadThreads();
+  const el = document.getElementById("tab-body");
+  const head = `${natHeadHtml(u)}${natTabsHtml(tab)}`;
+  if (tab === "Home") { el.innerHTML = head + `<div id="nat-home">${skelHtml("Loading your campaigns...", 2)}</div>`; loadNatHome(); }
+  if (tab === "NatCampaigns") { el.innerHTML = head + `<div id="nat-campaigns">${skelHtml("Loading your campaigns...", 2)}</div>`; loadNatCampaigns(); }
+  if (tab === "NatNew") { el.innerHTML = head + natComposerHtml(null); }
+  if (tab === "NatDiscover") { el.innerHTML = head + `<div id="nat-discover">${skelHtml("Loading creators...", 2)}</div>`; loadNatDiscover(); }
+  if (tab === "NatReports") { el.innerHTML = head + `<div id="nat-reports">${skelHtml("Loading your reports...", 1)}</div>`; loadNatReports(); }
+  if (tab === "NatBrand") { el.innerHTML = head + natBrandEditorHtml(u); }
+}
+function natHeadHtml(u) {
+  const bz = u.business || {};
+  return `<div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px">
+    ${bz.logoUrl ? `<img src="${esc(bz.logoUrl)}" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover">` : `<span class="avatar-initial" style="width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem">${esc((bz.brandName || bz.businessName || "N").charAt(0).toUpperCase())}</span>`}
+    <div>
+      <h2 style="margin:0">${esc(bz.brandName || bz.businessName || "Your brand")}</h2>
+      <div class="small muted">National account — your account can reach creators in every Magpie market, not just one city. ${bz.verifiedAt ? `<span style="color:var(--mint-deep)">Verified by Magpie</span>` : `Not verified yet: Magpie checks your website and store before your campaigns can go out.`}</div>
+    </div>
+  </div>`;
+}
+function natCampaignRowHtml(c) {
+  const statusLabel = { draft: "Draft", open: "Open — creators can raise a hand", closed: "Closed to new hands", completed: "Picks finished", cancelled: "Cancelled" }[c.status] || c.status;
+  return `<div class="panel" style="margin-top:10px">
+    <div class="flex-between"><strong>${esc(c.title || "Untitled campaign")}</strong><span class="badge ${c.status === "open" ? "ok" : "info"}">${esc(statusLabel)}</span></div>
+    <p class="small" style="margin:6px 0"><strong>What creators get:</strong> ${esc(c.whatYouGet || "")}<br><strong>What you ask:</strong> ${esc(c.whatWeAsk || "")}</p>
+    <p class="small muted" style="margin:0 0 8px">${c.handCount || 0} hands raised · ${c.pickedCount || 0} of ${c.picksCount || 0} picked · hand-raise deadline ${c.raiseByAt ? esc(fmtDay(c.raiseByAt)) : "not set"}</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn small-btn" onclick="return natOpenRaisers('${c.id}')">See who raised a hand</button>
+      ${c.status === "draft" ? `<button type="button" class="btn small-btn ghost" onclick="return natEditCampaign('${c.id}')">Edit</button><button type="button" class="btn small-btn ghost" onclick="return natPublish('${c.id}')">Publish</button>` : ""}
+      ${c.status === "open" ? `<button type="button" class="btn small-btn ghost" onclick="return natCloseCampaign('${c.id}')">Close to new hands</button>` : ""}
+      ${(c.status === "open" || c.status === "closed") ? `<button type="button" class="btn small-btn ghost" onclick="return natCompletePicks('${c.id}')">Finish picks</button>` : ""}
+    </div>
+    <div id="nat-camp-${c.id}"></div>
+  </div>`;
+}
+async function loadNatHome() {
+  const host = document.getElementById("nat-home");
+  if (!host) return;
+  try {
+    const d = await api("GET", "/national/me");
+    const a = d.account;
+    const founding = a.accessState !== "active";
+    host.innerHTML = `
+      ${founding ? `<div class="panel" style="margin-top:10px"><strong>Your account is on the founding list.</strong><p class="small" style="margin:6px 0 0">Campaigns go out when Magpie activates your account. You can write drafts and finish your brand profile now, so you are ready the day it opens.</p></div>` : ""}
+      ${!a.verified ? `<div class="panel" style="margin-top:10px"><strong>One step before campaigns can go out: brand verification.</strong><p class="small" style="margin:6px 0 0">Magpie checks that your website is really yours and that a real store sits behind it. Creators see the Verified by Magpie mark, and your campaigns open up once it is on.</p></div>` : ""}
+      <div class="panel" style="margin-top:10px">
+        <div class="flex-between"><strong>Your campaigns</strong><button type="button" class="btn small-btn" onclick="go('dashboard','NatNew')">New campaign</button></div>
+        <p class="small muted" style="margin:6px 0 0">${d.counts.open} open · ${d.counts.draft} drafts · ${d.counts.hands} hands raised across your campaigns · ${d.counts.picksToMake} picks still to make</p>
+      </div>
+      ${(d.campaigns || []).map((c) => natCampaignRowHtml(c)).join("") || `<p class="muted" style="margin-top:12px">No campaigns yet. Your first one takes a few minutes: say what creators get, what you ask, and how many you will pick.</p>`}`;
+  } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+}
+async function loadNatCampaigns() {
+  const host = document.getElementById("nat-campaigns");
+  if (!host) return;
+  try {
+    const d = await api("GET", "/national/campaigns");
+    host.innerHTML = (d.campaigns || []).map((c) => natCampaignRowHtml(c)).join("") || `<p class="muted">No campaigns yet.</p>`;
+  } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+}
+async function natPublish(id) {
+  try { await api("POST", `/national/campaigns/${id}/publish`, {}); renderNationalBusinessDash(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function natCloseCampaign(id) {
+  try { await api("POST", `/national/campaigns/${id}/close`, {}); renderNationalBusinessDash(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function natCompletePicks(id) {
+  if (!confirm("Finish picks for this campaign? Everyone who raised a hand and was not picked gets the close-out message.")) return false;
+  try { await api("POST", `/national/campaigns/${id}/complete-picks`, {}); renderNationalBusinessDash(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function natEditCampaign(id) {
+  try {
+    const d = await api("GET", `/national/campaigns/${id}`);
+    const el = document.getElementById("tab-body");
+    el.innerHTML = `${natHeadHtml(state.user)}${natTabsHtml("NatCampaigns")}` + natComposerHtml(d.campaign);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+// The composer: one screen, plain-words guidance beside the
+// fields (the offer composer's checklist pattern).
+function natComposerHtml(c) {
+  const cats = (state.boot && state.boot.creatorCategories) || [];
+  const picked = new Set((c && c.categories) || []);
+  const deadline = c && c.raiseByAt ? String(c.raiseByAt).slice(0, 16) : "";
+  return `<form onsubmit="return natSaveCampaign(event, ${c ? `'${c.id}'` : "null"})">
+    <h3 style="margin:14px 0 4px">${c ? "Edit campaign" : "New campaign"}</h3>
+    <p class="small muted" style="margin:0 0 10px">Creators see this exactly as you write it. Say the thing itself: "3 products of your choice, free" lands better than any category word.</p>
+    <label class="fld"><span>Headline, in plain words</span><input id="nc-title" value="${esc((c && c.title) || "")}" placeholder="Try our liquid vitamins, free"></label>
+    <label class="fld"><span>What the creator gets</span><input id="nc-get" value="${esc((c && c.whatYouGet) || "")}" placeholder="3 products of your choice, free"></label>
+    <label class="fld"><span>What you ask for, in one line</span><input id="nc-ask" value="${esc((c && c.whatWeAsk) || "")}" placeholder="Post 1 video and 1 story about your honest experience, and tag the brand"></label>
+    <label class="fld"><span>How many creators you will pick</span><input id="nc-picks" type="number" min="1" step="1" value="${c ? c.picksCount : ""}"></label>
+    <label class="fld"><span>Creators raise a hand by</span><input id="nc-deadline" type="datetime-local" value="${esc(deadline)}"></label>
+    <label class="fld"><span>The details (what you make, when gifts ship, when posts are due after delivery)</span><textarea id="nc-details" rows="4">${esc((c && c.details) || "")}</textarea></label>
+    <div class="fld"><span>Who it is for (categories — ordering only; every approved creator can still raise a hand)</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${cats.map((x) => `<label class="chip-check"><input type="checkbox" class="nc-cat" value="${esc(x)}" ${picked.has(x) ? "checked" : ""}> ${esc(x)}</label>`).join("")}</div>
+    </div>
+    <div class="panel"><strong>Before it goes out</strong>
+      <p class="small" style="margin:6px 0 0">What you get is stated as a thing, not a category. The ask fits in one line. No promise in the details that you cannot keep. Your logo and website are on your brand profile, because creators check both.</p>
+    </div>
+    <p style="margin-top:12px"><button type="submit" class="btn">Save draft</button>
+    ${c && c.status === "draft" ? `<button type="button" class="btn ghost" onclick="return natSaveAndPublish(event, '${c.id}')">Save and publish</button>` : ""}
+    ${!c ? `<span class="small muted"> Publishing happens from the campaign list once the draft reads right.</span>` : ""}</p>
+  </form>`;
+}
+function natComposerBody() {
+  const dl = document.getElementById("nc-deadline").value;
+  return {
+    title: document.getElementById("nc-title").value,
+    whatYouGet: document.getElementById("nc-get").value,
+    whatWeAsk: document.getElementById("nc-ask").value,
+    picksCount: parseInt(document.getElementById("nc-picks").value, 10) || 0,
+    raiseByAt: dl ? new Date(dl).toISOString() : null,
+    details: document.getElementById("nc-details").value,
+    categories: [...document.querySelectorAll(".nc-cat:checked")].map((x) => x.value),
+  };
+}
+async function natSaveCampaign(ev, id) {
+  ev.preventDefault();
+  try {
+    if (id) await api("PATCH", `/national/campaigns/${id}`, natComposerBody());
+    else await api("POST", "/national/campaigns", natComposerBody());
+    go("dashboard", "NatCampaigns");
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function natSaveAndPublish(ev, id) {
+  try { await api("PATCH", `/national/campaigns/${id}`, natComposerBody()); await api("POST", `/national/campaigns/${id}/publish`, {}); go("dashboard", "NatCampaigns"); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+// Raisers + picks + fulfillment, inside the campaigns list.
+async function natOpenRaisers(id) {
+  const host = document.getElementById(`nat-camp-${id}`);
+  if (!host) return false;
+  host.innerHTML = `<p class="muted small">Loading...</p>`;
+  try {
+    const d = await api("GET", `/national/campaigns/${id}/raisers`);
+    const rows = d.raisers || [];
+    host.innerHTML = `<div style="margin-top:10px">
+      <strong>Who raised a hand (${rows.length})</strong>
+      ${rows.length ? rows.map((r) => natRaiserRowHtml(id, r)).join("") : `<p class="small muted">Nobody yet. Hands land here the moment a creator raises one.</p>`}
+    </div>`;
+  } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+  return false;
+}
+function natRaiserRowHtml(campaignId, r) {
+  const c = r.creator || {};
+  const markets = (c.markets || []).map((m) => `${esc(m.market)}: ${m.localCount != null ? Number(m.localCount).toLocaleString("en-US") : "—"} local followers${m.localPct != null ? ` (${m.localPct}%)` : ""}`).join(" · ");
+  const f = r.fulfillment;
+  return `<div class="panel" style="margin-top:8px">
+    <div class="flex-between"><strong>${esc(c.name || "")} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}</strong><span class="badge ${r.status === "picked" ? "ok" : "info"}">${esc({ raised: "Hand raised", picked: "Picked", not_picked: "Not picked", withdrawn: "Withdrew" }[r.status] || r.status)}</span></div>
+    <p class="small" style="margin:6px 0">${esc((c.categories || []).join(", "))} · ${Number(c.totalAudience || 0).toLocaleString("en-US")} total followers · home market: ${esc(c.homeMarket || "Not listed yet")}</p>
+    ${markets ? `<p class="small muted" style="margin:0 0 6px">Listed in — ${markets} <span>(counts are the creator's own reported numbers)</span></p>` : ""}
+    ${!r.eligible ? `<p class="small" style="margin:0 0 6px">Cannot be picked right now: ${esc(r.ineligibleReason)}</p>` : ""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${r.status === "raised" && r.eligible ? `<button type="button" class="btn small-btn" onclick="return natPick('${campaignId}','${r.creatorId}')">Pick this creator</button>` : ""}
+      <button type="button" class="btn small-btn ghost" onclick="return natShortlistToggle('${r.creatorId}', ${c.shortlisted ? "false" : "true"}, this)">${c.shortlisted ? "Shortlisted ✓" : "Shortlist"}</button>
+    </div>
+    ${f ? `<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:8px">
+      <p class="small" style="margin:0 0 6px"><strong>Gift:</strong> ${esc(natFulfillLabel(f.status))}${f.trackingNumber ? ` · tracking ${esc(f.trackingNumber)}` : ""}${f.ordersAttributed != null ? ` · ${f.ordersAttributed} orders, $${Number(f.revenueAttributed || 0).toLocaleString("en-US")} — reported by your store` : ""}</p>
+      ${f.postLinks && f.postLinks.length ? `<p class="small" style="margin:0 0 6px">Posts: ${f.postLinks.map((x) => `<a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a>`).join(" · ")}</p>` : ""}
+      <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <select id="nf-status-${r.creatorId}">${["pending", "shipped", "delivered", "posted", "reported"].map((s) => `<option value="${s}" ${f.status === s ? "selected" : ""}>${esc(natFulfillLabel(s))}</option>`).join("")}</select>
+        <input id="nf-track-${r.creatorId}" placeholder="Tracking number" value="${esc(f.trackingNumber || "")}" style="max-width:180px">
+        <button type="button" class="btn small-btn ghost" onclick="return natSaveFulfillmentBiz('${campaignId}','${r.creatorId}')">Save gift update</button>
+      </span>
+    </div>` : ""}
+  </div>`;
+}
+async function natPick(campaignId, creatorId) {
+  try { await api("POST", `/national/campaigns/${campaignId}/pick`, { creatorId }); natOpenRaisers(campaignId); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function natSaveFulfillmentBiz(campaignId, creatorId) {
+  try {
+    await api("PATCH", `/national/campaigns/${campaignId}/fulfillment/${creatorId}`, {
+      status: document.getElementById(`nf-status-${creatorId}`).value,
+      trackingNumber: document.getElementById(`nf-track-${creatorId}`).value,
+    });
+    natOpenRaisers(campaignId);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function natShortlistToggle(creatorId, on, btn) {
+  try { await api("POST", "/national/shortlist", { creatorId, on }); if (btn) btn.textContent = on ? "Shortlisted ✓" : "Shortlist"; }
+  catch (e) { alert(e.message); }
+  return false;
+}
+// Discovery across all markets.
+async function loadNatDiscover() {
+  const host = document.getElementById("nat-discover");
+  if (!host) return;
+  const f = state.natDiscover || (state.natDiscover = { market: "", category: "", q: "" });
+  try {
+    const qs = new URLSearchParams();
+    if (f.market) qs.set("market", f.market);
+    if (f.category) qs.set("category", f.category);
+    if (f.q) qs.set("q", f.q);
+    const d = await api("GET", `/national/discover${qs.toString() ? "?" + qs.toString() : ""}`);
+    host.innerHTML = `
+      <p class="small muted" style="margin:10px 0">Every approved creator with a finished profile, in every market. Pick a market to see who is strong there, ranked by how many of their followers live in that market. Saving someone to your shortlist is just for you — they are not contacted and never see it. Campaigns are how you reach creators: post one and they raise a hand.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <input type="search" placeholder="Search a name or handle" value="${esc(f.q)}" oninput="state.natDiscover.q=this.value" onchange="loadNatDiscover()" style="flex:1;min-width:180px">
+        <select onchange="state.natDiscover.market=this.value; loadNatDiscover()"><option value="">All markets${d.focusMarkets && d.focusMarkets.length ? " (your focus markets first)" : ""}</option>${(d.markets || []).map((m) => `<option value="${esc(m)}" ${f.market === m ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>
+        <select onchange="state.natDiscover.category=this.value; loadNatDiscover()"><option value="">All categories</option>${(d.categories || []).map((m) => `<option value="${esc(m)}" ${f.category === m ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>
+      </div>
+      <p class="small muted">${d.total} creators</p>
+      <div class="mirror-grid">${(d.creators || []).map((c) => natDiscoverCardHtml(c)).join("") || `<p class="muted">No creators match. Loosen the filters.</p>`}</div>`;
+  } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+}
+function natDiscoverCardHtml(c) {
+  const markets = (c.markets || []).map((m) => `${esc(m.market)}: ${m.localCount != null ? Number(m.localCount).toLocaleString("en-US") : "—"}${m.localPct != null ? ` (${m.localPct}%)` : ""}`).join(" · ");
+  return `<article class="mirror-card" style="text-align:left">
+    <strong>${esc(c.name || "")}</strong> ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}
+    <p class="small" style="margin:6px 0">${esc((c.categories || []).join(", "))}</p>
+    <p class="small" style="margin:0 0 4px">${Number(c.totalAudience || 0).toLocaleString("en-US")} total followers · home market: ${esc(c.homeMarket || "Not listed yet")}</p>
+    ${markets ? `<p class="small muted" style="margin:0 0 8px">Local followers by market — ${markets}</p>` : ""}
+    <button type="button" class="btn small-btn ghost" onclick="return natShortlistToggle('${c.creatorId}', ${c.shortlisted ? "false" : "true"}, this)">${c.shortlisted ? "Shortlisted ✓" : "Shortlist"}</button>
+  </article>`;
+}
+// Reports.
+async function loadNatReports() {
+  const host = document.getElementById("nat-reports");
+  if (!host) return;
+  try {
+    const d = await api("GET", "/national/reports");
+    host.innerHTML = `
+      <p class="small muted" style="margin:10px 0">${esc(d.resultsLabel)}</p>
+      ${(d.campaigns || []).map((c) => `<div class="panel" style="margin-top:10px"><strong>${esc(c.title)}</strong>
+        <p class="small" style="margin:6px 0 0">${c.hands} hands raised · ${c.picks} of ${c.picksCount} picked · gifts: ${Object.entries(c.fulfillmentStates || {}).map(([k, v]) => `${esc(natFulfillLabel(k))} ${v}`).join(", ") || "none yet"}${c.attributed && c.attributed.orders ? `<br>${c.attributed.orders} orders, $${Number(c.attributed.revenue || 0).toLocaleString("en-US")} in sales — ${esc(c.attributed.source)}` : ""}</p></div>`).join("") || `<p class="muted">No campaigns yet, so no reports yet.</p>`}
+      <div class="panel" style="margin-top:14px"><strong>${esc(d.homeMarketLabel)}</strong>
+        ${(d.byHomeMarket || []).map((r) => `<div class="ui-row"><span class="k">${esc(r.market)}</span><span class="v">${r.hands} hands · ${r.picks} picks</span></div>`).join("") || `<p class="small muted">No hands yet.</p>`}
+      </div>
+      <div class="panel" style="margin-top:10px"><strong>${esc(d.listedMarketLabel)}</strong>
+        ${(d.byListedMarket || []).map((r) => `<div class="ui-row"><span class="k">${esc(r.market)}</span><span class="v">${r.hands} hands · ${r.picks} picks</span></div>`).join("") || `<p class="small muted">No hands yet.</p>`}
+      </div>`;
+  } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+}
+// Brand profile editor (the profile-settings surface, national
+// fields). Saves through the same /me/profile PATCH every
+// business uses; a website change clears verification server-side.
+function natBrandEditorHtml(u) {
+  const bz = u.business || {};
+  const markets = (state.boot && state.boot.markets) || [];
+  const focus = new Set(bz.focusMarkets || []);
+  return `<form onsubmit="return natSaveBrand(event)">
+    <h3 style="margin:14px 0 4px">Your brand profile</h3>
+    <p class="small muted" style="margin:0 0 10px">This is what a creator sees when they open your brand from a campaign. It is built from what you save here — nothing is invented.</p>
+    ${bz.verifiedAt ? `<p><span class="badge ok">Verified by Magpie</span> <span class="small muted">Magpie checked that this is the real brand behind your campaigns.</span></p>` : `<p><span class="badge info">Not verified yet</span> <span class="small muted">Campaigns can go out once Magpie verifies your brand.</span></p>`}
+    <label class="fld"><span>Brand name (the name creators see)</span><input id="nb-brandname" value="${esc(bz.brandName || "")}"></label>
+    <label class="fld"><span>Website</span><input id="nb-website" value="${esc(bz.website || "")}" placeholder="https://yourbrand.com"></label>
+    <p class="small muted" style="margin:-4px 0 10px">Changing your website after verification clears the Verified mark until Magpie checks the new site. That keeps the mark honest.</p>
+    <label class="fld"><span>Logo address (a link to your logo image)</span><input id="nb-logo" value="${esc(bz.logoUrl || "")}" placeholder="https://yourbrand.com/logo.png"></label>
+    <label class="fld"><span>What you sell, in your own words</span><textarea id="nb-about" rows="3">${esc(bz.brandAbout || bz.about || "")}</textarea></label>
+    <div class="fld"><span>Focus markets (where you care most — used to order Find creators and your reports; it never limits who can raise a hand)</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${markets.map((m) => `<label class="chip-check"><input type="checkbox" class="nb-focus" value="${esc(m.name || m)}" ${focus.has(m.name || m) ? "checked" : ""}> ${esc(m.name || m)}</label>`).join("")}</div>
+    </div>
+    <button type="submit" class="btn">Save brand profile</button>
+  </form>`;
+}
+async function natSaveBrand(ev) {
+  ev.preventDefault();
+  try {
+    const d = await api("PATCH", "/me/profile", {
+      brandName: document.getElementById("nb-brandname").value,
+      website: document.getElementById("nb-website").value,
+      logoUrl: document.getElementById("nb-logo").value,
+      brandAbout: document.getElementById("nb-about").value,
+      focusMarkets: [...document.querySelectorAll(".nb-focus:checked")].map((x) => x.value),
+    });
+    state.user = d.user || state.user;
+    renderNationalBusinessDash();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+
+// ---------- admin: the National room ----------
+async function loadAdminNational178() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading national accounts...</p>`;
+  try {
+    const d = await api("GET", "/admin/national");
+    state.adminNational178 = d;
+    const r = d.rollup || {};
+    el.innerHTML = `
+    <h3 style="margin-top:4px">National accounts</h3>
+    <p class="small muted">Brands that reach creators in every market. These numbers live here only — national accounts never count toward any market's launch numbers.</p>
+    <div class="panel"><strong>Roll-up:</strong> ${r.accounts || 0} accounts (${r.verifiedAccounts || 0} verified) · ${r.campaigns || 0} campaigns (${Object.entries(r.campaignsByStatus || {}).map(([k, v]) => `${esc(k)} ${v}`).join(", ") || "none"}) · ${r.hands || 0} hands · ${r.picks || 0} picks</div>
+    ${(r.staleNoPicks || []).length ? `<div class="panel" style="margin-top:10px"><strong>Needs a close-out:</strong> ${r.staleNoPicks.map((s) => `${esc(s.title)} — deadline passed 14+ days ago, ${s.handsWaiting} hands still waiting. <button type="button" class="btn small-btn ghost" onclick="return adminNatCloseCampaign('${s.campaignId}')">Close it</button>`).join("<br>")}</div>` : ""}
+    <div class="panel" style="margin-top:14px">
+      <h4 style="margin-top:0">Create a national account</h4>
+      <form onsubmit="return adminNatCreate(event)">
+        <label class="fld"><span>Account email</span><input id="an-email" type="email" required></label>
+        <label class="fld"><span>Business (legal) name</span><input id="an-bizname" required></label>
+        <label class="fld"><span>Brand name (what creators see)</span><input id="an-brandname"></label>
+        <label class="fld"><span>Website</span><input id="an-website" placeholder="https://brand.com" required></label>
+        <label class="fld"><span>What they sell</span><textarea id="an-about" rows="2"></textarea></label>
+        <label class="fld"><span>Logo address (optional)</span><input id="an-logo" placeholder="https://brand.com/logo.png"></label>
+        <label class="fld"><span>Currency</span><select id="an-currency"><option>USD</option><option>GBP</option><option>CAD</option><option>NZD</option><option>EUR</option></select></label>
+        <div class="fld"><span>Focus markets</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${(d.markets || []).map((m) => `<label class="chip-check"><input type="checkbox" class="an-focus" value="${esc(m)}"> ${esc(m)}</label>`).join("")}</div></div>
+        <button type="submit" class="btn">Create national account</button>
+        <span class="small muted"> Lands as pending, on the founding list. Approve + activate it like any business, then verify the brand below. No email is sent automatically.</span>
+      </form>
+    </div>
+    <h4 style="margin:18px 0 6px">Accounts</h4>
+    ${(d.accounts || []).map((a) => `<div class="panel" style="margin-top:8px">
+      <div class="flex-between"><strong>${esc(a.brandName)}</strong><span class="badge ${a.verified ? "ok" : "info"}">${a.verified ? "Verified brand" : "Not verified"}</span></div>
+      <p class="small" style="margin:6px 0">${esc(a.email)} · ${a.website ? `<a href="${esc(a.website)}" target="_blank" rel="noopener">${esc(a.websiteHost || a.website)}</a>` : "no website"} · status ${esc(a.status)} · ${a.accessState === "active" ? "activated" : "founding list"} · market: National (sentinel) · no plan<br>Focus: ${esc((a.focusMarkets || []).join(", ") || "all markets")}</p>
+      ${a.verified ? `<button type="button" class="btn small-btn ghost" onclick="return adminNatUnverify('${a.id}')">Remove verification</button>` : `<span style="display:inline-flex;gap:10px;flex-wrap:wrap;align-items:center"><label><input type="checkbox" id="anv-site-${a.id}"> Website resolves and belongs to the brand</label><label><input type="checkbox" id="anv-name-${a.id}"> Brand name matches the site</label><label><input type="checkbox" id="anv-store-${a.id}"> A real product or store exists there</label><button type="button" class="btn small-btn" onclick="return adminNatVerify('${a.id}')">Verify brand</button></span>`}
+    </div>`).join("") || `<p class="muted">No national accounts yet.</p>`}
+    <h4 style="margin:18px 0 6px">Convert a market business</h4>
+    <p class="small muted">Only for a business with no offers yet. Conversion sets the sentinel market, clears the plan to none (the old plan is kept in the audit log), and removes any partner stamp.</p>
+    <form onsubmit="return adminNatConvert(event)">
+      <label class="fld"><span>Business account id (from Admin search)</span><input id="an-convert-id" required></label>
+      <label class="fld"><span>Website (optional if already on file)</span><input id="an-convert-web"></label>
+      <button type="submit" class="btn ghost">Convert to national</button>
+    </form>
+    <h4 style="margin:18px 0 6px">Campaigns</h4>
+    ${(d.campaigns || []).map((c) => `<div class="panel" style="margin-top:8px">
+      <div class="flex-between"><strong>${esc(c.title || "Untitled")}</strong><span class="badge info">${esc(c.status)}</span></div>
+      <p class="small" style="margin:6px 0">${esc(c.brandName || "")}${c.verified ? " · verified" : " · NOT verified"} · ${c.handCount || 0} hands · ${c.pickedCount || 0}/${c.picksCount || 0} picked</p>
+      ${c.status !== "closed" && c.status !== "completed" && c.status !== "cancelled" ? `<button type="button" class="btn small-btn ghost" onclick="return adminNatCloseCampaign('${c.id}')">Close campaign</button>` : ""}
+      <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:8px"><input id="anr-creator-${c.id}" placeholder="Creator id" style="max-width:150px"><input id="anr-orders-${c.id}" type="number" min="0" placeholder="Orders" style="max-width:90px"><input id="anr-rev-${c.id}" type="number" min="0" step="0.01" placeholder="Revenue" style="max-width:100px"><button type="button" class="btn small-btn ghost" onclick="return adminNatResults('${c.id}')">Enter store-reported results</button></span>
+    </div>`).join("") || `<p class="muted">No national campaigns yet.</p>`}`;
+  } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+}
+async function adminNatCreate(ev) {
+  ev.preventDefault();
+  try {
+    const d = await api("POST", "/admin/national/accounts", {
+      email: document.getElementById("an-email").value,
+      businessName: document.getElementById("an-bizname").value,
+      brandName: document.getElementById("an-brandname").value,
+      website: document.getElementById("an-website").value,
+      about: document.getElementById("an-about").value,
+      logoUrl: document.getElementById("an-logo").value,
+      currency: document.getElementById("an-currency").value,
+      focusMarkets: [...document.querySelectorAll(".an-focus:checked")].map((x) => x.value),
+    });
+    if (d.sameWebsiteWarning && d.sameWebsiteWarning.length) alert("Heads up: another national account already uses this website: " + d.sameWebsiteWarning.map((x) => x.brandName).join(", ") + ". The account was still created.");
+    loadAdminNational178();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function adminNatVerify(id) {
+  const checklist = {
+    websiteResolves: document.getElementById(`anv-site-${id}`).checked,
+    nameMatches: document.getElementById(`anv-name-${id}`).checked,
+    storeExists: document.getElementById(`anv-store-${id}`).checked,
+  };
+  try { await api("POST", `/admin/national/accounts/${id}/verify`, { checklist }); loadAdminNational178(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function adminNatUnverify(id) {
+  if (!confirm("Remove this brand's verification? Live campaigns stay live but flagged here; new publishes stop until it is verified again.")) return false;
+  try { await api("POST", `/admin/national/accounts/${id}/verify`, { verified: false }); loadAdminNational178(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function adminNatConvert(ev) {
+  ev.preventDefault();
+  const id = document.getElementById("an-convert-id").value.trim();
+  if (!confirm("Convert this business to a national account? Its market becomes the National sentinel and its plan is cleared. This states what changes on the record.")) return false;
+  try {
+    await api("POST", `/admin/national/accounts/${id}/convert`, { website: document.getElementById("an-convert-web").value || undefined });
+    loadAdminNational178();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function adminNatCloseCampaign(id) {
+  const note = prompt("Why is this campaign closing? The note goes to the business.") || "";
+  try { await api("POST", `/admin/national/campaigns/${id}/close`, { note }); loadAdminNational178(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function adminNatResults(id) {
+  const creatorId = document.getElementById(`anr-creator-${id}`).value.trim();
+  if (!creatorId) { alert("Add the creator id first."); return false; }
+  try {
+    await api("POST", `/admin/national/campaigns/${id}/results`, {
+      creatorId,
+      ordersAttributed: document.getElementById(`anr-orders-${id}`).value === "" ? undefined : Number(document.getElementById(`anr-orders-${id}`).value),
+      revenueAttributed: document.getElementById(`anr-rev-${id}`).value === "" ? undefined : Number(document.getElementById(`anr-rev-${id}`).value),
+      resultNote: "Entered from the brand's store report.",
+    });
+    alert("Results saved. They show on the business's reports as reported by the brand's store.");
+  } catch (e) { alert(e.message); }
   return false;
 }
