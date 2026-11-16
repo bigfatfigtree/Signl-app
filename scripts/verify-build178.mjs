@@ -21,6 +21,7 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const national = require("../netlify/functions/lib/national.js");
+const sigdata = require("../netlify/functions/lib/sigdata.js");
 
 const PORT = 8931;
 const BASE = `http://localhost:${PORT}`;
@@ -82,6 +83,54 @@ check("built record: plan is null, no plan name/price", built.business.plan === 
 check("built record: pending + founding, brand fields set", built.status === "pending" && built.business.accessState === "founding" && built.business.brandName === "Fixture Brand" && built.business.website.includes("fixturebrand.example.com"));
 check("built record: focus markets exclude the sentinel", JSON.stringify(built.business.focusMarkets) === JSON.stringify(["Nashville"]));
 check("built record: verifiedAt null at birth", built.business.verifiedAt === null);
+
+console.log("== unit: fix pass (picked line, card payload, logos, plurals, Sig) ==");
+{
+  const pickedView = national.campaignCardView(
+    { id: "c1", businessId: "b1", title: "Try our vitamins, free", whatYouGet: "3 products of your choice, free", whatWeAsk: "Post 1 video and tag us", picksCount: 2, raiseByAt: "2999-01-01T00:00:00.000Z", categories: [], status: "open", createdAt: "2026-11-16T00:00:00.000Z" },
+    { id: "b1", role: "business", business: { scope: "national", businessName: "Fixture Co", brandName: "Fixture Oasis", logoUrl: "https://x.example.com/logo.png", verifiedAt: "2026-11-16T00:00:00.000Z" } },
+    { status: "picked" });
+  const pickedOccurrences = (pickedView.myHand.line.match(/You were picked/g) || []).length;
+  check("fix1: picked hand line says 'You were picked' exactly once", pickedOccurrences === 1, pickedView.myHand.line);
+  check("fix3: card payload carries pickedLine (spec 2.3 item 5)", pickedView.pickedLine === "If you are picked, Magpie messages you here with the details and next steps.", pickedView.pickedLine);
+  const appJsFix = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  check("fix1: client never prepends a second 'You were picked.'", !appJsFix.includes("<strong>You were picked.</strong>"));
+  const fnWin = (src, name) => { const a = src.indexOf(`function ${name}(`); if (a < 0) return ""; const rest = src.slice(a + 10); const m = rest.search(/\n(?:async )?function [A-Za-z0-9_]+\(/); return m > 0 ? src.slice(a, a + 10 + m) : src.slice(a); };
+  check("fix3: the campaign CARD renders pickedLine", fnWin(appJsFix, "nationalCampaignCardHtml").includes("pickedLine"));
+  for (const fn of ["nationalBrandChipHtml", "renderBrandProfilePage", "natHeadHtml"]) {
+    const w = fnWin(appJsFix, fn);
+    check(`fix2: ${fn} logo <img> carries the onerror initial-tile fallback`, w.includes("logoUrl") && w.includes("onerror"), fn);
+  }
+  const natNounSrc = (appJsFix.match(/function natNoun[^\n]*/) || [""])[0];
+  const natNoun = new Function(`${natNounSrc}; return natNoun;`)();
+  check("fix6: natNoun declines at 1 and pluralizes above 1", natNoun(1, "hand") === "1 hand" && natNoun(2, "hand") === "2 hands" && natNoun(0, "hand") === "0 hands" && natNoun(1, "pick") === "1 pick" && natNoun(3, "pick") === "3 picks");
+  const natSlice = appJsFix.slice(appJsFix.indexOf("// ---------- creator: the national lane"));
+  check("fix6: no bare counted 'hands' templates remain on national surfaces", !/\}\s+hands[\s·<]/.test(natSlice) && !/hands still waiting/.test(natSlice.replace("natNoun(s.handsWaiting, \"hand\")} still waiting", "")), "");
+  check("fix5: Regulars is conditional (national-excluded) in every nav source",
+    fnWin(appJsFix, "moreRowsFor").includes('scope === "national" ? [] : [{ icon: "users", label: "My Regulars"')
+    && fnWin(appJsFix, "everythingGroups125").includes('scope === "national" ? [] : [R("users", "My Regulars"')
+    && fnWin(appJsFix, "hamburgerGroups137").includes('scope === "national" ? [] : [R("users", "My Regulars"')
+    && fnWin(appJsFix, "tabItemsFor").includes('isNat178 ? [] : ["Regulars"]')
+    && fnWin(appJsFix, "renderNationalBusinessDash").includes('"Regulars": "NatDiscover"'));
+  const bizNatFacts = sigdata.buildBusinessFacts({
+    user: { role: "business", name: "Fixture Owner", market: "National", business: { businessName: "Fixture Nutrition Inc", accessState: "active" } },
+    readout: { overall: {} }, plan: null, draftOffers: 0,
+    national: { scope: "national", brandName: "Fixture Oasis", verified: true, campaigns: [{ title: "Try our liquid vitamins, free", status: "open", picksCount: 2, hands: 1, picks: 1, raiseByAt: "2999-01-01T00:00:00.000Z" }] },
+  });
+  const ownStatus = sigdata.answerFacts("business", bizNatFacts, "How are my national campaigns doing?");
+  check("fix4b: national campaign-status question answers from national facts", typeof ownStatus === "string" && ownStatus.includes("Try our liquid vitamins, free") && ownStatus.includes("1 hand raised") && ownStatus.includes("1 pick still to make") && !/offers live/.test(ownStatus), String(ownStatus).slice(0, 240));
+  check("fix6: Sig grounding lines say '1 hand', never '1 hands'", sigdata.factsLines("business", bizNatFacts).join(" ").includes("1 hand raised") && !sigdata.factsLines("business", bizNatFacts).join(" ").includes("1 hands"));
+  const STEM178 = "I only see your own";
+  const refused = (role, facts, q) => { const r = sigdata.sigPrivacyScreen(role, facts, q); return !!r && typeof r.text === "string" && r.text.includes(STEM178); };
+  check("fix4a: business probe about another brand's campaign refused", refused("business", bizNatFacts, "How is the other brand's national campaign doing?"));
+  check("fix4a: business probe about a named creator's hand on another campaign refused", refused("business", bizNatFacts, "Did @nashcreator raise a hand for the other brand's campaign?"));
+  check("fix4a: business asking about its OWN campaign hands is not refused", sigdata.sigPrivacyScreen("business", bizNatFacts, "How many hands has my campaign got?") === null);
+  const creatorFactsStub = { handle: "tulsacreator", nationalHands: [] };
+  check("fix4a: creator probe about another creator's hand refused", refused("creator", creatorFactsStub, "Did @nashcreator get picked?"));
+  check("fix4a: creator probe about a named creator's hand refused", refused("creator", creatorFactsStub, "Did Maria Garcia raise a hand?"));
+  check("fix4a: creator probe about total hand counts refused", refused("creator", creatorFactsStub, "How many hands were raised for this campaign in total?"));
+  check("fix4a: creator asking about their OWN hand is not refused", sigdata.sigPrivacyScreen("creator", creatorFactsStub, "Did I raise a hand for the Fixture Oasis campaign?") === null);
+}
 
 // ---------------- API end-to-end ----------------
 function client() {
@@ -253,6 +302,20 @@ try {
   const repCamp = (reports.data.campaigns || []).find((c) => c.id === campId) || {};
   check("reports: per-campaign hands/picks + labeled store-reported results", repCamp.hands === 2 && repCamp.picks === 1 && repCamp.attributed.orders === 12 && /brand's store/.test(repCamp.attributed.source) && /not live-synced/.test(reports.data.resultsLabel), JSON.stringify(reports.data).slice(0, 240));
   check("reports: both per-market breakdowns ride, labeled", Array.isArray(reports.data.byHomeMarket) && Array.isArray(reports.data.byListedMarket) && /calls home/.test(reports.data.homeMarketLabel));
+
+  console.log("== api: Sig national scoping (fix pass) ==");
+  const sigOwn = await brand("POST", "/api/sig/ask", { q: "How are my national campaigns doing?" });
+  check("Sig: national business gets its national campaign facts, not the market offers line", sigOwn.status === 200 && sigOwn.data.source === "data" && /national campaigns/i.test(sigOwn.data.text || "") && (sigOwn.data.text || "").includes("Try our liquid vitamins, free") && !/offers live/.test(sigOwn.data.text || ""), JSON.stringify(sigOwn.data).slice(0, 240));
+  const sigProbeBiz = await brand("POST", "/api/sig/ask", { q: "How is the other brand's national campaign doing?" });
+  check("Sig: national business probe about another brand refused deterministically", sigProbeBiz.data.source === "data" && (sigProbeBiz.data.text || "").includes("I only see your own"), JSON.stringify(sigProbeBiz.data).slice(0, 200));
+  const sigProbeHand = await brand("POST", "/api/sig/ask", { q: "Did @nashcreator raise a hand for the other brand's campaign?" });
+  check("Sig: named creator's hand on another campaign refused deterministically", sigProbeHand.data.source === "data" && (sigProbeHand.data.text || "").includes("I only see your own"), JSON.stringify(sigProbeHand.data).slice(0, 200));
+  const sigProbeCreator = await cUnlisted.client("POST", "/api/sig/ask", { q: "Did @nashcreator get picked?" });
+  check("Sig: creator probe about another creator's hand refused deterministically", sigProbeCreator.data.source === "data" && (sigProbeCreator.data.text || "").includes("I only see your own"), JSON.stringify(sigProbeCreator.data).slice(0, 200));
+  const sigProbeCount = await cUnlisted.client("POST", "/api/sig/ask", { q: "How many hands were raised for this campaign in total?" });
+  check("Sig: creator probe about total hand counts refused deterministically", sigProbeCount.data.source === "data" && (sigProbeCount.data.text || "").includes("I only see your own"), JSON.stringify(sigProbeCount.data).slice(0, 200));
+  const sigOwnHand = await cUnlisted.client("POST", "/api/sig/ask", { q: "Did I raise a hand for the Fixture Oasis campaign?" });
+  check("Sig: creator asking about their OWN hand is not refused", !(sigOwnHand.data.text || "").includes("I only see your own"), JSON.stringify(sigOwnHand.data).slice(0, 200));
 
   console.log("== api: market integrity ==");
   const localList = await cNash.client("GET", "/api/public/local-list?market=National");
