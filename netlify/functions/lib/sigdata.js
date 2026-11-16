@@ -101,6 +101,10 @@ function buildAdminFacts(d) {
   let founding = 0, active = 0;
   for (const u of approvedBiz) { if (d.businessAccessState(u) === "active") active += 1; else founding += 1; }
   for (const u of realBusinesses) {
+    // Build -178: a national account's market is the "National"
+    // sentinel, not a market. It never forms a market row and
+    // never counts toward any market's numbers (spec §7.3).
+    if (u.market === "National" && u.business && u.business.scope === "national") continue;
     const r = mRow(u.market);
     r.businesses += 1;
     if (u.status === "approved") { r.bizApproved += 1; if (d.businessAccessState(u) === "active") r.bizActive += 1; }
@@ -352,7 +356,14 @@ function buildBusinessFacts(d) {
   return {
     role: "business",
     businessName: (u.business && u.business.businessName) || u.name || "your business",
-    market: u.market || null,
+    // Build -178: a national account has NO home market. Its
+    // market field reads null here (never the "National"
+    // sentinel, which Maggie would quote as a city), its scope
+    // says national, and its own campaigns ride along — its own
+    // records only, like everything else on this sheet.
+    scope: d.national ? "national" : "market",
+    national: d.national || null,
+    market: d.national ? null : (u.market || null),
     marketLive: !!d.marketLive,
     founding: d.founding != null ? !!d.founding : !d.marketLive,
     accessState: (u.business && u.business.accessState) || "founding",
@@ -496,6 +507,9 @@ function buildCreatorFacts(d) {
     // from the shared definition), driving the home prompts.
     geoBreakdown: d.geoBreakdown || null,
     listedMarkets: d.listedMarkets || [],
+    // Build -178: the creator's own national-campaign hands
+    // (brand, campaign, own state in plain words). Own data only.
+    nationalHands: d.nationalHands || [],
     // Build -102: the public roster pages this creator appears
     // on, from the same finished-public predicate the pages and
     // the sitemap use (rides the withFounding payload).
@@ -683,6 +697,15 @@ function factsLines(role, f) {
   }
   if (role === "business") {
     const lines = [];
+    if (f.scope === "national" && f.national) {
+      const n = f.national;
+      lines.push(`Their business is ${n.brandName || f.businessName}, a NATIONAL account: it reaches creators in every Magpie market, not one city. It has no home market, and no market needs to open for its campaigns to run. It has no plan and no billing: Magpie has not set national pricing, and nothing is charged. The brand is ${n.verified ? "verified by Magpie" : "not verified yet, so its campaigns cannot go out until Magpie verifies the brand"}.`);
+      lines.push(n.campaigns && n.campaigns.length
+        ? `Their national campaigns: ${n.campaigns.map((c) => `"${c.title}" (${c.status}, ${fmt(c.hands)} hands raised, ${fmt(c.picks)} of ${fmt(c.picksCount)} picks made${c.raiseByAt ? `, hand-raise deadline ${String(c.raiseByAt).slice(0, 10)}` : ""})`).join("; ")}.`
+        : "They have no national campaigns yet. A campaign asks creators across every market to raise a hand; the brand then picks the creators it wants and Magpie tracks the gift fulfillment.");
+      lines.push("Everything above is this business's own record only. Never quote another business's campaigns, another creator's private details, or platform totals to this business.");
+      return lines;
+    }
     lines.push(`Their business is ${f.businessName} in ${f.market || "an unfiled market"}. The market is ${f.marketLive ? "OPEN (live)" : "NOT open yet, so the business is on the founding list and nothing is charged"}.`);
     if (f.planName) lines.push(`Their plan is ${f.planName} at ${money(f.planPrice)} a month with ${f.visitsPerMonth} creator visits a month and a ${money(f.foundingCredit)} founding credit off the first month. This month they have used ${fmt(f.visitsUsed)} of ${fmt(f.visitsAllowance)} visits (${fmt(f.visitsRemaining)} left${f.visitsCarried ? `, including ${fmt(f.visitsCarried)} rolled over from last month` : ""}).`);
     lines.push(`Their numbers right now: ${fmt(f.offersLive)} offers live, ${fmt(f.draftOffers)} drafts, ${fmt(f.applicantsWaiting)} applicants waiting on their answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live. Counted register dollars so far: ${money(f.countedDollars)} (counted means rung up through visit codes). Modeled estimate on top of that: ${money(f.modeledDollars)}, and that figure is an estimate, never a counted sale. Creators with finished profiles in their market: ${fmt(f.rosterInMarket)}.`);
@@ -718,6 +741,10 @@ function factsLines(role, f) {
     : "They are not on a public roster page yet: a market's public roster opens once at least 5 finished public profiles are listed in it. Businesses inside Magpie can still find a finished profile in the app; the public page is the web version of the same roster.");
   lines.push(`Their Momentum is ${fmt(f.momentumPoints)} points, level ${lv ? lv.name : "Starter"}${lv && lv.nextName ? `, with ${fmt(lv.nextAt - f.momentumPoints)} points to ${lv.nextName}` : ", the top level"}. Their tier is ${f.tier || "not set yet"}${f.audienceTotal != null ? ` on ${fmt(f.audienceTotal)} total followers across platforms` : ""}. Local audience in their home market: ${f.localPct != null ? f.localPct + "%" : "not reported"}. Markets they are listed in: ${f.listedMarkets.length ? f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}`).join(", ") : "just their home market"}.`);
   lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${cmoney(f, f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid outside the app). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
+  // Build -178: this creator's own national-campaign hands are
+  // their own data. Other creators' hands, pick states, and hand
+  // counts are never on this sheet.
+  if (f.nationalHands && f.nationalHands.length) lines.push(`National brand campaigns they raised a hand for (their own record only): ${f.nationalHands.map((h) => `${h.brandName} — "${h.campaignTitle}": ${h.line || h.status}`).join("; ")}.`);
   const avLine = f.audienceVerification || {};
   lines.push(avLine.igConnected
     ? `Instagram audience verification: status ${avLine.status}${avLine.verifiedMarkets && avLine.verifiedMarkets.length ? `, verified in ${avLine.verifiedMarkets.join(", ")} (Instagram city data within 10 points of the stated share)` : ""}${avLine.belowSelf && avLine.belowSelf.length ? `; Instagram shows lower in ${avLine.belowSelf.map((b) => `${b.market} (${b.igPct}% vs stated ${b.selfPct}%)`).join(", ")}` : ""}${avLine.note ? `; note: ${avLine.note}` : ""}.`
