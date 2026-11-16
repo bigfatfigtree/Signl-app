@@ -132,6 +132,28 @@ console.log("== unit: fix pass (picked line, card payload, logos, plurals, Sig) 
   check("fix4a: creator asking about their OWN hand is not refused", sigdata.sigPrivacyScreen("creator", creatorFactsStub, "Did I raise a hand for the Fixture Oasis campaign?") === null);
 }
 
+console.log("== unit: fld class collision fix (final fix pass) ==");
+{
+  const appJsFld = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  check("fldfix: zero solo class=\"fld\" label/div uses remain in app.js", !/class="fld"/.test(appJsFld));
+  check("fldfix: zero solo class=\"fld\" uses in server lib (national.js)", !/class="fld"/.test(fs.readFileSync(new URL("../netlify/functions/lib/national.js", import.meta.url), "utf8")));
+  check("fldfix: all 27 renamed uses carry class=\"nfld178\"", (appJsFld.match(/class="nfld178"/g) || []).length === 27, String((appJsFld.match(/class="nfld178"/g) || []).length));
+  check("fldfix: production band sections untouched (2x class=\"fld fld-mint\")", (appJsFld.match(/class="fld fld-mint"/g) || []).length === 2);
+  for (const fn of ["renderNationalCampaignPage", "natComposerHtml", "natBrandEditorHtml", "loadAdminNational178"]) {
+    const a = appJsFld.indexOf(`function ${fn}(`);
+    const rest = a < 0 ? "" : appJsFld.slice(a);
+    const m = rest.search(/\n(?:async )?function [A-Za-z0-9_]+\(/);
+    const w = m > 0 ? rest.slice(0, m) : rest;
+    check(`fldfix: ${fn} uses nfld178 and no solo fld`, w.includes("nfld178") && !/class="fld"/.test(w), fn);
+  }
+  for (const css of ["theme-v2.css", "theme-v3.css", "styles.css"]) {
+    const src = fs.readFileSync(new URL(`../public/${css}`, import.meta.url), "utf8");
+    check(`fldfix: nfld178 has no definition in ${css}`, !src.includes("nfld178"), css);
+  }
+  const v2 = fs.readFileSync(new URL("../public/theme-v2.css", import.meta.url), "utf8");
+  check("fldfix: theme-v2 .fld band rule left exactly as production", v2.includes(".fld { width: 100vw; margin-left: calc(50% - 50vw); padding: 46px max(24px, calc(50vw - 546px)); }"));
+}
+
 // ---------------- API end-to-end ----------------
 function client() {
   const jar = new Map();
