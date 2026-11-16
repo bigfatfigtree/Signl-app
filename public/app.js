@@ -35963,11 +35963,11 @@ async function renderNationalCampaignPage() {
     <h3 style="margin-top:0">Your gift</h3>
     <p class="small muted">Status: ${esc(natFulfillLabel(f ? f.status : "pending"))}${f && f.trackingNumber ? ` · Tracking: ${esc(f.trackingNumber)}` : ""}</p>
     <form onsubmit="return natSaveFulfillment(event, '${c.id}')">
-      <label class="fld"><span>What you would like (from what the brand offers)</span><input id="nf-picks" value="${esc((f && (f.productPicks || []).join(", ")) || "")}" placeholder="Product names, separated by commas"></label>
-      <label class="fld"><span>Your name for shipping</span><input id="nf-name" value="${esc((f && f.shippingName) || "")}"></label>
-      <label class="fld"><span>Shipping address</span><textarea id="nf-address" rows="2">${esc((f && f.shippingAddress) || "")}</textarea></label>
-      <label class="fld"><span>Phone (for the delivery company)</span><input id="nf-phone" value="${esc((f && f.phone) || "")}"></label>
-      ${f && f.status === "delivered" ? `<label class="fld"><span>Your post links (paste them once your posts are up)</span><input id="nf-posts" value="${esc((f.postLinks || []).join(", "))}" placeholder="Links, separated by commas"></label>` : ""}
+      <label class="nfld178"><span>What you would like (from what the brand offers)</span><input id="nf-picks" value="${esc((f && (f.productPicks || []).join(", ")) || "")}" placeholder="Product names, separated by commas"></label>
+      <label class="nfld178"><span>Your name for shipping</span><input id="nf-name" value="${esc((f && f.shippingName) || "")}"></label>
+      <label class="nfld178"><span>Shipping address</span><textarea id="nf-address" rows="2">${esc((f && f.shippingAddress) || "")}</textarea></label>
+      <label class="nfld178"><span>Phone (for the delivery company)</span><input id="nf-phone" value="${esc((f && f.phone) || "")}"></label>
+      ${f && f.status === "delivered" ? `<label class="nfld178"><span>Your post links (paste them once your posts are up)</span><input id="nf-posts" value="${esc((f.postLinks || []).join(", "))}" placeholder="Links, separated by commas"></label>` : ""}
       <button type="submit" class="btn">Save</button>
     </form>
     <p style="margin-top:10px"><button type="button" class="btn ghost small-btn" onclick="return natWithdraw('${c.id}')">Withdraw from this campaign</button></p>
@@ -36144,13 +36144,13 @@ function natComposerHtml(c) {
   return `<form onsubmit="return natSaveCampaign(event, ${c ? `'${c.id}'` : "null"})">
     <h3 style="margin:14px 0 4px">${c ? "Edit campaign" : "New campaign"}</h3>
     <p class="small muted" style="margin:0 0 10px">Creators see this exactly as you write it. Say the thing itself: "3 products of your choice, free" lands better than any category word.</p>
-    <label class="fld"><span>Headline, in plain words</span><input id="nc-title" value="${esc((c && c.title) || "")}" placeholder="Try our liquid vitamins, free"></label>
-    <label class="fld"><span>What the creator gets</span><input id="nc-get" value="${esc((c && c.whatYouGet) || "")}" placeholder="3 products of your choice, free"></label>
-    <label class="fld"><span>What you ask for, in one line</span><input id="nc-ask" value="${esc((c && c.whatWeAsk) || "")}" placeholder="Post 1 video and 1 story about your honest experience, and tag the brand"></label>
-    <label class="fld"><span>How many creators you will pick</span><input id="nc-picks" type="number" min="1" step="1" value="${c ? c.picksCount : ""}"></label>
-    <label class="fld"><span>Creators raise a hand by</span><input id="nc-deadline" type="datetime-local" value="${esc(deadline)}"></label>
-    <label class="fld"><span>The details (what you make, when gifts ship, when posts are due after delivery)</span><textarea id="nc-details" rows="4">${esc((c && c.details) || "")}</textarea></label>
-    <div class="fld"><span>Who it is for (categories — ordering only; every approved creator can still raise a hand)</span>
+    <label class="nfld178"><span>Headline, in plain words</span><input id="nc-title" value="${esc((c && c.title) || "")}" placeholder="Try our liquid vitamins, free"></label>
+    <label class="nfld178"><span>What the creator gets</span><input id="nc-get" value="${esc((c && c.whatYouGet) || "")}" placeholder="3 products of your choice, free"></label>
+    <label class="nfld178"><span>What you ask for, in one line</span><input id="nc-ask" value="${esc((c && c.whatWeAsk) || "")}" placeholder="Post 1 video and 1 story about your honest experience, and tag the brand"></label>
+    <label class="nfld178"><span>How many creators you will pick</span><input id="nc-picks" type="number" min="1" step="1" value="${c ? c.picksCount : ""}"></label>
+    <label class="nfld178"><span>Creators raise a hand by</span><input id="nc-deadline" type="datetime-local" value="${esc(deadline)}"></label>
+    <label class="nfld178"><span>The details (what you make, when gifts ship, when posts are due after delivery)</span><textarea id="nc-details" rows="4">${esc((c && c.details) || "")}</textarea></label>
+    <div class="nfld178"><span>Who it is for (categories — ordering only; every approved creator can still raise a hand)</span>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${cats.map((x) => `<label class="chip-check"><input type="checkbox" class="nc-cat" value="${esc(x)}" ${picked.has(x) ? "checked" : ""}> ${esc(x)}</label>`).join("")}</div>
     </div>
     <div class="panel"><strong>Before it goes out</strong>
@@ -36307,12 +36307,12 @@ function natBrandEditorHtml(u) {
     <h3 style="margin:14px 0 4px">Your brand profile</h3>
     <p class="small muted" style="margin:0 0 10px">This is what a creator sees when they open your brand from a campaign. It is built from what you save here — nothing is invented.</p>
     ${bz.verifiedAt ? `<p><span class="badge ok">Verified by Magpie</span> <span class="small muted">Magpie checked that this is the real brand behind your campaigns.</span></p>` : `<p><span class="badge info">Not verified yet</span> <span class="small muted">Campaigns can go out once Magpie verifies your brand.</span></p>`}
-    <label class="fld"><span>Brand name (the name creators see)</span><input id="nb-brandname" value="${esc(bz.brandName || "")}"></label>
-    <label class="fld"><span>Website</span><input id="nb-website" value="${esc(bz.website || "")}" placeholder="https://yourbrand.com"></label>
+    <label class="nfld178"><span>Brand name (the name creators see)</span><input id="nb-brandname" value="${esc(bz.brandName || "")}"></label>
+    <label class="nfld178"><span>Website</span><input id="nb-website" value="${esc(bz.website || "")}" placeholder="https://yourbrand.com"></label>
     <p class="small muted" style="margin:-4px 0 10px">Changing your website after verification clears the Verified mark until Magpie checks the new site. That keeps the mark honest.</p>
-    <label class="fld"><span>Logo address (a link to your logo image)</span><input id="nb-logo" value="${esc(bz.logoUrl || "")}" placeholder="https://yourbrand.com/logo.png"></label>
-    <label class="fld"><span>What you sell, in your own words</span><textarea id="nb-about" rows="3">${esc(bz.brandAbout || bz.about || "")}</textarea></label>
-    <div class="fld"><span>Focus markets (where you care most — used to order Find creators and your reports; it never limits who can raise a hand)</span>
+    <label class="nfld178"><span>Logo address (a link to your logo image)</span><input id="nb-logo" value="${esc(bz.logoUrl || "")}" placeholder="https://yourbrand.com/logo.png"></label>
+    <label class="nfld178"><span>What you sell, in your own words</span><textarea id="nb-about" rows="3">${esc(bz.brandAbout || bz.about || "")}</textarea></label>
+    <div class="nfld178"><span>Focus markets (where you care most — used to order Find creators and your reports; it never limits who can raise a hand)</span>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${markets.map((m) => `<label class="chip-check"><input type="checkbox" class="nb-focus" value="${esc(m.name || m)}" ${focus.has(m.name || m) ? "checked" : ""}> ${esc(m.name || m)}</label>`).join("")}</div>
     </div>
     <button type="submit" class="btn">Save brand profile</button>
@@ -36351,14 +36351,14 @@ async function loadAdminNational178() {
     <div class="panel" style="margin-top:14px">
       <h4 style="margin-top:0">Create a national account</h4>
       <form onsubmit="return adminNatCreate(event)">
-        <label class="fld"><span>Account email</span><input id="an-email" type="email" required></label>
-        <label class="fld"><span>Business (legal) name</span><input id="an-bizname" required></label>
-        <label class="fld"><span>Brand name (what creators see)</span><input id="an-brandname"></label>
-        <label class="fld"><span>Website</span><input id="an-website" placeholder="https://brand.com" required></label>
-        <label class="fld"><span>What they sell</span><textarea id="an-about" rows="2"></textarea></label>
-        <label class="fld"><span>Logo address (optional)</span><input id="an-logo" placeholder="https://brand.com/logo.png"></label>
-        <label class="fld"><span>Currency</span><select id="an-currency"><option>USD</option><option>GBP</option><option>CAD</option><option>NZD</option><option>EUR</option></select></label>
-        <div class="fld"><span>Focus markets</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${(d.markets || []).map((m) => `<label class="chip-check"><input type="checkbox" class="an-focus" value="${esc(m)}"> ${esc(m)}</label>`).join("")}</div></div>
+        <label class="nfld178"><span>Account email</span><input id="an-email" type="email" required></label>
+        <label class="nfld178"><span>Business (legal) name</span><input id="an-bizname" required></label>
+        <label class="nfld178"><span>Brand name (what creators see)</span><input id="an-brandname"></label>
+        <label class="nfld178"><span>Website</span><input id="an-website" placeholder="https://brand.com" required></label>
+        <label class="nfld178"><span>What they sell</span><textarea id="an-about" rows="2"></textarea></label>
+        <label class="nfld178"><span>Logo address (optional)</span><input id="an-logo" placeholder="https://brand.com/logo.png"></label>
+        <label class="nfld178"><span>Currency</span><select id="an-currency"><option>USD</option><option>GBP</option><option>CAD</option><option>NZD</option><option>EUR</option></select></label>
+        <div class="nfld178"><span>Focus markets</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${(d.markets || []).map((m) => `<label class="chip-check"><input type="checkbox" class="an-focus" value="${esc(m)}"> ${esc(m)}</label>`).join("")}</div></div>
         <button type="submit" class="btn">Create national account</button>
         <span class="small muted"> Lands as pending, on the founding list. Approve + activate it like any business, then verify the brand below. No email is sent automatically.</span>
       </form>
@@ -36372,8 +36372,8 @@ async function loadAdminNational178() {
     <h4 style="margin:18px 0 6px">Convert a market business</h4>
     <p class="small muted">Only for a business with no offers yet. Conversion sets the sentinel market, clears the plan to none (the old plan is kept in the audit log), and removes any partner stamp.</p>
     <form onsubmit="return adminNatConvert(event)">
-      <label class="fld"><span>Business account id (from Admin search)</span><input id="an-convert-id" required></label>
-      <label class="fld"><span>Website (optional if already on file)</span><input id="an-convert-web"></label>
+      <label class="nfld178"><span>Business account id (from Admin search)</span><input id="an-convert-id" required></label>
+      <label class="nfld178"><span>Website (optional if already on file)</span><input id="an-convert-web"></label>
       <button type="submit" class="btn ghost">Convert to national</button>
     </form>
     <h4 style="margin:18px 0 6px">Campaigns</h4>
