@@ -1568,6 +1568,46 @@ div.deal-terms p:last-child { margin-bottom: 6px; }
   outline: 2px solid var(--mint-deep); outline-offset: 2px;
 }
 
+/* ---------- category picker: real checkboxes (Build -176) ------
+   The creator category picker (quick claim, full join, Profile)
+   shared ONE shape after Jeff could not tell the old pill state
+   apart (2026-11-10): a Select-all row on top, then one SHORT row
+   per category in a 2-column grid, each with a visible checkbox.
+   Jeff's revision the same day: NO tint anywhere (he hated the
+   pale-green fill on checked rows) and COMPACT (13 tall full-width
+   rows scrolled forever). The state now rides on the control
+   alone — checked = filled dark box, white check, bold dark text
+   on a plain white row; unchecked = hollow box, muted text;
+   Select all shows a dash when only some categories are on. The
+   box IS the state. */
+.catpick { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+@media (min-width: 700px) { .catpick { grid-template-columns: repeat(3, 1fr); } }
+.catpick-row {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  background: #fff; border: 1.5px solid var(--line); border-radius: 10px;
+  padding: 6px 8px; min-height: 44px; cursor: pointer;
+  font-size: 14px; line-height: 1.15; font-weight: 600; color: var(--ink2);
+}
+.catpick-row input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: 0 0 auto;
+  width: 22px; height: 22px; min-width: 22px; margin: 0; padding: 0;
+  cursor: pointer; border: 2px solid #A9B8AE; border-radius: 6px;
+  background: #fff; display: inline-grid; place-content: center;
+}
+.catpick-row input[type="checkbox"]::after {
+  content: "\2713"; font-size: 14px; font-weight: 900;
+  line-height: 1; color: transparent;
+}
+.catpick-row input[type="checkbox"]:checked { background: var(--black); border-color: var(--black); }
+.catpick-row input[type="checkbox"]:checked::after { color: #fff; }
+.catpick-row input[type="checkbox"]:indeterminate { background: var(--black); border-color: var(--black); }
+.catpick-row input[type="checkbox"]:indeterminate::after { content: ""; width: 10px; height: 3px; border-radius: 2px; background: #fff; }
+.catpick-row:has(input:checked) { background: #fff; border-color: var(--black); color: var(--ink); font-weight: 700; }
+.catpick-row:has(input:indeterminate) { border-color: var(--black); color: var(--ink); font-weight: 700; }
+.catpick-row:focus-within { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+.catpick-allrow { grid-column: 1 / -1; background: #fff; border-style: dashed; }
+.catpick-allrow:has(input:checked) { border-style: solid; }
+
 /* ---------- radio chips: stacked option rows ---------- */
 .radio-stack { display: flex; flex-direction: column; gap: 8px; }
 .radio-chip {

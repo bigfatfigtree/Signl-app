@@ -10063,11 +10063,13 @@ function renderQuickClaim() {
 // ---------- Screen 0: the Neighbor Number (Build -156) ----------
 // Shown BEFORE any form when a checked record carries this
 // creator's own numbers: her counted neighbors, her local % in
-// plain words, her founding rank with its honest scope, and —
-// only when a real checked creator in her market has more
-// followers but fewer neighbors — that inversion, naming the
-// real account. The server computes all of it; nothing here is
-// estimated or invented.
+// plain words, and — only when a real checked creator in her
+// market has more followers but fewer neighbors — that
+// inversion, naming the real account. The server computes all
+// of it; nothing here is estimated or invented. Build -176
+// (Jeff): no rank or cohort size is ever shown to a creator —
+// her number and her neighbors are hers; where she stands
+// against others is not displayed, here or anywhere.
 function renderClaimHook() {
   const h = state.claimHook;
   const d = claimDraftInit();
@@ -10095,13 +10097,12 @@ function renderClaimHook() {
       <p style="font-size:34px;font-weight:800;margin:0 0 2px" id="nb-hook-count">${claimFmtCount(h.neighborCount)}</p>
       <p class="muted" style="margin:0 0 12px">${h.extrapolated ? T(`total potential neighbors in ${marketLabel}`, `vecinos potenciales en total en ${marketLabel}`) : T(`neighbors in ${marketLabel}`, `vecinos en ${marketLabel}`)}</p>
       ${h.localWords ? `<p style="margin:0 0 8px"><strong>${esc(h.localWords)}.</strong></p>` : ""}
-      <p style="margin:0 0 8px">${T("Your founding spot:", "Tu lugar de fundadora:")} <strong>#${h.rank}</strong> ${T(`of the ${h.checkedCount} ${h.market} creators we've checked so far`, `de los ${h.checkedCount} creadores de ${h.market} que hemos revisado hasta ahora`)}.</p>
       ${h.inversion ? `<p class="small" style="margin:0 0 12px">@${esc(h.inversion.handle)} ${T(`has more followers than you (${claimFmtCount(h.inversion.followers)} in total), but fewer neighbors in ${marketLabel}. Local beats famous here.`, `tiene más seguidores que tú (${claimFmtCount(h.inversion.followers)} en total), pero menos vecinos en ${marketLabel}. Aquí lo local le gana a lo famoso.`)}</p>` : ""}
       <div class="c85-lanes">
         <p><span class="c85-check">✓</span> ${T("Hosted visits: a local business treats you, you post honestly.", "Visitas en cortesía: un negocio local te invita y tú publicas con honestidad.")}</p>
         <p><span class="c85-check">✓</span> ${T("Paid bookings at your rate. You keep 97%.", "Reservas pagadas a tu tarifa. Te quedas con el 97%.")}</p>
       </div>
-      <button class="btn" type="button" style="width:100%" onclick="return claimHookGo()">${T(`Claim my #${h.rank} spot`, `Reclamar mi lugar #${h.rank}`)}</button>
+      <button class="btn" type="button" style="width:100%" onclick="return claimHookGo()">${T("Claim my spot", "Reclamar mi lugar")}</button>
       <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Free for creators. Takes a minute.", "Gratis para creadores. Toma un minuto.")}</p>
     </div>
   </section>`;
@@ -10220,7 +10221,8 @@ function renderClaimFacts() {
       ? T("Your invite picked this market. If your audience is really somewhere else, pick the market where most of your followers live. You can change it later, any time, in your profile.", "Tu invitación eligió este mercado. Si tu audiencia está en otro lugar, elige el mercado donde vive la mayoría de tus seguidores. Puedes cambiarlo después, cuando quieras, en tu perfil.")
       : T("Pick the market where most of your followers live. City not listed? Choose \"My city is not listed yet\" and sign up anyway — your sign-up counts toward opening Magpie there.", "Elige el mercado donde vive la mayoría de tus seguidores. ¿Tu ciudad no está en la lista? Elige «Mi ciudad aún no está en la lista» y regístrate igual: tu registro cuenta para abrir Magpie ahí.");
   const marketOpts = (pfMarket ? "" : `<option value="" disabled selected>${T("Pick your market", "Elige tu mercado")}</option>`) + marketOptions(pfMarket, true);
-  const cats = (state.boot.creatorCategories || []).map((c) => `<button type="button" class="rchip${d.cats.includes(c) ? " on" : ""}" data-cat="${esc(c)}" onclick="return claimToggleCat(this)">${esc(c)}</button>`).join("");
+  const allCats = state.boot.creatorCategories || [];
+  const cats = allCats.map((c) => `<label class="catpick-row"><input type="checkbox" data-cat="${esc(c)}" ${d.cats.includes(c) ? "checked" : ""} onchange="return claimToggleCat(this)"><span>${esc(c)}</span></label>`).join("");
   const stackRows = CLAIM_STACK_PLATFORMS.map((p) => `
       <div class="c85-stackrow"><label for="c85-stack-${p.id}">${T(p.label, p.label)}</label><input type="number" id="c85-stack-${p.id}" min="0" inputmode="numeric" placeholder="0" value="${d.stack[p.id] ? esc(String(d.stack[p.id])) : ""}" oninput="claimStackSync()"></div>`).join("");
   const total = claimStackTotal(d);
@@ -10246,7 +10248,7 @@ function renderClaimFacts() {
         <p class="fg-kicker">${T("What you post about", "De qué publicas")}</p>
         <h3 class="c85-cat-head" style="margin:4px 0 6px">${T("Almost everything you post counts here.", "Casi todo lo que publicas cuenta aquí.")}</h3>
         <p class="small" style="margin:0 0 10px">${T("Your followers are mostly your own neighbors, friends and family — and they'd love seeing you enjoy a meal, a haircut, a workout or a night out, not just one kind of post. So we've ticked everything for you. If your page is only ever about one thing, untick the rest and keep just yours.", "Tus seguidores son en su mayoría tus propios vecinos, amigos y familia, y les encantaría verte disfrutar una comida, un corte de pelo, un entrenamiento o una noche fuera, no solo un tipo de publicación. Por eso marcamos todo por ti. Si tu página es siempre de una sola cosa, desmarca el resto y deja solo la tuya.")}</p>
-        <div class="chiprow" id="c85-cats">${cats}</div>
+        <div class="catpick" id="c85-cats"><label class="catpick-row catpick-allrow"><input type="checkbox" id="c85-cat-all" ${allCats.length && allCats.every((c) => d.cats.includes(c)) ? "checked" : ""} onchange="return claimToggleAllCats(this)"><span>${T("Select all", "Seleccionar todo")}</span></label>${cats}</div>
         <p class="small muted" style="margin:8px 0 0">${T("Every ticked category is another kind of local business that can find you.", "Cada categoría marcada es otro tipo de negocio local que puede encontrarte.")}</p>
         <p class="small" id="c85-cat-warn" style="display:none;color:#B3261E;margin:8px 0 0">${T("Pick at least one, so businesses can find you.", "Elige al menos una, para que los negocios te encuentren.")}</p>
       </div>
@@ -10274,18 +10276,47 @@ function renderClaimFacts() {
   // and the note belongs to that market from the first paint.
   syncClaimMarketChoice();
   claimLocalLabelSync();
+  claimCatAllSync();
 }
 
-function claimToggleCat(btn) {
+// Build -176: the category picker is real checkboxes now (the
+// pill version hid its own state — Jeff, 2026-11-10). The box
+// IS the state: claimToggleCat reads the box the creator just
+// flipped, claimToggleAllCats drives the whole list from the
+// Select-all box on top, and claimCatAllSync keeps Select all
+// honest (checked when all 12 are, a dash when some are).
+function claimToggleCat(box) {
   const d = claimDraftInit();
   d.catsSeeded = true;
-  const cat = btn.getAttribute("data-cat") || "";
+  const cat = box.getAttribute("data-cat") || "";
   const i = d.cats.indexOf(cat);
-  if (i >= 0) d.cats.splice(i, 1); else d.cats.push(cat);
-  btn.classList.toggle("on", i < 0);
+  if (box.checked && i < 0) d.cats.push(cat);
+  if (!box.checked && i >= 0) d.cats.splice(i, 1);
+  claimCatAllSync();
   const warn = document.getElementById("c85-cat-warn");
   if (warn && d.cats.length) warn.style.display = "none";
-  return false;
+  return true;
+}
+
+function claimToggleAllCats(box) {
+  const d = claimDraftInit();
+  d.catsSeeded = true;
+  const all = state.boot.creatorCategories || [];
+  d.cats = box.checked ? [...all] : [];
+  document.querySelectorAll("#c85-cats input[data-cat]").forEach((b) => { b.checked = box.checked; });
+  box.indeterminate = false;
+  const warn = document.getElementById("c85-cat-warn");
+  if (warn && d.cats.length) warn.style.display = "none";
+  return true;
+}
+
+function claimCatAllSync() {
+  const all = document.getElementById("c85-cat-all");
+  if (!all) return;
+  const boxes = Array.from(document.querySelectorAll("#c85-cats input[data-cat]"));
+  const n = boxes.filter((b) => b.checked).length;
+  all.checked = boxes.length > 0 && n === boxes.length;
+  all.indeterminate = n > 0 && n < boxes.length;
 }
 
 function claimLocalSync() {
@@ -10625,19 +10656,22 @@ function renderClaimDone() {
       </div>
       ${neighborPanelHtml()}
       <button class="btn" type="button" style="width:100%" onclick="return claimGoProfile()">${T("Add your rates and best work", "Agrega tus tarifas y tu mejor trabajo")}</button>
-      <p class="small muted" style="margin:12px 0 0">${T("or just close this. We'll email you.", "o cierra esto. Te escribiremos por correo.")} <a href="#" onclick="return claimGoDashboard()">${T("Open my dashboard", "Abrir mi panel")}</a></p>
+      <button class="btn ghost" type="button" style="width:100%;margin-top:10px" onclick="return claimGoDashboard()">${T("Go to my dashboard", "Ir a mi panel")}</button>
+      <p class="small muted" style="margin:10px 0 0">${T("Finish your profile there so businesses can find you — or just close this, and we'll email you.", "Termina tu perfil ahí para que los negocios puedan encontrarte, o cierra esto y te escribiremos por correo.")}</p>
       ${signlInstallBannerHtml()}
     </div>
   </section>`;
 }
 
 // ---------- Build -156: the live stack moment + Neighbor Card ----------
-// On the done screen Maggie prompts the stack ("Want to climb?
-// Add your TikTok"). Every added platform saves through the same
-// profile write as always, then the number and the LIVE rank
-// recompute on screen. The FOUNDING rank locked at claim never
-// moves; the two are labelled so they can never read as a
-// contradiction.
+// On the done screen Maggie prompts the stack ("Add your
+// TikTok"). Every added platform saves through the same profile
+// write as always, then the number recomputes on screen.
+// Build -176 (Jeff): the founding/live rank paragraphs and the
+// card's rank line are GONE — a creator never sees her rank or
+// the size of the checked set, here or anywhere. The founding
+// lock still lands on her record server-side at claim; it is
+// simply never displayed.
 function neighborMissingPlatforms() {
   const stack = (state.user && state.user.creator && state.user.creator.audienceStack) || {};
   return CLAIM_STACK_PLATFORMS.filter((p) => !(Number(stack[p.id]) > 0));
@@ -10648,15 +10682,12 @@ function neighborPanelHtml() {
   const marketLabel = marketDisplayName(nb.market || (state.user && state.user.market) || "");
   const missing = neighborMissingPlatforms();
   const nextPlat = missing.length ? missing[0] : null;
-  const f = nb.founding;
   return `<div style="text-align:left;border-top:1px solid var(--hairline,#DFE7DF);padding-top:14px;margin:0 0 18px" id="nb-panel">
     <p style="margin:0 0 4px"><strong>${T("Your Neighbor Number", "Tu Número de Vecinos")}</strong></p>
     <p style="font-size:32px;font-weight:800;margin:0" id="nb-big">${claimFmtCount(nb.neighborCount)}</p>
     <p class="muted" style="margin:0 0 8px" id="nb-big-label">${nb.extrapolated ? T(`total potential neighbors in ${marketLabel}`, `vecinos potenciales en total en ${marketLabel}`) : T(`neighbors in ${marketLabel}`, `vecinos en ${marketLabel}`)}${nb.localWords ? ` · ${esc(nb.localWords)}` : ""}</p>
-    ${f ? `<p class="small" style="margin:0 0 4px"><strong>${T("Founding rank", "Rango fundador")} #${f.rank}</strong> ${T(`of the ${f.checkedCount} ${nb.market} creators checked when you claimed. This one is locked in; it never changes.`, `de los ${f.checkedCount} creadores de ${nb.market} revisados cuando reclamaste. Este queda fijo; nunca cambia.`)}</p>` : ""}
-    ${nb.liveRank ? `<p class="small" style="margin:0 0 10px"><strong>${T("Live rank today", "Rango en vivo hoy")} #${nb.liveRank}</strong> ${T(`of the ${nb.liveCheckedCount} ${nb.market} creators we've checked so far. This one moves as more creators are checked.`, `de los ${nb.liveCheckedCount} creadores de ${nb.market} que hemos revisado hasta ahora. Este se mueve cuando revisamos a más creadores.`)}</p>` : ""}
     ${nextPlat ? `<div class="notice blue" style="text-align:left">
-      <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Want to climb? Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Every platform you add recounts your neighbors and your live rank, right here.`, `¿Quieres subir? Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Cada plataforma que agregas vuelve a contar tus vecinos y tu rango en vivo, aquí mismo.`)}</p>
+      <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Every platform you add recounts your neighbors, right here.`, `Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Cada plataforma que agregas vuelve a contar tus vecinos, aquí mismo.`)}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
         <div class="field" style="margin:0"><label>${T("Platform", "Plataforma")}</label><select id="nb-plat">${missing.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join("")}</select></div>
         <div class="field" style="margin:0"><label>${T("Followers", "Seguidores")}</label><input type="number" id="nb-plat-count" min="1" inputmode="numeric" placeholder="0" style="width:130px"></div>
@@ -10703,13 +10734,14 @@ function neighborCardSave() {
   const nb = state.neighbor;
   const u = state.user;
   if (!nb || !u || !u.creator) return false;
-  const f = nb.founding || {};
   const marketLabel = marketDisplayName(nb.market || u.market || "");
   const name = u.name || "";
   const handle = (u.creator && u.creator.handle) || "";
   const photoAbs = u.creator.hasPhoto ? `${location.origin}/api/users/${u.id}/photo` : "";
-  const rankLine = f.rank ? `Founding #${f.rank} of ${f.checkedCount} ${marketLabel} creators checked` : (nb.liveRank ? `#${nb.liveRank} of ${nb.liveCheckedCount} ${marketLabel} creators checked` : marketLabel);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><circle cx="540" cy="215" r="85" fill="#E3F5EA"/><text x="540" y="245" font-family="Arial, sans-serif" font-size="72" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc((name || handle || "M").trim().charAt(0).toUpperCase())}</text>${photoAbs ? `<image href="${esc(photoAbs)}" x="455" y="130" width="170" height="170" preserveAspectRatio="xMidYMid slice"/>` : ""}<text x="540" y="380" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(name)}</text><text x="540" y="435" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">@${esc(handle)} · ${esc(marketLabel)}</text><text x="540" y="620" font-family="Arial, sans-serif" font-size="130" font-weight="800" fill="#0B0D0C" text-anchor="middle">${claimFmtCount(nb.neighborCount)}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">${nb.extrapolated ? "total potential neighbors" : "neighbors"}</text>${nb.localWords ? `<text x="540" y="745" font-family="Arial, sans-serif" font-size="34" fill="#5F7265" text-anchor="middle">${esc(nb.localWords)}</text>` : ""}<text x="540" y="830" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(rankLine)}</text><text x="540" y="950" font-family="Arial, sans-serif" font-size="32" fill="#5F7265" text-anchor="middle">Magpie · Local beats famous</text></svg>`;
+  // Build -176: the card prints NO rank line (it used to read
+  // "Founding #N of X creators checked"). Her number, her
+  // neighbors, her market — nothing about anyone else.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><circle cx="540" cy="215" r="85" fill="#E3F5EA"/><text x="540" y="245" font-family="Arial, sans-serif" font-size="72" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc((name || handle || "M").trim().charAt(0).toUpperCase())}</text>${photoAbs ? `<image href="${esc(photoAbs)}" x="455" y="130" width="170" height="170" preserveAspectRatio="xMidYMid slice"/>` : ""}<text x="540" y="380" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(name)}</text><text x="540" y="435" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">@${esc(handle)} · ${esc(marketLabel)}</text><text x="540" y="620" font-family="Arial, sans-serif" font-size="130" font-weight="800" fill="#0B0D0C" text-anchor="middle">${claimFmtCount(nb.neighborCount)}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">${nb.extrapolated ? "total potential neighbors" : "neighbors"}</text>${nb.localWords ? `<text x="540" y="745" font-family="Arial, sans-serif" font-size="34" fill="#5F7265" text-anchor="middle">${esc(nb.localWords)}</text>` : ""}<text x="540" y="950" font-family="Arial, sans-serif" font-size="32" fill="#5F7265" text-anchor="middle">Magpie · Local beats famous</text></svg>`;
   const blob = new Blob([svg], { type: "image/svg+xml" });
   api("POST", "/neighbor/card-event", { action: "generated" }).catch(() => {});
   const file = new File([blob], "magpie-neighbor-card.svg", { type: "image/svg+xml" });
@@ -10756,7 +10788,7 @@ function renderJoinCreator() {
   // state. The full founding profile form below stays one tap
   // away for creators who would rather do it all now.
   if (state.joinMode !== "full") return renderQuickClaim();
-  const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}" checked onchange="proHintSync('jc')"> ${esc(c)}</label>`).join("");
+  const cats = `<label class="catpick-row catpick-allrow"><input type="checkbox" id="c-cat-all" checked onchange="profileAllToggle('c-cat', this)"><span>${T("Select all", "Seleccionar todo")}</span></label>` + state.boot.creatorCategories.map((c) => `<label class="catpick-row"><input type="checkbox" name="c-cat" value="${esc(c)}" checked onchange="profileRowSync('c-cat');proHintSync('jc')"><span>${esc(c)}</span></label>`).join("");
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const pf = state.prefill || {};
   // Build -173: same rule as the claim door — no parsed
@@ -10849,7 +10881,7 @@ function renderJoinCreator() {
       </div>
       <div class="fgroup">
         <p class="fg-kicker">${T("What you create", "Lo que creas")}</p>
-        <div class="field"><label>${T("What do you create in? (pick at least one)", "¿En qué categorías creas? (elige al menos una)")}</label><p class="small muted" style="margin:4px 0 8px">${T("We've ticked all of them — most creators here keep nearly all. Only untick what you'd never post about.", "Marcamos todas: la mayoría de los creadores aquí conserva casi todas. Solo desmarca lo que nunca publicarías.")}</p><div class="checkrow">${cats}</div></div>
+        <div class="field"><label>${T("What do you create in? (pick at least one)", "¿En qué categorías creas? (elige al menos una)")}</label><p class="small muted" style="margin:4px 0 8px">${T("We've ticked all of them — most creators here keep nearly all. Only untick what you'd never post about.", "Marcamos todas: la mayoría de los creadores aquí conserva casi todas. Solo desmarca lo que nunca publicarías.")}</p><div class="catpick">${cats}</div></div>
         <div class="field"><label>${T("Comps you would accept (optional)", "Cortesías que aceptarías (opcional)")}</label><div class="checkrow">${comps}</div></div>
         <div class="field" id="jc-paid-wrap" style="display:none">
           <label class="tgl-row"><input type="checkbox" class="sw" id="jc-paid"><span><strong>${T("Paid cash campaigns", "Campañas pagadas en efectivo")}</strong> ${T("(Headliners tier): separate from comps, businesses can hire me for paid campaigns when a business runs one.", "(nivel Headliners): aparte de las cortesías, los negocios pueden contratarme para campañas pagadas cuando un negocio lance una.")}</span></label>
@@ -14393,11 +14425,16 @@ async function loadTicketBanner() {
 
 // ---------- creator excitement layer (Jeff, 2026-10-29) ----------
 // Rendered on the founding home the moment a creator is approved:
-// their rank by local reach, a shareable founding stat card, their
-// city's unlock meter, and the plain statement of what Momentum
-// actually does. Every number comes from GET /me/founding's buzz
-// object, computed server-side from stored records. Nothing here
-// invents a figure, and no line promises money.
+// a shareable founding stat card, their city's unlock meter, and
+// the plain statement of what Momentum actually does. Every
+// number comes from GET /me/founding's buzz object, computed
+// server-side from stored records. Nothing here invents a
+// figure, and no line promises money. Build -176 (Jeff): the
+// stat card no longer prints the creator's rank by local reach
+// (nor "get your rank" prompts, nor a rank clause in the share
+// text): creators never see their rank, anywhere. The founding
+// BAND ("in the first 100") stays: it is the sanctioned
+// band-only framing of the 2026-10-18 canon, not a position.
 function creatorBuzzHtml(u, card, f, buzz) {
   if (!buzz) return "";
   const placeRaw = f.unlisted ? (f.city || "your city") : marketTalkNameClient(f.market);
@@ -14447,14 +14484,9 @@ function creatorCharterCardHtml(u, card, f, buzz, placeRaw) {
 
 function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
   const p = card.profile || {};
-  const rank = buzz.localRank;
   const pct = p.localAudiencePct === null || p.localAudiencePct === undefined ? null : p.localAudiencePct;
-  const complete = !!(u.profileCompletion && u.profileCompletion.complete);
-  const rankLine = rank
-    ? `#${rank.rank} in ${placeRaw} by local reach`
-    : (pct === null ? "Set your local % to get your rank" : (!complete ? "Finish your profile to take your rank" : "Your rank shows once the founding class here fills in"));
   const bits = [`I am a founding creator on Magpie in ${placeRaw}.`];
-  if (pct !== null) bits.push(`${pct}% of my audience is local${rank ? `, and I rank #${rank.rank} here by local reach` : ""}.`);
+  if (pct !== null) bits.push(`${pct}% of my audience is local.`);
   bits.push("Magpie ranks creators by local reach, not follower count. Local businesses book us for comped visits or paid bookings at our own rates.");
   const link = inviteUrlFor(u);
   if (link) bits.push(`Creators: join through my link: ${link}`);
@@ -14464,7 +14496,6 @@ function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
     <div class="stat-place">${esc(placeRaw)}${p.tierBand ? ` &middot; ${esc(p.tierBand)} tier` : ""} &middot; ${fmtNum(totalAudienceOf(card))} total audience</div>
     <div class="stat-big">${pct === null ? "Local % not set" : `${pct}%`}</div>
     <div class="stat-lbl">${pct === null ? "Add your local audience % in your profile and this card fills in." : "of my audience is local"}</div>
-    <div class="stat-rank">${esc(rankLine)}</div>
     <div class="stat-sub">Ranked by local reach, not follower count.${f.priorityBand ? ` In the first ${f.priorityBand} founding creators in ${esc(placeRaw)}.` : ""}</div>
     <div class="stat-actions"><button type="button" class="btn small-btn" onclick="return shareStatCard(this)" data-stat-text="${esc(bits.join(" "))}">Share my stat card</button></div>
   </section>`;
@@ -16153,7 +16184,9 @@ function profileRowSync(name) {
   const all = document.getElementById(name + "-all");
   if (!all) return true;
   const boxes = Array.from(document.querySelectorAll(`input[name=${name}]`));
-  all.checked = boxes.length > 0 && boxes.every((b) => b.checked);
+  const n = boxes.filter((b) => b.checked).length;
+  all.checked = boxes.length > 0 && n === boxes.length;
+  all.indeterminate = n > 0 && n < boxes.length;
   return true;
 }
 
@@ -16238,7 +16271,7 @@ function creatorProfileHtml(u) {
   if (state.profileMarketFlash) state.profileMarketFlash = "";
   const allCatsOn = state.boot.creatorCategories.length > 0 && state.boot.creatorCategories.every((x) => (c.categories || []).includes(x));
   const allCompsOn = state.boot.compCategories.length > 0 && state.boot.compCategories.every((x) => (c.compCategories || []).includes(x));
-  const cats = `<label><input type="checkbox" id="p-cat-all" ${allCatsOn ? "checked" : ""} onchange="profileAllToggle('p-cat', this)"> All</label>` + state.boot.creatorCategories.map((x) => `<label><input type="checkbox" name="p-cat" value="${esc(x)}" onchange="profileRowSync('p-cat');proHintSync('p')" ${c.categories && c.categories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
+  const cats = `<label class="catpick-row catpick-allrow"><input type="checkbox" id="p-cat-all" ${allCatsOn ? "checked" : ""} onchange="profileAllToggle('p-cat', this)"><span>${T("Select all", "Seleccionar todo")}</span></label>` + state.boot.creatorCategories.map((x) => `<label class="catpick-row"><input type="checkbox" name="p-cat" value="${esc(x)}" onchange="profileRowSync('p-cat');proHintSync('p')" ${c.categories && c.categories.includes(x) ? "checked" : ""}><span>${esc(x)}</span></label>`).join("");
   const comps = `<label><input type="checkbox" id="p-comp-all" ${allCompsOn ? "checked" : ""} onchange="profileAllToggle('p-comp', this)"> All</label>` + state.boot.compCategories.map((x) => `<label><input type="checkbox" name="p-comp" value="${esc(x)}" onchange="profileRowSync('p-comp')" ${c.compCategories && c.compCategories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
   const stackVal = (id) => (c.audienceStack && c.audienceStack[id]) || (id === "instagram" ? c.followerCount || 0 : 0);
   const stackRows = [
@@ -16349,7 +16382,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Add every platform you are on — Pinterest, Twitch, your own website, any of them. Each one gets a handle, a link and a follower count, and every count stacks into your total audience.</p>
         <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points. <strong>Magpie starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
       </div>
-      <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="checkrow">${cats}</div><p class="small muted" style="margin:6px 0 0">${T("More ticked categories means more kinds of businesses can find you. Most creators here are in almost all of them — your followers are your neighbors, and they'd watch you enjoy almost anything local.", "Más categorías marcadas significa que más tipos de negocios pueden encontrarte. La mayoría de los creadores aquí está en casi todas: tus seguidores son tus vecinos, y te verían disfrutar casi cualquier cosa local.")}</p></div>
+      <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="catpick">${cats}</div><p class="small muted" style="margin:6px 0 0">${T("More ticked categories means more kinds of businesses can find you. Most creators here are in almost all of them — your followers are your neighbors, and they'd watch you enjoy almost anything local.", "Más categorías marcadas significa que más tipos de negocios pueden encontrarte. La mayoría de los creadores aquí está en casi todas: tus seguidores son tus vecinos, y te verían disfrutar casi cualquier cosa local.")}</p></div>
       <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP} Once you add a local % for a platform in Your audience below, this number is worked out from those automatically.</p></div>
       </div>
       <div class="fgroup tint" id="pf-about">
