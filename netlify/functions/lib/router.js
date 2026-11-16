@@ -2196,6 +2196,11 @@ const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, liste
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
 const bizdev = require("./bizdev");
+// National business accounts (Build -178): the module owns the
+// ncampaign/nhand/nfulfill/nshortlist records and the /api/national
+// + /api/admin/national surfaces; cross-cutting helpers from this
+// file reach it through the deps object built at dispatch.
+const national = require("./national");
 const pilots = require("./pilots");
 const notifyLib = require("./notify");
 const ZIP_CENTROIDS = require("./zip-centroids.json");
@@ -2507,6 +2512,12 @@ const PAID_COMP = "Paid cash campaigns";
 // stats, and when a city's count gets big enough it becomes a market.
 // Nobody gets left out at the door.
 const UNLISTED = "Not listed yet";
+// National business accounts (Build -178): a national account's
+// user.market is this sentinel. It is never added to MARKETS,
+// never gets a flag in config:markets, and never counts toward
+// any market's launch numbers — see lib/national.js and the
+// sentinel exclusions noted where user.market groupings live.
+const NATIONAL_MARKET = national.NATIONAL_MARKET;
 const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024;
 
 // Creator photo gallery (Jeff, 2026-10-25): up to 6 photos per
@@ -15853,7 +15864,10 @@ async function buildSigFacts(user, full) {
   if (user.role === "business") {
     const readout = await businessPerformanceReadout(user);
     const [apps, offers, users, marketLive] = await Promise.all([allApplications(), allOffers(), allUsers(), isMarketLive(user.market)]);
-    const plan = (user.business && planById(user.business.planId || user.business.plan)) || PLANS[0];
+    // Build -178: a national account has no plan (null by design);
+    // the PLANS[0] fallback must never invent one for it, or
+    // Maggie would quote a local plan and price that do not exist.
+    const plan = national.isNationalBusiness(user) ? null : ((user.business && planById(user.business.planId || user.business.plan)) || PLANS[0]);
     const rosterInMarket = users.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u) && isListedInMarket(u, user.market)).length;
     // Build -108: how many of that roster carry an
     // Instagram-verified share in this business's market.
@@ -15868,6 +15882,9 @@ async function buildSigFacts(user, full) {
       .map((b) => ({ creatorName: b.creatorName || "A creator", title: b.title || "Paid visit", line: b.postingTermsLine || postingTermsLine(b.postingTerms), status: b.status, postDeadline: b.postDeadline || null }));
     return sigdata.buildBusinessFacts({
       user, readout, plan, marketLive, founding: isFoundingBusiness(user),
+      // Build -178: a national business's own campaign facts, from
+      // the national module's scoped read (its own records only).
+      national: await (async () => { try { return await national.sigBusinessNational(user); } catch (e) { return null; } })(),
       paidPostingTerms: myPaidTerms,
       applicantsWaiting: apps.filter((a) => a.businessId === user.id && (a.status === "applied" || a.status === "backfill_offered")).length,
       draftOffers: offers.filter((o) => o.businessId === user.id && o.status === "draft").length,
@@ -16051,6 +16068,9 @@ async function buildSigFacts(user, full) {
       // Build -154: this creator's Regulars — counted customers
       // brought in, all time, from the counted chokepoint.
       regularsBroughtIn: await creatorRegularsCount(user.id),
+      // Build -178: this creator's own national-campaign hands
+      // (own data only; other creators' hands never appear).
+      nationalHands: await (async () => { try { return await national.sigCreatorNationalHands(user); } catch (e) { return []; } })(),
       missingLabels: (pc.missing || []).map((id) => itemLabels[id] || id),
       // Build -108: whether the Instagram connect lane is open
       // in this environment at all (Meta credentials present);
@@ -20920,6 +20940,10 @@ function dealVersionAt(deal, iso) {
 function territoryFromDeals(deals, marketName, atIso) {
   const market = normalizeMarketName(marketName || "");
   if (!market || market === UNLISTED) return null;
+  // Build -178: the national sentinel is not a territory. No deal
+  // covers it, no national account is ever attributed to a market
+  // partner (spec §7.5).
+  if (market === NATIONAL_MARKET) return null;
   const at = String(atIso || nowIso());
   const covering = [];
   for (const deal of deals || []) {
@@ -23256,6 +23280,7 @@ function adminGate138(user, seg, method, query) {
     case "email-health": return need("connections.view");
     case "message-templates": return need("templates.view");
     case "platform-totals": return null; // the handler scopes its own payload
+    case "national": return need("approvals"); // Build -178: national accounts ride the approvals permission
     default: return deny();
   }
 }
@@ -23958,6 +23983,23 @@ async function route(event) {
     return bizdev.handleBizdevApi({ user, seg, method, event, query });
   }
 
+  // National business accounts (Build -178): the national lane's
+  // own API — creator feed + campaign pages + brand profiles, the
+  // national business's campaigns/discovery/reports, all scoped
+  // inside the module. "national" is deliberately NOT in
+  // MARKETPLACE_SECTIONS: the lane runs without any market going
+  // live, which is its whole point (spec §4.1).
+  if (seg[0] === "national") {
+    return national.handleNationalApi({
+      user, seg, method, event, query,
+      deps: {
+        json, err, parseBody, nowIso, profileCompleteOf, isTester, allUsers, publicUser,
+        businessAccessState, notifyUser, audienceTotalOf, plausibleBizName,
+        termsVersion: TERMS_VERSION, managedTalentBudgetDefault: MANAGED_TALENT_BUDGET_DEFAULT,
+      },
+    });
+  }
+
   // Biz Dev sweep trigger (Build -157). Placement note: this
   // explicit route MUST sit before the generic admin/bdev
   // dispatch directly below, or that dispatch would swallow
@@ -24462,6 +24504,11 @@ async function route(event) {
     if (method === "OPTIONS") return { statusCode: 204, headers: cors, body: "" };
     if (method === "GET") {
       const marketName = normalizeMarketName(query.market || "");
+      // Build -178: the national sentinel is not a local list.
+      // canonicalMarketName already resolves it to no market (so
+      // nothing could list under it), and this guard keeps that
+      // exclusion explicit rather than incidental (spec §7.3).
+      if (marketName === NATIONAL_MARKET) return json(200, { market: marketName, allCategories: CREATOR_CATEGORIES, categories: [] }, cors);
       const users = await allUsers();
       // Build -36: total Points order the list within a market
       // (after local reach, before seniority), and the level
@@ -25244,6 +25291,10 @@ async function route(event) {
       if (target && target.role === "business") biz = target;
     }
     if (!biz) return err(403, "Only a business can start a subscription checkout.");
+    // Build -178: a national account has no plan and no price
+    // configuration (plan is null by design until Jeff decides
+    // national pricing), so it can never reach a checkout session.
+    if (national.isNationalBusiness(biz)) return err(403, "National accounts do not have a plan or billing yet. Magpie will share plan options before anything is ever charged.");
     if (businessAccessState(biz) !== "active") return err(403, FOUNDING_BUSINESS_MESSAGE);
     let priceId = typeof b.priceId === "string" ? b.priceId : null;
     let planIdWanted = typeof b.planId === "string" ? b.planId : null;
@@ -26397,6 +26448,30 @@ async function route(event) {
         if (!v.ok) return err(400, v.error);
         bz.reviewLinks = v.links;
       }
+      // National brand profile fields (Build -178, spec §5.3):
+      // only a national account carries them. The website is
+      // host-validated like review links; changing it AFTER
+      // verification clears the verification stamp, so a brand
+      // cannot verify one site and swap in another — it must be
+      // re-verified before its next publish (the publish gate and
+      // the feed fence both read verifiedAt).
+      if (national.isNationalBusiness(user)) {
+        if (b.brandName !== undefined) {
+          const bn = plausibleBizName(b.brandName);
+          if (!bn) return err(400, "Give your brand its real name — creators see it on your campaigns.");
+          bz.brandName = bn;
+        }
+        if (b.website !== undefined) {
+          const v = national.validateWebsiteUrl(b.website);
+          if (!v.ok) return err(400, v.error);
+          const hostChanged = national.websiteHostOf(bz.website) !== v.host;
+          bz.website = v.url;
+          if (hostChanged && bz.verifiedAt) { bz.verifiedAt = null; bz.verifiedBy = null; bz.verifyChecklist = null; bz.websiteChangedAfterVerify = true; }
+        }
+        if (b.logoUrl !== undefined) bz.logoUrl = String(b.logoUrl || "").trim().slice(0, 500);
+        if (b.brandAbout !== undefined) bz.brandAbout = String(b.brandAbout || "").trim().slice(0, 600);
+        if (b.focusMarkets !== undefined) bz.focusMarkets = national.cleanFocusMarkets(b.focusMarkets);
+      }
       // Audience-code discounts: the business's opt-in and its
       // own percentage. Off unless they turn it on; the code is
       // issued for counting either way.
@@ -26952,6 +27027,21 @@ async function route(event) {
     // markets at the data layer.
     const gate138 = adminGate138(user, seg, method, query);
     if (gate138) return gate138;
+
+    // National business accounts (Build -178): create / verify /
+    // convert / campaign moderation / attributed results + the
+    // national roll-up. The module enforces the record rules; the
+    // permission gate above has already run for scoped admins.
+    if (seg[1] === "national") {
+      return national.handleAdminNationalApi({
+        user, seg, method, event, query,
+        deps: {
+          json, err, parseBody, nowIso, profileCompleteOf, isTester, allUsers, publicUser,
+          businessAccessState, notifyUser, audienceTotalOf, plausibleBizName,
+          termsVersion: TERMS_VERSION, managedTalentBudgetDefault: MANAGED_TALENT_BUDGET_DEFAULT,
+        },
+      });
+    }
 
     // ---- Build -138: Automations & connections (Area 1) ----
     if (seg[1] === "automations") {
