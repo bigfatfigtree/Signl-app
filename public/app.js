@@ -11433,9 +11433,17 @@ function jbScopeSync181() {
   const set = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? "" : "none"; };
   set("jb-plans", !national);
   set("jb-market-field", !national);
-  set("jb-city-row", !national);
   set("jb-national-fields", national);
-  if (national) set("jb-custom-wrap", false);
+  if (national) {
+    set("jb-city-row", false);
+    set("jb-custom-wrap", false);
+  } else {
+    // Review fix: coming back to One market must restore the
+    // market-driven field state (an unlisted-market pick shows
+    // the custom city fields and hides the city row) — the
+    // market sync owns those two elements, so hand them back.
+    syncBizMarketChoice();
+  }
 }
 
 async function registerBusiness(e) {

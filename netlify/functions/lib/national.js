@@ -519,13 +519,39 @@ async function handleNationalApi(ctx) {
     const target = await store.get(`user:${seg[2]}`);
     if (!target || target.role !== "business" || !target.business) return err(404, "That brand is not on Magpie.");
     if (deps.isTester(target) && !deps.isTester(user) && user.role !== "admin") return err(404, "That brand is not on Magpie.");
+    // Build -181 review fix: the profile itself sits behind the
+    // same fence as the feed. Until now any signed-in user who
+    // learned an unverified (or not-yet-approved) brand's id
+    // could read its profile — self-serve signup hands the brand
+    // its own id on day one, before anyone has vetted it, so
+    // "invisible until verified" has to be enforced HERE, not
+    // just in the feed. Owner and admin always see it. Everyone
+    // else: the brand must be publicly visible (approved, and
+    // for national brands verified) — or, for a creator, they
+    // hold a hand on one of its campaigns, the same exception
+    // the campaign page itself makes.
+    const isOwner = user.id === target.id;
+    if (!isOwner && user.role !== "admin") {
+      const national = isNationalBusiness(target);
+      const publiclyVisible = target.status === "approved" && (!national || !!(target.business && target.business.verifiedAt));
+      let allowed = publiclyVisible;
+      if (!allowed && user.role === "creator") {
+        const myHands = (await listAllHands()).filter((h) => h.creatorId === user.id && h.businessId === target.id);
+        allowed = myHands.length > 0;
+      }
+      if (!allowed) return err(404, "That brand is not on Magpie.");
+    }
     let open = [];
     if (isNationalBusiness(target)) {
       const campaigns = (await listCampaigns()).map((c) => campaignOnRead(c)).filter((c) => c.businessId === target.id && c.status === "open");
       if (user.role === "creator") {
         open = campaigns.filter((c) => campaignVisibleToCreator(c, target, user, deps)).map((c) => ({ id: c.id, title: c.title, whatYouGet: c.whatYouGet, raiseByAt: c.raiseByAt }));
-      } else {
+      } else if (isOwner || user.role === "admin") {
         open = campaigns.map((c) => ({ id: c.id, title: c.title, whatYouGet: c.whatYouGet, raiseByAt: c.raiseByAt }));
+      } else {
+        // Other signed-in viewers get the public subset only:
+        // no test-only or sample campaigns ride the profile.
+        open = campaigns.filter((c) => !c.testOnly && !c.sample).map((c) => ({ id: c.id, title: c.title, whatYouGet: c.whatYouGet, raiseByAt: c.raiseByAt }));
       }
     }
     return json(200, { brand: brandProfileView(target, open) });

@@ -156,6 +156,19 @@ try {
   const feedBefore = await creator("GET", "/api/national/feed");
   check("creator feed: unverified brand's campaign invisible", !(feedBefore.data.campaigns || []).some((c) => c.id === campId));
 
+  console.log("== the brand PROFILE is behind the same fence (review fix) ==");
+  const profEarly = await creator("GET", `/api/national/brands/${brandId}`);
+  check("creator: unverified brand's profile is a 404", profEarly.status === 404, `status=${profEarly.status} ${JSON.stringify(profEarly.data).slice(0, 120)}`);
+  const profOwner = await brand("GET", `/api/national/brands/${brandId}`);
+  check("the brand itself can always read its own profile", profOwner.status === 200 && profOwner.data.brand.brandName === BRAND_NAME, `status=${profOwner.status}`);
+  const bizViewer = client();
+  const bizReg = await bizViewer("POST", "/api/auth/register", { role: "business", name: "Viewer Owner", email: "bizviewer@fixtures.dev", password: "viewer-pass-123", businessName: "Viewer Fixture Shop", market: "Nashville", city: "Nashville", category: "Retail", planId: "self-service", agreedTerms: true });
+  check("market business viewer registers", bizReg.status === 201, JSON.stringify(bizReg.data).slice(0, 120));
+  const profBiz = await bizViewer("GET", `/api/national/brands/${brandId}`);
+  check("an unrelated business: unverified brand's profile is a 404 too", profBiz.status === 404, `status=${profBiz.status}`);
+  const profAnon = await client()("GET", `/api/national/brands/${brandId}`);
+  check("signed-out: profile is not public", profAnon.status === 401 || profAnon.status === 404, `status=${profAnon.status}`);
+
   console.log("== admin verifies; the brand behaves like an admin-created one ==");
   const verify = await admin("POST", `/api/admin/national/accounts/${brandId}/verify`, { checklist: { websiteResolves: true, nameMatches: true, storeExists: true } });
   check("admin verify stamps the self-serve brand", verify.status === 200 && verify.data.account.verified === true, JSON.stringify(verify.data).slice(0, 160));
