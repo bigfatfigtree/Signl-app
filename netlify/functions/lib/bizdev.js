@@ -437,6 +437,19 @@ function repLeadPayload(lead, opts) {
       viewLead = { ...lead, attribution: { ...lead.attribution, repCode: opts.viewerRepCode } };
     }
     out.playbook = renderPlaybookLinks(viewLead);
+    // Build -184: a shared book's stored playbook sits in
+    // whoever's voice won the merge (Nashville: Tony's, by
+    // design; Hampton Roads: section-mixed). Handing Jeff a
+    // script that says "I'm Tony" (or Tony one that says "I'm
+    // Jeff") is the bug Jeff flagged — so the payload re-voices
+    // the rendered copy into the VIEWER's own first person, the
+    // same render-point discipline as the claim link above. The
+    // stored record is never mutated by a read: renderPlaybook
+    // Links already returned a deep copy and the re-voicer
+    // walks it into a fresh structure.
+    if (lead.sharedBook && opts && opts.viewerRepCode) {
+      out.playbook = revoicePlaybookForViewer(out.playbook, opts.viewerRepCode, lead.marketName);
+    }
     out.claimLink = viewLead.attribution && viewLead.attribution.repCode ? claimPath(viewLead) : null;
   }
   return out;
@@ -472,6 +485,61 @@ function renderPlaybookLinks(lead) {
     return v;
   };
   return walk(lead.playbook);
+}
+
+// Build -184: per-viewer playbook voice. The phrase pairs are
+// the two men's attested first-person lines (Jeff's from the
+// Nashville + Hampton Roads packs, Tony's from his Hampton
+// Roads originals and the -180-era Nashville re-voice table in
+// revoicePlaybookForTony, which stays as the load-time history
+// it is). The pairs run TOWARD the viewer: whichever voice a
+// stored section sits in, the viewer reads his own. "Jeff's go"
+// is an HQ instruction, not a voice line — protected by the
+// sentinel, exactly as the load-time pass protected it. Unlike
+// the load-time pass this NEVER drops a playbook: it runs on a
+// read, and a missing guide is worse than a stray third-person
+// mention, so the swapped result always renders.
+const PLAYBOOK_VOICES = {
+  "HQ-JEFF": { first: "Jeff", full: "Jeff Rimmer" },
+  "HR-TONY": { first: "Tony", full: "Tony Johnson" },
+};
+function playbookVoicePairs(marketName) {
+  const market = marketName || "Hampton Roads";
+  return [
+    ["this is Jeff Rimmer — I run Magpie", "this is Tony Johnson — I'm with Magpie"],
+    ["I'm Jeff — I run Magpie", "I'm Tony — I'm with Magpie"],
+    ["Hi, this is Jeff with Magpie", "Hi, this is Tony with Magpie"],
+    ["Jeff here, I run Magpie", "Tony here, I'm with Magpie"],
+    ["Jeff Rimmer here, founder of Magpie", "Tony Johnson here — I'm with Magpie"],
+    ["I'm Jeff — I'm local, I run Magpie", "I'm Tony — I'm local, I'm with Magpie"],
+    ["I'm Jeff Rimmer — I live here in Hampton Roads, and I run Magpie", "I'm Tony Johnson — I live here in Hampton Roads, and I'm helping Magpie"],
+    ["Jeff Rimmer\nFounder, Magpie", `Tony Johnson\nMagpie — ${market}`],
+    ["Jeff Rimmer\nFounder, Magpie", "Tony Johnson\nMagpie — Nashville"],
+    ["Jeff Rimmer\nFounder, Magpie", "Tony Johnson\nMagpie — Hampton Roads"],
+    ["Jeff Rimmer", "Tony Johnson"],
+    ["— Jeff", "— Tony"],
+  ];
+}
+function revoicePlaybookForViewer(pb, viewerRepCode, marketName) {
+  if (!pb || typeof pb !== "object") return pb;
+  const viewer = PLAYBOOK_VOICES[viewerRepCode];
+  if (!viewer) return pb;
+  const toJeff = viewerRepCode === "HQ-JEFF";
+  const GO = "\u0001JEFFSGO\u0001";
+  const swap = (s) => {
+    let out = s.split("Jeff's go").join(GO);
+    for (const [jeffPhrase, tonyPhrase] of playbookVoicePairs(marketName)) {
+      out = out.split(toJeff ? tonyPhrase : jeffPhrase).join(toJeff ? jeffPhrase : tonyPhrase);
+    }
+    return out.split(GO).join("Jeff's go");
+  };
+  const walk = (v) => {
+    if (typeof v === "string") return swap(v);
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") { const o = {}; for (const k of Object.keys(v)) o[k] = walk(v[k]); return o; }
+    return v;
+  };
+  return walk(pb);
 }
 
 // ---------------- DNC store (platform-canonical) ----------------
@@ -3502,5 +3570,5 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
 module.exports = {
   init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, maybeLoadTonyNashville20261112, maybeUnifySharedBooks20261112, runBizdevSweep, bdevHealth,
   claimPageHtml, seatOf, KIT,
-  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable, leadInSeatBook, workClaimOf, SHARED_MARKETS },
+  _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable, leadInSeatBook, workClaimOf, SHARED_MARKETS, revoicePlaybookForViewer, repLeadPayload },
 };
