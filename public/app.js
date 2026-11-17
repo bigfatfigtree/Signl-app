@@ -36984,9 +36984,11 @@ function natHeadHtml(u) {
   </div>`;
 }
 function natCampaignRowHtml(c) {
-  const statusLabel = { draft: "Draft", open: "Open — creators can raise a hand", closed: "Closed to new hands", completed: "Picks finished", cancelled: "Cancelled" }[c.status] || c.status;
+  const statusLabel = { draft: "Draft", awaiting_release: "With Magpie for review", open: "Open — creators can raise a hand", closed: "Closed to new hands", completed: "Picks finished", cancelled: "Cancelled" }[c.status] || c.status;
   return `<div class="panel" style="margin-top:10px">
     <div class="flex-between"><strong>${esc(c.title || "Untitled campaign")}</strong><span class="badge ${c.status === "open" ? "ok" : "info"}">${esc(statusLabel)}</span></div>
+    ${c.status === "awaiting_release" ? `<div class="nat-held191"><strong>With Magpie for review.</strong> Your campaign is not visible to creators yet.</div>` : ""}
+    ${c.status === "draft" && c.brandStateLine ? `<div class="nat-held191">${esc(c.brandStateLine)}</div>` : ""}
     <p class="small" style="margin:6px 0"><strong>What creators get:</strong> ${esc(c.whatYouGet || "")}<br><strong>What you ask:</strong> ${esc(c.whatWeAsk || "")}</p>
     <p class="small muted" style="margin:0 0 8px">${natNoun(c.handCount, "hand")} raised · ${c.pickedCount || 0} of ${c.picksCount || 0} picked · hand-raise deadline ${c.raiseByAt ? esc(fmtDay(c.raiseByAt)) : "not set"}</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -37026,7 +37028,7 @@ async function loadNatHome() {
         <p class="small muted" style="margin:6px 0 0">Creators raise a hand to say they are interested. Nothing is booked and nothing ships until you pick.</p>
         ${zeroCampaigns
           ? `<p class="small muted" style="margin:6px 0 0">No campaigns yet. Your first one takes a few minutes: say what creators get, what you ask, and how many you will pick.</p>`
-          : `<p class="small muted" style="margin:6px 0 0">${d.counts.open} open · ${natNoun(d.counts.draft, "draft")} · ${natNoun(d.counts.hands, "hand")} raised across your campaigns · ${natNoun(d.counts.picksToMake, "pick")} still to make</p>`}
+          : `<p class="small muted" style="margin:6px 0 0">${d.counts.open} open · ${d.counts.awaitingRelease ? `${natNoun(d.counts.awaitingRelease, "campaign")} with Magpie for review · ` : ""}${natNoun(d.counts.draft, "draft")} · ${natNoun(d.counts.hands, "hand")} raised across your campaigns · ${natNoun(d.counts.picksToMake, "pick")} still to make</p>`}
       </div>
       ${(d.campaigns || []).map((c) => natCampaignRowHtml(c)).join("")}`;
     loadSigTopNudges();
@@ -37458,6 +37460,64 @@ function renderNatFoundingMessages187() {
 }
 
 // ---------- admin: the National room ----------
+// PL-17 (Build -191): the national publishing hold + the
+// pre-publish review queue. The gate panel says the EFFECTIVE
+// state in plain words: a live market releases it even when the
+// stored hold still says on.
+function adminNatGateHtml191(g) {
+  const line = g.effectiveOn
+    ? "On. A national campaign a brand publishes waits in the queue below for review before any creator can see it."
+    : g.releasedByLaunch
+      ? "Released by launch. A market is live, so national campaigns go out as soon as a brand publishes them. The stored hold is still on, but it no longer holds anything."
+      : "Off. National campaigns go out as soon as a brand publishes them.";
+  const btn = g.storedOn
+    ? `<button type="button" class="btn small-btn" onclick="return adminNatGateToggle191(false)">Release the hold</button>`
+    : `<button type="button" class="btn small-btn ghost" onclick="return adminNatGateToggle191(true)">Turn the hold back on</button>`;
+  return `<div class="panel nat-gate191" style="margin-top:10px">
+    <div class="flex-between"><strong>National publishing hold</strong><span class="badge ${g.effectiveOn ? "info" : "ok"}">${g.effectiveOn ? "Holding" : "Released"}</span></div>
+    <p class="small" style="margin:6px 0 10px">${esc(line)}</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${btn}<span class="small muted">Turning the hold back on never pulls back a campaign that is already open.</span></div>
+  </div>`;
+}
+function natSubmittedLabel191(c) {
+  const raw = c.submittedAt || c.createdAt || "";
+  const d = raw ? new Date(raw) : null;
+  if (!d || Number.isNaN(d.getTime())) return "Submitted time not recorded";
+  return `Submitted ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+}
+function adminNatQueueHtml191(queue) {
+  return `<div class="panel nat-queue191" style="margin-top:10px">
+    <div class="flex-between"><strong>Waiting for release</strong><span class="badge ${queue.length ? "info" : "ok"}">${queue.length ? natNoun(queue.length, "campaign") : "Clear"}</span></div>
+    <p class="small muted" style="margin:6px 0 0">National campaigns a brand has published while the hold is on. Release one and it opens to approved creators with finished profiles. Send one back and it returns to the brand as a draft.</p>
+    ${queue.length ? queue.map((c) => `<div class="nat-queue-row191">
+      <div class="flex-between"><strong>${esc(c.brandName || "A national brand")}</strong><span class="badge info">Awaiting release</span></div>
+      <p style="margin:6px 0 2px"><strong>${esc(c.title || "Untitled campaign")}</strong></p>
+      <p class="small" style="margin:0 0 2px"><strong>What creators get:</strong> ${esc(c.whatYouGet || "")}</p>
+      <p class="small muted" style="margin:0 0 10px">${esc(natSubmittedLabel191(c))}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn small-btn" onclick="return adminNatRelease191('${c.id}')">Release</button>
+        <button type="button" class="btn small-btn ghost" onclick="return adminNatSendBack191('${c.id}')">Send back</button>
+      </div>
+    </div>`).join("") : `<div class="nat-queue-empty191"><strong>Nothing is waiting.</strong><p class="small muted" style="margin:4px 0 0">When a national brand publishes while the hold is on, its campaign lands here first.</p></div>`}
+  </div>`;
+}
+async function adminNatGateToggle191(on) {
+  try { await api("POST", "/admin/national/publish-gate", { hold: !!on }); loadAdminNational178(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function adminNatRelease191(id) {
+  try { await api("POST", `/admin/national/campaigns/${id}/release`, {}); loadAdminNational178(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+async function adminNatSendBack191(id) {
+  const reason = prompt("What should the brand know or fix? This note shows on the brand's campaign list.");
+  if (reason === null) return false;
+  try { await api("POST", `/admin/national/campaigns/${id}/send-back`, { reason }); loadAdminNational178(); }
+  catch (e) { alert(e.message); }
+  return false;
+}
 async function loadAdminNational178() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -37470,6 +37530,8 @@ async function loadAdminNational178() {
     <h3 style="margin-top:4px">National accounts</h3>
     <p class="small muted">Brands that reach creators in every market. These numbers live here only — national accounts never count toward any market's launch numbers.</p>
     <div class="panel"><strong>Roll-up:</strong> ${natNoun(r.accounts, "account")} (${r.verifiedAccounts || 0} verified) · ${natNoun(r.campaigns, "campaign")} (${Object.entries(r.campaignsByStatus || {}).map(([k, v]) => `${esc(k)} ${v}`).join(", ") || "none"}) · ${natNoun(r.hands, "hand")} · ${natNoun(r.picks, "pick")}</div>
+    ${adminNatGateHtml191(d.gate || {})}
+    ${adminNatQueueHtml191(d.releaseQueue || [])}
     ${(r.staleNoPicks || []).length ? `<div class="panel" style="margin-top:10px"><strong>Needs a close-out:</strong> ${r.staleNoPicks.map((s) => `${esc(s.title)} — deadline passed 14+ days ago, ${natNoun(s.handsWaiting, "hand")} still waiting. <button type="button" class="btn small-btn ghost" onclick="return adminNatCloseCampaign('${s.campaignId}')">Close it</button>`).join("<br>")}</div>` : ""}
     <div class="panel" style="margin-top:14px">
       <h4 style="margin-top:0">Create a national account</h4>
@@ -37501,7 +37563,7 @@ async function loadAdminNational178() {
     </form>
     <h4 style="margin:18px 0 6px">Campaigns</h4>
     ${(d.campaigns || []).map((c) => `<div class="panel" style="margin-top:8px">
-      <div class="flex-between"><strong>${esc(c.title || "Untitled")}</strong><span class="badge info">${esc(c.status)}</span></div>
+      <div class="flex-between"><strong>${esc(c.title || "Untitled")}</strong><span class="badge info">${esc(c.status === "awaiting_release" ? "Awaiting release" : c.status)}</span></div>
       <p class="small" style="margin:6px 0">${esc(c.brandName || "")}${c.verified ? " · verified" : " · NOT verified"} · ${natNoun(c.handCount, "hand")} · ${c.pickedCount || 0}/${c.picksCount || 0} picked</p>
       ${c.status !== "closed" && c.status !== "completed" && c.status !== "cancelled" ? `<button type="button" class="btn small-btn ghost" onclick="return adminNatCloseCampaign('${c.id}')">Close campaign</button>` : ""}
       <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:8px"><input id="anr-creator-${c.id}" placeholder="Creator id" style="max-width:150px"><input id="anr-orders-${c.id}" type="number" min="0" placeholder="Orders" style="max-width:90px"><input id="anr-rev-${c.id}" type="number" min="0" step="0.01" placeholder="Revenue" style="max-width:100px"><button type="button" class="btn small-btn ghost" onclick="return adminNatResults('${c.id}')">Enter store-reported results</button></span>

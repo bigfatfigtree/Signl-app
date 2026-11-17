@@ -24435,6 +24435,11 @@ async function route(event) {
       deps: {
         json, err, parseBody, nowIso, profileCompleteOf, isTester, allUsers, publicUser,
         businessAccessState, notifyUser, audienceTotalOf, plausibleBizName,
+        // PL-17 (Build -191): the national staging gate reads the
+        // market launch RECORD (the raw config:markets flags, the
+        // same discipline as the Charter stamp), never the
+        // TEST_MODE display override in isMarketLive.
+        anyMarketLiveByFlag: async () => { const flags = await getMarketFlags(); return Object.values(flags || {}).some((v) => !!v); },
         termsVersion: TERMS_VERSION, managedTalentBudgetDefault: MANAGED_TALENT_BUDGET_DEFAULT,
       },
     });
@@ -27514,6 +27519,7 @@ async function route(event) {
         deps: {
           json, err, parseBody, nowIso, profileCompleteOf, isTester, allUsers, publicUser,
           businessAccessState, notifyUser, audienceTotalOf, plausibleBizName,
+          anyMarketLiveByFlag: async () => { const flags = await getMarketFlags(); return Object.values(flags || {}).some((v) => !!v); },
           termsVersion: TERMS_VERSION, managedTalentBudgetDefault: MANAGED_TALENT_BUDGET_DEFAULT,
         },
       });

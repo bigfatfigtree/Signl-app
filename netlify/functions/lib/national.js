@@ -45,6 +45,72 @@ const HAND_STATE_LINES = {
 const FULFILL_STATUSES = ["pending", "shipped", "delivered", "posted", "reported", "withdrawn"];
 const VERIFY_CHECKLIST_KEYS = ["websiteResolves", "nameMatches", "storeExists"];
 
+// ---------- PL-17: the national publish staging gate (Build -191) ----------
+// A stored Admin setting, never a code constant: the record at
+// config:nationalPublishGate is { hold, state, updatedAt, updatedBy }.
+// Absent record = hold ON, the pre-launch default. The EFFECTIVE
+// gate is stored hold ON AND no market live: the moment any
+// market's live flag is set in config:markets (the app's existing
+// marketLive mechanism, read as the raw launch record, not the
+// TEST_MODE display override), the gate no longer holds anything,
+// whatever the stored flag still says. While the gate effectively
+// holds, a fully-gated national publish lands in the distinct
+// "awaiting_release" campaign status instead of "open". That
+// status is invisible by the existing feed fence (which only ever
+// admits "open"), so no call site special-cases it. Re-arming the
+// gate never pulls an already-open campaign back.
+const NATIONAL_PUBLISH_GATE_KEY = "config:nationalPublishGate";
+const AWAITING_RELEASE_STATUS = "awaiting_release";
+const AWAITING_RELEASE_LINE = "With Magpie for review. Your campaign is not visible to creators yet.";
+
+async function anyMarketLiveByFlag() {
+  try {
+    const rec = await store.get("config:markets");
+    const flags = (rec && rec.flags) || {};
+    return Object.values(flags).some((v) => !!v);
+  } catch (e) {
+    return false;
+  }
+}
+async function getNationalPublishGateRecord() {
+  try { return await store.get(NATIONAL_PUBLISH_GATE_KEY); } catch (e) { return null; }
+}
+function gateStoredOn(rec) {
+  if (!rec) return true; // pre-launch default: the hold is on
+  if (typeof rec.hold === "boolean") return rec.hold;
+  if (typeof rec.on === "boolean") return rec.on;
+  return rec.state !== "off";
+}
+async function nationalPublishGateState(deps) {
+  const rec = await getNationalPublishGateRecord();
+  const storedOn = gateStoredOn(rec);
+  let anyLive = false;
+  try {
+    anyLive = deps && typeof deps.anyMarketLiveByFlag === "function"
+      ? !!(await deps.anyMarketLiveByFlag())
+      : await anyMarketLiveByFlag();
+  } catch (e) { anyLive = false; }
+  const effectiveOn = storedOn && !anyLive;
+  return {
+    storedOn,
+    anyMarketLive: anyLive,
+    effectiveOn,
+    holds: effectiveOn,
+    releasedByLaunch: storedOn && anyLive,
+    state: effectiveOn ? "on" : "off",
+    effectiveState: effectiveOn ? "holding" : (storedOn ? "released_by_launch" : "off"),
+    updatedAt: rec && rec.updatedAt ? rec.updatedAt : null,
+    updatedBy: rec && rec.updatedBy ? rec.updatedBy : null,
+    isDefault: !rec,
+  };
+}
+async function setNationalPublishGate(on, actorId, nowIsoFn) {
+  const ts = typeof nowIsoFn === "function" ? nowIsoFn() : new Date().toISOString();
+  const rec = { hold: !!on, state: on ? "on" : "off", updatedAt: ts, updatedBy: actorId || null };
+  await store.set(NATIONAL_PUBLISH_GATE_KEY, rec);
+  return rec;
+}
+
 // ---------- scope helpers (spec §1.1) ----------
 // Scope lives on the business sub-record. An absent scope reads
 // "market" everywhere, so every existing business record behaves
@@ -150,6 +216,9 @@ function campaignOnRead(c, nowMs) {
 // a store.
 function campaignVisibleToCreator(campaign, brand, creator, deps) {
   if (!campaign || !brand || !creator) return false;
+  // PL-17: "awaiting_release" is excluded here, by status, like
+  // every other non-open state. The staging gate adds no other
+  // fence and no call site checks for it.
   if (campaign.status !== "open") return false;
   if (!isNationalBusiness(brand)) return false;
   if (brand.status !== "approved") return false;
@@ -294,6 +363,12 @@ function newCampaignRecord(bizUser, body, deps) {
     sample: false,
     testOnly: false,
     adminNote: null,
+    // PL-17 (Build -191): the staging gate's lifecycle stamps.
+    submittedAt: null,
+    releasedAt: null,
+    releasedBy: null,
+    sentBackAt: null,
+    reviewNote: null,
     createdAt: ts,
     updatedAt: ts,
     publishedAt: null,
@@ -386,6 +461,12 @@ function discoveryCard(creator, deps, shortlisted) {
 
 module.exports = {
   NATIONAL_MARKET,
+  NATIONAL_PUBLISH_GATE_KEY,
+  AWAITING_RELEASE_STATUS,
+  AWAITING_RELEASE_LINE,
+  nationalPublishGateState,
+  setNationalPublishGate,
+  anyMarketLiveByFlag,
   TRACKING_NOTE,
   RAISE_EXPLAINER,
   HAND_STATE_LINES,
@@ -672,6 +753,7 @@ async function handleNationalApi(ctx) {
       counts: {
         campaigns: campaigns.length,
         open: campaigns.filter((c) => c.status === "open").length,
+        awaitingRelease: campaigns.filter((c) => c.status === AWAITING_RELEASE_STATUS).length,
         draft: campaigns.filter((c) => c.status === "draft").length,
         hands: hands.filter((h) => h.status === "raised" || h.status === "picked").length,
         picks: hands.filter((h) => h.status === "picked").length,
@@ -725,12 +807,32 @@ async function handleNationalApi(ctx) {
       const errs = publishGateErrors(current, user);
       if (errs.length) return err(400, errs[0], );
       const ts = nowIso();
+      // PL-17 (Build -191): the staging gate is a point read on
+      // this path only (the stored setting + the market flags
+      // record). Effectively on, the campaign waits for an Admin
+      // release and no creator can see it; effectively off, it
+      // goes straight to open exactly as before.
+      const gate = await nationalPublishGateState(deps);
+      campaign.reviewNote = null;
+      campaign.sentBackAt = null;
+      if (gate.effectiveOn) {
+        campaign.status = AWAITING_RELEASE_STATUS;
+        campaign.submittedAt = ts;
+        campaign.publishedAt = null;
+        campaign.releasedAt = null;
+        campaign.releasedBy = null;
+        campaign.updatedAt = ts;
+        await store.set(`ncampaign:${campaign.id}`, campaign);
+        await logEvent({ type: "national_campaign_awaiting_release", actorId: user.id, actorRole: "business", subjectId: campaign.id, market: null, data: { title: campaign.title, picksCount: campaign.picksCount } });
+        return json(200, { campaign: businessCampaignView(campaign, await listHandsForCampaign(campaign.id)), gate });
+      }
       campaign.status = "open";
+      campaign.submittedAt = campaign.submittedAt || ts;
       campaign.publishedAt = ts;
       campaign.updatedAt = ts;
       await store.set(`ncampaign:${campaign.id}`, campaign);
       await logEvent({ type: "national_campaign_published", actorId: user.id, actorRole: "business", subjectId: campaign.id, market: null, data: { title: campaign.title, picksCount: campaign.picksCount } });
-      return json(200, { campaign: businessCampaignView(campaign, await listHandsForCampaign(campaign.id)) });
+      return json(200, { campaign: businessCampaignView(campaign, await listHandsForCampaign(campaign.id)), gate });
     }
     if (seg.length === 4 && seg[3] === "close" && method === "POST") {
       if (campaign.status === "completed" || campaign.status === "cancelled") return err(409, "This campaign is already finished.");
@@ -945,9 +1047,16 @@ function campaign0Focus(user) {
 // of its own campaign (spec §5.1).
 function businessCampaignView(campaign, hands) {
   const list = hands || [];
+  // PL-17: the brand always sees its true state in plain words.
+  let brandStateLine = "";
+  if (campaign.status === AWAITING_RELEASE_STATUS) brandStateLine = AWAITING_RELEASE_LINE;
+  else if (campaign.status === "draft" && campaign.reviewNote) brandStateLine = "Magpie sent this campaign back to draft. " + campaign.reviewNote;
+  else if (campaign.status === "draft" && campaign.sentBackAt) brandStateLine = "Magpie sent this campaign back to draft. Edit it and publish again when it is ready.";
   return {
     ...campaign,
     status: campaign.status,
+    awaitingRelease: campaign.status === AWAITING_RELEASE_STATUS,
+    brandStateLine,
     handCount: list.filter((h) => h.status === "raised" || h.status === "picked").length,
     raisedCount: list.filter((h) => h.status === "raised").length,
     pickedCount: list.filter((h) => h.status === "picked").length,
@@ -999,12 +1108,70 @@ async function handleAdminNationalApi(ctx) {
     const campaigns = (await listCampaigns()).map((c) => campaignOnRead(c));
     const brands = await usersByIds(campaigns.map((c) => c.businessId));
     const hands = await listAllHands();
+    const gate = await nationalPublishGateState(deps);
+    const view = (c) => ({ ...businessCampaignView(c, hands.filter((h) => h.campaignId === c.id)), brandName: brands.get(c.businessId) ? brandDisplayName(brands.get(c.businessId)) : "", verified: !!(brands.get(c.businessId) && brands.get(c.businessId).business && brands.get(c.businessId).business.verifiedAt) });
     return json(200, {
       rollup: await nationalRollup(deps),
+      gate,
+      // PL-17: the pre-publish review queue. Awaiting campaigns
+      // only, oldest first, each row carrying everything an Admin
+      // needs to release or send it back.
+      releaseQueue: campaigns.filter((c) => c.status === AWAITING_RELEASE_STATUS)
+        .sort((a, z) => String(a.submittedAt || a.createdAt || "") < String(z.submittedAt || z.createdAt || "") ? -1 : 1)
+        .map((c) => ({ ...view(c), submittedAt: c.submittedAt || c.createdAt || null })),
       accounts,
-      campaigns: campaigns.map((c) => ({ ...businessCampaignView(c, hands.filter((h) => h.campaignId === c.id)), brandName: brands.get(c.businessId) ? brandDisplayName(brands.get(c.businessId)) : "", verified: !!(brands.get(c.businessId) && brands.get(c.businessId).business && brands.get(c.businessId).business.verifiedAt) })),
+      campaigns: campaigns.map(view),
       markets: MARKETS.map((m) => m.name),
     });
+  }
+
+  // PL-17: Admin releases or re-arms the stored hold. This flips
+  // stored state only; a live market still overrides it (the
+  // effective state in the response says so truthfully).
+  if (seg.length === 3 && seg[2] === "publish-gate" && method === "POST") {
+    const b = parseBody(event);
+    const on = b.hold !== undefined ? !!b.hold : (b.on !== undefined ? !!b.on : b.state !== "off");
+    await setNationalPublishGate(on, user.id, nowIso);
+    const gate = await nationalPublishGateState(deps);
+    await logEvent({ type: on ? "national_publish_gate_armed" : "national_publish_gate_released", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { effectiveOn: gate.effectiveOn, anyMarketLive: gate.anyMarketLive } });
+    return json(200, { gate });
+  }
+
+  // PL-17: release one held campaign. It goes open under all the
+  // existing fences (approved and finished creators only).
+  if (seg.length === 5 && seg[2] === "campaigns" && seg[4] === "release" && method === "POST") {
+    const campaign = await getCampaign(seg[3]);
+    if (!campaign) return err(404, "Campaign not found");
+    if (campaign.status !== AWAITING_RELEASE_STATUS) return err(409, "Only a campaign waiting for release can be released. This campaign is " + campaign.status + ".");
+    const ts = nowIso();
+    campaign.status = "open";
+    campaign.publishedAt = ts;
+    campaign.releasedAt = ts;
+    campaign.releasedBy = user.id;
+    campaign.updatedAt = ts;
+    await store.set(`ncampaign:${campaign.id}`, campaign);
+    if (deps.notifyUser) await deps.notifyUser(campaign.businessId, "national_campaign_released", `Your campaign "${campaign.title}" is now open. Creators who are approved and have finished their profile can raise a hand.`, { campaignId: campaign.id });
+    await logEvent({ type: "national_campaign_released", actorId: user.id, actorRole: "admin", subjectId: campaign.id, market: null, data: { title: campaign.title, businessId: campaign.businessId } });
+    return json(200, { campaign: businessCampaignView(campaignOnRead(campaign), await listHandsForCampaign(campaign.id)) });
+  }
+
+  // PL-17: send one held campaign back to the brand as a draft,
+  // with a plain reason the brand can see on its own list.
+  if (seg.length === 5 && seg[2] === "campaigns" && seg[4] === "send-back" && method === "POST") {
+    const campaign = await getCampaign(seg[3]);
+    if (!campaign) return err(404, "Campaign not found");
+    if (campaign.status !== AWAITING_RELEASE_STATUS) return err(409, "Only a campaign waiting for release can be sent back. This campaign is " + campaign.status + ".");
+    const b = parseBody(event);
+    const ts = nowIso();
+    campaign.status = "draft";
+    campaign.sentBackAt = ts;
+    campaign.reviewNote = String(b.reason || b.note || "").trim().slice(0, 500) || null;
+    campaign.submittedAt = null;
+    campaign.updatedAt = ts;
+    await store.set(`ncampaign:${campaign.id}`, campaign);
+    if (deps.notifyUser) await deps.notifyUser(campaign.businessId, "national_campaign_sent_back", `Magpie sent your campaign "${campaign.title}" back to draft.${campaign.reviewNote ? " Note from the Magpie team: " + campaign.reviewNote : " Open your campaigns list, edit it, and publish again when it is ready."}`, { campaignId: campaign.id });
+    await logEvent({ type: "national_campaign_sent_back", actorId: user.id, actorRole: "admin", subjectId: campaign.id, market: null, data: { title: campaign.title, businessId: campaign.businessId, reason: campaign.reviewNote } });
+    return json(200, { campaign: businessCampaignView(campaignOnRead(campaign), await listHandsForCampaign(campaign.id)) });
   }
 
   // Create a national account (spec §10). Admin only; lands

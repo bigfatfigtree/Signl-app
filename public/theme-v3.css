@@ -2222,3 +2222,18 @@ select.ctl189, .sr-sel select {
 .shelf-nophoto-pct { font-size: 2.6rem; font-weight: 800; line-height: 1; letter-spacing: -.01em; }
 .shelf-nophoto-cap { font-size: .78rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; opacity: .92; }
 .shelf-nophoto-init { font-size: 3.4rem; font-weight: 800; }
+
+/* PL-17 (Build -191): the national publishing hold, the brand's
+   awaiting-release state, and the Admin release queue. White
+   panels, soft-pill badges, the one Instrument Sans system. */
+.nat-held191 {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--accent-soft);
+  padding: 10px 12px; margin: 8px 0; font-size: .92rem;
+}
+.nat-queue-row191 {
+  border: 1px solid var(--line); border-radius: 14px; background: #fff;
+  padding: 14px; margin-top: 10px;
+}
+.nat-queue-empty191 {
+  border: 1.5px dashed var(--line); border-radius: 14px; padding: 16px; margin-top: 10px; background: #fff;
+}
