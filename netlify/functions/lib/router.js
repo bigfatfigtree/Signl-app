@@ -7068,10 +7068,13 @@ async function recentLifecycleEmail(userId, windowMs) {
   }
   return latest;
 }
-// Build -185: the last-sign-in stamp the win-back sweep reads.
+// Build -185: the last-activity stamp the win-back sweep reads.
 // user.updatedAt cannot serve (sweeps and backfills bump it, so
-// it would mark everyone active forever); this field moves
-// ONLY on a real sign-in — password, Google, or sign-in link.
+// it would mark everyone active forever); this field moves on a
+// real sign-in (password, Google, or sign-in link), on a side
+// switch, and — throttled to once a day — when a live session
+// loads /auth/me, so a daily-active user on a 30-day session is
+// never mistaken for dormant (review fix, Build -185).
 async function stampLastSignIn(user) {
   user.lastSignInAt = nowIso();
   await store.set(`user:${user.id}`, user);
@@ -12446,21 +12449,25 @@ function winBackPlace(user) {
 function winBackMaggieBody(user) {
   const first = greetingName(user);
   const place = winBackPlace(user);
-  return `Hi ${first}, Maggie here from the Magpie team. It has been a couple of weeks since you stopped by, so I wanted to say hello. Your founding spot in ${place} is still yours, and your page is just as you left it. Whenever you are ready, sign in and have a look around. If your profile still has anything unfinished, finishing it puts you first in line when offers open in ${place}.`;
+  return `Hi ${first}, Maggie here from the Magpie team. It has been a couple of weeks since you stopped by, so I wanted to say hello. Your founding spot in ${place} is still yours, and your page is just as you left it. Whenever you are ready, sign in and have a look around.`;
 }
 function winBackEmail(user) {
   const first = greetingName(user);
-  const national = user.scope === "national";
+  // Scope lives on user.business.scope (national.js businessScopeOf),
+  // never on a top-level user.scope — reading the wrong field sent
+  // national brands the market copy with "National" as the place
+  // name (Build -185 review fix).
+  const isNat = national.isNationalBusiness(user);
   const place = winBackPlace(user);
   const subject = "Your Magpie founding spot is still held";
   const lines = [
     `Hi ${first},`,
     "",
-    national
+    isNat
       ? "It has been a couple of weeks since you signed in to Magpie, so a quick note from us: your national founding account is still held, and everything is right where you left it."
       : `It has been a couple of weeks since you signed in to Magpie, so a quick note from us: your founding business spot in ${place} is still held, and your account is right where you left it.`,
     "",
-    national
+    isNat
       ? "When your brand is verified, local creators in every Magpie market can see your campaigns. If anything on your brand profile is still unfinished, finishing it now means you are ready the moment verification lands."
       : `When ${place} opens, founding businesses are the first ones local creators see. If anything on your profile is still unfinished, finishing it now means you are ready on day one.`,
     "",
@@ -12526,7 +12533,17 @@ async function runWinbackSweep(opts = {}) {
         summary.sentCreators += 1;
       } else {
         const mail = winBackEmail(u);
-        await deliverEmail("win_back", u, mail.subject, mail.text, null);
+        const delivered = await deliverEmail("win_back", u, mail.subject, mail.text, null);
+        if (delivered && delivered.sent === false && !delivered.queued) {
+          // Nothing was delivered or queued (transport failure
+          // or the win_back automation is off): release the
+          // monthly cap slot and do not count a send that never
+          // happened (Build -185 review fix). deliverEmail
+          // already logged its own *_email_not_sent event. A
+          // queued result counts: the queue delivers it.
+          await store.del(`winback:${u.id}`);
+          continue;
+        }
         summary.sentBusinesses += 1;
       }
       await logEvent({ type: "winback_sent", actorId: null, actorRole: "system", subjectId: u.id, market: u.market || null, data: { role: u.role, dormantDays: Math.floor((now - anchor) / DAY_MS) } });
@@ -17188,6 +17205,7 @@ async function handleSwitchSide(event, ctx) {
   if (!session) return err(401, "Not signed in");
   session.userId = sib.id;
   await store.set(`session:${ctx.token}`, session);
+  await stampLastSignIn(sib);
   await logEvent({ type: "account_side_switched", actorId: sib.id, actorRole: sib.role, subjectId: sib.id, market: sib.market || null, data: { fromUserId: ctx.user.id } });
   const payload = await withFounding(sib);
   await withLinkedSide(payload, sib);
@@ -24933,6 +24951,17 @@ async function route(event) {
   if (method === "POST" && seg[0] === "auth" && seg[1] === "signin-link" && seg[2] === "consume" && seg.length === 3) return handleSigninLinkConsume(event);
   if (method === "GET" && seg[0] === "auth" && seg[1] === "me") {
     if (!user) return err(401, "Not signed in");
+    // Build -185 review fix: sessions live 30 days, so sign-in
+    // alone cannot carry the dormancy anchor — a daily-active
+    // user on one long session would read as quiet. Loading
+    // /auth/me IS the user opening the app: refresh the activity
+    // stamp, throttled to one point write per user per day.
+    // View-as never stamps (an admin looking is not the user's
+    // activity).
+    if (!viewAs && user.role !== "admin") {
+      const last = Date.parse(user.lastSignInAt || "") || 0;
+      if (Date.now() - last > DAY_MS) { try { await stampLastSignIn(user); } catch (e) { /* a stamp failure never breaks /auth/me */ } }
+    }
     const meUser = await withFounding(user);
     await withLinkedSide(meUser, user);
     // View-as decoration (Build -67): the client shows the

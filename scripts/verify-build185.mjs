@@ -10,6 +10,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,6 +67,14 @@ function client() {
 }
 
 async function main() {
+  console.log("== unit: the win-back email branches on the real scope field ==");
+  const router = createRequire(import.meta.url)("../netlify/functions/lib/router.js");
+  const natMail = router.winBackEmail({ name: "Trop Fixture", email: "nat@fixtures.dev", role: "business", market: "National", business: { scope: "national", businessName: "Trop Fixture" } });
+  check("national business gets the national copy", natMail.text.includes("your national founding account is still held"), natMail.text.slice(0, 160));
+  check("national copy never says 'in National'", !natMail.text.includes("in National"));
+  const mktMail = router.winBackEmail({ name: "Local Fixture", email: "loc@fixtures.dev", role: "business", market: "Nashville", business: { scope: "market", businessName: "Local Fixture" } });
+  check("market business keeps the market copy", mktMail.text.includes("your founding business spot in Nashville is still held"), mktMail.text.slice(0, 160));
+
   startServer();
   check("dev server up", await waitUp());
   const adm = client();
@@ -100,13 +109,29 @@ async function main() {
   const b3 = await mkBusiness("b3@fixtures.dev", "B3 Fixture Goods"); await approve(b3); // lifecycle email 1h ago -> suppressed
   const b4 = await mkBusiness("b4@fixtures.dev", "B4 Fixture Goods"); await approve(b4); // redeemed, post owed -> skipped
   const b5 = await mkBusiness("b5@fixtures.dev", "B5 Fixture Goods"); await approve(b5); // redeemed + posted -> emailed
+  // A dormant NATIONAL business is seeded at the DB layer below
+  // (built by national.buildNationalBusinessUser, the same
+  // constructor the admin-created and self-serve flows use):
+  // it must be emailed, with the national copy (unit-proven above).
+  const c8client = client();
+  const c8 = await mkCreator("c8@fixtures.dev", "c8fixture"); await approve(c8);
+  await c8client("POST", "/api/auth/login", { email: "c8@fixtures.dev", password: "fixture-pass-185" });
+  check("finish profile c8@fixtures.dev", (await c8client("PATCH", "/api/me/profile", { city: "Nashville", categories: ["Food & Drink"], localAudiencePct: 85, audienceStack: { instagram: 12000 } })).status === 200);
+  // c8 keeps this session cookie across the restart below: a live
+  // session from 20 days ago. Loading /auth/me must refresh the
+  // activity stamp, so the sweep leaves c8 alone (review fix D2).
 
   console.log("== time-shift the records ==");
   await stopServer();
   const db = readDb();
   const setUser = (id, patch) => { const k = `user:${id}`; db[k] = { ...db[k], ...patch }; };
   const dormant = { lastSignInAt: daysAgo(20), reviewedAt: daysAgo(30), createdAt: daysAgo(40) };
-  for (const u of [c1, c3, c7, b1, b2, b3, b4, b5]) setUser(u.id, dormant);
+  for (const u of [c1, c3, c7, b1, b2, b3, b4, b5, c8]) setUser(u.id, dormant);
+  const nationalLib = createRequire(import.meta.url)("../netlify/functions/lib/national.js");
+  const nb = nationalLib.buildNationalBusinessUser({ email: "nb@fixtures.dev", name: "Nat Fixture", businessName: "Nat Fixture Brands", brandName: "Nat Fixture", category: "Retail" }, { nowIso: () => new Date().toISOString(), termsVersion: null });
+  nb.status = "approved";
+  db[`user:${nb.id}`] = { ...nb, ...dormant };
+  db[`email:${nb.email}`] = { userId: nb.id };
   setUser(c2.id, { lastSignInAt: daysAgo(2), reviewedAt: daysAgo(30), createdAt: daysAgo(40) });
   setUser(c4.id, { lastSignInAt: daysAgo(20), reviewedAt: null, createdAt: daysAgo(40) });
   setUser(c5.id, { lastSignInAt: daysAgo(13), reviewedAt: daysAgo(30), createdAt: daysAgo(40) });
@@ -131,12 +156,18 @@ async function main() {
   const adm2 = client();
   await adm2("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
+  console.log("== a live session loading /auth/me counts as activity ==");
+  const me = await c8client("GET", "/api/auth/me");
+  check("c8's session still valid after the shift", me.status === 200, JSON.stringify(me.data).slice(0, 120));
+  const c8Rec = readDb()[`user:${c8.id}`];
+  check("/auth/me refreshed c8's activity stamp", Math.abs(Date.now() - Date.parse(c8Rec.lastSignInAt)) < 120000, c8Rec.lastSignInAt);
+
   console.log("== run the sweep ==");
   const sweep = await adm2("POST", "/api/admin/compliance/sweep", {});
   check("sweep responds with a winback summary", sweep.status === 200 && !!sweep.data.winback, JSON.stringify(sweep.data).slice(0, 200));
   const wb = (sweep.data && sweep.data.winback) || {};
   check("one creator nudged", wb.sentCreators === 1, JSON.stringify(wb));
-  check("two businesses emailed (b1 + b5)", wb.sentBusinesses === 2, JSON.stringify(wb));
+  check("three businesses emailed (b1 + b5 + national)", wb.sentBusinesses === 3, JSON.stringify(wb));
   check("one suppression (b3)", wb.suppressed === 1, JSON.stringify(wb));
   check("two active-booking skips (c3 + b4)", wb.skippedActiveBooking === 2, JSON.stringify(wb));
   check("one monthly-cap skip (b2)", wb.skippedCap === 1, JSON.stringify(wb));
@@ -150,13 +181,14 @@ async function main() {
   check("no message for the 13-day creator", msgsTo(c5.id).length === 0);
   check("no message for the tester", msgsTo(t1.id).length === 0);
   check("no message for the unfinished creator (Finish Engine's lane)", msgsTo(c7.id).length === 0);
+  check("no message for the session-active creator (activity stamp)", msgsTo(c8.id).length === 0);
   check("no winback stamp for the unfinished creator", !db2[`winback:${c7.id}`]);
-  check("winback stamps: c1 + b1 + b5 stamped", !!db2[`winback:${c1.id}`] && !!db2[`winback:${b1.id}`] && !!db2[`winback:${b5.id}`]);
+  check("winback stamps: c1 + b1 + b5 + national stamped", !!db2[`winback:${c1.id}`] && !!db2[`winback:${b1.id}`] && !!db2[`winback:${b5.id}`] && !!db2[`winback:${nb.id}`]);
   check("b2's cap stamp is still the OLD one (~10 days)", Math.abs(Date.parse((db2[`winback:${b2.id}`] || {}).lastSentAt) - (Date.now() - 10 * 86400e3)) < 3600e3, (db2[`winback:${b2.id}`] || {}).lastSentAt);
   check("b3 has NO winback stamp (suppressed before stamping)", !db2[`winback:${b3.id}`]);
   check("b4 has NO winback stamp (booking skip)", !db2[`winback:${b4.id}`]);
   const wbEvents = Object.values(db2).filter((v) => v && v.type === "winback_sent");
-  check("winback_sent events recorded for the three sends", wbEvents.length === 3, String(wbEvents.length));
+  check("winback_sent events recorded for the four sends", wbEvents.length === 4, String(wbEvents.length));
   const supEvents = Object.values(db2).filter((v) => v && v.type === "winback_suppressed" && v.subjectId === b3.id);
   check("b3's suppression is logged, not silent", supEvents.length === 1);
 
