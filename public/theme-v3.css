@@ -2385,3 +2385,28 @@ body.v3-slim .ham137-panel .more-row .more-ic, body.v3-slim .ev125-panel .more-r
   .tab-user .tu-sub { font-size: 13px; color: #8b8b93; }
   .tab-user .tu-ava { width: 40px; height: 40px; }
 }
+
+/* ================= Build -194 (PL-39 delta: two measured misses from the -193 review) =================
+   B1 — menu row radius. The -193 rule (.ham137-panel .more-row,
+   specificity 0,2,0) loses to theme-v2.css's body.v3-on .more-row
+   { border-radius: 16px } (0,2,1), so every v3-on menu row
+   computed 16px instead of Hapsta's 12px. The scoped rules below
+   are 0,3,1 — they outrank the v2 rule on the menu panels only,
+   for both v3 body classes,
+   (hamburger/Biz Dev drawer, Everything panel, identity menu:
+   every .more-row in the app lives in one of these three panels),
+   and touch no other row metric. The Admin shell carries neither
+   v3 body class, so its rows keep the -193 rule's 12px as before;
+   the desktop rails (.tab-item / .rail-item) are separate rules
+   and are untouched.
+   B2 — identity avatar. Hapsta's .avatar measures 52px; the -193
+   block set 44px in menus and 40px at the rail foot. Both are
+   52px below. */
+body.v3-on .ham137-panel .more-row, body.v3-on .ev125-panel .more-row, body.v3-on .idm126-panel .more-row,
+body.v3-slim .ham137-panel .more-row, body.v3-slim .ev125-panel .more-row, body.v3-slim .idm126-panel .more-row {
+  border-radius: 12px;
+}
+.mi-ava189 { width: 52px; height: 52px; }
+@media (min-width: 768px) {
+  .tab-user .tu-ava { width: 52px; height: 52px; }
+}
