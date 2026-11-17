@@ -30193,6 +30193,13 @@ let adminAppView = null; // legacy: superseded by the per-section views below (k
 // Deck/List view. View and search state is per section.
 let adminAppViewByRole187 = { creator: null, business: null }; // "deck" | "list"; null = deck while that section's queue exists, else list
 let adminAppSearch187 = { creator: "", business: "" };
+// Build -195 (Jeff, 2026-11-17): the two sections sit behind a
+// Businesses / Creators toggle at the top of the room — one
+// section on screen at a time, so Jeff opens the queue he wants
+// instead of scrolling past the other one. null = not chosen
+// yet this session; the first render resolves the default from
+// the live queues (see loadApplications).
+let adminAppSection195 = null;
 let adminDeckNote = "";
 let adminDeckNoteBad = false;
 let adminDeckNoteRole = ""; // Build -187: which section's deck the note belongs to
@@ -30207,6 +30214,26 @@ function adminAppSetView(v, role) {
   if (role && adminAppViewByRole187[role] !== undefined) adminAppViewByRole187[role] = v;
   else { adminAppViewByRole187.creator = v; adminAppViewByRole187.business = v; }
   loadApplications();
+}
+
+// Build -195: flip the Applications room between its two
+// sections. Pure presentation: both sections are already in
+// the DOM with their queues rendered, so a flip only moves
+// the hidden flag and the toggle's active state — no fetch,
+// no reload — and each section keeps its own search text and
+// Deck/List view exactly where Jeff left them. The choice is
+// remembered in adminAppSection195, so the full re-renders
+// loadApplications does (after an approval, a Deck/List flip)
+// reopen the room on the section Jeff was looking at.
+function adminAppSetSection195(role) {
+  adminAppSection195 = role;
+  for (const r of ["business", "creator"]) {
+    const sec = document.getElementById(`apps-sec-${r}`);
+    if (sec) sec.style.display = r === role ? "" : "none";
+    const btn = document.getElementById(`apps-seg-btn-${r}`);
+    if (btn) { btn.classList.toggle("on", r === role); btn.setAttribute("aria-selected", r === role ? "true" : "false"); }
+  }
+  return false;
 }
 
 function adminKnownTotal(u) {
@@ -30709,6 +30736,22 @@ async function loadApplications() {
     for (const role of ["business", "creator"]) {
       if (!adminAppViewByRole187[role]) adminAppViewByRole187[role] = state.adminAppsByRole187[role].pend.length ? "deck" : "list";
     }
+    // Build -195: resolve which section the room opens on. A
+    // section Jeff picked this session sticks; otherwise the
+    // section holding pending work opens — and when both or
+    // neither hold any, the room opens on Businesses, the
+    // section that has always come first. The toggle's labels
+    // carry the same live pending counts the section heads
+    // print, so Jeff can see where the work is without opening.
+    if (!adminAppSection195) {
+      const bPend195 = state.adminAppsByRole187.business.pend.length;
+      const cPend195 = state.adminAppsByRole187.creator.pend.length;
+      adminAppSection195 = cPend195 > 0 && bPend195 === 0 ? "creator" : "business";
+    }
+    const toggleHtml195 = `<div class="segsw apps-seg195" role="tablist" aria-label="Application sections">
+          <button type="button" id="apps-seg-btn-business" role="tab" aria-selected="${adminAppSection195 === "business" ? "true" : "false"}" class="${adminAppSection195 === "business" ? "on" : ""}" onclick="adminAppSetSection195('business')">Businesses &middot; ${state.adminAppsByRole187.business.pend.length} pending</button>
+          <button type="button" id="apps-seg-btn-creator" role="tab" aria-selected="${adminAppSection195 === "creator" ? "true" : "false"}" class="${adminAppSection195 === "creator" ? "on" : ""}" onclick="adminAppSetSection195('creator')">Creators &middot; ${state.adminAppsByRole187.creator.pend.length} pending</button>
+        </div>`;
     // Market choices for Find a user. A failed read keeps the
     // choices already loaded; the queue never depends on it.
     try {
@@ -30718,7 +30761,7 @@ async function loadApplications() {
     const sectionHtml = (role, title) => {
       const d = state.adminAppsByRole187[role];
       const view = adminAppViewByRole187[role];
-      return `<section class="apps-section187" id="apps-sec-${role}">
+      return `<section class="apps-section187" id="apps-sec-${role}"${role === adminAppSection195 ? "" : " style=\"display:none\""}>
       <div class="apps-sec-head187">
         <h2 style="margin:0">${title}</h2>
         <span class="muted small"><strong>${d.pend.length} pending</strong> &middot; ${d.dec.length} decided</span>
@@ -30740,6 +30783,7 @@ async function loadApplications() {
       <div id="admin-refile-panel"></div>
       ${adminUserSearchPanelHtml()}
       ${filterBanner}
+      ${toggleHtml195}
       ${sectionHtml("business", "Business applications")}
       ${sectionHtml("creator", "Creator applications")}
       ${otherHtml}`;

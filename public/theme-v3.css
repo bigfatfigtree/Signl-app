@@ -1951,6 +1951,13 @@ body.drawer168-open { overflow: hidden; }
 .apps-sec-tools187 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 12px; }
 .apps-sec-tools187 input[type="search"] { flex: 1 1 220px; max-width: 380px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
 
+/* Build -195: the Applications room's Businesses / Creators
+   toggle — the app's .segsw segmented family stretched full
+   width at the top of the room. One tap flips which section
+   shows; the labels carry the live pending counts. */
+.segsw.apps-seg195 { display: flex; width: 100%; box-sizing: border-box; margin: 18px 0 2px; }
+.segsw.apps-seg195 button { flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 10px; }
+
 /* Build -187 (scope additions 6 + 7): the shell type treatment.
    Inter carries the navigation surfaces (menus, phone bar,
    desktop rail, group headers, identity card) with the quiet
