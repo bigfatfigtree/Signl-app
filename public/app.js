@@ -24208,13 +24208,24 @@ function campStartRowsHtml(mode, g) {
   const tpls = mode === "open" ? (g.templates || []).filter((t) => { const k = String(t.label || "").trim().toLowerCase(); if (!k || seenTpl189.has(k)) return false; seenTpl189.add(k); return true; }).map((t) => `<button type="button" class="rail-row camp-pick" onclick="applyTemplate('${esc(t.id)}')"><span class="rr-tx">${esc(t.label)}</span></button>`).join("") : "";
   return plays + noPlay + tpls;
 }
+// Build -190 (PL-09): the plays, the guidance templates and
+// the kind starters live in ONE picker inside the form's first
+// step, not stacked as sections above it. The rail keeps the
+// photo, the preview switch and the plan summary.
+function campPickerHtml(mode, g) {
+  const kindRow190 = (kind, name, desc) => `<button type="button" class="rail-row camp-pick" onclick="return startOfferTemplate('${kind}')"><span class="rr-tx">${name} <span class="muted">— ${desc}</span></span></button>`;
+  return `<div class="field" id="camp-picker190">
+      <label>Start from a play or template <span class="opt-tag">Optional</span></label>
+      ${campStartRowsHtml(mode, g)}
+      ${kindRow190("comp", "Comped visit", "your product is the payment")}
+      ${kindRow190("paid", "Paid booking", "cash at the creator's listed rate")}
+      ${kindRow190("coupon", "Coupon post", "a coupon is the payment")}
+      ${kindRow190("open", "Open call", "post it and let creators apply")}
+      <p class="small muted" style="margin:4px 0 0">A play presets the goal, the brief and the timing. A template presets the offer itself. A kind sets how the creator is paid, which the form below also asks. All optional, all editable.</p>
+    </div>`;
+}
 function campRailHtml(mode, g, myPlan, planObj) {
   return `<div class="df-group">
-      <div class="df-label">Start from a play or template</div>
-      ${campStartRowsHtml(mode, g)}
-      <p class="rail-note">A play presets the goal, the brief and the timing. A template presets the offer itself. Both are optional.</p>
-    </div>
-    <div class="df-group">
       <div class="df-label">Your offer photo</div>
       ${bizOfferPhotoHtml()}
     </div>
@@ -24268,6 +24279,7 @@ function applyTemplate(id) {
   const hidden = document.getElementById("o2-template");
   if (hidden) hidden.value = id;
   offerCoachUpdate();
+  showToast(`Template set: ${t.label || t.title}. The offer fields are filled in from it; edit anything.`);
 }
 
 // The live coaching: strength checklist + dignity floor warning,
@@ -24349,10 +24361,11 @@ function playFill(tpl, bizName, comped) { return String(tpl || "").replaceAll("{
 // what the play owns (goal, brief fields, pattern numbers) and
 // leaves the business's own title/comped/tiers untouched.
 function applyPlayToDraft(playId) {
+  offerDraftSync();
   const d = state.offerDraft || (state.offerDraft = {});
   const play = sigPlay(playId);
   d.play = playId || null;
-  if (!play) { renderMyOffersPage(); return; }
+  if (!play) { loadCampaignSetup(); return; }
   const bizName = (state.user && state.user.business && state.user.business.businessName) || "";
   d.briefGoal = play.goal;
   d.briefHook = playFill(play.hook, bizName, d.comped || "");
@@ -24361,7 +24374,13 @@ function applyPlayToDraft(playId) {
   d.briefTiming = play.timing;
   d.briefCta = play.cta;
   if (!d.spots) d.spots = String(play.spots);
-  renderMyOffersPage();
+  // Build -190 (PL-09 rider): this called a render function
+  // that exists nowhere, so the click threw, nothing
+  // re-rendered and the toast never fired. The composer now
+  // re-renders itself and lands on the brief step, where the
+  // play's drafting is visible.
+  state.campaignStep = 2;
+  loadCampaignSetup();
   showToast(`Play set: ${play.name}. The brief below is drafted from it; edit anything.`);
 }
 function composerPlaysHtml() {
@@ -25230,15 +25249,13 @@ async function loadCampaignSetup() {
   }).join("")}</div>`;
   el.innerHTML = `
   ${wsHead("Start a campaign", { sub: "Build a new campaign here. Checking on one you already made lives in Your campaigns.", subKey: "biz-setup" })}
-  ${campaignGuideHtml()}
   <div class="camp-wrap"><div class="camp-layout"><div class="camp-main">
-  <h3 style="margin:24px 0 0">Templates</h3>
-  ${bizTemplatesHtml()}
   <div id="offers-live-only">
   ${foundingBiz ? `<p class="small" style="margin:14px 0 0"><strong>Building ahead:</strong> build a campaign now and it saves as a draft. Drafts go out the day ${esc(foundingBizPlace(state.user))} opens. Nothing is sent to a creator before then.</p>${sigDraftCardHtml(state.user)}` : ""}
   <div class="panel camp-form189" id="offer-composer" style="margin-top:18px">
     <h3 style="margin-top:0">New campaign</h3>
     <div id="form-error"></div>
+    ${campaignGuideHtml()}
     <div class="field"><label>Who sees this offer ${infoBtn("lane")}</label>
     <div class="bookseg" role="tablist">
       <button type="button" class="${mode === "open" ? "on" : ""}" onclick="setComposerLane('open')">Post an open call</button>
@@ -25253,6 +25270,7 @@ async function loadCampaignSetup() {
       <input type="hidden" id="o2-template" value="${dv(dft.template)}">
       <div class="fgroup tint">
       <p class="fg-kicker">The offer</p>
+      ${campPickerHtml(mode, g)}
       <div class="field"><label>Offer title <span class="req-tag">Required</span> ${infoBtn("title")}</label><input id="o2-title" value="${dv(dft.title)}" placeholder="Dinner for two on us" oninput="offerDraftSync()" onblur="offerValidateField('title')"><p class="small muted camp-help" style="margin:4px 0 0">This is the name creators see first. Name the experience, not the deal.</p><p class="field-err" id="err-o2-title"></p></div>
       <div class="field"><label>What is your first month built around? <span class="opt-tag">Optional</span></label>
         <div class="radio-stack">
@@ -25376,8 +25394,6 @@ async function loadCampaignSetup() {
   </div>
   <aside class="camp-rail">${campRailHtml(mode, g, myPlan, planObj)}<div id="offer-peek-rail187" style="margin-top:14px"></div></aside>
   </div></div>
-  <div id="aud-block"></div>
-  <div class="wcard" style="margin-top:18px"><h3 style="margin-top:0">Already made one?</h3><p class="small muted" style="margin:0">Current and past campaigns, who applied, and what they did live in Your campaigns.</p><p style="margin:10px 0 0"><button type="button" class="btn ghost" onclick="return go('dashboard','My Offers')">Open Your campaigns</button></p></div>
   <div id="offer-info-pop" class="sheet-overlay" style="display:none" onclick="if(event.target===this) closeOfferInfo()">
     <div class="sheet">
       <div class="flex-between"><strong id="offer-info-title"></strong><button type="button" class="linklike" onclick="closeOfferInfo()">Close</button></div>
@@ -25387,7 +25403,6 @@ async function loadCampaignSetup() {
   <div id="applicant-stack"></div>`;
   offerCoachUpdate();
   campaignStepsInit();
-  loadAudienceBlock();
   // Build -136: a starter sentence tapped on Home starts the
   // guide the moment this view lands.
   if (state.campaignGuideSeed) {
@@ -25423,8 +25438,12 @@ async function loadMyOffers() {
     renderRequestsTab(true);
     return;
   }
-  el.innerHTML = `${wsHead("Your campaigns", { sub: "Current and past campaigns, who applied, and what they did.", subKey: "biz-campaigns", action: `<button type="button" class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">+ Start a campaign</button>` })}<div id="offers-segs"></div><div id="camp-prompts"></div><div id="offer-list">${skelHtml("Loading your campaigns...", 2)}</div>`;
+  el.innerHTML = `${wsHead("Your campaigns", { sub: "Current and past campaigns, who applied, and what they did.", subKey: "biz-campaigns", action: `<button type="button" class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">+ Start a campaign</button>` })}<div id="offers-segs"></div><div id="camp-prompts"></div><div id="offer-list">${skelHtml("Loading your campaigns...", 2)}</div><div id="aud-block"></div>`;
   renderOffersSegTabs();
+  // Build -190 (PL-09): Audience offers and the redemption log
+  // live here now, with the campaigns they belong to, not on
+  // the composer.
+  loadAudienceBlock();
   try {
     const data = await api("GET", "/offers");
     state.myOffers = data.offers || [];
