@@ -29864,7 +29864,7 @@ function adminUserCardHtml(u) {
     : u.status === "rejected" ? '<span class="badge bad">Rejected</span>'
     : `<span class="badge">${esc(u.status || "")}</span>`;
   return `<div class="panel admin-user-card">
-    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum && !u.minimumOverride ? ' <span class="badge bad">Under the 500 minimum</span>' : ""}${u.minimumOverride ? ' <span class="badge info">500 minimum overridden</span>' : ""} <span class="badge">${esc(u.role || "")}</span>${u.linkedAccountId ? ` <span class="badge info">Dual account: ${u.role === "creator" ? "business" : "creator"} side too</span>` : ""}</div>
+    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum && !u.minimumOverride ? ' <span class="badge bad">Under the 500 minimum</span>' : ""}${u.minimumOverride ? ' <span class="badge info">500 minimum overridden</span>' : ""} <span class="badge">${esc(u.role || "")}</span>${u.linkedAccountId ? ` <span class="badge info">Dual account: ${u.linkedSide ? `${esc(u.linkedSide.role)} side too (${esc(u.linkedSide.status)})` : `${u.role === "creator" ? "business" : "creator"} side too`}</span>` : ""}</div>
     ${adminUserCardFactsHtml(u)}
     ${u.status === "pending" ? `<div class="admin-card-decide">
       <button class="btn" onclick="adminCardApprove('${u.id}')">Approve</button>
