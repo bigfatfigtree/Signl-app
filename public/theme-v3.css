@@ -289,9 +289,10 @@ body.v3-on #founding-dash .kpi-card .kpi-num { color: var(--ink); }
 /* Build -188 (PL-03): the collapsed avatar chip + bottom
    clearance for page content where the pill floats. */
 #agent-fab.fab-mini { width: 46px; padding: 0; justify-content: center; }
-@media (min-width: 901px) {
-  body.fab-on188 #app { padding-bottom: 92px; }
-}
+/* Build -188 fix pass (PL-03 residual): the bottom clearance
+   applies at every width, phones included, so at the end of a
+   page the chip rests over this padding, never over content. */
+body.fab-on188 #app { padding-bottom: 92px; }
 #agent-fab .fab-dot { width: 8px; height: 8px; border-radius: 50%; background: #00B67A; flex: none; }
 #agent-fab .fab-badge { background: var(--accent); border-color: var(--ink); }
 body.v3-on #agent-fab.show, body.v3-slim #agent-fab.show { display: flex !important; }

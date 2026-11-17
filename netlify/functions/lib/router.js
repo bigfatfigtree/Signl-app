@@ -559,17 +559,19 @@ function suggestionFingerprint(parts) {
 const SUGGESTION_OPEN_CAP = 10;
 const SUGGESTION_SUPPRESS_MS = 14 * 86400000;
 const SUGGESTION_TTL_MS = 14 * 86400000;
-// The market business gate (Jeff's canon): ~50-60 approved,
-// profile-complete creators, balanced across the launch
-// categories. Balance floor per category follows the spec's own
-// worked example (54 creators, fitness at 4 -> "6 more").
+// The market business gate (Jeff's canon, PL-01): a market
+// opens at 50 approved creators; finished profiles are
+// reported alongside that count, not as the bar, and balance
+// across the launch categories still matters. Balance floor
+// per category follows the spec's own worked example
+// (54 creators, fitness at 4 -> "6 more").
 const GATE_LOW = 50;
 const GATE_CATEGORY_FLOOR = 10;
 const GATE_CATEGORIES = ["Food & Drink", "Fitness & Wellness", "Beauty & Grooming", "Lifestyle", "Nightlife"];
 const SUGGESTION_WATCHING = [
   "Supply gaps in every market and category, against open-offer demand",
   "Recruiting targets where offers, fruitless searches, and typed-city requests agree",
-  "Every market's run at its 50-60 creator business gate, category balance included",
+  "Every market's run at its launch bar of 50 approved creators, category balance included",
   "Creators signing up from cities that are not listed markets yet",
   "Applications waiting on review, and how long the oldest has waited",
   "Searches that found nobody, and match lists that end without a pick",
@@ -672,13 +674,13 @@ async function buildSuggestionCandidates() {
     }
     const balanced = thinN >= GATE_CATEGORY_FLOOR;
     if (total >= GATE_LOW && balanced) {
-      push({ id: `gate:${mk}`, kind: "gate", type: "marketing.gate_watch", family: "marketing", score: 97, market: mk, text: `${mk} clears its business gate: ${total} bookable creators, and every launch category covered (thinnest is ${thin} at ${thinN}). The stored business target list is the next move — approaching them stays your call.`, receipt: { market: mk, creators: total, gate: `${GATE_LOW}-${GATE_LOW + 10}`, thinnest: thin, thinnestCount: thinN }, action: { label: "See the roster", route: "stats-creators", params: { market: mk } }, fingerprint: suggestionFingerprint(["gate", mk, total, ...GATE_CATEGORIES.map((c) => (cats[c] || {}).supply || 0)]) });
+      push({ id: `gate:${mk}`, kind: "gate", type: "marketing.gate_watch", family: "marketing", score: 97, market: mk, text: `${mk} clears its business gate: ${total} bookable creators, and every launch category covered (thinnest is ${thin} at ${thinN}). The stored business target list is the next move — approaching them stays your call.`, receipt: { market: mk, creators: total, gate: `${GATE_LOW}`, thinnest: thin, thinnestCount: thinN }, action: { label: "See the roster", route: "stats-creators", params: { market: mk } }, fingerprint: suggestionFingerprint(["gate", mk, total, ...GATE_CATEGORIES.map((c) => (cats[c] || {}).supply || 0)]) });
     } else if (total >= GATE_LOW) {
       const deficit = GATE_CATEGORY_FLOOR - thinN;
-      push({ id: `gate:${mk}`, kind: "gate", type: "marketing.gate_watch", family: "marketing", score: 96, market: mk, text: `${mk} has the numbers for its business gate (${total} creators) but ${thin} is thin at ${thinN} — about ${deficit} more ${thin} creator${deficit === 1 ? "" : "s"} opens the business approach.`, receipt: { market: mk, creators: total, gate: `${GATE_LOW}-${GATE_LOW + 10}`, thinnest: thin, thinnestCount: thinN, needed: deficit }, action: { label: "See the roster", route: "stats-creators", params: { market: mk } }, fingerprint: suggestionFingerprint(["gate", mk, total, ...GATE_CATEGORIES.map((c) => (cats[c] || {}).supply || 0)]) });
+      push({ id: `gate:${mk}`, kind: "gate", type: "marketing.gate_watch", family: "marketing", score: 96, market: mk, text: `${mk} has the numbers for its business gate (${total} creators) but ${thin} is thin at ${thinN} — about ${deficit} more ${thin} creator${deficit === 1 ? "" : "s"} opens the business approach.`, receipt: { market: mk, creators: total, gate: `${GATE_LOW}`, thinnest: thin, thinnestCount: thinN, needed: deficit }, action: { label: "See the roster", route: "stats-creators", params: { market: mk } }, fingerprint: suggestionFingerprint(["gate", mk, total, ...GATE_CATEGORIES.map((c) => (cats[c] || {}).supply || 0)]) });
     } else {
       const needed = GATE_LOW - total;
-      push({ id: `gate:${mk}`, kind: "gate", type: "marketing.gate_watch", family: "marketing", score: 95, market: mk, text: `${mk} is ${needed} creator${needed === 1 ? "" : "s"} from its business gate (${total} of ${GATE_LOW}). ${thin} is thinnest at ${thinN}.`, receipt: { market: mk, creators: total, gate: `${GATE_LOW}-${GATE_LOW + 10}`, thinnest: thin, thinnestCount: thinN, needed }, action: { label: "See the roster", route: "stats-creators", params: { market: mk } }, fingerprint: suggestionFingerprint(["gate", mk, total, ...GATE_CATEGORIES.map((c) => (cats[c] || {}).supply || 0)]) });
+      push({ id: `gate:${mk}`, kind: "gate", type: "marketing.gate_watch", family: "marketing", score: 95, market: mk, text: `${mk} is ${needed} creator${needed === 1 ? "" : "s"} from its business gate (${total} of ${GATE_LOW}). ${thin} is thinnest at ${thinN}.`, receipt: { market: mk, creators: total, gate: `${GATE_LOW}`, thinnest: thin, thinnestCount: thinN, needed }, action: { label: "See the roster", route: "stats-creators", params: { market: mk } }, fingerprint: suggestionFingerprint(["gate", mk, total, ...GATE_CATEGORIES.map((c) => (cats[c] || {}).supply || 0)]) });
     }
   }
 
@@ -29542,11 +29544,13 @@ async function route(event) {
       };
       const pending = users.filter((u) => u.status === "pending").sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
       const decided = users.filter((u) => u.status !== "pending").sort((a, b) => (a.reviewedAt < b.reviewedAt ? 1 : -1));
-      // Founding roster counts (Jeff, 2026-10-21): approval alone is
-      // not the launch number any more. The quick claim holds the
-      // spot with almost nothing on file, so this strip separates
-      // approved from approved AND profile-complete (the only
-      // creators businesses can actually see). Creators only;
+      // Founding roster counts (PL-01 canon, superseding the
+      // 2026-10-21 note): approval IS the launch number, a market
+      // opens at 50 approved. The quick claim holds the spot with
+      // almost nothing on file, so this strip separates approved
+      // from approved AND profile-complete (the only creators
+      // businesses can actually see) and reports finished
+      // alongside the launch count. Creators only;
       // testers never count toward the roster, matching the markets
       // endpoint. Computed from the records on every read.
       // Build -188 (PL-18): the summary strip used to be hardcoded
@@ -30711,8 +30715,9 @@ async function route(event) {
       // the rest of Admin. Splits per market and role: signed up
       // (every record), awaiting review (pending), approved, and
       // profile finished — approved creators whose profile is
-      // complete, the launch number (profileCompleteOf is
-      // creator-only, so business rows carry the first three).
+      // complete, reported alongside the launch number, which is
+      // approved: a market opens at 50 approved (profileCompleteOf
+      // is creator-only, so business rows carry the first three).
       // Unlisted sign-ups group by typed city + region exactly
       // like unlistedByCity above, for creators AND businesses,
       // so the next Clarksville is visible before it festers.

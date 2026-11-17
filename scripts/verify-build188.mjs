@@ -84,6 +84,29 @@ check("PL-03 overlap guard lifts the chip clear", appJs.includes("function fabAv
 check("PL-03 bottom clearance where the pill floats", themeCss.includes("body.fab-on188 #app { padding-bottom: 92px; }"));
 // PL-04: the Lineup panel lands below the sticky bar.
 check("PL-04 lineup slot carries scroll clearance under the bar", themeCss.includes("#lineup-slot, #fo-lineup-slot { scroll-margin-top: 84px; }"));
+// PL-03 residual (fix pass): the guard probes the chip's FULL
+// box against real glyph rects + interactive rects and searches
+// both directions for the nearest clear spot; the old 5-point /
+// center-only sampling is gone, and the bottom clearance now
+// applies at phone widths too, not only >=901px.
+check("PL-03 residual: guard builds blockers from text glyph rects (TreeWalker + getClientRects)", (() => { const s = seg(appJs, "function fabAvoid188()", "function renderAgentFab"); return s.includes("createTreeWalker") && s.includes("getClientRects"); })());
+check("PL-03 residual: guard searches down as well as up for a clear spot", (() => { const s = seg(appJs, "function fabAvoid188()", "function renderAgentFab"); return s.includes("maxDown") && s.includes("base - d"); })());
+check("PL-03 residual: bottom clearance is not desktop-only any more", !themeCss.includes("@media (min-width: 901px) {\n  body.fab-on188 #app"));
+// PL-01 residual (fix pass): Maggie's launch definition is the
+// canon everywhere she states it: launch = 50 APPROVED; finished
+// profiles are reported alongside, never the bar.
+check("PL-01 residual: admin Maggie bank defines launch as 50 approved", appJs.includes("The launch number is 50 approved creators: a market opens at 50 approved."));
+check("PL-01 residual: old admin-bank launch definition is gone", !appJs.includes("The launch number is approved creators with a finished profile"));
+check("PL-01 residual: creator offers answer counts approvals toward opening", appJs.includes("a market opens at 50 approved creators: approvals are the count that moves a city toward opening") && !appJs.includes("finished founding profiles are literally one of the counts that moves a city toward opening"));
+check("PL-01 residual: sigdata counts answer names approved as the launch number", sigJs.includes("Approved creators are the launch number: a market opens at 50 approved."));
+check("PL-01 residual: sigdata no longer calls finished profiles the launch number", !sigJs.includes("Finished profiles are the launch number"));
+// PL-01 residual (fix pass): the retired 50-60 gate range is
+// gone from Admin's suggestion machinery in router.js: the
+// SUGGESTION_WATCHING line, the gate comment, and the gate
+// receipts (which now print the single canon figure).
+check("PL-01 residual: SUGGESTION_WATCHING uses the 50 approved launch bar", routerJs.includes("Every market's run at its launch bar of 50 approved creators, category balance included"));
+check("PL-01 residual: no 50-60 gate language survives in router.js", !routerJs.includes("50-60") && !routerJs.includes("50–60"));
+check("PL-01 residual: gate receipts print the single figure, never the range", routerJs.includes("gate: `${GATE_LOW}`") && !routerJs.includes("${GATE_LOW}-${GATE_LOW + 10}"));
 check("stamp: BUILD_ID is 2026.11.17-188", buildJs.includes('exports.BUILD_ID = "2026.11.17-188"'));
 check("stamp: shell carries 2026.11.17-188 x4", (indexHtml.match(/2026\.11\.17-188/g) || []).length === 4);
 check("PL-01: FOUNDING_LAUNCH_BAR is 50", /const FOUNDING_LAUNCH_BAR = 50;/.test(routerJs));

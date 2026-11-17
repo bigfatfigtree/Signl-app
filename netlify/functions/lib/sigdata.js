@@ -1090,7 +1090,7 @@ function answerAdmin(f, q, t) {
     }
     if (hasWord(t, "pending", "waiting")) return `${fmt(c.pending)} creator ${plural(c.pending, "application")} pending a decision, out of ${fmt(c.total)} creators in total.`;
     if (hasWord(t, "approved")) return `${fmt(c.approved)} approved creators, and ${fmt(c.complete)} of them ${c.complete === 1 ? "has" : "have"} finished profiles.`;
-    if (hasPhrase(t, "finished", "complete", "profiles")) return `${fmt(c.complete)} creators have finished profiles, out of ${fmt(c.approved)} approved. Finished profiles are the launch number: they are the roster businesses can see.`;
+    if (hasPhrase(t, "finished", "complete", "profiles")) return `${fmt(c.complete)} creators have finished profiles, out of ${fmt(c.approved)} approved. Approved creators are the launch number: a market opens at 50 approved. Finished profiles are reported alongside that count, and they are the roster businesses can see.`;
     if (hasWord(t, "rejected")) return `${fmt(c.rejected)} ${plural(c.rejected, "creator")} rejected, out of ${fmt(c.total)} in total.`;
     if (countAsk || hasWord(t, "total")) {
       return `${fmt(c.total)} creators in total: ${fmt(c.approved)} approved, ${fmt(c.pending)} pending, ${fmt(c.rejected)} rejected. ${fmt(c.complete)} of the approved ${c.complete === 1 ? "has" : "have"} finished profiles, and finished profiles are the roster businesses can see.${c.testers ? ` ${fmt(c.testers)} tester ${plural(c.testers, "record")} not counted in any of those numbers.` : ""}`;

@@ -4440,35 +4440,107 @@ function ensureSigFab() {
 // the chip; if a button, field or text leaf is there, lift the
 // chip in 56px steps (max 3) until its points are clear. The
 // chip never rests on top of a value, a button, or a sentence.
+//
+// Build -188 fix pass (PL-03 residual): the 5-point probe above
+// missed the pending-business landing at 390px, where the chip's
+// center sat over the status card's edge while its lower corner
+// covered the tail of the Payment sentence (and, on the national
+// composer, a corner grazed a full-width input by a few px).
+// Point sampling cannot see a sentence: the guard now builds the
+// real blocker set, the glyph rects of every visible text node
+// (Range.getClientRects, so a wide element box with no glyphs
+// under the chip does not count, and a glyph under ANY part of
+// the chip does) plus the rects of interactive elements, then
+// moves the chip to the NEAREST fully clear position, searching
+// up and down in 4px steps from its base spot. If no position in
+// range is fully clear (a solid wall of text), it settles where
+// the total overlap is smallest. The chip never rests on top
+// of a value, a button, or a sentence when a clear spot exists.
 function fabAvoid188() {
   const fab = document.getElementById("agent-fab");
   if (!fab || !fab.classList.contains("show")) return;
   const base = window.innerWidth <= 767.98 ? 84 : 20;
-  // Harm standard (the audit's own evidence): an interactive
-  // element anywhere under the chip, or readable text under
-  // its CENTER. A paragraph's box grazing a corner is not a
-  // cover; a button or a sentence under the middle is.
-  const probe = () => {
-    const r = fab.getBoundingClientRect();
-    if (!r.width) return { interactive: false, centerText: false };
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const pts = [[cx, cy], [r.left + 6, r.top + 6], [r.right - 6, r.bottom - 6], [r.left + 6, r.bottom - 6], [r.right - 6, r.top + 6]];
-    fab.style.visibility = "hidden";
-    let interactive = false, centerText = false;
-    pts.forEach(([x, y], i) => {
-      if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return;
-      const el = document.elementFromPoint(x, y);
-      if (!el || el === fab || fab.contains(el) || el === document.body || el === document.documentElement) return;
-      if (el.closest("button, a, input, select, textarea, [role='button']")) interactive = true;
-      if (i === 0 && el.children.length === 0 && (el.innerText || "").trim()) centerText = true;
-    });
-    fab.style.visibility = "";
-    return { interactive, centerText };
-  };
   fab.style.bottom = "";
-  let lift = 0;
-  let p = probe();
-  while ((p.interactive || p.centerText) && lift < 3) { lift += 1; fab.style.bottom = `${base + lift * 56}px`; p = probe(); }
+  const r0 = fab.getBoundingClientRect();
+  if (!r0.width || !r0.height) return;
+  // ---- collect blockers: [left, top, right, bottom] ----
+  const blockers = [];
+  const visCache = new Map();
+  const vis = (el) => {
+    if (!visCache.has(el)) {
+      const c = window.getComputedStyle(el);
+      visCache.set(el, c.display !== "none" && c.visibility !== "hidden");
+    }
+    return visCache.get(el);
+  };
+  try {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        const p = n.parentElement;
+        if (!p || p.closest("#agent-fab")) return NodeFilter.FILTER_REJECT;
+        if (!vis(p)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    let node;
+    while ((node = walker.nextNode())) {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const gr of range.getClientRects()) {
+        if (gr.width && gr.height) blockers.push([gr.left, gr.top, gr.right, gr.bottom]);
+      }
+    }
+  } catch (e) { /* best-effort: fall through with what we have */ }
+  document.querySelectorAll("button, a, input, select, textarea, label, [role='button']").forEach((el) => {
+    if (el === fab || fab.contains(el)) return;
+    if (!vis(el)) return;
+    const r = el.getBoundingClientRect();
+    if (r.width && r.height) blockers.push([r.left, r.top, r.right, r.bottom]);
+  });
+  // NOTE (fix pass): whole element BOXES of text-bearing
+  // elements are deliberately NOT blockers. The audit's own harm
+  // standard is a cover: glyphs under the chip. A heading's box
+  // spans the full column width, so its empty right end is not a
+  // cover, and on the pending card the stacked row boxes leave
+  // no 46px box-free gap anywhere in the viewport: box-blocking
+  // was tried and pushed the chip to the top of the screen while
+  // still settling on a glyph sliver. Glyph rects are the exact
+  // geometry of "a value, a button, or a sentence".
+  // ---- overlap helpers (2px breathing room around the chip) ----
+  const PAD = 2;
+  const overlapArea = (top) => {
+    const l = r0.left - PAD, r = r0.right + PAD, t = top - PAD, b = top + r0.height + PAD;
+    let area = 0;
+    for (const bl of blockers) {
+      const ox = Math.min(r, bl[2]) - Math.max(l, bl[0]);
+      if (ox <= 0) continue;
+      const oy = Math.min(b, bl[3]) - Math.max(t, bl[1]);
+      if (oy > 0) area += ox * oy;
+    }
+    return area;
+  };
+  if (overlapArea(r0.top) === 0) return;
+  const maxUp = Math.max(0, r0.top - 8);
+  const maxDown = Math.max(0, window.innerHeight - 8 - r0.bottom);
+  const maxD = Math.max(maxUp, maxDown);
+  let chosen = null;
+  for (let d = 4; d <= maxD && chosen === null; d += 4) {
+    if (d <= maxUp && overlapArea(r0.top - d) === 0) chosen = base + d;
+    else if (d <= maxDown && overlapArea(r0.top + d) === 0) chosen = base - d;
+  }
+  if (chosen === null) {
+    // No fully clear spot within reach: settle at the least
+    // overlap found (searching up first at each distance).
+    let bestArea = Infinity, bestBottom = null;
+    for (let d = 0; d <= maxD; d += 8) {
+      if (d <= maxUp) { const a = overlapArea(r0.top - d); if (a < bestArea) { bestArea = a; bestBottom = base + d; } }
+      if (d <= maxDown) { const a = overlapArea(r0.top + d); if (a < bestArea) { bestArea = a; bestBottom = base - d; } }
+      if (bestArea === 0) break;
+    }
+    chosen = bestBottom;
+  }
+  if (chosen !== null && chosen !== base) fab.style.bottom = `${chosen}px`;
 }
 function renderAgentFab() {
   const fab = document.getElementById("agent-fab");
@@ -6159,7 +6231,7 @@ function sigBankFor(biz) {
       a: "Your book-me page is your public Magpie page at your profile link. Turn it on under Profile: it shows your handle, your local reach, your categories, and your featured posts, and nothing private. Signed-in businesses see your listed rate and book you inside Magpie. Businesses with a paid, active account can also see your social channels and message you in the app. Bookings that start on Magpie stay on Magpie.", flow: "Finish my profile" },
     { id: "offers", q: "How do I get offers?", ph: ["get offers", "no offers", "offers yet", "find work", "get booked", "bookings", "get work"], g: [["offer", "offers", "booked", "work", "gigs", "jobs"], ["how", "get", "find", "none", "no", "why", "any"]], s: [],
       a: (c) => {
-        let t = c.live ? "Businesses post offers and invite creators straight from the roster. Finished profiles with strong local reach get invited first. Applying is one tap, and your profile card is the application, so a finished profile is the whole game." : "Your city is building right now, and you're early. Offers start when it opens, and finished founding profiles are literally one of the counts that moves a city toward opening, so finishing yours now brings it closer AND puts you first in line: first pick goes to completed founding profiles.";
+        let t = c.live ? "Businesses post offers and invite creators straight from the roster. Finished profiles with strong local reach get invited first. Applying is one tap, and your profile card is the application, so a finished profile is the whole game." : "Your city is building right now, and you're early. Offers start when it opens, and a market opens at 50 approved creators: approvals are the count that moves a city toward opening. Finishing yours now puts you first in line when it does: first pick goes to completed founding profiles.";
         if (c.charter) t += " And as a Charter Creator, you see new paid offers 24 hours before everyone else" + (c.live ? "." : " once your market is live.");
         return t;
       }, flow: (c) => c.live ? "See offers near you" : "Finish my profile" },
@@ -29042,7 +29114,7 @@ const SIG_ADMIN_BANK = [
   { id: "approvals", q: "How do approvals work?", ph: ["how do approvals work", "approve", "pending mean", "what does pending mean", "review queue", "reject"], g: [["approv", "pending", "reject", "application"], ["how", "work", "mean", "decide", "long"]], s: [],
     a: "Applications land in the queue as pending. Approving a creator puts them on the founding roster. Approving a business puts it on the founding list; it still needs activation, per business or for a whole market at once, before it gets full access. Every applicant is owed an answer within 2 business days, and the app tracks that." },
   { id: "marketsadmin", q: "How do markets and activation work?", ph: ["activate a market", "market live", "founding only", "launch number", "profile complete"], g: [["market", "markets", "activation"], ["activate", "live", "open", "work", "mean"]], s: [],
-    a: "A market that is not live shows creators their founding status page only: no offers, no discovery. Activating a market opens publishing and bookings there, but founding businesses activate separately, per business or for every founding business in the market. The launch number is approved creators with a finished profile: home city, an audience count above zero, at least one category, and local audience share reported." },
+    a: "A market that is not live shows creators their founding status page only: no offers, no discovery. Activating a market opens publishing and bookings there, but founding businesses activate separately, per business or for every founding business in the market. The launch number is 50 approved creators: a market opens at 50 approved. Finished profiles are reported alongside that count, not as the bar: a finished profile has a home city, an audience count above zero, at least one category, and local audience share reported, and finished profiles are the roster businesses can see." },
   { id: "partnersadmin", q: "How do partners work?", ph: ["partner", "demo partner", "share", "tracked link"], g: [["partner", "partners", "demo"], ["how", "work", "create", "share", "seed"]], s: ["partner"],
     a: "Partners recruit creators and businesses through tracked links and keep their share of subscription revenue in their markets. Create one under Partners; the partner sets their own password from the sign-in page with Forgot password. Demo Media Group is the seeded demo partner: its records are Sample-tagged and tester-flagged, so they stay out of every real count while the partner dashboard demos end to end." },
   { id: "pricing", q: "What do the plans cost?", ph: ["cost", "price", "pricing", "plans", "per month"], g: [["plan", "plans", "cost", "price"], ["what", "how much", "difference", "include"]], s: ["pricing"],
