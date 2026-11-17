@@ -169,9 +169,11 @@ check("BD drawer carries the shell's full destination set",
   && appJs.includes('dest("deck", "Seller Kit"') && appJs.includes('dest("stats", "My Money"')
   && appJs.includes('dest("menu", "Menu & PIN"') && appJs.includes('"Your account"'));
 check("BD drawer: admin gets Manage, a rep gets My creator side, sign out always rides",
-  appJs.includes('"Manage"') && appJs.includes('return bdGoManage161()')
-  && appJs.includes('"My creator side"') && appJs.includes('return bdGoCreator()')
-  && appJs.includes('bdDrawerRowHtml168'));
+  // Build -193: the controls ride the drawer's bottom identity
+  // block (bdIdentity193) instead of destination rows — same
+  // drawer, same controls, identity pinned at the bottom.
+  appJs.includes('return bdGoManage161()') && appJs.includes('return bdGoCreator()')
+  && appJs.includes('function bdIdentity193') && appJs.includes('bdDrawerRowHtml168'));
 check("BD drawer only opens inside the rep shell",
   appJs.includes('if (!u || !bdShellActive()) return false;'));
 

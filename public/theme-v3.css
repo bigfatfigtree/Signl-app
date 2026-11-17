@@ -2237,3 +2237,151 @@ select.ctl189, .sr-sel select {
 .nat-queue-empty191 {
   border: 1.5px dashed var(--line); border-radius: 14px; padding: 16px; margin-top: 10px; background: #fff;
 }
+
+/* ================= Build -193 (PL-39: the Hapsta-measured shell) =================
+   Jeff (2026-11-17): the menu and rail in EVERY shell (Admin,
+   Creator, Partner, Business, Biz Dev) match the Hapsta app
+   shell's measured values, not an eyeballed approximation.
+   Measured from hapsta-app/www/app/portal.html (its sidebar
+   stylesheet and .btn):
+     font            Inter (already loaded in the shell)
+     row             15px / weight 500 / color #26262b,
+                     padding 9px 12px, margin 2px 0,
+                     radius 12px, icon-to-label gap 9px
+     row icon        18px line icon (stroke 1.8), no chip
+     row hover       #f1f1f0
+     row active      tint background, color #0a0a0a, weight 600
+     group header    12px / 600 / #8b8b93, margin 20px 10px 6px,
+                     no letter-spacing, no uppercase transform
+     rail            240px wide, padding 18px 14px
+     mobile drawer   252px
+     primary pill    padding 11px 19px, radius 999px,
+                     14.5px / 600
+     identity        name 15px strong, state line 13px #8b8b93
+   Magpie substitutions, per Jeff's spec: the active tint and
+   the primary pill use the Magpie blue-to-green brand
+   gradient/tint in place of Hapsta's mint. The phone bottom
+   bars are untouched (PL-22 stands as built). */
+
+/* --- menus (hamburger, Everything panel, Biz Dev drawer): flat rows --- */
+.ham137-panel .more-row, .ev125-panel .more-row {
+  font-size: 15px; font-weight: 500; color: #26262b; line-height: 1.27;
+  padding: 9px 12px; margin: 2px 0; gap: 9px; min-height: 0;
+  border: 0; background: transparent; box-shadow: none; border-radius: 12px;
+}
+/* The icon span reset must not depend on a body shell class:
+   the Admin shell body carries neither v3-on nor v3-slim, and
+   an unscoped base rule elsewhere gives the span a 40px tile. */
+.ham137-panel .more-row .more-ic, .ev125-panel .more-row .more-ic {
+  width: auto; height: auto; flex: none; padding: 0;
+  background: none; border-radius: 0; color: inherit;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ham137-panel .more-row:hover, .ev125-panel .more-row:hover { background: #f1f1f0; }
+body.v3-on .ham137-panel .more-row .more-ic, body.v3-on .ev125-panel .more-row .more-ic,
+body.v3-slim .ham137-panel .more-row .more-ic, body.v3-slim .ev125-panel .more-row .more-ic {
+  width: auto; height: auto; flex: none; padding: 0;
+  background: none; border-radius: 0; color: inherit;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ham137-panel .more-row .more-ic svg, .ev125-panel .more-row .more-ic svg { width: 18px; height: 18px; }
+.ham137-panel .more-row .more-ic .tab-sig-img, .ev125-panel .more-row .more-ic .tab-sig-img { width: 18px; height: 18px; border-radius: 50%; }
+.ham137-panel .more-label, .ev125-panel .more-label {
+  font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ham137-panel .more-row.row-on187, .ev125-panel .more-row.row-on187,
+.ham137-panel .more-row.on, .ev125-panel .more-row.on {
+  background: linear-gradient(92deg, rgba(24, 91, 255, .10), rgba(0, 182, 122, .12));
+  color: #0a0a0a;
+}
+.ham137-panel .more-row.row-on187 .more-label, .ev125-panel .more-row.row-on187 .more-label,
+.ham137-panel .more-row.on .more-label, .ev125-panel .more-row.on .more-label { font-weight: 600; }
+.ham137-panel .more-row.row-on187 .more-ic, .ev125-panel .more-row.row-on187 .more-ic { background: none; }
+
+/* --- group headers: Hapsta's quiet 12px gray, as measured --- */
+.ev125-group h5 {
+  font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: #8b8b93; margin: 20px 10px 6px;
+}
+.rail-group189 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: #8b8b93; margin: 20px 10px 6px; padding: 0;
+}
+
+/* --- the menu's primary-action pill (Hapsta .btn metrics, Magpie gradient) --- */
+.menu-primary193 {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; padding: 11px 19px; margin: 8px 0 2px; line-height: 1.05;
+  border: 0; border-radius: 999px; background: var(--grad); color: #fff;
+  font-family: 'Inter', system-ui, sans-serif; font-size: 14.5px; font-weight: 600;
+  cursor: pointer;
+}
+.menu-primary193.is-locked193 { opacity: .55; }
+.menu-primary193-note {
+  margin: 4px 10px 0; font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12.5px; color: #8b8b93;
+}
+
+/* --- identity at the bottom of the menu: Hapsta .who metrics --- */
+.menu-idcard187 { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.menu-idcard187-who { flex: 1; min-width: 0; }
+.menu-idcard187-acts { flex-basis: 100%; }
+.menu-idcard187-name { font-family: 'Inter', system-ui, sans-serif; font-size: 15px; font-weight: 600; }
+.menu-idcard187-state { font-size: 13px; color: #8b8b93; }
+.mi-ava189 { width: 44px; height: 44px; }
+
+/* --- mobile drawer width: Hapsta's 252px --- */
+@media (max-width: 767.98px) {
+  .ham137-panel, .ev125-panel { width: min(252px, 88vw); }
+}
+
+/* --- desktop rails: the same rows, the same numbers --- */
+#rail, .rail-item { font-family: 'Inter', system-ui, sans-serif; }
+@media (min-width: 768px) {
+  body.v3-on #tabbar { width: 240px; padding-left: 14px; padding-right: 14px; }
+  body.v3-on main { margin-left: 240px; width: calc(100% - 240px); }
+  #tabbar .tab-main { gap: 0; }
+  #tabbar .tab-item {
+    gap: 9px; padding: 9px 12px; margin: 2px 0; min-height: 0;
+    border-radius: 12px; color: #26262b; line-height: 1.27;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  #tabbar .tab-item .tab-label, #tabbar .tab-item .tab-label .lbl-full { font-size: 15px; font-weight: 500; }
+  #tabbar .tab-item .tab-ic { padding: 0; background: none; }
+  #tabbar .tab-item .tab-ic svg { width: 18px; height: 18px; }
+  #tabbar .tab-item:hover { background: #f1f1f0; }
+  #tabbar .tab-item.on {
+    background: linear-gradient(92deg, rgba(24, 91, 255, .10), rgba(0, 182, 122, .12));
+    box-shadow: none; color: #0a0a0a;
+  }
+  #tabbar .tab-item.on .tab-label, #tabbar .tab-item.on .tab-label .lbl-full { font-weight: 600; }
+  #tabbar .tab-item.on .tab-ic { background: none; }
+  body.rail-on #rail { width: 240px; padding: 18px 14px 90px; }
+  body.rail-on main, body.rail-on .footer { margin-left: 240px; }
+  body.rail-on main { width: calc(100% - 240px); }
+  body.rail-on #toprow { margin-left: 240px; }
+  .rail-item {
+    font-size: 15px; font-weight: 500; color: #26262b; line-height: 1.27;
+    gap: 9px; padding: 9px 12px; margin: 2px 0; min-height: 0; border-radius: 12px;
+  }
+  .rail-item .rail-label { font-size: 15px; font-weight: 500; }
+  .rail-item .bn-icon svg { width: 18px; height: 18px; }
+  .rail-item:hover { background: #f1f1f0; color: #26262b; }
+  .rail-item.on, body.rail-on .rail-item.on {
+    background: linear-gradient(92deg, rgba(24, 91, 255, .10), rgba(0, 182, 122, .12));
+    box-shadow: none; color: #0a0a0a;
+  }
+  .rail-item.on .rail-label { font-weight: 600; }
+  #tabbar .tab-item .tab-label, .rail-item .rail-label { line-height: 1.27; }
+  /* the rail's primary pill takes Hapsta .btn metrics too */
+  .rail-primary187 {
+    width: 100%; margin: 10px 0 4px; padding: 11px 19px; line-height: 1.05;
+    border-radius: 999px; background: var(--grad);
+    font-size: 14.5px; font-weight: 600;
+  }
+  /* rail-foot identity: same who metrics */
+  .tab-user .tu-name { font-family: 'Inter', system-ui, sans-serif; font-size: 15px; font-weight: 600; }
+  .tab-user .tu-sub { font-size: 13px; color: #8b8b93; }
+  .tab-user .tu-ava { width: 40px; height: 40px; }
+}

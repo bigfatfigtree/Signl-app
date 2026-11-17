@@ -2937,7 +2937,11 @@ function everythingRowHtml125(r) {
     const innerL = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub nav-lock187-note">${esc(lock187)}</span></span>`;
     return `<button type="button" class="more-row ev125-row nav-locked187" aria-disabled="true" onclick="closeEverything125(); return navLockedTap187('${lock187}')">${innerL}</button>`;
   }
-  const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
+  // Build -193 (PL-39, Jeff's Hapsta-measured shell): menu rows
+  // are FLAT — one line icon and one single-line label. No
+  // description line, no chevron. Badges and standing status
+  // still ride the row's right edge.
+  const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : ""}`;
   const onCls189 = r.tab && r.tab === state.tab ? " row-on187" : "";
   if (r.href) return `<a class="more-row ev125-row${onCls189}" href="${esc(r.href)}" onclick="closeEverything125()">${inner}</a>`;
   const act = r.act || `return go('dashboard','${r.tab}')`;
@@ -2959,6 +2963,7 @@ function openEverything125() {
   <div class="ev125-panel" role="dialog" aria-label="Everything">
     ${drawer168HeadHtml("closeEverything125")}
     <div class="ev125-head"><strong>Everything</strong><span class="muted small">All you can do</span><button type="button" class="linklike" onclick="closeEverything125()" aria-label="Close">✕</button></div>
+    ${menuPrimary193("closeEverything125")}
     ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(everythingRowHtml125).join("")}</div>`).join("")}
     ${state.user ? menuIdentityCard187(state.user, state.user.role === "business" && state.user.business ? state.user.business.businessName : state.user.role === "partner" && state.user.partner ? state.user.partner.name : state.user.name) : ""}
   </div>`;
@@ -3149,7 +3154,8 @@ function hamburgerRowHtml137(r) {
     const innerL = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub nav-lock187-note">${esc(lock187)}</span></span>`;
     return `<button type="button" class="more-row ev125-row nav-locked187" aria-disabled="true" onclick="closeHamburger137(); return navLockedTap187('${lock187}')">${innerL}</button>`;
   }
-  const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
+  // Build -193: flat rows, same treatment as everythingRowHtml125.
+  const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : ""}`;
   const onCls187 = r.tab && r.tab === state.tab ? " row-on187" : "";
   if (r.href) return `<a class="more-row ev125-row${onCls187}" href="${esc(r.href)}" onclick="closeHamburger137()">${inner}</a>`;
   const act = r.act || `return go('dashboard','${r.tab}')`;
@@ -3177,7 +3183,7 @@ function openHamburger137() {
   el.innerHTML = `
   <div class="ham137-panel" role="dialog" aria-label="Menu">
     ${drawer168HeadHtml("closeHamburger137")}
-    <div class="ham137-head">${avaHtml122("idm126-ava", "idm126-ava", photo, initial)}<span class="idm126-who"><span class="idm126-name">${esc(name || "")}</span><span class="idm126-sub">${esc(roleWord)}</span></span><button type="button" class="linklike" onclick="closeHamburger137()" aria-label="Close">✕</button></div>
+    ${menuPrimary193()}
     ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(hamburgerRowHtml137).join("")}</div>`).join("")}
     ${menuIdentityCard187(u, name)}
   </div>`;
@@ -3215,6 +3221,60 @@ function menuIdentityCard187(u, name) {
     <div class="menu-idcard187-acts">
     ${other ? `<button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return switchSide180()">Switch to your ${other} side</button>` : ""}
     <button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return go('dashboard','${profTab}')">Profile and account</button>
+    </div>
+  </div>`;
+}
+// Build -193 (PL-39): the menu's one primary action — a
+// full-width gradient pill at the top of the menu, the role's
+// "+ New session" equivalent, at Hapsta's measured button
+// metrics (theme-v3.css, Build -193 block). Creator: Find
+// offers. Business: Start a new campaign. Admin and Partner
+// have NO pill: neither has one honest primary action a
+// stranger would read in five seconds (the same call Jeff
+// made for the -187 center +), so their menus carry none
+// rather than a decorative button. A pending account's pill
+// stays visible with its unlock note, never a live-looking
+// dead end (the -187 locked treatment).
+function menuPrimary193(closeFn) {
+  const u = state.user;
+  if (!u) return "";
+  const close = closeFn || "closeHamburger137";
+  if (u.role === "creator") {
+    if (u.status === "pending") return `<button type="button" class="menu-primary193 is-locked193" onclick="${close}(); return navLockedTap187('Unlocks when your application is approved.')">Find offers</button><p class="menu-primary193-note">Unlocks when your application is approved.</p>`;
+    return `<button type="button" class="menu-primary193" onclick="${close}(); return go('dashboard','Find Offers')">Find offers</button>`;
+  }
+  if (u.role === "business") {
+    if (u.status === "pending") return `<button type="button" class="menu-primary193 is-locked193" onclick="${close}(); return navLockedTap187('Unlocks when your application is approved.')">Start a new campaign</button><p class="menu-primary193-note">Unlocks when your application is approved.</p>`;
+    const tab193 = u.business && u.business.scope === "national" ? "NatNew" : "Campaign Setup";
+    return `<button type="button" class="menu-primary193" onclick="${close}(); return go('dashboard','${tab193}')">Start a new campaign</button>`;
+  }
+  return "";
+}
+// Build -193: the Biz Dev drawer's bottom identity block —
+// avatar, name, one seat line, and the account controls
+// (your account, the side switch, sign out) pinned at the
+// bottom of the menu like every other shell. With the seat
+// gone there is no primary pill either: no honest action.
+function bdMenuPrimary193() {
+  if (state.bdNoSeat) return "";
+  return `<button type="button" class="menu-primary193" onclick="closeBdDrawer168(); return go('dashboard','BD Leads')">Add a lead</button>`;
+}
+function bdIdentity193(u) {
+  const seat = u.bizdevSeat || {};
+  const photo = selfAvatarUrl122(u);
+  const initial = String(u.name || "").trim().charAt(0).toUpperCase() || "S";
+  const stateLine = state.bdNoSeat
+    ? "Your seat has ended"
+    : (u.role === "admin" ? `Sell mode (your HQ seat)${seat.repCode ? ` · ${seat.repCode}` : ""}` : `Biz Dev${seat.repCode ? ` · ${esc(seat.repCode)}` : ""}${bdMktName() ? ` · ${esc(bdMktName())}` : ""}`);
+  return `<div class="menu-idcard187">
+    <span class="mi-ava189" aria-hidden="true">${photo ? `<img src="${esc(photo)}" alt="" onerror="this.remove()">` : ""}${esc(initial)}</span>
+    <div class="menu-idcard187-who"><span class="menu-idcard187-name">${esc(u.name || "")}</span><span class="menu-idcard187-state">${esc(stateLine)}</span></div>
+    <div class="menu-idcard187-acts">
+    <button type="button" class="btn ghost small-btn" onclick="closeBdDrawer168(); return go('dashboard','Account')">Your account</button>
+    ${u.role === "admin"
+      ? `<button type="button" class="btn ghost small-btn" onclick="closeBdDrawer168(); return bdGoManage161()">Manage</button>`
+      : `<button type="button" class="btn ghost small-btn" onclick="closeBdDrawer168(); return bdGoCreator()">My creator side</button>`}
+    <button type="button" class="btn ghost small-btn" onclick="signOut()">Sign out</button>
     </div>
   </div>`;
 }
@@ -3274,8 +3334,11 @@ function bdMenuTap168() {
   return bdOpenDrawer168();
 }
 function bdDrawerRowHtml168(r) {
-  const inner = `<span class="more-ic">${bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span><span class="more-chev">›</span>`;
-  return `<button type="button" class="more-row ev125-row" onclick="closeBdDrawer168(); ${r.act}">${inner}</button>`;
+  // Build -193: flat rows in the Biz Dev drawer too — icon and
+  // one label, active destination carries the soft pill.
+  const inner = `<span class="more-ic">${bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span></span>`;
+  const onCls193 = r.tab && r.tab === state.tab ? " row-on187" : "";
+  return `<button type="button" class="more-row ev125-row${onCls193}" onclick="closeBdDrawer168(); ${r.act}">${inner}</button>`;
 }
 function bdOpenDrawer168() {
   const old = document.getElementById("bd-drawer168");
@@ -3287,7 +3350,7 @@ function bdOpenDrawer168() {
   const u = state.user;
   if (!u || !bdShellActive()) return false;
   const seat = u.bizdevSeat || {};
-  const dest = (icon, label, sub, tab) => ({ icon, label, sub, act: `return go('dashboard','${tab}')` });
+  const dest = (icon, label, sub, tab) => ({ icon, label, sub, tab, act: `return go('dashboard','${tab}')` });
   const groups = [
     // Build -188 (PL-05): seat gone — the Sell group collapses
     // to Home (the panel) so the drawer stops offering seven
@@ -3301,13 +3364,12 @@ function bdOpenDrawer168() {
       dest("deck", "Seller Kit", "The cards and pages you show", "BD Kit"),
       dest("stats", "My Money", "What you have earned so far", "BD Money"),
     ] }]),
+    // Build -193: the account controls (your account, the
+    // side switch, sign out) live in the bottom identity
+    // block now, like every other shell — this group keeps
+    // only the seat's own destination.
     { title: "Your seat", rows: [
       dest("menu", "Menu & PIN", "Your claim link, your city, your Show Mode PIN", "BD Menu"),
-      { icon: "person", label: "Your account", sub: "Your settings: sign-in, email and password", act: "return go('dashboard','Account')" },
-      ...(u.role === "admin"
-        ? [{ icon: "building", label: "Manage", sub: "Back to the HQ Biz Dev room", act: "return bdGoManage161()" }]
-        : [{ icon: "person", label: "My creator side", sub: "Look at your creator account", act: "return bdGoCreator()" }]),
-      { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
     ] },
   ];
   const el = document.createElement("div");
@@ -3316,8 +3378,9 @@ function bdOpenDrawer168() {
   el.innerHTML = `
   <div class="ham137-panel" role="dialog" aria-label="Menu">
     ${drawer168HeadHtml("closeBdDrawer168")}
-    <div class="ham137-head">${avaHtml122("idm126-ava", "idm126-ava", selfAvatarUrl122(u), String(u.name || "").trim().charAt(0).toUpperCase() || "S")}<span class="idm126-who"><span class="idm126-name">${esc(u.name || "")}</span><span class="idm126-sub">${u.role === "admin" ? `Sell mode (your HQ seat)${seat.repCode ? ` · ${esc(seat.repCode)}` : ""}` : `Biz Dev${seat.repCode ? ` · ${esc(seat.repCode)}` : ""}`}</span></span><button type="button" class="linklike" onclick="closeBdDrawer168()" aria-label="Close">✕</button></div>
+    ${bdMenuPrimary193()}
     ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(bdDrawerRowHtml168).join("")}</div>`).join("")}
+    ${bdIdentity193(u)}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeBdDrawer168(); });
   document.body.appendChild(el);
@@ -3731,7 +3794,13 @@ function tabBarHtml() {
     <button type="button" class="tab-item tab-signout" onclick="signOut()">
       <span class="tab-ic">${bnIcon("signout")}</span><span class="tab-label">Sign out</span>
     </button>`;
-    return `${railhead}<div class="tab-main">${btns}${signout}</div>${railfoot}`;
+    // Build -193: the Biz Dev rail carries the same primary
+    // pill as its menu (Add a lead), desktop only — the
+    // .rail-primary187 rules hide it on the phone bar. No
+    // pill when the seat is gone (no honest action).
+    const bdRailPill193 = state.bdNoSeat ? "" : `
+    <button type="button" class="rail-primary187" onclick="return go('dashboard','BD Leads')">Add a lead</button>`;
+    return `${railhead}<div class="tab-main">${btns}${bdRailPill193}${signout}</div>${railfoot}`;
   }
   const items = tabItemsFor();
   if (!items.length) return "";
