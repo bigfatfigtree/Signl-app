@@ -9908,7 +9908,7 @@ const CLAIM_STACK_PLATFORMS = [
 // pedestrian shopping street off Oxford Street) - the site
 // library carries no London city shot, so it was sourced the
 // same way that library itself was: real stock, never generated.
-const CLAIM_CITY_PHOTOS = ["atlanta", "austin", "chicago", "dallas", "denver", "london", "miami", "nashville", "new-york", "tampa", "virginia-beach", "washington-dc"];
+const CLAIM_CITY_PHOTOS = ["atlanta", "austin", "chicago", "dallas", "denver", "london", "miami", "nashville", "new-york-city", "tampa", "virginia-beach", "washington-dc"];
 function claimPhotoFor(market) {
   const slug = String(market || "").trim().toLowerCase().replace(/\s+/g, "-");
   return CLAIM_CITY_PHOTOS.includes(slug) ? `/assets/claim/city-${slug}.jpg` : "/assets/claim/welcome.jpg";
