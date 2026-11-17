@@ -7068,6 +7068,17 @@ async function recentLifecycleEmail(userId, windowMs) {
   }
   return latest;
 }
+// Build -185: the last-activity stamp the win-back sweep reads.
+// user.updatedAt cannot serve (sweeps and backfills bump it, so
+// it would mark everyone active forever); this field moves on a
+// real sign-in (password, Google, or sign-in link), on a side
+// switch, and — throttled to once a day — when a live session
+// loads /auth/me, so a daily-active user on a 30-day session is
+// never mistaken for dormant (review fix, Build -185).
+async function stampLastSignIn(user) {
+  user.lastSignInAt = nowIso();
+  await store.set(`user:${user.id}`, user);
+}
 async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   const threadId = platformThreadId(creator.id);
   const msg = {
@@ -12413,6 +12424,134 @@ async function runProfileCompletionReminderSweep(opts = {}) {
   return summary;
 }
 
+// ---------- Win-back (Build -185, Jeff, approved 2026-11-15) ----------
+// A quiet approved creator or business gets ONE warm nudge
+// after ~14 days without a sign-in, then at most once a month.
+// Creators hear from Maggie in-app (sendPlatformMessage, which
+// carries the 4-hour lifecycle suppression guard on its email
+// ping); businesses get the win_back email, guarded explicitly
+// by the same recentLifecycleEmail check before anything sends.
+// Nobody with a live booking obligation is ever nudged: a
+// booking still in "booked", or redeemed with the post still
+// outstanding, means the person is mid-work, not dormant.
+// Dormancy anchor: the newest of lastSignInAt (Build -185's
+// sign-in stamp), reviewedAt and createdAt — for a dual-role
+// account the sibling side's anchor counts too (one point get),
+// because a person active on one side is not dormant. The cap
+// lives in its own winback:{userId} record, stamped BEFORE the
+// send so a crashed run can never double-send.
+const WINBACK_DORMANT_DAYS = 14;
+const WINBACK_CAP_DAYS = 30;
+function winBackPlace(user) {
+  if (user.market === UNLISTED) return user.city || "your city";
+  return user.market ? marketTalkName(user.market) : "your market";
+}
+function winBackMaggieBody(user) {
+  const first = greetingName(user);
+  const place = winBackPlace(user);
+  return `Hi ${first}, Maggie here from the Magpie team. It has been a couple of weeks since you stopped by, so I wanted to say hello. Your founding spot in ${place} is still yours, and your page is just as you left it. Whenever you are ready, sign in and have a look around.`;
+}
+function winBackEmail(user) {
+  const first = greetingName(user);
+  // Scope lives on user.business.scope (national.js businessScopeOf),
+  // never on a top-level user.scope — reading the wrong field sent
+  // national brands the market copy with "National" as the place
+  // name (Build -185 review fix).
+  const isNat = national.isNationalBusiness(user);
+  const place = winBackPlace(user);
+  const subject = "Your Magpie founding spot is still held";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    isNat
+      ? "It has been a couple of weeks since you signed in to Magpie, so a quick note from us: your national founding account is still held, and everything is right where you left it."
+      : `It has been a couple of weeks since you signed in to Magpie, so a quick note from us: your founding business spot in ${place} is still held, and your account is right where you left it.`,
+    "",
+    isNat
+      ? "When your brand is verified, local creators in every Magpie market can see your campaigns. If anything on your brand profile is still unfinished, finishing it now means you are ready the moment verification lands."
+      : `When ${place} opens, founding businesses are the first ones local creators see. If anything on your profile is still unfinished, finishing it now means you are ready on day one.`,
+    "",
+    "Sign in here: https://app.magpielocal.com",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+async function runWinbackSweep(opts = {}) {
+  const summary = { checked: 0, sentCreators: 0, sentBusinesses: 0, suppressed: 0, skippedActiveBooking: 0, skippedCap: 0 };
+  const now = opts.now ? new Date(opts.now).getTime() : Date.now();
+  const users = await allUsers();
+  const bookings = await allBookings();
+  const posts = await allPosts();
+  const postedBookingIds = new Set(posts.map((p) => p && p.bookingId).filter(Boolean));
+  const obligated = new Set();
+  for (const bk of bookings) {
+    if (!bk) continue;
+    const active = bk.status === "booked" || (!!bk.redeemedAt && !postedBookingIds.has(bk.id));
+    if (!active) continue;
+    if (bk.creatorId) obligated.add(bk.creatorId);
+    if (bk.businessId) obligated.add(bk.businessId);
+  }
+  const anchorOf = (u) => Math.max(Date.parse(u.lastSignInAt || "") || 0, Date.parse(u.reviewedAt || "") || 0, Date.parse(u.createdAt || "") || 0);
+  for (const u of users) {
+    if (u.role !== "creator" && u.role !== "business") continue;
+    if (u.status !== "approved" || isTester(u)) continue;
+    if (standingState(u) === "banned") continue;
+    // Unfinished creators belong to the Finish Engine's lane:
+    // it already works them, and a second nudge engine landing
+    // in the same thread would read as noise (and double-count
+    // in the Finish Engine's own message trail).
+    if (u.role === "creator" && !profileCompleteOf(u)) continue;
+    summary.checked += 1;
+    let anchor = anchorOf(u);
+    if (u.linkedAccountId) {
+      const sib = await store.get(`user:${u.linkedAccountId}`);
+      if (sib) anchor = Math.max(anchor, anchorOf(sib));
+    }
+    if (!anchor || now - anchor < WINBACK_DORMANT_DAYS * DAY_MS) continue;
+    if (obligated.has(u.id)) { summary.skippedActiveBooking += 1; continue; }
+    const wb = await store.get(`winback:${u.id}`);
+    if (wb && wb.lastSentAt && now - Date.parse(wb.lastSentAt) < WINBACK_CAP_DAYS * DAY_MS) { summary.skippedCap += 1; continue; }
+    if (u.role === "business") {
+      // The 4-hour lifecycle guard, checked BEFORE the cap
+      // stamp: a suppressed business keeps its monthly slot.
+      const recent = await recentLifecycleEmail(u.id, PLATFORM_PING_SUPPRESS_WINDOW_MS);
+      if (recent) {
+        summary.suppressed += 1;
+        await logEvent({ type: "winback_suppressed", actorId: null, actorRole: "system", subjectId: u.id, market: u.market || null, data: { reason: "recent_lifecycle_email", lifecycleKind: recent.kind, lifecycleAt: recent.at } });
+        continue;
+      }
+    }
+    await store.set(`winback:${u.id}`, { lastSentAt: new Date(now).toISOString(), role: u.role });
+    try {
+      if (u.role === "creator") {
+        const res = await sendPlatformMessage(null, u, winBackMaggieBody(u), { engine: "winback" });
+        if (res && res.email && res.email.suppressed) summary.suppressed += 1;
+        summary.sentCreators += 1;
+      } else {
+        const mail = winBackEmail(u);
+        const delivered = await deliverEmail("win_back", u, mail.subject, mail.text, null);
+        if (delivered && delivered.sent === false && !delivered.queued) {
+          // Nothing was delivered or queued (transport failure
+          // or the win_back automation is off): release the
+          // monthly cap slot and do not count a send that never
+          // happened (Build -185 review fix). deliverEmail
+          // already logged its own *_email_not_sent event. A
+          // queued result counts: the queue delivers it.
+          await store.del(`winback:${u.id}`);
+          continue;
+        }
+        summary.sentBusinesses += 1;
+      }
+      await logEvent({ type: "winback_sent", actorId: null, actorRole: "system", subjectId: u.id, market: u.market || null, data: { role: u.role, dormantDays: Math.floor((now - anchor) / DAY_MS) } });
+    } catch (e) { /* the cap stamp stands, so a failed send never retries inside the month */ }
+  }
+  return summary;
+}
+
 const PROFILE_REMINDER_SWEEP_THROTTLE_MS = 55 * 60 * 1000;
 async function maybeRunProfileReminderSweep() {
   if (sweepMemoFresh("profileReminderSweep")) return null;
@@ -17127,6 +17266,7 @@ async function handleSwitchSide(event, ctx) {
   if (!session) return err(401, "Not signed in");
   session.userId = sib.id;
   await store.set(`session:${ctx.token}`, session);
+  await stampLastSignIn(sib);
   await logEvent({ type: "account_side_switched", actorId: sib.id, actorRole: sib.role, subjectId: sib.id, market: sib.market || null, data: { fromUserId: ctx.user.id } });
   const payload = await withFounding(sib);
   await withLinkedSide(payload, sib);
@@ -17184,6 +17324,7 @@ async function handleLogin(event) {
   if (!user || !auth.verifyPassword(b.password || "", user.passwordSalt, user.passwordHash)) {
     return err(401, "Email or password did not match");
   }
+  await stampLastSignIn(user);
   await logEvent({ type: "user_signed_in", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: {} });
   const token = await auth.createSession(user.id);
   const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
@@ -17567,6 +17708,7 @@ async function handleGoogleCallback(event, ctx) {
     if (user && !user.google) await linkGoogleIdentity(user, identity, "signin_email_match");
   }
   if (user) {
+    await stampLastSignIn(user);
     await logEvent({ type: "user_signed_in", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { via: "google" } });
     const token = await auth.createSession(user.id);
     const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
@@ -17703,6 +17845,7 @@ async function handleSigninLinkConsume(event) {
   // replayed link can never mint a second session.
   await store.del(`signinlink:${hash}`);
   await store.del(`signinlink-user:${user.id}`);
+  await stampLastSignIn(user);
   await logEvent({ type: "user_signed_in", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { via: "signin_link" } });
   const session = await auth.createSession(user.id);
   const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
@@ -24898,6 +25041,17 @@ async function route(event) {
   if (method === "POST" && seg[0] === "auth" && seg[1] === "signin-link" && seg[2] === "consume" && seg.length === 3) return handleSigninLinkConsume(event);
   if (method === "GET" && seg[0] === "auth" && seg[1] === "me") {
     if (!user) return err(401, "Not signed in");
+    // Build -185 review fix: sessions live 30 days, so sign-in
+    // alone cannot carry the dormancy anchor — a daily-active
+    // user on one long session would read as quiet. Loading
+    // /auth/me IS the user opening the app: refresh the activity
+    // stamp, throttled to one point write per user per day.
+    // View-as never stamps (an admin looking is not the user's
+    // activity).
+    if (!viewAs && user.role !== "admin") {
+      const last = Date.parse(user.lastSignInAt || "") || 0;
+      if (Date.now() - last > DAY_MS) { try { await stampLastSignIn(user); } catch (e) { /* a stamp failure never breaks /auth/me */ } }
+    }
     const meUser = await withFounding(user);
     await withLinkedSide(meUser, user);
     // View-as decoration (Build -67): the client shows the
@@ -27252,7 +27406,10 @@ async function route(event) {
     // Build -91: the weekly roster digest rides the same clock.
     const rosterDigest = await runRosterDigestSweep(remOpts.now ? { now: remOpts.now.toISOString() } : {});
     await store.set("config:rosterDigestSweep", { lastRunAt: nowIso() });
-    return json(200, { ok: true, sweep: summary, offerSweep, profileReminders, finishEngine, rosterDigest });
+    // Build -185: the dormant win-back rides the same clock.
+    const winback = await runWinbackSweep(remOpts);
+    await store.set("config:winbackSweep", { lastRunAt: nowIso() });
+    return json(200, { ok: true, sweep: summary, offerSweep, profileReminders, finishEngine, rosterDigest, winback });
   }
   // Offer lifecycle sweep: same trigger discipline as compliance
   // (scheduled token or admin session). Drives the selection SLA,
@@ -35719,4 +35876,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
