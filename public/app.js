@@ -2227,6 +2227,7 @@ function bnIcon(name) {
     keypad: `<circle cx="6.5" cy="6.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="6.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="17.5" cy="6.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="17.5" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="6.5" cy="17.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="17.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="17.5" cy="17.5" r="1.35" fill="currentColor" stroke="none"/>`,
     bolt: `<path d="M13 2.8 4.9 13.4h5.5l-1 7.8 8.4-11.3h-5.6z"/>`,
     sliders: `<path d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17"/><circle cx="9" cy="6.5" r="2.1" fill="#fff"/><circle cx="15.5" cy="12" r="2.1" fill="#fff"/><circle cx="7.5" cy="17.5" r="2.1" fill="#fff"/>`,
+    switch180: `<path d="M3.5 7.5h13.2"/><path d="m13.7 4 3.5 3.5-3.5 3.5"/><path d="M20.5 16.5H7.3"/><path d="m10.3 13-3.5 3.5 3.5 3.5"/>`,
     help: `<circle cx="12" cy="12" r="8.6"/><path d="M9.7 9.3A2.5 2.5 0 1 1 12 11.8v1.2"/><path d="M12 16.9h.01"/>`,
     star: `<path d="m12 3.2 2.7 5.5 6 .9-4.3 4.2 1 6-5.4-2.9-5.4 2.9 1-6L3.3 9.6l6-.9z"/>`,
   };
@@ -3293,15 +3294,29 @@ function identityMenuRows126() {
     dest("profile", "Your account", "Your settings: sign-in, email and password", "Account"),
     signout,
   ];
+  // Dual-role (Build -180): a creator or business account either
+  // switches to its other side or adds it, right here — one tap,
+  // same account, same sign-in.
+  const sideRows180 = [];
+  if (u.role === "creator" || u.role === "business") {
+    const other = u.role === "creator" ? "business" : "creator";
+    if (u.linkedSide && u.linkedSide.role === other) {
+      sideRows180.push({ icon: "switch180", label: other === "creator" ? "Switch to your creator side" : "Switch to your business side", sub: "Same account, same sign-in", act: "return switchSide180()" });
+    } else {
+      sideRows180.push({ icon: "switch180", label: other === "creator" ? "Add a creator side" : "Add a business side", sub: other === "creator" ? "Get booked as a creator on this same account" : "Run a business on this same account", act: `return openAddSide180('${other}')` });
+    }
+  }
   if (u.role === "creator") return [
     ...(u.bizdevSeat && u.bizdevSeat.active ? [{ icon: "building", label: "Biz Dev home", sub: "Your seller dashboard", act: "return bdGoShell()" }] : []),
     dest("profile", "My profile", "Your public creator profile", "Profile"),
     dest("sliders", "Settings", "Notifications, connected accounts, password", "Settings"),
+    ...sideRows180,
     signout,
   ];
   if (u.role === "business") return [
     dest("building", "Business profile", "Your business's public profile", "Profile"),
     dest("sliders", "Settings", "Notifications, plan and password", "Settings"),
+    ...sideRows180,
     signout,
   ];
   if (u.role === "partner" && !state.pilotScopeId) return [
@@ -3348,6 +3363,131 @@ function openIdentityMenu126() {
 function closeIdentityMenu126() {
   const el = document.getElementById("identity-menu126");
   if (el) el.remove();
+  return false;
+}
+
+// ---------- Build -180: dual-role switch + add-a-side ----------
+// One account, two sides. The switch re-points the session
+// server-side; the add-side form files the other side's normal
+// application under the same email and sign-in.
+async function switchSide180() {
+  try {
+    const data = await api("POST", "/auth/switch-side", {});
+    state.user = data.user;
+    state.view = "dashboard";
+    state.tab = null;
+    render();
+    window.scrollTo(0, 0);
+    showToast(data.user && data.user.role === "creator" ? "You are on your creator side now." : "You are on your business side now.");
+  } catch (e) {
+    showToast(e.message || "That switch did not go through. Try again.");
+  }
+  return false;
+}
+
+function closeAddSide180() {
+  const el = document.getElementById("addside180");
+  if (el) el.remove();
+  return false;
+}
+
+function addSideCity180() {
+  const mktSel = document.getElementById("as180-market");
+  const citySel = document.getElementById("as180-city");
+  const custom = document.getElementById("as180-custom");
+  if (!mktSel) return;
+  const unlisted = mktSel.value === unlistedLabel();
+  if (custom) custom.style.display = unlisted ? "" : "none";
+  if (citySel) {
+    const mkt = (state.boot.markets || []).find((m) => m.name === mktSel.value);
+    citySel.innerHTML = `<option value="">Pick later</option>` + (mkt ? mkt.cities.map((c) => `<option>${esc(c)}</option>`).join("") : "");
+    citySel.disabled = unlisted;
+  }
+}
+
+function openAddSide180(role) {
+  closeAddSide180();
+  const u = state.user;
+  if (!u) return false;
+  const isCreator = role === "creator";
+  const termsLine = `I agree to the <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and to account and marketing emails from Magpie.`;
+  const fields = isCreator ? `
+    <div class="field"><label>Your handle, on your main platform</label><input id="as180-handle" placeholder="For example: yourname" autocomplete="off"></div>
+    <div class="field"><label>Where is your main audience?</label><select id="as180-platform">
+      <option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="youtube">YouTube</option><option value="facebook">Facebook</option><option value="x">X</option><option value="linkedin">LinkedIn</option>
+    </select></div>
+    <div class="field"><label>Your market</label><select id="as180-market" onchange="addSideCity180()">${marketOptions(u.market, true)}</select></div>`
+  : `
+    <div class="field"><label>Your name</label><input id="as180-name" value="${esc(u.name || "")}" autocomplete="name"></div>
+    <div class="field"><label>Business name</label><input id="as180-business" placeholder="Your business as customers know it"></div>
+    <div class="field"><label>Category</label><select id="as180-category">${(state.boot.businessCategories || []).map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+    <div class="field"><label>Market</label><select id="as180-market" onchange="addSideCity180()">${marketOptions(u.market, true)}</select></div>
+    <div class="field"><label>City</label><select id="as180-city"></select></div>`;
+  const el = document.createElement("div");
+  el.id = "addside180";
+  el.className = "idm126-overlay";
+  el.innerHTML = `
+  <div class="idm126-panel" role="dialog" aria-label="${isCreator ? "Add a creator side" : "Add a business side"}">
+    <div class="idm126-head"><span class="idm126-who"><span class="idm126-name">${isCreator ? "Add your creator side" : "Add your business side"}</span><span class="idm126-sub">${esc(u.email || "")}</span></span><button type="button" class="linklike" onclick="closeAddSide180()" aria-label="Close">✕</button></div>
+    <p class="small" style="margin:10px 0">${isCreator
+      ? "Your creator side lives on this same account and sign-in. It goes through the same quick review as any creator, and nothing about your business side changes."
+      : "Your business side lives on this same account and sign-in. It joins the founding list like any business application, and nothing about your creator side changes."}</p>
+    <div id="as180-error"></div>
+    <form novalidate onsubmit="return submitAddSide180(event, '${role}')">
+      ${fields}
+      <div id="as180-custom" style="display:none">
+        <div class="field"><label>Your city</label><input id="as180-custom-city" placeholder="For example: Tulsa"></div>
+        <div class="field"><label>Your country</label><input id="as180-custom-country" placeholder="For example: United States"></div>
+        <div class="field"><label>Your state or province (optional)</label><input id="as180-custom-state"></div>
+      </div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="as180-terms"><span>${termsLine}</span></label></div>
+      <button class="btn" type="submit" style="width:100%">${isCreator ? "Add my creator side" : "Add my business side"}</button>
+    </form>
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeAddSide180(); });
+  document.body.appendChild(el);
+  addSideCity180();
+  return false;
+}
+
+async function submitAddSide180(e, role) {
+  e.preventDefault();
+  const errBox = (msg) => { document.getElementById("as180-error").innerHTML = `<div class="error-box">${esc(msg)}</div>`; };
+  if (!document.getElementById("as180-terms").checked) { errBox("Please agree to the Terms of Service and Privacy Policy so we can set this side up."); return false; }
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
+  const marketVal = document.getElementById("as180-market").value;
+  const isUnlisted = marketVal === unlistedLabel();
+  const body = { role, market: marketVal, agreedTerms: true };
+  if (isUnlisted) {
+    body.customCity = document.getElementById("as180-custom-city").value.trim();
+    body.customCountry = document.getElementById("as180-custom-country").value.trim();
+    body.customState = document.getElementById("as180-custom-state").value.trim() || undefined;
+    if (!body.customCity || !body.customCountry) { submitBusy(form, false); errBox("Tell us your city and country, so your sign-up counts toward opening Magpie there."); return false; }
+  }
+  if (role === "creator") {
+    body.quickClaim = true;
+    body.handle = document.getElementById("as180-handle").value;
+    body.primaryPlatform = document.getElementById("as180-platform").value;
+  } else {
+    body.name = document.getElementById("as180-name").value;
+    body.businessName = document.getElementById("as180-business").value;
+    body.category = document.getElementById("as180-category").value;
+    if (!isUnlisted) body.city = document.getElementById("as180-city").value || undefined;
+  }
+  try {
+    const data = await api("POST", "/auth/add-side", body);
+    closeAddSide180();
+    state.user = data.user;
+    state.view = "dashboard";
+    state.tab = null;
+    render();
+    window.scrollTo(0, 0);
+    showToast(role === "creator" ? "Your creator side is added. You are looking at it now." : "Your business side is added. You are looking at it now.");
+  } catch (err) {
+    submitBusy(form, false);
+    errBox(err.message);
+  }
   return false;
 }
 
@@ -10628,6 +10768,15 @@ async function doQuickClaim(e) {
   } catch (err) {
     submitBusy(form, false);
     errBox(err.message);
+    // Dual-role (Build -180): the email already holds the other
+    // side of an account. The message says what to do; put her
+    // cursor in the password field so re-typing the account
+    // password and resubmitting is all that stands between her
+    // and the claim.
+    if (err.data && err.data.code === "dual_role_password") {
+      const pw = document.getElementById("c85-password");
+      if (pw) { pw.focus(); pw.select(); }
+    }
   }
   return false;
 }
@@ -11145,6 +11294,10 @@ async function doRegisterCreator(e) {
   } catch (err) {
     submitBusy(form, false);
     errBox(err.message);
+    if (err.data && err.data.code === "dual_role_password") {
+      const pw = document.getElementById("jc-password");
+      if (pw) { pw.focus(); pw.select(); }
+    }
   }
   return false;
 }
@@ -11498,6 +11651,10 @@ async function registerBusiness(e) {
   } catch (err) {
     submitBusy(form, false);
     errBox(err.message);
+    if (err.data && err.data.code === "dual_role_password") {
+      const pw = document.getElementById("jb-password");
+      if (pw) { pw.focus(); pw.select(); }
+    }
   }
   return false;
 }
@@ -29741,7 +29898,7 @@ function adminUserCardHtml(u) {
     : u.status === "rejected" ? '<span class="badge bad">Rejected</span>'
     : `<span class="badge">${esc(u.status || "")}</span>`;
   return `<div class="panel admin-user-card">
-    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum && !u.minimumOverride ? ' <span class="badge bad">Under the 500 minimum</span>' : ""}${u.minimumOverride ? ' <span class="badge info">500 minimum overridden</span>' : ""} <span class="badge">${esc(u.role || "")}</span></div>
+    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum && !u.minimumOverride ? ' <span class="badge bad">Under the 500 minimum</span>' : ""}${u.minimumOverride ? ' <span class="badge info">500 minimum overridden</span>' : ""} <span class="badge">${esc(u.role || "")}</span>${u.linkedAccountId ? ` <span class="badge info">Dual account: ${u.linkedSide ? `${esc(u.linkedSide.role)} side too (${esc(u.linkedSide.status)})` : `${u.role === "creator" ? "business" : "creator"} side too`}</span>` : ""}</div>
     ${adminUserCardFactsHtml(u)}
     ${u.status === "pending" ? `<div class="admin-card-decide">
       <button class="btn" onclick="adminCardApprove('${u.id}')">Approve</button>
@@ -36135,7 +36292,7 @@ function renderNationalBusinessDash() {
   if (tab === "NatNew") { el.innerHTML = head + natComposerHtml(null); }
   if (tab === "NatDiscover") { el.innerHTML = head + `<div id="nat-discover">${skelHtml("Loading creators...", 2)}</div>`; loadNatDiscover(); }
   if (tab === "NatReports") { el.innerHTML = head + `<div id="nat-reports">${skelHtml("Loading your reports...", 1)}</div>`; loadNatReports(); }
-  if (tab === "NatBrand") { el.innerHTML = head + natBrandEditorHtml(u); }
+  if (tab === "NatBrand") { el.innerHTML = head + natBrandEditorHtml(u); natMkSync("brand"); }
 }
 function natHeadHtml(u) {
   const bz = u.business || {};
@@ -36228,7 +36385,7 @@ function natComposerHtml(c) {
     <label class="nfld178"><span>Creators raise a hand by</span><input id="nc-deadline" type="datetime-local" value="${esc(deadline)}"></label>
     <label class="nfld178"><span>The details (what you make, when gifts ship, when posts are due after delivery)</span><textarea id="nc-details" rows="4">${esc((c && c.details) || "")}</textarea></label>
     <div class="nfld178"><span>Who it is for (categories — ordering only; every approved creator can still raise a hand)</span>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${cats.map((x) => `<label class="chip-check"><input type="checkbox" class="nc-cat" value="${esc(x)}" ${picked.has(x) ? "checked" : ""}> ${esc(x)}</label>`).join("")}</div>
+      <div class="checkrow" style="margin-top:6px">${cats.map((x) => `<label><input type="checkbox" class="nc-cat" value="${esc(x)}" ${picked.has(x) ? "checked" : ""}> ${esc(x)}</label>`).join("")}</div>
     </div>
     <div class="panel"><strong>Before it goes out</strong>
       <p class="small" style="margin:6px 0 0">What you get is stated as a thing, not a category. The ask fits in one line. No promise in the details that you cannot keep. Your logo and website are on your brand profile, because creators check both.</p>
@@ -36373,6 +36530,89 @@ async function loadNatReports() {
       </div>`;
   } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
 }
+// ---------- Focus-market picker (Build -179) ----------
+// Reusable grouped market multi-select built on the app's
+// established .checkrow chip pattern (the profile builder's comps
+// picker): real inputs visually hidden inside pill labels, mint
+// fill + check mark when checked. Used by the admin Create
+// national account form and the brand profile editor; the submit
+// handlers keep reading the same input classes (.an-focus /
+// .nb-focus) and the same market-name values, unchanged.
+const NAT_FOCUS_MARKETS_179 = ["Nashville", "Virginia Beach", "Miami", "New York City", "Los Angeles", "Atlanta", "Toronto"];
+function natMarketGroups(names) {
+  const list = [...new Set((names || []).map((n) => String(n || "")).filter(Boolean))];
+  const boot = (state.boot && state.boot.markets) || [];
+  const countryOf = (name) => {
+    const m = boot.find((x) => (x && (x.name || x)) === name);
+    return (m && m.country) || "United States";
+  };
+  const focus = NAT_FOCUS_MARKETS_179.filter((n) => list.includes(n));
+  const focusSet = new Set(focus);
+  const us = [];
+  const intl = [];
+  for (const name of list) {
+    if (focusSet.has(name)) continue;
+    const c = countryOf(name);
+    if (c === "United States" || c === "Puerto Rico") us.push(name); else intl.push(name);
+  }
+  const groups = [];
+  if (focus.length) groups.push({ label: "Focus markets", markets: focus });
+  if (us.length) groups.push({ label: "United States", markets: us });
+  if (intl.length) groups.push({ label: "International", markets: intl });
+  return groups;
+}
+function natMarketPickerHtml(opts) {
+  const { uid, inputClass, markets, checked } = opts || {};
+  const names = [...new Set((markets || []).map((m) => (typeof m === "string" ? m : (m && m.name) || "")).filter(Boolean))];
+  const checkedSet = new Set(checked || []);
+  const pickedCount = names.filter((n) => checkedSet.has(n)).length;
+  const groups = natMarketGroups(names);
+  return `<div class="mkpick" id="mkpick-${esc(uid)}">
+    <div class="mkpick-bar">
+      <input type="search" class="mkpick-q" placeholder="Filter markets" aria-label="Filter markets" oninput="natMkFilter('${esc(uid)}', this.value)">
+      <span class="mkpick-count" id="mkpick-count-${esc(uid)}">${pickedCount} selected</span>
+      <button type="button" class="btn small-btn ghost" onclick="natMkAll('${esc(uid)}', true)">Select all</button>
+      <button type="button" class="btn small-btn ghost" onclick="natMkAll('${esc(uid)}', false)">Clear</button>
+    </div>
+    ${groups.map((g) => `<div class="mkpick-sec"><div class="mkpick-group">${esc(g.label)}</div><div class="checkrow mkpick-chips">${g.markets.map((name) => `<label><input type="checkbox" class="${esc(inputClass)}" value="${esc(name)}" onchange="natMkSync('${esc(uid)}')" ${checkedSet.has(name) ? "checked" : ""}> ${esc(name)}</label>`).join("")}</div></div>`).join("")}
+    <p class="mkpick-none" id="mkpick-none-${esc(uid)}" style="display:none">No markets match your filter.</p>
+  </div>`;
+}
+function natMkRoot(uid) { return document.getElementById(`mkpick-${uid}`); }
+function natMkSync(uid) {
+  const root = natMkRoot(uid);
+  if (!root) return;
+  const n = root.querySelectorAll('input[type="checkbox"]:checked').length;
+  const c = document.getElementById(`mkpick-count-${uid}`);
+  if (c) c.textContent = `${n} selected`;
+}
+function natMkAll(uid, on) {
+  const root = natMkRoot(uid);
+  if (!root) return false;
+  root.querySelectorAll('input[type="checkbox"]').forEach((x) => { x.checked = !!on; });
+  natMkSync(uid);
+  return false;
+}
+function natMkFilter(uid, q) {
+  const root = natMkRoot(uid);
+  if (!root) return;
+  const needle = String(q || "").trim().toLowerCase();
+  let anyVisible = false;
+  root.querySelectorAll(".mkpick-sec").forEach((sec) => {
+    let secVisible = false;
+    sec.querySelectorAll(".mkpick-chips label").forEach((lab) => {
+      const input = lab.querySelector("input");
+      const name = input ? input.value : lab.textContent;
+      const show = !needle || name.toLowerCase().includes(needle);
+      lab.style.display = show ? "" : "none";
+      if (show) secVisible = true;
+    });
+    sec.style.display = secVisible ? "" : "none";
+    if (secVisible) anyVisible = true;
+  });
+  const none = document.getElementById(`mkpick-none-${uid}`);
+  if (none) none.style.display = anyVisible ? "none" : "";
+}
 // Brand profile editor (the profile-settings surface, national
 // fields). Saves through the same /me/profile PATCH every
 // business uses; a website change clears verification server-side.
@@ -36390,7 +36630,7 @@ function natBrandEditorHtml(u) {
     <label class="nfld178"><span>Logo address (a link to your logo image)</span><input id="nb-logo" value="${esc(bz.logoUrl || "")}" placeholder="https://yourbrand.com/logo.png"></label>
     <label class="nfld178"><span>What you sell, in your own words</span><textarea id="nb-about" rows="3">${esc(bz.brandAbout || bz.about || "")}</textarea></label>
     <div class="nfld178"><span>Focus markets (where you care most — used to order Find creators and your reports; it never limits who can raise a hand)</span>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${markets.map((m) => `<label class="chip-check"><input type="checkbox" class="nb-focus" value="${esc(m.name || m)}" ${focus.has(m.name || m) ? "checked" : ""}> ${esc(m.name || m)}</label>`).join("")}</div>
+      ${natMarketPickerHtml({ uid: "brand", inputClass: "nb-focus", markets, checked: [...focus] })}
     </div>
     <button type="submit" class="btn">Save brand profile</button>
   </form>`;
@@ -36435,7 +36675,7 @@ async function loadAdminNational178() {
         <label class="nfld178"><span>What they sell</span><textarea id="an-about" rows="2"></textarea></label>
         <label class="nfld178"><span>Logo address (optional)</span><input id="an-logo" placeholder="https://brand.com/logo.png"></label>
         <label class="nfld178"><span>Currency</span><select id="an-currency"><option>USD</option><option>GBP</option><option>CAD</option><option>NZD</option><option>EUR</option></select></label>
-        <div class="nfld178"><span>Focus markets</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${(d.markets || []).map((m) => `<label class="chip-check"><input type="checkbox" class="an-focus" value="${esc(m)}"> ${esc(m)}</label>`).join("")}</div></div>
+        <div class="nfld178"><span>Focus markets</span>${natMarketPickerHtml({ uid: "admin", inputClass: "an-focus", markets: d.markets || [], checked: [] })}</div>
         <button type="submit" class="btn">Create national account</button>
         <span class="small muted"> Lands as pending, on the founding list. Approve + activate it like any business, then verify the brand below. No email is sent automatically.</span>
       </form>
@@ -36460,6 +36700,7 @@ async function loadAdminNational178() {
       ${c.status !== "closed" && c.status !== "completed" && c.status !== "cancelled" ? `<button type="button" class="btn small-btn ghost" onclick="return adminNatCloseCampaign('${c.id}')">Close campaign</button>` : ""}
       <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:8px"><input id="anr-creator-${c.id}" placeholder="Creator id" style="max-width:150px"><input id="anr-orders-${c.id}" type="number" min="0" placeholder="Orders" style="max-width:90px"><input id="anr-rev-${c.id}" type="number" min="0" step="0.01" placeholder="Revenue" style="max-width:100px"><button type="button" class="btn small-btn ghost" onclick="return adminNatResults('${c.id}')">Enter store-reported results</button></span>
     </div>`).join("") || `<p class="muted">No national campaigns yet.</p>`}`;
+    natMkSync("admin");
   } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
 }
 async function adminNatCreate(ev) {
