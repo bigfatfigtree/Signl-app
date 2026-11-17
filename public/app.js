@@ -11495,16 +11495,15 @@ function renderForBusinesses() {
     <p class="small">How this works: one short form, about 2 minutes. First tell us where you operate, then a few facts about your business, then you are done. After you join, you land on a page that explains exactly what happens next. We review every application by hand.</p>
     </div>
     <div class="form-body">
-    <div class="plan-cards" id="jb-plans">${plans}</div>
     <div id="jb-prefill"></div>
     <div id="jb-error"></div>
     ${state.googlePrefill ? `<div class="notice blue">You're applying with Google: your name and email are filled in from your Google account. Finish the form and Google stays linked, so signing in later is one tap.</div>` : googleButtonHtml("apply")}
     <form onsubmit="return registerBusiness(event)">
       <div class="fgroup tint">
         <p class="fg-kicker">Your business</p>
-        <div class="field"><label>Where do you operate?</label>${chipSelectHtml("jb-scope", [{ value: "market", label: "One market: we serve one city area" }, { value: "national", label: "National: we operate across markets" }], "market", "jbScopeSync181", false)}<p class="small muted">National is for brands whose products ship or sell across markets. Creators see your brand name and logo only, never your name or email. National brands: pick National here and ignore the plans above. National accounts have no plan yet, and nothing is charged.</p></div>
+        <div class="field"><label>Where do you operate?</label>${chipSelectHtml("jb-scope", [{ value: "market", label: "One market: we serve one city area" }, { value: "national", label: "National: we operate across markets" }], "market", "jbScopeSync181", false)}<p class="small muted">National is for brands whose products ship or sell across markets. Creators see your brand name and logo only, never your name or email. National accounts have no plan yet, and nothing is charged.</p></div>
         <div id="jb-national-fields" style="display:none">
-          <div class="field"><label>Brand name (what creators see)</label><input id="jb-brand" placeholder="Your brand as customers know it, if different from the business name"></div>
+          <div class="field"><label>Brand name (what creators see)</label><input id="jb-brand" placeholder="Your brand as customers know it, if different from the business name"><p class="small muted">Creators see this brand name. They never see your business name, your name, or your email.</p></div>
           <div class="field"><label>Your website</label><input id="jb-website" type="url" placeholder="https://yourbrand.com"><p class="small muted">Magpie checks the brand before creators can see it. Until a person on our team verifies your brand, it stays hidden from creators.</p></div>
           <div class="notice blue">National accounts have no plan yet, and nothing is charged. Magpie shares plan options before anything is ever charged.</div>
         </div>
@@ -11512,6 +11511,7 @@ function renderForBusinesses() {
           <div class="field"><label>Your name</label><input id="jb-name" required placeholder="The person running this account" value="${esc(state.googlePrefill ? state.googlePrefill.name : "")}"></div>
           <div class="field"><label>Business name</label><input id="jb-business" required placeholder="Your business as customers know it"></div>
         </div>
+        <p class="small muted" style="margin:-4px 0 10px">Your name and business name stay on your account. If you are a national brand, creators see only the Brand name above, never these.</p>
         <div class="form-2col">
           <div class="field"><label>Email</label><input id="jb-email" type="email" required placeholder="you@yourbusiness.com" value="${esc(state.googlePrefill ? state.googlePrefill.email : "")}"></div>
           <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input id="jb-password" type="password" required minlength="10"></div>
@@ -11539,6 +11539,11 @@ function renderForBusinesses() {
       </div>
       ${igAssistCardHtml("jb", "business")}
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
+      <div id="jb-plans">
+        <p class="fg-kicker">Your founding plan</p>
+        <p class="small muted" style="margin:0 0 8px">Last step. Pick the plan you would start on when your city opens. Nothing is charged today, and founding pricing locks while you stay subscribed.</p>
+        <div class="plan-cards">${plans}</div>
+      </div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on Magpie on Magpie, and to account and marketing emails from Magpie.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
     </form>
