@@ -16426,7 +16426,7 @@ async function handleRegister(event, linkCtx) {
       linkPrimary = primary;
     } else {
       return json(409, {
-        error: `You already have a Magpie ${primary.role === "business" ? "business" : "creator"} account with this email. To add your ${role} side to that same account, enter your account password here — or sign in and add it from your account menu.`,
+        error: `You already have a Magpie ${primary.role === "business" ? "business" : "creator"} account with this email. To add your ${role} side to that same account, enter your account password here. Or sign in and add it from your account menu.`,
         code: "dual_role_password",
       });
     }
