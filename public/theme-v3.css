@@ -286,6 +286,12 @@ body.v3-on #founding-dash .kpi-card .kpi-num { color: var(--ink); }
   box-shadow: 0 10px 26px rgba(23,21,18,.25);
 }
 #agent-fab img { width: 32px; height: 32px; border-radius: 50%; display: block; }
+/* Build -188 (PL-03): the collapsed avatar chip + bottom
+   clearance for page content where the pill floats. */
+#agent-fab.fab-mini { width: 46px; padding: 0; justify-content: center; }
+@media (min-width: 901px) {
+  body.fab-on188 #app { padding-bottom: 92px; }
+}
 #agent-fab .fab-dot { width: 8px; height: 8px; border-radius: 50%; background: #00B67A; flex: none; }
 #agent-fab .fab-badge { background: var(--accent); border-color: var(--ink); }
 body.v3-on #agent-fab.show, body.v3-slim #agent-fab.show { display: flex !important; }
@@ -985,6 +991,11 @@ button.sigtop-nudge:hover { border-color: var(--ink3); }
     padding: 10px 0; border-bottom: 1px solid var(--line); margin-bottom: 14px;
   }
   .takeover-bar .tb-title { font-weight: 800; font-size: 1.05rem; }
+  /* Build -188 (PL-04): anything scrolled to inside the shop
+     surfaces stops below the sticky bar, never under it. The
+     Lineup panel was the cited casualty: its heading and first
+     sentence rendered half-hidden behind the bar. */
+  #lineup-slot, #fo-lineup-slot { scroll-margin-top: 84px; }
   .takeover-bar .tb-links { margin-left: auto; display: flex; gap: 8px; }
 }
 @media (max-width: 899px) {

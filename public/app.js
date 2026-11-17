@@ -3274,6 +3274,9 @@ function sigBarGo137() {
   return go("dashboard", "Sig");
 }
 function openSigSheet137() {
+  // Build -188 (PL-03): she has been used once — the pill
+  // collapses to the avatar chip from here on.
+  if (!state.fabMini) { state.fabMini = true; try { renderAgentFab(); } catch (e) { /* fab re-renders on next shell paint */ } }
   closeSigSheet137();
   closeHamburger137();
   closeEverything125();
@@ -4404,7 +4407,68 @@ function ensureSigFab() {
     fab.setAttribute("aria-label", "Ask Maggie");
     document.body.appendChild(fab);
   }
+  // Build -188 (PL-03): the full pill introduces Maggie once;
+  // after the first scroll it collapses to a small avatar chip
+  // so it stops covering values, buttons and sentences at the
+  // bottom-right of every screen (audit D-X1: the pill sat on
+  // top of stat numbers, form inputs and buttons on six
+  // screens). First open collapses it too (openSigSheet137).
+  if (!window.__fabMiniScroll188) {
+    window.__fabMiniScroll188 = true;
+    window.addEventListener("scroll", () => {
+      if (!state.fabMini && window.scrollY > 24) { state.fabMini = true; renderAgentFab(); }
+      clearTimeout(window.__fabAvoidT188);
+      window.__fabAvoidT188 = setTimeout(fabAvoid188, 160);
+    }, { passive: true });
+  }
+  // Home content lands asynchronously (highlights, cards), so
+  // re-check placement whenever the app column changes.
+  if (!window.__fabObserve188) {
+    window.__fabObserve188 = true;
+    const appEl = document.getElementById("app");
+    if (appEl && window.MutationObserver) {
+      let t = null;
+      new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => { try { fabAvoid188(); } catch (e) { /* best-effort */ } }, 220); }).observe(appEl, { childList: true, subtree: true });
+    }
+  }
   renderAgentFab();
+}
+// Build -188 (PL-03): the overlap guard. Even as a 46px chip,
+// a fixed corner element can graze a form field or a button on
+// dense screens (the national composer, the partner home). On
+// render and after scrolling settles, sample what sits under
+// the chip; if a button, field or text leaf is there, lift the
+// chip in 56px steps (max 3) until its points are clear. The
+// chip never rests on top of a value, a button, or a sentence.
+function fabAvoid188() {
+  const fab = document.getElementById("agent-fab");
+  if (!fab || !fab.classList.contains("show")) return;
+  const base = window.innerWidth <= 767.98 ? 84 : 20;
+  // Harm standard (the audit's own evidence): an interactive
+  // element anywhere under the chip, or readable text under
+  // its CENTER. A paragraph's box grazing a corner is not a
+  // cover; a button or a sentence under the middle is.
+  const probe = () => {
+    const r = fab.getBoundingClientRect();
+    if (!r.width) return { interactive: false, centerText: false };
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const pts = [[cx, cy], [r.left + 6, r.top + 6], [r.right - 6, r.bottom - 6], [r.left + 6, r.bottom - 6], [r.right - 6, r.top + 6]];
+    fab.style.visibility = "hidden";
+    let interactive = false, centerText = false;
+    pts.forEach(([x, y], i) => {
+      if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return;
+      const el = document.elementFromPoint(x, y);
+      if (!el || el === fab || fab.contains(el) || el === document.body || el === document.documentElement) return;
+      if (el.closest("button, a, input, select, textarea, [role='button']")) interactive = true;
+      if (i === 0 && el.children.length === 0 && (el.innerText || "").trim()) centerText = true;
+    });
+    fab.style.visibility = "";
+    return { interactive, centerText };
+  };
+  fab.style.bottom = "";
+  let lift = 0;
+  let p = probe();
+  while ((p.interactive || p.centerText) && lift < 3) { lift += 1; fab.style.bottom = `${base + lift * 56}px`; p = probe(); }
 }
 function renderAgentFab() {
   const fab = document.getElementById("agent-fab");
@@ -4416,12 +4480,26 @@ function renderAgentFab() {
   // The v3 shell classes are the real "inside the app" test.
   const inAppShell = !!state.user && !state.preview
     && (document.body.classList.contains("v3-on") || document.body.classList.contains("v3-slim"));
-  if (!state.user || state.preview || (!q && !inAppShell)) { fab.classList.remove("show"); fab.innerHTML = ""; fab.onclick = null; return; }
+  if (!state.user || state.preview || (!q && !inAppShell)) { fab.classList.remove("show"); fab.innerHTML = ""; fab.onclick = null; document.body.classList.remove("fab-on188"); return; }
   fab.classList.add("show");
-  fab.innerHTML = `${sigMarkHtml("fab-sig-img")}<span class="fab-dot" aria-hidden="true"></span>Maggie${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
+  document.body.classList.add("fab-on188");
+  // Build -188 (PL-03): the chip is the DEFAULT state, not just
+  // the after-scroll one — the audit's six captures were all
+  // landing screens at rest, pill on top of a value, a button
+  // or a sentence. Mini = avatar chip only (plus the
+  // waiting-count badge, which is Maggie's own news, not page
+  // content it could hide). The labeled pill remains available
+  // only if a future intro moment sets state.fabMini = false
+  // explicitly; nothing does today.
+  const mini188 = state.fabMini !== false;
+  fab.classList.toggle("fab-mini", mini188);
+  fab.innerHTML = mini188
+    ? `${sigMarkHtml("fab-sig-img")}${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`
+    : `${sigMarkHtml("fab-sig-img")}<span class="fab-dot" aria-hidden="true"></span>Maggie${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
   // Build -137: the orb opens the Sig SHEET (her brief +
   // the live chat) over the current screen, at every width.
   fab.onclick = openSigSheet137;
+  requestAnimationFrame(() => { try { fabAvoid188(); } catch (e) { /* best-effort placement */ } });
 }
 // Overhaul V2: the ready-for-you card is the Grin agent card —
 // a soft accent-tint card, the agent's avatar, one bold line
