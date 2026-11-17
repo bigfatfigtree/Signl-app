@@ -16376,12 +16376,22 @@ async function handleRegister(event, linkCtx) {
   if (!linkPrimarySeed && (typeof b.password !== "string" || b.password.length < 10)) return err(400, "Password must be at least 10 characters");
   if (!quickClaim && (!b.name || typeof b.name !== "string")) return err(400, "Name is required");
   const unlisted = b.market === UNLISTED;
+  // Build -181: self-serve NATIONAL signup (Jeff, 2026-11-16: he
+  // expected businesses to sign up THEMSELVES and pick National;
+  // -178 shipped admin-created only). A brand that operates
+  // across markets picks National in the business form; its
+  // record takes the exact shape an admin-created national
+  // account carries (sentinel market, no plan, unverified until
+  // an admin checks it in the National room), so every national
+  // surface treats the two identically and the verification gate
+  // has no self-serve bypass.
+  const nationalSignup = role === "business" && b.scope === "national";
   // A business in a not-yet-listed city joins the founding list
   // exactly the way a creator signals a city (UX audit fix,
   // 2026-10-22): the record carries their typed city, the account
   // stays founding-gated like every founding business, and their
   // sign-up counts toward opening the market. Nobody dead-ends.
-  const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
+  const market = nationalSignup ? { name: national.NATIONAL_MARKET, cities: [], country: "United States" } : unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
   if (!market) return err(400, "Choose one of the Magpie markets");
   let customCity = "";
   let customCountry = "";
@@ -16420,8 +16430,23 @@ async function handleRegister(event, linkCtx) {
     if (!primary || family.some((u) => u && u.role === role)) {
       return err(409, "An account with this email already exists. Sign in instead, or use Forgot password on the sign-in page to reset it.");
     }
+    // Build -186 (review hardening): dual-role links only ever
+    // join a creator side and a business side. A partner, admin
+    // or recruiter record under this email is not a side-able
+    // account — the standing refusal applies, and nothing links.
+    if (primary.role !== "creator" && primary.role !== "business") {
+      return err(409, "An account with this email already exists. Sign in instead, or use Forgot password on the sign-in page to reset it.");
+    }
     if (linkPrimarySeed && family.some((u) => u.id === linkPrimarySeed.id)) {
       linkPrimary = primary;
+    } else if (!primary.passwordSalt || !primary.passwordHash) {
+      // Passwordless primaries (team-invite records carry a null
+      // hash) can never prove ownership by password — and
+      // verifyPassword throws on a missing salt, which turned
+      // this branch into a public 500. Standing refusal instead.
+      return err(409, "An account with this email already exists. Sign in instead, or use Forgot password on the sign-in page to reset it.");
+    } else if (linkThrottleHit(email, event)) {
+      return err(429, "Too many attempts. Try again in a few minutes.");
     } else if (auth.verifyPassword(b.password || "", primary.passwordSalt, primary.passwordHash)) {
       linkPrimary = primary;
     } else {
@@ -16781,6 +16806,36 @@ async function handleRegister(event, linkCtx) {
       farmAreas: [],
       brokerage: "",
     };
+  } else if (nationalSignup) {
+    // Build -181: self-serve national business. Same Terms and
+    // real-name gates as any business, then the record is built
+    // by the SAME builder the admin create uses, so a self-serve
+    // brand and an admin-created brand are indistinguishable
+    // downstream: scope national, plan null, accessState
+    // founding, verifiedAt null. The brand stays invisible to
+    // creators until an admin verifies it in the National room;
+    // there is no self-serve path around that gate.
+    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
+    if (!plausibleBizName(b.businessName)) return err(400, "Give your business its real name — creators see it on your offers.");
+    let websiteUrl = "";
+    if (b.website) {
+      const w = national.validateWebsiteUrl(b.website);
+      if (!w.ok) return err(400, w.error);
+      websiteUrl = w.url;
+    }
+    const natRec = national.buildNationalBusinessUser({
+      email,
+      name: b.name,
+      businessName: plausibleBizName(b.businessName),
+      brandName: typeof b.brandName === "string" && b.brandName.trim() ? b.brandName.trim() : undefined,
+      website: websiteUrl,
+      about: typeof b.about === "string" ? b.about : "",
+      focusMarkets: Array.isArray(b.focusMarkets) ? b.focusMarkets : [],
+      country: typeof b.country === "string" ? b.country : undefined,
+    }, { nowIso, termsVersion: TERMS_VERSION, managedTalentBudgetDefault: MANAGED_TALENT_BUDGET_DEFAULT });
+    user.business = natRec.business;
+    user.business.category = BUSINESS_CATEGORIES.includes(b.category) ? b.category : "Other";
+    user.city = "";
   } else {
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
     // Build -151: a one-letter fragment is not a business name —
@@ -17062,6 +17117,12 @@ async function handleSwitchSide(event, ctx) {
   if (ctx.session && ctx.session.viewAs) return err(403, "You are viewing another account. Exit the view before switching sides.");
   const sib = await linkedSiblingOf(ctx.user);
   if (!sib) return err(409, "This account has only one side. Add the other side from your account menu first.");
+  // Build -186: defense in depth — a switch only ever moves
+  // between a creator side and a business side, whatever the
+  // link records say.
+  if (!["creator", "business"].includes(sib.role) || !["creator", "business"].includes(ctx.user.role)) {
+    return err(409, "This account has only one side. Add the other side from your account menu first.");
+  }
   const session = await auth.getSessionRecord(ctx.token);
   if (!session) return err(401, "Not signed in");
   session.userId = sib.id;
@@ -17091,6 +17152,21 @@ async function handleAddSide(event, ctx) {
 
 const igPrefillHits = new Map();
 const loginAttempts = new Map();
+// Build -186: the dual-role link path in handleRegister checks
+// a submitted password against an existing account — the same
+// guessing surface as sign-in, so it draws on the SAME throttle
+// budget (10 attempts per 10 minutes per email+IP, shared with
+// handleLogin). Returns true when the caller is over budget.
+function linkThrottleHit(email, event) {
+  const ip = (event.headers["x-nf-client-connection-ip"] || event.headers["x-forwarded-for"] || "unknown").toString();
+  const key = `${email}|${ip}`;
+  const now = Date.now();
+  const attempts = (loginAttempts.get(key) || []).filter((t) => now - t < 10 * 60 * 1000);
+  if (attempts.length >= 10) return true;
+  attempts.push(now);
+  loginAttempts.set(key, attempts);
+  return false;
+}
 async function handleLogin(event) {
   const b = parseBody(event);
   const email = (b.email || "").toLowerCase();
@@ -17361,6 +17437,13 @@ async function handleReset(event) {
   const sibAfterReset = await syncLinkedPassword(user, salt, pwHash);
   await store.del(`pwreset:${hash}`);
   await store.del(`pwreset-user:${user.id}`);
+  // Build -186: the sibling's outstanding reset token dies too —
+  // it was minted against the old shared password.
+  if (sibAfterReset) {
+    const sibIdx = await store.get(`pwreset-user:${sibAfterReset.id}`);
+    if (sibIdx && sibIdx.tokenHash) await store.del(`pwreset:${sibIdx.tokenHash}`);
+    await store.del(`pwreset-user:${sibAfterReset.id}`);
+  }
   // The credential changed: every existing session signs out.
   await auth.revokeSessionsForUser(user.id);
   if (sibAfterReset) await auth.revokeSessionsForUser(sibAfterReset.id);
@@ -17623,7 +17706,9 @@ async function handleSigninLinkConsume(event) {
   await logEvent({ type: "user_signed_in", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { via: "signin_link" } });
   const session = await auth.createSession(user.id);
   const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
-  return json(200, { user: await withFounding(user) }, { "Set-Cookie": auth.sessionCookie(session, secure) });
+  const linkPayload = await withFounding(user);
+  await withLinkedSide(linkPayload, user);
+  return json(200, { user: linkPayload }, { "Set-Cookie": auth.sessionCookie(session, secure) });
 }
 
 // ---------- main router ----------
@@ -20529,10 +20614,15 @@ function ccOverview(P) {
   const completedBizIds = new Set(P.compBookings.filter((b) => b.status === "completed").map((b) => b.businessId));
   const unconnected = [...completedBizIds].filter((id) => !P.connectedBizIds.has(id)).length;
   if (unconnected > 0) attention.push({ kind: "unconnected_registers", count: unconnected, text: `${unconnected} ${unconnected === 1 ? "business has" : "businesses have"} completed visits and no register connected.`, target: { view: "command", subtab: "overview", anchor: "registers" } });
+  // Build -186: usersTotal counts PEOPLE, not records — a
+  // dual-role person's two sides are one person here (the
+  // per-role tiles below still count each side in its role).
+  const peopleKeys = new Set();
+  for (const u of people) peopleKeys.add(u.linkedAccountId ? [u.id, u.linkedAccountId].sort().join(":") : u.id);
   return {
     filters: ccFiltersEcho(P),
     tiles: {
-      usersTotal: people.length,
+      usersTotal: peopleKeys.size,
       creators: creators.length,
       businesses: businesses.length,
       partners: partners.length,
@@ -29336,6 +29426,13 @@ async function route(event) {
       const total = matches.length;
       const users = matches.slice(0, 25).map(({ u }) => {
         const pub = publicUser(u);
+        // Build -186: the admin card's dual-account badge names
+        // the other side AND its status (the sibling record is
+        // already in this list — no extra read).
+        if (u.linkedAccountId) {
+          const sib = all.find((x) => x.id === u.linkedAccountId);
+          if (sib) pub.linkedSide = { role: sib.role, status: sib.status };
+        }
         pub.partnerId = u.partnerId || null;
         pub.partnerName = u.partnerId ? partnerNameOf(u.partnerId) : "";
         if (u.role === "creator") {
