@@ -67,7 +67,13 @@ function countsTowardMarket(user) {
 
 function brandDisplayName(user) {
   const b = (user && user.business) || {};
-  return String(b.brandName || b.businessName || (user && user.name) || "").trim();
+  // Build -181: NO fallback to user.name. That field is the
+  // account holder's personal name, and this string is what
+  // creators see on campaigns, brand profiles and notifications
+  // — a brand with no brand/business name set shows as nothing
+  // here (callers render their own neutral fallback), never as
+  // the person who runs the account.
+  return String(b.brandName || b.businessName || "").trim();
 }
 
 // ---------- website validation (spec §1.2, §5.3) ----------
@@ -302,7 +308,12 @@ function brandProfileView(bizUser, openCampaigns) {
     businessId: bizUser.id,
     scope: national ? "national" : "market",
     brandName: brandDisplayName(bizUser),
-    businessName: b.businessName || "",
+    // Build -181: businessName is NOT in this view. This payload
+    // is creator-facing (brand profile page + campaign page), and
+    // creators see the BRAND name and logo only — the operating
+    // company's legal name (which can differ from the brand, e.g.
+    // a parent company behind a product brand) is the brand's own
+    // data, served on its own /national/me surface, never here.
     logoUrl: b.logoUrl || null,
     initial: (brandDisplayName(bizUser).charAt(0) || "M").toUpperCase(),
     about: (national ? (b.brandAbout || b.about) : b.about) || "",

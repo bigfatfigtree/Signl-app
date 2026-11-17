@@ -16307,12 +16307,22 @@ async function handleRegister(event) {
   if (typeof b.password !== "string" || b.password.length < 10) return err(400, "Password must be at least 10 characters");
   if (!quickClaim && (!b.name || typeof b.name !== "string")) return err(400, "Name is required");
   const unlisted = b.market === UNLISTED;
+  // Build -181: self-serve NATIONAL signup (Jeff, 2026-11-16: he
+  // expected businesses to sign up THEMSELVES and pick National;
+  // -178 shipped admin-created only). A brand that operates
+  // across markets picks National in the business form; its
+  // record takes the exact shape an admin-created national
+  // account carries (sentinel market, no plan, unverified until
+  // an admin checks it in the National room), so every national
+  // surface treats the two identically and the verification gate
+  // has no self-serve bypass.
+  const nationalSignup = role === "business" && b.scope === "national";
   // A business in a not-yet-listed city joins the founding list
   // exactly the way a creator signals a city (UX audit fix,
   // 2026-10-22): the record carries their typed city, the account
   // stays founding-gated like every founding business, and their
   // sign-up counts toward opening the market. Nobody dead-ends.
-  const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
+  const market = nationalSignup ? { name: national.NATIONAL_MARKET, cities: [], country: "United States" } : unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
   if (!market) return err(400, "Choose one of the Magpie markets");
   let customCity = "";
   let customCountry = "";
@@ -16669,6 +16679,36 @@ async function handleRegister(event) {
       farmAreas: [],
       brokerage: "",
     };
+  } else if (nationalSignup) {
+    // Build -181: self-serve national business. Same Terms and
+    // real-name gates as any business, then the record is built
+    // by the SAME builder the admin create uses, so a self-serve
+    // brand and an admin-created brand are indistinguishable
+    // downstream: scope national, plan null, accessState
+    // founding, verifiedAt null. The brand stays invisible to
+    // creators until an admin verifies it in the National room;
+    // there is no self-serve path around that gate.
+    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
+    if (!plausibleBizName(b.businessName)) return err(400, "Give your business its real name — creators see it on your offers.");
+    let websiteUrl = "";
+    if (b.website) {
+      const w = national.validateWebsiteUrl(b.website);
+      if (!w.ok) return err(400, w.error);
+      websiteUrl = w.url;
+    }
+    const natRec = national.buildNationalBusinessUser({
+      email,
+      name: b.name,
+      businessName: plausibleBizName(b.businessName),
+      brandName: typeof b.brandName === "string" && b.brandName.trim() ? b.brandName.trim() : undefined,
+      website: websiteUrl,
+      about: typeof b.about === "string" ? b.about : "",
+      focusMarkets: Array.isArray(b.focusMarkets) ? b.focusMarkets : [],
+      country: typeof b.country === "string" ? b.country : undefined,
+    }, { nowIso, termsVersion: TERMS_VERSION, managedTalentBudgetDefault: MANAGED_TALENT_BUDGET_DEFAULT });
+    user.business = natRec.business;
+    user.business.category = BUSINESS_CATEGORIES.includes(b.category) ? b.category : "Other";
+    user.city = "";
   } else {
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
     // Build -151: a one-letter fragment is not a business name —
