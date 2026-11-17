@@ -36258,7 +36258,7 @@ function renderNationalBusinessDash() {
   if (tab === "NatNew") { el.innerHTML = head + natComposerHtml(null); }
   if (tab === "NatDiscover") { el.innerHTML = head + `<div id="nat-discover">${skelHtml("Loading creators...", 2)}</div>`; loadNatDiscover(); }
   if (tab === "NatReports") { el.innerHTML = head + `<div id="nat-reports">${skelHtml("Loading your reports...", 1)}</div>`; loadNatReports(); }
-  if (tab === "NatBrand") { el.innerHTML = head + natBrandEditorHtml(u); }
+  if (tab === "NatBrand") { el.innerHTML = head + natBrandEditorHtml(u); natMkSync("brand"); }
 }
 function natHeadHtml(u) {
   const bz = u.business || {};
@@ -36351,7 +36351,7 @@ function natComposerHtml(c) {
     <label class="nfld178"><span>Creators raise a hand by</span><input id="nc-deadline" type="datetime-local" value="${esc(deadline)}"></label>
     <label class="nfld178"><span>The details (what you make, when gifts ship, when posts are due after delivery)</span><textarea id="nc-details" rows="4">${esc((c && c.details) || "")}</textarea></label>
     <div class="nfld178"><span>Who it is for (categories — ordering only; every approved creator can still raise a hand)</span>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${cats.map((x) => `<label class="chip-check"><input type="checkbox" class="nc-cat" value="${esc(x)}" ${picked.has(x) ? "checked" : ""}> ${esc(x)}</label>`).join("")}</div>
+      <div class="checkrow" style="margin-top:6px">${cats.map((x) => `<label><input type="checkbox" class="nc-cat" value="${esc(x)}" ${picked.has(x) ? "checked" : ""}> ${esc(x)}</label>`).join("")}</div>
     </div>
     <div class="panel"><strong>Before it goes out</strong>
       <p class="small" style="margin:6px 0 0">What you get is stated as a thing, not a category. The ask fits in one line. No promise in the details that you cannot keep. Your logo and website are on your brand profile, because creators check both.</p>
@@ -36496,6 +36496,89 @@ async function loadNatReports() {
       </div>`;
   } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
 }
+// ---------- Focus-market picker (Build -179) ----------
+// Reusable grouped market multi-select built on the app's
+// established .checkrow chip pattern (the profile builder's comps
+// picker): real inputs visually hidden inside pill labels, mint
+// fill + check mark when checked. Used by the admin Create
+// national account form and the brand profile editor; the submit
+// handlers keep reading the same input classes (.an-focus /
+// .nb-focus) and the same market-name values, unchanged.
+const NAT_FOCUS_MARKETS_179 = ["Nashville", "Virginia Beach", "Miami", "New York City", "Los Angeles", "Atlanta", "Toronto"];
+function natMarketGroups(names) {
+  const list = [...new Set((names || []).map((n) => String(n || "")).filter(Boolean))];
+  const boot = (state.boot && state.boot.markets) || [];
+  const countryOf = (name) => {
+    const m = boot.find((x) => (x && (x.name || x)) === name);
+    return (m && m.country) || "United States";
+  };
+  const focus = NAT_FOCUS_MARKETS_179.filter((n) => list.includes(n));
+  const focusSet = new Set(focus);
+  const us = [];
+  const intl = [];
+  for (const name of list) {
+    if (focusSet.has(name)) continue;
+    const c = countryOf(name);
+    if (c === "United States" || c === "Puerto Rico") us.push(name); else intl.push(name);
+  }
+  const groups = [];
+  if (focus.length) groups.push({ label: "Focus markets", markets: focus });
+  if (us.length) groups.push({ label: "United States", markets: us });
+  if (intl.length) groups.push({ label: "International", markets: intl });
+  return groups;
+}
+function natMarketPickerHtml(opts) {
+  const { uid, inputClass, markets, checked } = opts || {};
+  const names = [...new Set((markets || []).map((m) => (typeof m === "string" ? m : (m && m.name) || "")).filter(Boolean))];
+  const checkedSet = new Set(checked || []);
+  const pickedCount = names.filter((n) => checkedSet.has(n)).length;
+  const groups = natMarketGroups(names);
+  return `<div class="mkpick" id="mkpick-${esc(uid)}">
+    <div class="mkpick-bar">
+      <input type="search" class="mkpick-q" placeholder="Filter markets" aria-label="Filter markets" oninput="natMkFilter('${esc(uid)}', this.value)">
+      <span class="mkpick-count" id="mkpick-count-${esc(uid)}">${pickedCount} selected</span>
+      <button type="button" class="btn small-btn ghost" onclick="natMkAll('${esc(uid)}', true)">Select all</button>
+      <button type="button" class="btn small-btn ghost" onclick="natMkAll('${esc(uid)}', false)">Clear</button>
+    </div>
+    ${groups.map((g) => `<div class="mkpick-sec"><div class="mkpick-group">${esc(g.label)}</div><div class="checkrow mkpick-chips">${g.markets.map((name) => `<label><input type="checkbox" class="${esc(inputClass)}" value="${esc(name)}" onchange="natMkSync('${esc(uid)}')" ${checkedSet.has(name) ? "checked" : ""}> ${esc(name)}</label>`).join("")}</div></div>`).join("")}
+    <p class="mkpick-none" id="mkpick-none-${esc(uid)}" style="display:none">No markets match your filter.</p>
+  </div>`;
+}
+function natMkRoot(uid) { return document.getElementById(`mkpick-${uid}`); }
+function natMkSync(uid) {
+  const root = natMkRoot(uid);
+  if (!root) return;
+  const n = root.querySelectorAll('input[type="checkbox"]:checked').length;
+  const c = document.getElementById(`mkpick-count-${uid}`);
+  if (c) c.textContent = `${n} selected`;
+}
+function natMkAll(uid, on) {
+  const root = natMkRoot(uid);
+  if (!root) return false;
+  root.querySelectorAll('input[type="checkbox"]').forEach((x) => { x.checked = !!on; });
+  natMkSync(uid);
+  return false;
+}
+function natMkFilter(uid, q) {
+  const root = natMkRoot(uid);
+  if (!root) return;
+  const needle = String(q || "").trim().toLowerCase();
+  let anyVisible = false;
+  root.querySelectorAll(".mkpick-sec").forEach((sec) => {
+    let secVisible = false;
+    sec.querySelectorAll(".mkpick-chips label").forEach((lab) => {
+      const input = lab.querySelector("input");
+      const name = input ? input.value : lab.textContent;
+      const show = !needle || name.toLowerCase().includes(needle);
+      lab.style.display = show ? "" : "none";
+      if (show) secVisible = true;
+    });
+    sec.style.display = secVisible ? "" : "none";
+    if (secVisible) anyVisible = true;
+  });
+  const none = document.getElementById(`mkpick-none-${uid}`);
+  if (none) none.style.display = anyVisible ? "none" : "";
+}
 // Brand profile editor (the profile-settings surface, national
 // fields). Saves through the same /me/profile PATCH every
 // business uses; a website change clears verification server-side.
@@ -36513,7 +36596,7 @@ function natBrandEditorHtml(u) {
     <label class="nfld178"><span>Logo address (a link to your logo image)</span><input id="nb-logo" value="${esc(bz.logoUrl || "")}" placeholder="https://yourbrand.com/logo.png"></label>
     <label class="nfld178"><span>What you sell, in your own words</span><textarea id="nb-about" rows="3">${esc(bz.brandAbout || bz.about || "")}</textarea></label>
     <div class="nfld178"><span>Focus markets (where you care most — used to order Find creators and your reports; it never limits who can raise a hand)</span>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${markets.map((m) => `<label class="chip-check"><input type="checkbox" class="nb-focus" value="${esc(m.name || m)}" ${focus.has(m.name || m) ? "checked" : ""}> ${esc(m.name || m)}</label>`).join("")}</div>
+      ${natMarketPickerHtml({ uid: "brand", inputClass: "nb-focus", markets, checked: [...focus] })}
     </div>
     <button type="submit" class="btn">Save brand profile</button>
   </form>`;
@@ -36558,7 +36641,7 @@ async function loadAdminNational178() {
         <label class="nfld178"><span>What they sell</span><textarea id="an-about" rows="2"></textarea></label>
         <label class="nfld178"><span>Logo address (optional)</span><input id="an-logo" placeholder="https://brand.com/logo.png"></label>
         <label class="nfld178"><span>Currency</span><select id="an-currency"><option>USD</option><option>GBP</option><option>CAD</option><option>NZD</option><option>EUR</option></select></label>
-        <div class="nfld178"><span>Focus markets</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${(d.markets || []).map((m) => `<label class="chip-check"><input type="checkbox" class="an-focus" value="${esc(m)}"> ${esc(m)}</label>`).join("")}</div></div>
+        <div class="nfld178"><span>Focus markets</span>${natMarketPickerHtml({ uid: "admin", inputClass: "an-focus", markets: d.markets || [], checked: [] })}</div>
         <button type="submit" class="btn">Create national account</button>
         <span class="small muted"> Lands as pending, on the founding list. Approve + activate it like any business, then verify the brand below. No email is sent automatically.</span>
       </form>
@@ -36583,6 +36666,7 @@ async function loadAdminNational178() {
       ${c.status !== "closed" && c.status !== "completed" && c.status !== "cancelled" ? `<button type="button" class="btn small-btn ghost" onclick="return adminNatCloseCampaign('${c.id}')">Close campaign</button>` : ""}
       <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:8px"><input id="anr-creator-${c.id}" placeholder="Creator id" style="max-width:150px"><input id="anr-orders-${c.id}" type="number" min="0" placeholder="Orders" style="max-width:90px"><input id="anr-rev-${c.id}" type="number" min="0" step="0.01" placeholder="Revenue" style="max-width:100px"><button type="button" class="btn small-btn ghost" onclick="return adminNatResults('${c.id}')">Enter store-reported results</button></span>
     </div>`).join("") || `<p class="muted">No national campaigns yet.</p>`}`;
+    natMkSync("admin");
   } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
 }
 async function adminNatCreate(ev) {
