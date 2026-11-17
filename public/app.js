@@ -14210,7 +14210,6 @@ async function loadPointsCard() {
       <div class="kv"><span>Level</span><b>Level ${lvl.level} · ${esc(lvl.name || "")}</b></div>
       ${lvl.earlyAccessHours ? `<p class="small" style="margin:8px 0 0">Your level sees new offers ${lvl.earlyAccessHours} hours early.</p>` : ""}
       ${lvl.nextAt ? `<p class="small" style="margin:4px 0 0">Next level, ${esc(lvl.nextName || "")}, at ${lvl.nextAt} points.</p>` : `<p class="small" style="margin:4px 0 0">Top level. Nice work.</p>`}
-      <p class="small" style="margin:8px 0 0">${POINTS_WHY_LONG}</p>
       <h4 style="margin:14px 0 6px">Your Line</h4>
       ${gens || `<p class="small">Nobody yet. Points land when a creator you invite finishes signing up.</p>`}
       <h4 style="margin:14px 0 6px">Ways to earn</h4>
