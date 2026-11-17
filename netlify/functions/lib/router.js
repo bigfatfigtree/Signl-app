@@ -5749,14 +5749,17 @@ function isFoundingBusiness(u) {
   return !!u && u.role === "business" && businessAccessState(u) !== "active";
 }
 
-// Founding launch bar (creator excitement layer, Jeff, 2026-10-29):
-// the finished-profile count a market's founding roster is built
-// to before businesses open there (the 25 to 30 finished-creator
-// gate the launch plan runs on, stated at its floor). The city
-// unlock meter on the creator founding home reads this number;
-// it is a planning bar shown honestly as progress, not a promise
-// that a market opens the day the count lands.
-const FOUNDING_LAUNCH_BAR = 25;
+// Founding launch bar (Build -188, PL-01; Jeff's settled line,
+// 2026-11-16): a market launches at 50 APPROVED creators.
+// Finished profiles in the mid-30s or better is the healthy
+// shape behind that number, context only, never the bar. The
+// city unlock meter on the creator founding home reads this
+// number against the APPROVED count; it is a planning bar shown
+// honestly as progress, not a promise that a market opens the
+// day the count lands. (Supersedes the 2026-10-29 finished-25
+// bar: at 27 finished Nashville the old meter declared the
+// roster "built" while 13 approvals were still missing.)
+const FOUNDING_LAUNCH_BAR = 50;
 
 
 // Neighborhood Anchor (Build -32, Jeff, 2026-10-29): the FIRST
@@ -7084,8 +7087,14 @@ async function recentLifecycleEmail(userId, windowMs) {
 // loads /auth/me, so a daily-active user on a 30-day session is
 // never mistaken for dormant (review fix, Build -185).
 async function stampLastSignIn(user) {
-  user.lastSignInAt = nowIso();
-  await store.set(`user:${user.id}`, user);
+  // Build -188 (PL-59): the stamp is bookkeeping, never a gate.
+  // An unguarded throw here used to turn a good sign-in into a
+  // clean 500 (the -185 /auth/me refresh already guards its own
+  // call site; guarding the helper covers every caller at once).
+  try {
+    user.lastSignInAt = nowIso();
+    await store.set(`user:${user.id}`, user);
+  } catch (e) { /* a stamp failure never breaks sign-in */ }
 }
 async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   const threadId = platformThreadId(creator.id);
@@ -9517,7 +9526,11 @@ async function rankApplications(apps) {
         ratingAvg: rating.ratingAvg,
         ratingCount: rating.ratingCount,
         badges: momentum.badgesFor(c),
-        foundingRank: approvedRank.get(c.id) || null,
+        // Build -188 (PL-12): the exact founding rank is Admin-only
+        // (Jeff: "it tells on us"). This stack is a BUSINESS payload,
+        // so it carries the band only ("in the first 100"), never
+        // the exact rank. Admin surfaces read the raw record.
+        foundingBand: foundingBand(approvedRank.get(c.id) || null),
         createdAt: c.createdAt,
         trackRecord: track,
       },

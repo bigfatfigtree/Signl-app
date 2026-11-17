@@ -3454,6 +3454,14 @@ async function switchSide180() {
     state.sigQueueCount = 0;
     state.sigThread = [];
     state.natMe = null;
+    // Build -188 (PL-15): the "Maggie noticed" stack on Home
+    // renders from the cached state.sigHome (loadSigTopNudges
+    // only fetches when the cache is empty). The -187 clear
+    // missed this cache, so after a side switch the new side's
+    // Home showed the OTHER side's chips verbatim (creator
+    // chips on the business Home). Clear it with the queue so
+    // the stack always refetches from the active side's records.
+    state.sigHome = null;
     state.user = data.user;
     state.view = "dashboard";
     state.tab = null;
@@ -5431,7 +5439,6 @@ function renderMomentumTab() {
     <div class="kpi-label">Your Momentum</div>
     <div class="kpi-num" style="font-size:3rem">${fmtNum(m.points || 0)}</div>
     <div class="kpi-sub">${m.points ? `${tier ? `You are in the ${esc(tier)} tier. ` : ""}${next ? `Next: ${esc(next.label)} (+${next.points}).` : "Every way to earn is done. Keep the streak going."}` : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
-    <p class="small" style="margin:10px 0 0">${POINTS_WHY_LONG}</p>
   </div>
   ${momentumHtml(u)}
   ${growRosterHtml(u)}
@@ -13497,7 +13504,7 @@ function sqNoticeHtml() {
   state.sqNotice = null;
   if (v === "connected") return `<div class="notice"><strong>Your register is connected.</strong> Code visits and come-backs now count themselves. The connection, its locations, and the disconnect live in Results, under your proof controls.</div>`;
   if (v === "error") return `<div class="notice"><strong>Square connect did not finish.</strong> Nothing changed, and your codes still count at the till. You can try again from the setup checklist on Home.</div>`;
-  if (v === "unavailable") return `<div class="notice blue"><strong>The register plug-in opens on your setup call.</strong> We plug into your POS with you, one tap on your end. Until then your codes count on the register you already have.</div>`;
+  if (v === "unavailable") return `<div class="notice blue"><strong>The register plug-in is set up in writing.</strong> We walk you through plugging into your POS in writing, one tap on your end; a call only if you want one. Until then your codes count on the register you already have.</div>`;
   return "";
 }
 async function loadReceipt() {
@@ -13671,7 +13678,7 @@ function squareControlsHtml(r) {
   const head = `<h4 style="margin:16px 0 4px">Your register</h4>`;
   if (!reg.configured) {
     return `${head}
-    <p class="small" style="margin:0">On our setup call, we plug into your POS with you: it takes one tap on your end, and we stay on the line until your panel says connected. If your system isn't one we connect to yet, nothing waits on that: your codes start counting on the register you already have, the day your first creator posts.</p>`;
+    <p class="small" style="margin:0">We plug into your POS with you, in writing: it takes one tap on your end, and we walk you through it step by step until your panel says connected; a call only if you want one. If your system isn't one we connect to yet, nothing waits on that: your codes start counting on the register you already have, the day your first creator posts.</p>`;
   }
   const sandboxTag = reg.env === "sandbox" ? ` <span class="badge">Square sandbox: a test register, not a live one</span>` : "";
   if (reg.state === "paused") {
@@ -13886,7 +13893,7 @@ function creditPanelHtml(r) {
     ? `<p class="small" style="margin:0"><strong>Your register is connected</strong>${reg.businessName ? ` (${esc(reg.businessName)})` : ""}, counting from ${esc(fmtDate(reg.connectedAt))}. Code visits and came-backs count themselves.${reg.lastSyncAt ? ` Last read from your register ${esc(fmtDate(reg.lastSyncAt))}.` : ""} Manage it in your proof controls below.</p>`
     : regPaused
       ? `<p class="small" style="margin:0"><strong>Register paused.</strong> Your register stopped sharing checks on ${esc(fmtDate(reg.pausedAt))}. Your codes still count at the till. Reconnect from your proof controls below.</p>`
-      : `<p class="small" style="margin:0"><strong>Register plug-in:</strong> we plug into your POS with you on the setup call, one tap on your end, we stay on the line until your panel says connected; if your system isn't one we connect to yet, your codes start counting on the register you already have.</p>`;
+      : `<p class="small" style="margin:0"><strong>Register plug-in:</strong> we plug into your POS with you in writing, one tap on your end, and walk you through it step by step until your panel says connected; a call only if you want one. If your system isn't one we connect to yet, your codes start counting on the register you already have.</p>`;
   return `<div style="margin-top:16px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:12px">
     <h4 style="margin:0 0 4px">How Magpie gets credit</h4>
     <p class="small muted" style="margin:0">Your score only counts what your register can prove. Here is the whole chain.</p>
@@ -14968,7 +14975,11 @@ function shareStatCard(btn) {
 function creatorUnlockHtml(f, buzz, placeRaw) {
   const un = buzz.unlock;
   if (!un) return "";
-  const pct = Math.max(0, Math.min(100, Math.round((un.complete / un.launchBar) * 100)));
+  // Build -188 (PL-01): the bar is 50 APPROVED creators (Jeff's
+  // settled line, 2026-11-16), so progress and the "built" state
+  // read the approved count. Finished profiles stay the context
+  // line below, never the bar. No raw counts print (Build -30).
+  const pct = Math.max(0, Math.min(100, Math.round((un.approved / un.launchBar) * 100)));
   // BUILD -30 (Jeff, 2026-10-29): the meter shows NO raw counts
   // while a market is small, because a small number discourages
   // the very people it is meant to excite. Below double digits
@@ -14979,11 +14990,11 @@ function creatorUnlockHtml(f, buzz, placeRaw) {
   // drive this gate, they are just not printed.
   const state = un.marketLive
     ? `${esc(placeRaw)} is live. Businesses are booking now.`
-    : (un.complete >= un.launchBar
+    : (un.approved >= un.launchBar
       ? `The founding roster is built. ${esc(placeRaw)} is in launch position, and businesses activate as the market opens.`
-      : (un.complete >= 10
-        ? `<strong>${pct}% of the founding goal is in.</strong> Finished founding profiles keep landing, and every one moves this bar, including yours.`
-        : `Founding class forming. Finished founding profiles are landing now, and every one moves this bar, including yours.`));
+      : ((un.approved >= 10 || un.complete >= 10)
+        ? `<strong>${pct}% of the founding goal is in.</strong> Approved founding creators keep landing, and every finished profile moves this bar, including yours.`
+        : `Founding class forming. Approved founding creators are landing now, and every finished profile moves this bar, including yours.`));
   return `<section class="wcard">
     <p class="ui-kicker">City unlock meter</p>
     <h3 style="margin:2px 0 0">${esc(placeRaw)}'s founding class</h3>
@@ -16913,7 +16924,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
       </div>
       <div class="field" id="pf-bio"><label>${T("Bio", "Biografía")}</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
-      <div class="field"><label>${T("Your pitch line", "Tu línea de presentación")}</label><input id="p-pitch" value="${esc(c.pitchLine || "")}" maxlength="200" placeholder="${T("One line that introduces you, at the top of your profile", "Una línea que te presenta, arriba de tu perfil")}"><p class="small muted">${T("Maggie can draft it from your real profile: your categories, your local percentage, your streets. Accept it, edit it, or write your own.", "Maggie puede redactarla desde tu perfil real: tus categorías, tu porcentaje local, tus calles. Acéptala, edítala o escribe la tuya.")}</p><button type="button" class="btn small-btn ghost" onclick="return pitchDraftFill()">${T("Draft it with Sig", "Redactarla con Sig")}</button> <span id="p-pitch-note" class="small muted"></span></div>
+      <div class="field"><label>${T("Your pitch line", "Tu línea de presentación")}</label><input id="p-pitch" value="${esc(c.pitchLine || "")}" maxlength="200" placeholder="${T("One line that introduces you, at the top of your profile", "Una línea que te presenta, arriba de tu perfil")}"><p class="small muted">${T("Maggie can draft it from your real profile: your categories, your local percentage, your streets. Accept it, edit it, or write your own.", "Maggie puede redactarla desde tu perfil real: tus categorías, tu porcentaje local, tus calles. Acéptala, edítala o escribe la tuya.")}</p><button type="button" class="btn small-btn ghost" onclick="return pitchDraftFill()">${T("Draft it with Maggie", "Redactarla con Maggie")}</button> <span id="p-pitch-note" class="small muted"></span></div>
       </div>
       <div class="save-bar"><div id="save-warn"></div><button class="btn" type="submit">${T("Save profile", "Guardar perfil")}</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span></div>
     </form>
@@ -20103,7 +20114,7 @@ function partnerHelpHtml(d) {
     <div class="pt-sig-copy">
       <div class="flex-between"><strong>Maggie</strong><span class="badge info">Your guide</span></div>
       <p class="small" style="margin:6px 0 10px">Questions about your numbers? Maggie reads your dashboard and answers in plain sentences, with your next move attached.</p>
-      <button class="btn small-btn" onclick="return go('dashboard','Sig')">Open Maggie</button>
+      <button class="btn small-btn" onclick="return go('dashboard','Sig')">Open Sig</button>
     </div>
   </div>
   <div class="wcard">
@@ -22103,7 +22114,7 @@ function setupChecklistHtml(cl) {
   const squareNote = (s) => {
     if (s.id !== "square" || s.done) return "";
     if (reg.state === "paused") return `<p class="small" style="margin:4px 0 0"><strong>Register paused.</strong> Square stopped sharing checks. Your codes still count at the till.</p>`;
-    if (!reg.configured) return `<p class="small muted" style="margin:4px 0 0">On our setup call, we plug into your register with you: one tap on your end. Until then your codes count on the register you already have.</p>`;
+    if (!reg.configured) return `<p class="small muted" style="margin:4px 0 0">We plug into your register with you in writing: one tap on your end, and we walk you through it step by step; a call only if you want one. Until then your codes count on the register you already have.</p>`;
     if (reg.env === "sandbox") return `<p class="small" style="margin:4px 0 0"><span class="badge">Square sandbox: a test register, not a live one</span></p>`;
     return "";
   };
@@ -29607,7 +29618,7 @@ async function loadCompliance() {
       </div>`).join("");
     el.innerHTML = `
       <div class="flex-between"><h3 style="margin:0">Post compliance</h3><button class="btn small-btn" onclick="runSweepNow()">Run sweep now</button></div>
-      <p class="small muted" style="margin-top:8px">The sweep runs on a schedule and sends the 48-hour reminder, the day-5 reminder, and the day-6 final warning; it pauses creators at the one-week hard stop, and a redeemed comp with no post one month after the visit makes the account no longer active (Phase C). A hard stop with no post and no word from the creator counts a silent no-show strike; two strikes remove the creator. Paid visits run on their agreed posting terms instead. Counts: ${Object.entries(data.counts || {}).map(([k, v]) => `${esc(statusLabel[k] || k)} ${v}`).join(" &middot; ") || "none yet"}</p>
+      <p class="small muted" style="margin-top:8px">The sweep runs on a schedule and sends the 48-hour reminder, the day-5 reminder, and the day-6 final warning; it pauses creators at the one-week hard stop, and a redeemed comp with no post one month after the visit makes the account no longer active (the paid-visit posting-terms rules). A hard stop with no post and no word from the creator counts a silent no-show strike; two strikes remove the creator. Paid visits run on their agreed posting terms instead. Counts: ${Object.entries(data.counts || {}).map(([k, v]) => `${esc(statusLabel[k] || k)} ${v}`).join(" &middot; ") || "none yet"}</p>
       <div id="sweep-note" class="small saved"></div>
       ${rows || `<p class="muted">No redeemed visits yet. Compliance rows appear here the moment a comp is redeemed.</p>`}
       ${bizRows ? `<h3 class="mt">Businesses with honor reports</h3><p class="small muted">Creator reports that a business did not honor a comp. Admin only; there is no public surface for this.</p>${bizRows}` : ""}`;
@@ -29684,7 +29695,7 @@ function adminMarketCardHtml(m) {
     <div class="mkt-reach"><span class="mkt-reach-num">${fmtNum(m.combinedFollowers || 0)}</span> <span class="muted small">combined followers (as reported by creators), across ${fmtNum(m.creatorsListed || 0)} listed ${m.creatorsListed === 1 ? "creator" : "creators"}</span></div>
     <div class="mkt-reach"><span class="mkt-reach-num">${fmtNum(m.localFollowers || 0)}</span> <span class="muted small">local followers: the part of that audience that lives in ${esc(m.label)}, worked out from the local share each creator reports for this market</span></div>
     <p class="mkt-stats"><strong>${m.avgLocalPct === null || m.avgLocalPct === undefined ? "—" : m.avgLocalPct + "%"}</strong> avg % local <span class="muted small">(average share of a listed creator's audience that lives in their market)</span></p>
-    <p class="mkt-stats"><strong>${m.creatorsApproved}</strong> approved creators &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> complete &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></p>
+    <p class="mkt-stats"><strong>${m.creatorsApproved} of 50 approved</strong> &middot; ${Math.max(0, 50 - (m.creatorsApproved || 0))} to go to launch &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> finished profiles &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></p>
     <div class="mkt-actions"><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button><div class="muted small" style="margin-top:4px">${m.live ? "Back to founding only: no new offers or bookings there." : "Opens publishing and bookings here. Founding businesses still activate separately."}</div>${m.businessesFounding ? `<button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}<button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleBench('${esc(m.name)}', ${m.benchOpen ? "false" : "true"})">${m.benchOpen ? "Close bench" : "Open bench"}</button><div class="muted small" style="margin-top:4px">Bench: creators seeing each other in this market. ${m.live ? "Open while the market is live." : m.benchOpen ? "Open by override, ahead of launch." : "Opens at launch unless you open it here."}</div></div>
   </div>`;
 }
@@ -29696,6 +29707,14 @@ function renderAdminMarkets() {
   const sort = state.adminMarketsSort || "default";
   const group = state.adminMarketsGroup || "none";
   const rows = (data.markets || []).map((m, i) => ({ m, i }));
+  // Build -188 (PL-01): the launch push pins Nashville first and
+  // Hampton Roads (Virginia Beach) second in the default order,
+  // so the two markets Jeff is driving to 50 approved lead the
+  // page. Explicit sorts keep their own order.
+  if (sort === "default") {
+    const pin188 = (m) => (m.name === "Nashville" ? 0 : m.name === "Virginia Beach" ? 1 : 2);
+    rows.sort((a, b) => pin188(a.m) - pin188(b.m) || a.i - b.i);
+  }
   if (sort === "creators") {
     const signedUp = (m) => (m.creatorsApproved || 0) + (m.creatorsPending || 0);
     rows.sort((a, b) => signedUp(b.m) - signedUp(a.m) || a.i - b.i);
@@ -34914,7 +34933,7 @@ async function bdLoadHome(el) {
   ${(d.newLeads || []).length ? `<section><h3 class="bd-h">New leads for you</h3>${d.newLeads.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
   <section class="panel">
     <h3 style="margin-top:0">${esc(d.rep.marketName)} founding progress</h3>
-    <p class="bd-gate-big">Creators: ${p.creators} of ${p.gateLow}–${p.gateHigh} needed to open ${esc(d.rep.marketName)}</p>
+    <p class="bd-gate-big">Creators: ${p.creators} of ${p.gateLow} approved needed to open ${esc(d.rep.marketName)}${p.creators < p.gateLow ? ` — ${p.gateLow - p.creators} to go` : " — the launch number is in"}</p>
     <div class="bd-progress"><span style="width:${pct}%"></span></div>
     <div class="bd-buckets">${buckets}</div>
     <p style="margin:10px 0 2px">Businesses on the founding list: <strong>${p.foundingClaimed}</strong></p>
@@ -36093,7 +36112,7 @@ function abdPvHome() {
   ${(h.alarms && h.alarms.length) ? `<section class="panel bd-alarm-panel"><h3 style="margin-top:0">Maggie noticed</h3>${h.alarms.map((a) => `<div class="bd-logrow"><strong>${esc(a.name)}</strong><br><span>${esc(a.line || "")}</span> <button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return abdPvOpenLead('${a.leadId}')">Open</button></div>`).join("")}</section>` : ""}
   ${((pv.queue && pv.queue.length) || (h.queue && h.queue.length)) ? `<h3 class="bd-h">Your next best doors</h3>${(pv.queue && pv.queue.length ? pv.queue : h.queue).map((item) => abdPvQueueCard(item)).join("")}` : ""}
   ${h.scoreboard ? `<section class="panel"><h3 style="margin-top:0">Your last week, in one look</h3>${(h.scoreboard.lines || []).map((line) => `<p style="margin:6px 0">${esc(line)}</p>`).join("")}<p class="muted small" style="margin:8px 0 0">Week of ${esc(h.scoreboard.weekOf || "")}</p></section>` : ""}
-  ${h.progress ? `<section class="panel"><h3 style="margin-top:0">Founding progress</h3><p style="margin:0">Creators: ${h.progress.creators} of ${h.progress.gateLow}–${h.progress.gateHigh}</p><p class="muted small">Businesses on the founding list: ${h.progress.foundingClaimed}</p></section>` : ""}
+  ${h.progress ? `<section class="panel"><h3 style="margin-top:0">Founding progress</h3><p style="margin:0">Creators: ${h.progress.creators} of ${h.progress.gateLow} approved${h.progress.creators < h.progress.gateLow ? ` — ${h.progress.gateLow - h.progress.creators} to go` : ""}</p><p class="muted small">Businesses on the founding list: ${h.progress.foundingClaimed}</p></section>` : ""}
   ${h.numbers ? `<section class="panel"><h3 style="margin-top:0">My numbers</h3><p style="margin:0">${h.numbers.claimedThisMonth} founding spots claimed this month · ${h.numbers.visitsThisWeek} visits this week · $${Number(h.numbers.moneyBuilding || 0).toLocaleString()} building up</p></section>` : ""}`;
 }
 function abdPvContacts() {
@@ -36227,7 +36246,7 @@ function abdRender(el) {
       <button type="button" class="btn small-btn" onclick="return abdSetState('${esc(m.marketId)}')">Save state</button></span>
     </div>
     <p class="muted small" style="margin:6px 0 0">Open a market when its founding creator roster is full. Flipping to Open asks you to confirm first.</p>
-    <p class="small" style="margin:8px 0">Gate: <strong>${m.progress.creators} creators</strong> of ${m.progress.gateLow}–${m.progress.gateHigh} · weakest: ${Object.entries(m.progress.byBucket).sort((a, b) => a[1].count - b[1].count).map(([k, v]) => `${esc(k)} ${v.count}`).join(" · ")}</p>
+    <p class="small" style="margin:8px 0">Gate: <strong>${m.progress.creators} approved creators</strong> of ${m.progress.gateLow} approved${m.progress.creators < m.progress.gateLow ? ` (${m.progress.gateLow - m.progress.creators} to go)` : ""} · weakest: ${Object.entries(m.progress.byBucket).sort((a, b) => a[1].count - b[1].count).map(([k, v]) => `${esc(k)} ${v.count}`).join(" · ")}</p>
     <p class="small muted" style="margin:0">Leads ${m.loaded} · touched ${m.touched} · visited ${m.visited} · interested ${m.interested} · claimed ${m.claimed} (confirmed ${m.confirmed}) · active ${m.active}</p>
   </div>`).join("")}
   ${abdRollupHtml(d)}

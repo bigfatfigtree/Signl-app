@@ -96,7 +96,11 @@ async function setLeadStatus(lead, status, by) {
   return lead;
 }
 
-const GATE = { low: 50, high: 60 };
+// Build -188 (PL-01): Jeff's settled launch line is 50 APPROVED
+// creators (2026-11-16). The retired 50-60 range is gone: low and
+// high are both the one canon number, and surfaces print the
+// single figure ("50 approved"), never a range.
+const GATE = { low: 50, high: 50 };
 const GATE_BUCKETS = ["Food", "Fitness", "Beauty", "Lifestyle", "Going Out"];
 const BLENDED_MONTHLY = 326.50;
 const PLANS = [199, 349, 699];
@@ -532,6 +536,12 @@ function playbookVoicePairs(marketName) {
 // missed these and Jeff still read Tony's openers on the whole
 // HR book.)
 const PLAYBOOK_VOICE_EXTRA_TO_JEFF = [
+  // Build -188 (PL-78): the pair table turns Tony's stored intro
+  // opener ("...and I'm helping Magpie build its founding creator
+  // list...") into the broken "I run Magpie build its founding
+  // creator list" in Jeff's view. This repair runs after the pairs
+  // and restores the Nashville wording Jeff's own template uses.
+  ["I run Magpie build its founding creator list", "I run Magpie, and I'm building its founding creator list"],
   ["this is Tony Johnson — I'm local, I'm with Magpie", "this is Jeff Rimmer — I run Magpie"],
   ["I'm Tony, I'm with Magpie here in Hampton Roads", "I'm Jeff, I run Magpie here in Hampton Roads"],
   ["I'm Tony — I'm with Magpie here in Hampton Roads", "I'm Jeff — I run Magpie here in Hampton Roads"],
@@ -618,7 +628,7 @@ async function marketProgress(marketId) {
     byBucket[b] = { count: n, word: n === 0 ? "Need more" : n < 5 ? "Getting there" : "Ready" };
   }
   return {
-    creators: creators.count || 0, gateLow: GATE.low, gateHigh: GATE.high,
+    creators: creators.count || 0, gateLow: GATE.low, gateHigh: GATE.high, launchTarget: GATE.low,
     byBucket, foundingClaimed: claimed,
     state: await marketState(marketId),
   };
