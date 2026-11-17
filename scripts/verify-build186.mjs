@@ -381,6 +381,8 @@ try {
     businessName: "Pwless Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
   });
   check("passwordless creator primary: 409, not a 500", pwlessProbe.status === 409, `status=${pwlessProbe.status}`);
+  const pwlessLogin = await client()("POST", "/api/auth/login", { email: "team-seed@fixtures.dev", password: "any-guess-12345" });
+  check("login against a passwordless record: 401, not a 500 (review follow-up)", pwlessLogin.status === 401, `status=${pwlessLogin.status}`);
 
   console.log("== -186 hardening: reset token revocation (healthy link) ==");
   await stopServer();
