@@ -1568,6 +1568,20 @@ div.deal-terms p:last-child { margin-bottom: 6px; }
   outline: 2px solid var(--mint-deep); outline-offset: 2px;
 }
 
+/* ---------- market picker: grouped .checkrow chips + filter bar
+   (Build -179). The chips themselves are the .checkrow pills
+   above; this block only lays out the picker around them. */
+.mkpick { margin-top: 6px; }
+.mkpick-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 4px; }
+.mkpick-q { flex: 1; min-width: 160px; }
+.mkpick-count { font-size: .82rem; color: var(--muted); white-space: nowrap; }
+.mkpick-group {
+  font-size: .66rem; font-weight: 800; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted); margin: 10px 0 6px;
+}
+.mkpick-chips { margin-bottom: 2px; }
+.mkpick-none { font-size: .85rem; color: var(--muted); margin: 8px 0 2px; }
+
 /* ---------- category picker: real checkboxes (Build -176) ------
    The creator category picker (quick claim, full join, Profile)
    shared ONE shape after Jeff could not tell the old pill state
