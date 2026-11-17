@@ -2351,7 +2351,7 @@ async function adminPreviewAs126(kind) {
     const target = t && t[kind];
     if (!target) {
       say(kind === "creator"
-        ? "There is no test creator account to preview yet: creator preview only ever opens the flagged test account, never a real creator. Flag a test creator first, then this tab opens it."
+        ? "There is no creator-only preview account yet: creator preview opens a dedicated test creator with no Biz Dev seat and no linked side, never a real creator. Tap Set up creator preview and this tab opens it."
         : "The demo partner is not seeded yet, so there is no partner account to preview. Seed the demo partner from the Partners tab, then this tab opens it.");
       return false;
     }
@@ -2359,6 +2359,19 @@ async function adminPreviewAs126(kind) {
     await api("POST", `/admin/${kind === "creator" ? "creators" : "partners"}/${target.id}/view`, {});
     location.reload();
   } catch (e) { say(e.message || "That preview could not open."); }
+  return false;
+}
+
+// PL-37 (Build -192): one tap creates (or re-designates) the
+// dedicated creator-only preview record, then the Creator tab
+// above opens it. Admin only; the server enforces the shape.
+async function adminCreatePreviewCreator192() {
+  const note = document.getElementById("pv-note126");
+  const say = (msg) => { if (note) note.textContent = msg; };
+  try {
+    const d = await api("POST", "/admin/preview-targets/creator", { create: true });
+    say(`Creator preview is ready: ${d.creator.name} is the dedicated preview creator. Tap Creator above to open it.`);
+  } catch (e) { say(e.message || "The preview creator could not be set up."); }
   return false;
 }
 
@@ -28143,6 +28156,7 @@ async function loadAdminHome137() {
       <span class="pv-tabs126-label">Preview as</span>
       <button type="button" class="pv-tab126" onclick="enterPreview()">Business</button>
       <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('creator')">Creator</button>
+      <button type="button" class="pv-tab126" onclick="return adminCreatePreviewCreator192()">Set up creator preview</button>
       <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('partner')">Partner</button>
     </div>
     <p id="pv-note126" class="small muted" role="status" style="margin:2px 0 10px"></p>`;
@@ -28265,6 +28279,7 @@ function renderAdmin() {
       <span class="pv-tabs126-label">Preview as</span>
       <button type="button" class="pv-tab126" onclick="enterPreview()">Business</button>
       <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('creator')">Creator</button>
+      <button type="button" class="pv-tab126" onclick="return adminCreatePreviewCreator192()">Set up creator preview</button>
       <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('partner')">Partner</button>
     </div>
     <p id="pv-note126" class="small muted" role="status" style="margin:2px 0 10px"></p>

@@ -4959,15 +4959,42 @@ async function handleVerifyCounts(event) {
 // DEMO partner (partner.demo). Earliest-created wins so the pick
 // is stable. Null when no honest target exists — the tab then
 // says so instead of opening anything.
+// PL-37 (Build -192, Jeff's ruling 2026-11-17 superseding his
+// 2026-11-10 no-fix): the creator preview target must be a
+// CREATOR-ONLY record. The old pick (earliest approved tester)
+// landed on a record that also holds a Biz Dev seat, whose seat
+// makes the Sell shell its default, so Preview As Creator opened
+// a rep shell. A candidate is now disqualified by ANY of: an
+// active Biz Dev seat (the stamp on the user record or a seat
+// record in bdevrep:), a linked second side (linkedAccountId),
+// or demo-showcase duty. Resolution lives in this one place and
+// reads, in order: (1) the Admin-designated record in
+// config:previewTargets, (2) a record flagged previewDedicated,
+// (3) the earliest remaining qualifying tester. No qualifying
+// record, no target: the tab says so and Admin can create the
+// dedicated record from the same surface (POST below).
+const PREVIEW_TARGETS_KEY_192 = "config:previewTargets";
+function previewCreatorOnly192(u, seatedIds) {
+  return !!u && u.role === "creator" && u.status === "approved" && isTester(u) && !isDemoShowcaseCreator(u)
+    && !u.linkedAccountId
+    && !(u.bizdevSeat && u.bizdevSeat.active)
+    && !(seatedIds && seatedIds.has(u.id));
+}
 function previewTargets126(users) {
+  const o = arguments[1] || {};
   const byCreated = (a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
-  const creator = (users || [])
-    .filter((u) => u && u.role === "creator" && u.status === "approved" && isTester(u) && !isDemoShowcaseCreator(u))
-    .sort(byCreated)[0] || null;
+  const pool = (users || []).filter((u) => previewCreatorOnly192(u, o.seatedIds)).sort(byCreated);
+  let creator = null;
+  if (o.designatedId) creator = pool.find((u) => u.id === o.designatedId) || null;
+  if (!creator) creator = pool.find((u) => u.previewDedicated) || pool[0] || null;
   const partner = (users || [])
     .filter((u) => u && u.role === "partner" && u.partner && u.partner.demo)
     .sort(byCreated)[0] || null;
   return { creator, partner };
+}
+async function previewSeatedIds192() {
+  const rows = await store.list("bdevrep:");
+  return new Set(rows.map((r) => r.value && r.value.userId).filter(Boolean));
 }
 
 // ---------- The 500 minimum (Jeff's ruling, 2026-11-01) ----------
@@ -28313,16 +28340,70 @@ async function route(event) {
     // (partner.demo). Targets are resolved here, server-side, so
     // the client can never aim the view at another account.
     if (seg[1] === "preview-targets" && seg.length === 2 && method === "GET") {
-      // Build -170: prefix memo (see memoAggP).
-      const ptPayload = await memoAggP("admin-preview-targets", ["user"], 30000, async () => {
+      // Build -170: prefix memo (see memoAggP). Build -192: the
+      // memo now also keys on the config and seat prefixes,
+      // because the designated target and seat records decide it.
+      const ptPayload = await memoAggP("admin-preview-targets", ["user", "config", "bdevrep"], 30000, async () => {
         const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
-        const t = previewTargets126(users);
+        const cfg = (await store.get(PREVIEW_TARGETS_KEY_192)) || {};
+        const t = previewTargets126(users, { seatedIds: await previewSeatedIds192(), designatedId: cfg.creatorId || null });
         return {
-          creator: t.creator ? { id: t.creator.id, name: t.creator.name || "Test creator" } : null,
+          creator: t.creator ? { id: t.creator.id, name: t.creator.name || "Test creator", dedicated: !!t.creator.previewDedicated || t.creator.id === cfg.creatorId } : null,
           partner: t.partner ? { id: t.partner.id, name: (t.partner.partner && t.partner.partner.orgName) || t.partner.name || "Demo partner" } : null,
+          designatedCreatorId: cfg.creatorId || null,
         };
       });
       return json(200, ptPayload);
+    }
+
+    // PL-37 (Build -192): Admin designates or creates the
+    // dedicated creator preview record. Designation requires a
+    // qualifying creator-only tester (no seat, no linked side);
+    // creation builds exactly that record, flagged
+    // previewDedicated + tester, so it stays out of counts,
+    // rosters and discovery like every tester, and designates it
+    // in the same step. This is the ONLY production step the live
+    // feature needs, and it is an Admin action, never a migration.
+    if (seg[1] === "preview-targets" && seg[2] === "creator" && seg.length === 3 && method === "POST") {
+      const b = parseBody(event);
+      const seatedIds = await previewSeatedIds192();
+      if (b.userId) {
+        const target = await store.get(`user:${String(b.userId)}`);
+        if (!target || target.role !== "creator") return err(404, "Creator not found");
+        if (!previewCreatorOnly192(target, seatedIds)) return err(400, "That account cannot be the creator preview: it must be an approved test creator with no Biz Dev seat and no linked second side.");
+        await store.set(PREVIEW_TARGETS_KEY_192, { creatorId: target.id, updatedAt: nowIso(), updatedBy: user.id });
+        await logEvent({ type: "admin_preview_creator_designated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: {} });
+        return json(200, { creator: { id: target.id, name: target.name || "Preview creator" }, designated: true });
+      }
+      if (b.create) {
+        const email = "preview-creator@magpielocal.com";
+        const existing = await store.get(`email:${email}`);
+        if (existing && existing.userId) {
+          const rec = await store.get(`user:${existing.userId}`);
+          if (rec && previewCreatorOnly192(rec, seatedIds)) {
+            await store.set(PREVIEW_TARGETS_KEY_192, { creatorId: rec.id, updatedAt: nowIso(), updatedBy: user.id });
+            return json(200, { creator: { id: rec.id, name: rec.name || "Preview creator" }, designated: true, alreadyExisted: true });
+          }
+          return err(409, "The preview creator email is already used by an account that cannot serve as the preview. Designate a qualifying test creator instead.");
+        }
+        const ts = nowIso();
+        const password = crypto.randomBytes(18).toString("base64url");
+        const { salt, hash } = auth.hashPassword(password);
+        const rec = {
+          id: crypto.randomUUID(), role: "creator", name: "Preview Creator", email,
+          passwordSalt: salt, passwordHash: hash, status: "approved",
+          tester: true, previewDedicated: true,
+          market: "Nashville", city: "Nashville", country: "United States",
+          createdAt: ts, updatedAt: ts, reviewedAt: ts, reviewedBy: user.id,
+          creator: { handle: "previewcreator", categories: ["Food & Drink"], localAudiencePct: 55, audienceStack: { instagram: 6000 }, followerCount: 6000, totalAudience: 6000, hasPhoto: false, bio: "", bestWork: [], publicPage: true, profileComplete: true },
+        };
+        await store.set(`user:${rec.id}`, rec);
+        await store.set(`email:${email}`, { userId: rec.id });
+        await store.set(PREVIEW_TARGETS_KEY_192, { creatorId: rec.id, updatedAt: ts, updatedBy: user.id });
+        await logEvent({ type: "admin_preview_creator_created", actorId: user.id, actorRole: "admin", subjectId: rec.id, market: rec.market, data: {} });
+        return json(201, { creator: { id: rec.id, name: rec.name }, designated: true, created: true });
+      }
+      return err(400, "Say create, or name the test creator account to designate.");
     }
 
     // View the approved test creator's account (Build -126): the
@@ -28336,6 +28417,15 @@ async function route(event) {
       if (!target || target.role !== "creator") return err(404, "Creator not found");
       if (!isTester(target) || target.status !== "approved" || isDemoShowcaseCreator(target)) {
         return err(403, "Creator preview only opens the approved test creator account. Real creator accounts are never previewed this way.");
+      }
+      // PL-37 (Build -192): the view door enforces the same
+      // creator-only rule as the target resolver, so a seated or
+      // linked test record cannot be aimed at directly either.
+      {
+        const seatRec = await store.get(`bdevrep:${target.id}`);
+        if ((target.bizdevSeat && target.bizdevSeat.active) || seatRec || target.linkedAccountId) {
+          return err(403, "That test account also holds another role, so its preview would open the wrong shell. Creator preview opens the dedicated creator-only preview account.");
+        }
       }
       const viewToken = await auth.createViewSession({ adminUser: user, adminToken: ctx.token, targetUser: target, role: "creator", label: target.name || "Test creator" });
       await logEvent({ type: "admin_viewed_creator_account", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { creatorName: target.name || null, adminEmail: user.email } });
