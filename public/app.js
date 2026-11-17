@@ -10808,6 +10808,25 @@ function signlInstallBannerHtml() {
   </div>`;
 }
 
+// Build -182: the Instagram follow block on the claim done
+// screen. An honor-system invitation, never a gate: no API can
+// confirm a follow, so nothing in the flow waits on it, checks
+// it, or records it. It lives ONLY on the done screen (the
+// Build -85 rule keeps the claim itself at three short screens
+// and a done state, nothing else), in the same shape as the
+// install banner above: offered once, dismissible, remembered.
+function magpieIgFollowDismissed() { try { return localStorage.getItem("magpie_ig_follow_dismissed") === "1"; } catch (e) { return false; } }
+function dismissMagpieIgFollow() { try { localStorage.setItem("magpie_ig_follow_dismissed", "1"); } catch (e) {} const b = document.getElementById("magpie-ig-follow"); if (b) b.remove(); return false; }
+function magpieIgFollowHtml() {
+  if (magpieIgFollowDismissed()) return "";
+  return `<div class="panel" id="magpie-ig-follow" style="margin-top:14px;text-align:left">
+    <strong>${T("Follow Magpie on Instagram", "Sigue a Magpie en Instagram")}</strong>
+    <p class="small muted" style="margin:6px 0 10px">${T("Launch news, founding creators and the first offers land on @magpielocal first.", "Las novedades del lanzamiento, los creadores fundadores y las primeras ofertas llegan primero a @magpielocal.")}</p>
+    <a class="btn" href="https://instagram.com/magpielocal" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none">${T("Follow @magpielocal", "Seguir a @magpielocal")}</a>
+    <a href="#" class="small" style="margin-left:10px" onclick="return dismissMagpieIgFollow()">${T("Not now", "Ahora no")}</a>
+  </div>`;
+}
+
 function renderClaimDone() {
   const done = state.claimDone || { firstName: "", total: 0, complete: false, under: false };
   const line2 = done.under
@@ -10833,6 +10852,7 @@ function renderClaimDone() {
       <button class="btn ghost" type="button" style="width:100%;margin-top:10px" onclick="return claimGoDashboard()">${T("Go to my dashboard", "Ir a mi panel")}</button>
       <p class="small muted" style="margin:10px 0 0">${T("Finish your profile there so businesses can find you — or just close this, and we'll email you.", "Termina tu perfil ahí para que los negocios puedan encontrarte, o cierra esto y te escribiremos por correo.")}</p>
       ${signlInstallBannerHtml()}
+      ${magpieIgFollowHtml()}
     </div>
   </section>`;
 }
@@ -11319,13 +11339,19 @@ function renderForBusinesses() {
     <p>Join the founding business list. We hold your place while your market's roster is built. Founding pricing is locked while you stay subscribed, and activation runs in application order.</p>
     </div>
     <div class="form-body">
-    <div class="plan-cards">${plans}</div>
+    <div class="plan-cards" id="jb-plans">${plans}</div>
     <div id="jb-prefill"></div>
     <div id="jb-error"></div>
     ${state.googlePrefill ? `<div class="notice blue">You're applying with Google: your name and email are filled in from your Google account. Finish the form and Google stays linked, so signing in later is one tap.</div>` : googleButtonHtml("apply")}
     <form onsubmit="return registerBusiness(event)">
       <div class="fgroup tint">
         <p class="fg-kicker">Your business</p>
+        <div class="field"><label>Where do you operate?</label>${chipSelectHtml("jb-scope", [{ value: "market", label: "One market: we serve one city area" }, { value: "national", label: "National: we operate across markets" }], "market", "jbScopeSync181", false)}<p class="small muted">National is for brands whose products ship or sell across markets. Creators see your brand name and logo only, never your name or email.</p></div>
+        <div id="jb-national-fields" style="display:none">
+          <div class="field"><label>Brand name (what creators see)</label><input id="jb-brand" placeholder="Your brand as customers know it, if different from the business name"></div>
+          <div class="field"><label>Your website</label><input id="jb-website" type="url" placeholder="https://yourbrand.com"><p class="small muted">Magpie checks the brand before creators can see it. Until a person on our team verifies your brand, it stays hidden from creators.</p></div>
+          <div class="notice blue">National accounts have no plan yet, and nothing is charged. Magpie shares plan options before anything is ever charged.</div>
+        </div>
         <div class="form-2col">
           <div class="field"><label>Your name</label><input id="jb-name" required placeholder="The person running this account" value="${esc(state.googlePrefill ? state.googlePrefill.name : "")}"></div>
           <div class="field"><label>Business name</label><input id="jb-business" required placeholder="Your business as customers know it"></div>
@@ -11338,7 +11364,7 @@ function renderForBusinesses() {
       <div class="fgroup">
         <p class="fg-kicker">Where + what</p>
         <div class="field"><label>Category</label>${chipSelectHtml("jb-category", state.boot.businessCategories.map((c) => ({ value: c, label: c })), state.boot.businessCategories[0], null, false)}</div>
-        <div class="field"><label>Market</label><input id="jb-market-search" placeholder="Search markets" oninput="filterBizMarketOptions()" style="margin-bottom:6px"><select id="jb-market" onchange="syncBizMarketChoice()">${marketOptions("", true)}</select><p class="small muted">City missing? Pick "My city is not listed yet".</p></div>
+        <div class="field" id="jb-market-field"><label>Market</label><input id="jb-market-search" placeholder="Search markets" oninput="filterBizMarketOptions()" style="margin-bottom:6px"><select id="jb-market" onchange="syncBizMarketChoice()">${marketOptions("", true)}</select><p class="small muted">City missing? Pick "My city is not listed yet".</p></div>
       <div id="jb-custom-wrap" style="display:none">
         <div class="notice blue">Your sign-up counts toward opening Magpie in your city. Founding pricing held — we email you at launch.</div>
         <div class="form-2col">
@@ -11570,12 +11596,37 @@ async function jbConvoFile() {
   return false;
 }
 
+// Build -181: the business form's scope choice. National hides
+// every market-bound control (plan cards, market picker, city)
+// and shows the brand fields instead; the market flow is
+// untouched when One market is picked.
+function jbScopeSync181() {
+  const scopeEl = document.getElementById("jb-scope");
+  const national = !!scopeEl && scopeEl.value === "national";
+  const set = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? "" : "none"; };
+  set("jb-plans", !national);
+  set("jb-market-field", !national);
+  set("jb-national-fields", national);
+  if (national) {
+    set("jb-city-row", false);
+    set("jb-custom-wrap", false);
+  } else {
+    // Review fix: coming back to One market must restore the
+    // market-driven field state (an unlisted-market pick shows
+    // the custom city fields and hides the city row) — the
+    // market sync owns those two elements, so hand them back.
+    syncBizMarketChoice();
+  }
+}
+
 async function registerBusiness(e) {
   e.preventDefault();
   const form = e.target;
   const errBox = (msg) => { document.getElementById("jb-error").innerHTML = `<div class="error-box">${esc(msg)}</div>`; };
-  const marketVal = document.getElementById("jb-market").value;
-  const isUnlisted = marketVal === unlistedLabel();
+  const scope181 = (document.getElementById("jb-scope") || {}).value || "market";
+  const isNational181 = scope181 === "national";
+  const marketVal = isNational181 ? "" : document.getElementById("jb-market").value;
+  const isUnlisted = !isNational181 && marketVal === unlistedLabel();
   const customCity = isUnlisted ? document.getElementById("jb-city-text").value.trim() : "";
   const customCountry = isUnlisted ? document.getElementById("jb-country-text").value.trim() : "";
   const customState = isUnlisted ? document.getElementById("jb-state-text").value.trim() : "";
@@ -11589,18 +11640,21 @@ async function registerBusiness(e) {
       businessName: document.getElementById("jb-business").value,
       email: document.getElementById("jb-email").value,
       password: document.getElementById("jb-password").value,
-      market: marketVal,
+      scope: isNational181 ? "national" : undefined,
+      brandName: isNational181 ? (document.getElementById("jb-brand").value.trim() || undefined) : undefined,
+      website: isNational181 ? (document.getElementById("jb-website").value.trim() || undefined) : undefined,
+      market: isNational181 ? undefined : marketVal,
       customCity: isUnlisted ? customCity : undefined,
       customCountry: isUnlisted ? customCountry : undefined,
       customState: isUnlisted ? customState : undefined,
-      city: isUnlisted ? undefined : document.getElementById("jb-city").value,
+      city: isUnlisted || isNational181 ? undefined : document.getElementById("jb-city").value,
       category: document.getElementById("jb-category").value,
       posProvider: (document.getElementById("jb-pos") || {}).value || undefined,
       posOther: (document.getElementById("jb-pos-other") || {}).value || undefined,
-      neighborhood: document.getElementById("jb-neighborhood").value,
-      zip: document.getElementById("jb-zip").value,
+      neighborhood: isNational181 ? undefined : document.getElementById("jb-neighborhood").value,
+      zip: isNational181 ? undefined : document.getElementById("jb-zip").value,
       about: document.getElementById("jb-about").value,
-      planId: document.getElementById("jb-plan").value,
+      planId: isNational181 ? undefined : document.getElementById("jb-plan").value,
       moment: (document.getElementById("jb-moment") || {}).value || undefined,
       baselineDay: (document.getElementById("jb-baseline-day") || {}).value || undefined,
       baselineCount: (document.getElementById("jb-baseline-count") || {}).value || undefined,
@@ -29864,7 +29918,7 @@ function adminUserCardHtml(u) {
     : u.status === "rejected" ? '<span class="badge bad">Rejected</span>'
     : `<span class="badge">${esc(u.status || "")}</span>`;
   return `<div class="panel admin-user-card">
-    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum && !u.minimumOverride ? ' <span class="badge bad">Under the 500 minimum</span>' : ""}${u.minimumOverride ? ' <span class="badge info">500 minimum overridden</span>' : ""} <span class="badge">${esc(u.role || "")}</span>${u.linkedAccountId ? ` <span class="badge info">Dual account: ${u.role === "creator" ? "business" : "creator"} side too</span>` : ""}</div>
+    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum && !u.minimumOverride ? ' <span class="badge bad">Under the 500 minimum</span>' : ""}${u.minimumOverride ? ' <span class="badge info">500 minimum overridden</span>' : ""} <span class="badge">${esc(u.role || "")}</span>${u.linkedAccountId ? ` <span class="badge info">Dual account: ${u.linkedSide ? `${esc(u.linkedSide.role)} side too (${esc(u.linkedSide.status)})` : `${u.role === "creator" ? "business" : "creator"} side too`}</span>` : ""}</div>
     ${adminUserCardFactsHtml(u)}
     ${u.status === "pending" ? `<div class="admin-card-decide">
       <button class="btn" onclick="adminCardApprove('${u.id}')">Approve</button>

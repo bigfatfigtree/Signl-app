@@ -12,6 +12,11 @@ function hashPassword(password) {
 }
 
 function verifyPassword(password, salt, expectedHash) {
+  // Build -186 follow-up: a passwordless record (team-invite
+  // accounts carry a null hash) is a non-match, never a throw —
+  // scryptSync/Buffer.from on a missing salt or hash used to
+  // turn public auth routes into 500s.
+  if (!salt || !expectedHash) return false;
   const hash = crypto.scryptSync(password, salt, 64);
   const expected = Buffer.from(expectedHash, "hex");
   return hash.length === expected.length && crypto.timingSafeEqual(hash, expected);
