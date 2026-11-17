@@ -3224,6 +3224,10 @@ function bdOpenDrawer168() {
   const seat = u.bizdevSeat || {};
   const dest = (icon, label, sub, tab) => ({ icon, label, sub, act: `return go('dashboard','${tab}')` });
   const groups = [
+    // Build -188 (PL-05): seat gone — the Sell group collapses
+    // to Home (the panel) so the drawer stops offering seven
+    // dead destinations.
+    ...(state.bdNoSeat ? [{ title: "Sell", rows: [dest("home", "Home", "Your seat status and the next step", "BD Home")] }] : [
     { title: "Sell", rows: [
       dest("home", "Home", "Your day, your next best doors", "BD Home"),
       dest("users", "My Leads", "Your book, one business at a time", "BD Leads"),
@@ -3231,7 +3235,7 @@ function bdOpenDrawer168() {
       dest("receipt", "Orders", "Orders you have recorded", "BD Orders"),
       dest("deck", "Seller Kit", "The cards and pages you show", "BD Kit"),
       dest("stats", "My Money", "What you have earned so far", "BD Money"),
-    ] },
+    ] }]),
     { title: "Your seat", rows: [
       dest("menu", "Menu & PIN", "Your claim link, your city, your Show Mode PIN", "BD Menu"),
       { icon: "person", label: "Your account", sub: "Your settings: sign-in, email and password", act: "return go('dashboard','Account')" },
@@ -3625,7 +3629,9 @@ function tabBarHtml() {
   // every other role's bar.
   if (bdShellActive()) {
     const t = state.tab || "BD Home";
-    const items155 = [
+    // Build -188 (PL-05): with the seat gone, the bar collapses
+    // to the one honest destination — the panel itself.
+    const items155 = state.bdNoSeat ? [["BD Home", "home", "Home"]] : [
       ["BD Home", "home", "Home"], ["BD Leads", "users", "My Leads"], ["BD Contacts", "book", "Contacts"], ["BD Orders", "receipt", "Orders"], ["BD Kit", "deck", "Seller Kit"], ["BD Money", "stats", "My Money"], ["BD Menu", "menu", "Menu"],
     ];
     const btns = items155.map(([tab, icon, label], ix) => `
@@ -34652,6 +34658,28 @@ function bdShellActive() {
   const u = state.user;
   return !!(u && u.bizdevSeat && u.bizdevSeat.active && state.shell !== "creator" && state.view !== "staff");
 }
+// Build -188 (PL-05): the desync state — the account still
+// carries an active seat stamp, but the server has no seat
+// record for it, so every /bdev call answers "No biz dev seat
+// on this account." Instead of seven dead tabs each printing
+// that raw error, the shell collapses to one plain panel:
+// what happened and the exact next step. Any BD loader that
+// meets the error hands over to bdSeatGone.
+function bdNoSeatPanelHtml() {
+  return `<div class="panel" style="max-width:560px">
+    <h3 style="margin-top:0">Your Biz Dev seat isn't active</h3>
+    <p>Your account still shows a Biz Dev seat, but the seat itself is not on file, so your leads, kit and money can't load. Nothing you did caused this, and nothing is lost: your book comes back the moment the seat is restored.</p>
+    <p><strong>Next step:</strong> seats are assigned by Jeff (HQ) from Admin, Biz Dev, Seats. Ask Jeff to re-assign your seat, then reload this page.</p>
+    <p style="margin-bottom:0"><button type="button" class="btn" onclick="location.reload()">Reload</button></p>
+  </div>`;
+}
+function bdSeatGone(e, el) {
+  if (!e || !/No biz dev seat/.test(String(e.message || ""))) return false;
+  state.bdNoSeat = true;
+  try { renderNav(); } catch (err) { /* nav re-renders on next go() */ }
+  if (el) el.innerHTML = bdNoSeatPanelHtml();
+  return true;
+}
 function bdGoShell() { state.shell = "bizdev"; state.tab = "BD Home"; renderNav(); return go("dashboard", "BD Home"); }
 function bdGoCreator() { state.shell = "creator"; state.tab = "Dashboard"; renderNav(); return go("dashboard", "Dashboard"); }
 
@@ -34722,6 +34750,9 @@ function renderBizdevDash() {
   app.innerHTML = `<div class="wrap bd-wrap"><div id="tab-body"><p class="muted">Loading...</p></div></div>`;
   bdFlushOutbox();
   const el = () => document.getElementById("tab-body");
+  // Build -188 (PL-05): seat known gone — every BD tab is the
+  // one plain panel; Account stays reachable.
+  if (state.bdNoSeat && tab !== "Account") { el().innerHTML = bdNoSeatPanelHtml(); return; }
   if (tab === "Account") { el().innerHTML = accountViewHtml126("Biz Dev"); return; }
   if (tab === "BD Leads") return bdLoadLeads(el());
   if (tab === "BD Contacts") return bdLoadContacts(el());
@@ -34898,7 +34929,7 @@ async function bdLoadHome(el) {
   if (!el) return;
   let d = null, offline = false;
   try { d = await api("GET", bdPath("/bdev/home")); bd.home = d; bdSyncSeat161(d.rep); bdCacheSet("home", d); }
-  catch (e) { d = bdCacheGet("home"); offline = true; if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
+  catch (e) { if (bdSeatGone(e, el)) return; d = bdCacheGet("home"); offline = true; if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
   const p = d.progress;
   const pct = Math.min(100, Math.round((p.creators / p.gateLow) * 100));
   const buckets = Object.entries(p.byBucket).map(([name, b]) => `<div class="bd-bucket"><span>${esc(name)}</span><strong>${b.count}</strong><span class="muted small">${esc(b.word)}</span></div>`).join("");
@@ -34997,7 +35028,7 @@ async function bdLoadLeads(el) {
   const catQ = bd.category ? `&category=${encodeURIComponent(bd.category)}` : "";
   const statusQ = bd.status ? `&status=${encodeURIComponent(bd.status)}` : "";
   try { d = await api("GET", bdPath(`/bdev/leads?filter=${encodeURIComponent(bd.filter === "near" ? "all" : bd.filter)}&q=${encodeURIComponent(bd.q)}${cityQ}${nbQ}${catQ}${statusQ}`)); bdCacheSet("leads", d); bdSyncSeat161(d.seat); }
-  catch (e) { d = bdCacheGet("leads"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
+  catch (e) { if (bdSeatGone(e, el)) return; d = bdCacheGet("leads"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
   if (d.facets) bd.facets = d.facets;
   const facets = d.facets || bd.facets || { cities: [], neighborhoods: [] };
   const nbOptions = (facets.neighborhoods || []).filter((n) => !bd.city || n.city === bd.city);
@@ -35091,7 +35122,7 @@ function bdContactCard(c, opts) {
   if (c.email) bits.push(`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`);
   if (c.phone) bits.push(`<a href="tel:${esc(String(c.phone).replace(/[^0-9+]/g, ""))}">${esc(c.phone)}</a>`);
   return `<div class="card bd-lead-card">
-    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(c.name || c.business || "No name")}</strong><span class="badge">${c.source === "lead" ? "From a lead" : "Added"}</span></div>
+    <div class="bd-lead-top"><strong class="bd-lead-name">${esc(c.name || c.business || "No name")}</strong><span class="badge">${c.kind === "second" ? "Second contact" : c.kind === "business" ? "Business" : c.source === "lead" ? "From a lead" : "Added"}</span></div>
     <div class="muted small">${esc(c.business || "")}${c.role ? ` · ${esc(c.role)}` : ""}${c.city ? ` · ${esc(c.city)}` : ""}${c.neighborhood ? ` · ${esc(c.neighborhood)}` : ""}${o.ownerTag && c.ownerName ? ` · ${esc(c.ownerName)}'s book` : ""}</div>
     ${bits.length ? `<div class="small" style="margin-top:4px">${bits.join(" · ")}</div>` : `<div class="muted small" style="margin-top:4px">Contact info being researched.</div>`}
     ${c.notes ? `<p class="small" style="margin:6px 0 0">${esc(c.notes)}</p>` : ""}
@@ -35125,8 +35156,8 @@ async function bdLoadContacts(el) {
     if (bd.contactQ) qs.set("q", bd.contactQ);
     if (bd.contactCity) qs.set("city", bd.contactCity);
     const d = await api("GET", bdPath(`/bdev/contacts?${qs.toString()}`));
-    bd.contacts = d.contacts || []; bd.contactCities = d.cities || [];
-  } catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
+    bd.contacts = d.contacts || []; bd.contactCities = d.cities || []; bd.contactSummary = d.summary || null;
+  } catch (e) { if (bdSeatGone(e, el)) return; el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
   bdRenderContacts(el);
 }
 function bdRenderContacts(el) {
@@ -35135,6 +35166,7 @@ function bdRenderContacts(el) {
   el.innerHTML = `
   <h2>Contacts</h2>
   <p class="muted small" style="margin:4px 0 10px">Your rolodex — everyone you talk to, in one place. Contacts from your leads show up on their own; add anyone else by hand.</p>
+  ${bd.contactSummary ? `<p class="small" style="margin:0 0 10px"><strong>${bd.contactSummary.businesses} businesses</strong> · ${bd.contactSummary.people + bd.contactSummary.secondContacts} people (${bd.contactSummary.people} main contacts + ${bd.contactSummary.secondContacts} second contacts) · ${bd.contactSummary.businessContacts} business contacts${bd.contactSummary.added ? ` · ${bd.contactSummary.added} added by hand` : ""}</p>` : ""}
   <div class="bd-searchrow">
     <input id="bd-ct-q" type="search" placeholder="Find a person or business" value="${esc(bd.contactQ)}" oninput="bdContactSearch(this.value)">
     <button type="button" class="btn" onclick="return bdContactToggleAdd()">Add a contact</button>
@@ -35180,7 +35212,7 @@ async function bdLoadOrders(el) {
   el = el || document.getElementById("tab-body");
   if (!el) return;
   try { const d = await api("GET", bdPath("/bdev/orders")); bd.orders = d.orders || []; }
-  catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
+  catch (e) { if (bdSeatGone(e, el)) return; el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
   bdRenderOrders(el);
 }
 function bdRenderOrders(el) {
@@ -35687,7 +35719,7 @@ async function bdLoadKit(el) {
   if (!el) return;
   let d = null;
   try { d = await api("GET", bdPath("/bdev/kit")); bd.kit = d.kit; bdSyncSeat161(d.seat); bdCacheSet("kit", d); }
-  catch (e) { d = bdCacheGet("kit"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
+  catch (e) { if (bdSeatGone(e, el)) return; d = bdCacheGet("kit"); if (!d) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; } }
   const k = d.kit;
   bd.practiceItems = d.practice || k.practice || bd.practiceItems || [];
   const card = (title, text) => `<div class="card bd-kit-card"><strong>${esc(title)}</strong><p>${esc(text)}</p></div>`;
@@ -35769,7 +35801,7 @@ async function bdLoadMoney(el) {
   if (!el) return;
   let d = null;
   try { d = await api("GET", bdPath("/bdev/money")); bd.money = d; bdSyncSeat161(d.seat); }
-  catch (e) { el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
+  catch (e) { if (bdSeatGone(e, el)) return; el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; return; }
   const m = d.money;
   const v = m.vesting;
   const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;

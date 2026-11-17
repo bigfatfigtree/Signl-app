@@ -291,21 +291,31 @@ async function rolodexEntries170(ownerUserId, seat) {
   for (const l of await allLeads()) {
     if (ownerUserId && (seat ? !leadInSeatBook(l, seat) : l.assignedRepId !== ownerUserId)) continue;
     if (!(l.dmName || l.email || l.phone1 || l.phone2)) continue;
+    // Build -188 (PL-20): every entry carries its KIND so the
+    // rolodex can say what it is. A lead with no named decision
+    // maker is a BUSINESS contact, not a person; a secondContact
+    // is a second person at the same business; and a "second
+    // contact" that is really a shared inbox (its stored name
+    // says so) is a business contact wearing a person's slot.
+    const inboxNamed = (n) => /inbox/i.test(String(n || ""));
     out.push({
       id: "lead:" + l.id, source: "lead", leadId: l.id,
       name: l.dmName || "", business: l.name || "", role: l.dmRoleLabel || "",
       email: l.email || "", phone: l.phone1 || l.phone2 || "",
       city: l.city || "", neighborhood: l.neighborhood || "", notes: l.repNotes || "",
       ownerId: l.assignedRepId || null, ownerName: nameOf(l.assignedRepId), marketName: l.marketName || "",
+      kind: l.dmName ? "person" : "business",
     });
     const sc = l.secondContact;
     if (sc && sc.name) {
+      const scIsInbox = inboxNamed(sc.name);
       out.push({
         id: "lead2:" + l.id, source: "lead", leadId: l.id,
-        name: sc.name || "", business: l.name || "", role: sc.roleLabel || sc.role || "",
+        name: scIsInbox ? "" : (sc.name || ""), business: l.name || "", role: sc.roleLabel || sc.role || "",
         email: sc.email || "", phone: sc.phone || "",
-        city: l.city || "", neighborhood: l.neighborhood || "", notes: "",
+        city: l.city || "", neighborhood: l.neighborhood || "", notes: scIsInbox ? "Shared inbox on the lead record — a business contact, not a person." : "",
         ownerId: l.assignedRepId || null, ownerName: nameOf(l.assignedRepId), marketName: l.marketName || "",
+        kind: scIsInbox ? "business" : "second",
       });
     }
   }
@@ -2889,7 +2899,19 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       let contacts = all;
       if (cityF) contacts = contacts.filter((c) => c.city === cityF);
       if (q) contacts = contacts.filter((c) => [c.name, c.business, c.city, c.role].join(" ").toLowerCase().includes(q));
-      return json(200, { contacts, cities });
+      // Build -188 (PL-20): the count, with its makeup, computed
+      // over the UNFILTERED rolodex so the header always
+      // reconciles with the book (Manage's lead count).
+      const bizIds = new Set(all.filter((c) => c.source === "lead").map((c) => c.leadId));
+      const summary = {
+        businesses: bizIds.size,
+        people: all.filter((c) => c.kind === "person").length,
+        secondContacts: all.filter((c) => c.kind === "second").length,
+        businessContacts: all.filter((c) => c.kind === "business").length,
+        added: all.filter((c) => c.source === "added").length,
+        total: all.length,
+      };
+      return json(200, { contacts, cities, summary });
     }
     if (method === "POST") {
       const name = String(b.name || "").trim();
