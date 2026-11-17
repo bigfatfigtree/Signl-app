@@ -5795,6 +5795,14 @@ async function ensureBusinessAnchors(users) {
 }
 
 const FOUNDING_BUSINESS_MESSAGE = "Your business is on the founding list, so the creator roster and the product tools are not open yet. Every founding application gets a decision or a clear status within 2 business days. Your Founding Status page shows your plan, your place in line, and what happens next.";
+// Build -187 (scope addition 3): a national account is not on a
+// founding list, has no plan and no place in line (plan is null
+// by the -178 design). The shared founding refusal branches by
+// scope so a national account never gets market framing.
+const FOUNDING_BUSINESS_MESSAGE_NATIONAL187 = "Your brand is not active yet. Finding creators, campaigns going out and messages open when Magpie activates your account, after your application is approved and your brand is verified.";
+function foundingBusinessMessage187(u) {
+  return u && u.business && u.business.scope === "national" ? FOUNDING_BUSINESS_MESSAGE_NATIONAL187 : FOUNDING_BUSINESS_MESSAGE;
+}
 
 function publicUser(u) {
   if (!u) return null;
@@ -25252,7 +25260,7 @@ async function route(event) {
     if (b.businessCode) biz = await businessByStaffCode(b.businessCode);
     else if (user && user.role === "business") biz = user;
     if (!biz) return err(400, "Enter the business code from the register card first.");
-    if (businessAccessState(biz) !== "active") return err(403, FOUNDING_BUSINESS_MESSAGE);
+    if (businessAccessState(biz) !== "active") return err(403, foundingBusinessMessage187(biz));
     if (!(await isMarketLive(biz.market))) return err(403, `The ${marketTalkName(biz.market)} market has not launched yet, so there are no creator visits to redeem.`);
     const pinRec = await staffPinRecord(biz.id);
     if (!pinRec) return err(403, "The owner has not set a staff PIN yet. Ask the owner to set one under Plan, then Staff redemption.");
@@ -25715,7 +25723,7 @@ async function route(event) {
     // configuration (plan is null by design until Jeff decides
     // national pricing), so it can never reach a checkout session.
     if (national.isNationalBusiness(biz)) return err(403, "National accounts do not have a plan or billing yet. Magpie will share plan options before anything is ever charged.");
-    if (businessAccessState(biz) !== "active") return err(403, FOUNDING_BUSINESS_MESSAGE);
+    if (businessAccessState(biz) !== "active") return err(403, foundingBusinessMessage187(biz));
     let priceId = typeof b.priceId === "string" ? b.priceId : null;
     let planIdWanted = typeof b.planId === "string" ? b.planId : null;
     if (!priceId && planIdWanted) priceId = stripePriceForPlan(planIdWanted);
@@ -26035,7 +26043,7 @@ async function route(event) {
       if (target && target.role === "business") biz = target;
     }
     if (!biz) return err(403, "Only a business can add a card.");
-    if (businessAccessState(biz) !== "active") return err(403, FOUNDING_BUSINESS_MESSAGE);
+    if (businessAccessState(biz) !== "active") return err(403, foundingBusinessMessage187(biz));
     const record = (await store.get(`user:${biz.id}`)) || biz;
     record.business = record.business || {};
     record.business.billing = record.business.billing || {};
@@ -26263,6 +26271,13 @@ async function route(event) {
       // "moment" rides along: the standing Menu of Moments pick is
       // a founding-page profile field, set pre-launch by design.
       const PAGE_FIELDS = ["businessName", "category", "city", "neighborhood", "zip", "about", "preferredLanguage", "musicOpen", "musicLive", "musicCreated", "studentOpen", "assetPacket", "moment", "standingAvailability", "posProvider", "posOther"];
+      // Build -187 (scope addition 3): a NATIONAL account's page
+      // fields are its brand fields — the brand editor on its
+      // founding Home sends exactly these, and the national branch
+      // below exists to apply them. Before this fix the whitelist
+      // refused every national brand save while founding, so the
+      // Home's "finish your brand profile now" was not true.
+      if (national.isNationalBusiness(user)) PAGE_FIELDS.push("brandName", "website", "logoUrl", "brandAbout", "focusMarkets");
       const extra = Object.keys(b || {}).filter((k) => !PAGE_FIELDS.includes(k));
       if (extra.length) {
         return err(403, "Your business page is yours to edit now. Plan settings and the product tools open when Magpie activates your business.");
@@ -29444,6 +29459,21 @@ async function route(event) {
           const p = all.find((x) => x.id === u.partnerId);
           pub.partnerName = p && p.partner ? (p.partner.name || p.name || "") : "";
         }
+        // Build -187 (scope addition 2): the Applications tab is
+        // split into Business and Creator sections, so a dual-role
+        // account (Build -180) must cross-reference itself in both
+        // queues. The sibling is already in `all` — the same
+        // no-extra-read pattern Find a user uses (Build -186) —
+        // and the note names the other side and its status.
+        if (u.linkedAccountId) {
+          const sib = all.find((x) => x.id === u.linkedAccountId);
+          if (sib && (sib.role === "creator" || sib.role === "business")) {
+            const label = sib.role === "business"
+              ? ((sib.business && (sib.business.brandName || sib.business.businessName)) || sib.name || "")
+              : (sib.creator && sib.creator.handle ? "@" + sib.creator.handle : (sib.name || ""));
+            pub.linkedSide = { role: sib.role, status: sib.status, label };
+          }
+        }
         // Typed-city suggestion (Jeff, 2026-10-23): an unlisted
         // record whose typed city already belongs to a market gets
         // the resolver's suggestion inline, so it can be filed
@@ -31341,7 +31371,7 @@ async function route(event) {
   const FOUNDING_OPEN_SECTIONS = ["discover", "favorites", "offers"];
   if (user.role !== "admin" && isFoundingBusiness(user) && MARKETPLACE_SECTIONS.includes(seg[0])
     && !(user.status === "approved" && FOUNDING_OPEN_SECTIONS.includes(seg[0]))) {
-    return err(403, FOUNDING_BUSINESS_MESSAGE);
+    return err(403, foundingBusinessMessage187(user));
   }
 
   // Everything below requires an approved account.
@@ -32945,7 +32975,7 @@ async function route(event) {
       // A founding business is refused bookings product-wide
       // (the founding gate); a deal that books itself on
       // acceptance must not slip one through before activation.
-      if (isFoundingBusiness(user)) return err(403, FOUNDING_BUSINESS_MESSAGE);
+      if (isFoundingBusiness(user)) return err(403, foundingBusinessMessage187(user));
       const b = parseBody(event);
       let terms = null;
       let creator = null;
@@ -33110,7 +33140,7 @@ async function route(event) {
           const cap = maxVisitsPerWeekOf(creator);
           if (visitsThisWeek(allBk, creator.id, Date.now()) >= cap) return err(403, `The creator is at their max of ${cap} visit${cap === 1 ? "" : "s"} this week. The deal stays open until its deadline; accept next week, or let it expire and send a fresh one.`);
           const dealBiz = await store.get(`user:${deal.businessId}`);
-          if (dealBiz && isFoundingBusiness(dealBiz)) return err(403, FOUNDING_BUSINESS_MESSAGE);
+          if (dealBiz && isFoundingBusiness(dealBiz)) return err(403, foundingBusinessMessage187(dealBiz));
           const booking = await materializeDeal(deal);
           deal.status = "accepted";
           deal.updatedAt = nowIso();

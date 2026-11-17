@@ -2138,6 +2138,34 @@ function isFoundingBusiness(u) {
   return !!u && u.role === "business" && businessAccessState(u) !== "active";
 }
 
+// Build -187 (Jeff's scope addition, 2026-11-16): a destination a
+// not-yet-active account can SEE but cannot use yet stays visible,
+// grayed, with the unlock step named on the item. Tapping it shows
+// the note instead of navigating into the pending wall or an error
+// box. The gates themselves are unchanged — this is presentation
+// and routing only. Returns the unlock note for a tab in the
+// current account state, or "" when the destination is usable.
+// The note always names the step the code actually gates on:
+// pending accounts are walled by render() until approval; a
+// national account's creator discovery is refused by its loader
+// until an admin activates the account.
+function navLock187(tab) {
+  const u = state.user;
+  if (!u || state.preview || !tab) return "";
+  if ((u.role === "business" || u.role === "creator") && u.status === "pending" && !bdShellActive()) {
+    return "Unlocks when your application is approved.";
+  }
+  if (u.role === "business" && u.business && u.business.scope === "national" && businessAccessState(u) !== "active"
+    && (tab === "Discover" || tab === "Favorites" || tab === "NatDiscover")) {
+    return "Unlocks when Magpie activates your account.";
+  }
+  return "";
+}
+function navLockedTap187(note) {
+  showToast(note);
+  return false;
+}
+
 function renderNav() {
   if (state.view === "staff") {
     // Staff mode has no navigation of its own: the register screen
@@ -2867,6 +2895,11 @@ function everythingGroups125() {
   return [];
 }
 function everythingRowHtml125(r) {
+  const lock187 = !r.act && !r.href ? navLock187(r.tab) : "";
+  if (lock187) {
+    const innerL = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub nav-lock187-note">${esc(lock187)}</span></span>`;
+    return `<button type="button" class="more-row ev125-row nav-locked187" aria-disabled="true" onclick="closeEverything125(); return navLockedTap187('${lock187}')">${innerL}</button>`;
+  }
   const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
   if (r.href) return `<a class="more-row ev125-row" href="${esc(r.href)}" onclick="closeEverything125()">${inner}</a>`;
   const act = r.act || `return go('dashboard','${r.tab}')`;
@@ -3049,10 +3082,16 @@ function hamburgerGroups137() {
   return [];
 }
 function hamburgerRowHtml137(r) {
+  const lock187 = !r.act && !r.href ? navLock187(r.tab) : "";
+  if (lock187) {
+    const innerL = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub nav-lock187-note">${esc(lock187)}</span></span>`;
+    return `<button type="button" class="more-row ev125-row nav-locked187" aria-disabled="true" onclick="closeHamburger137(); return navLockedTap187('${lock187}')">${innerL}</button>`;
+  }
   const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
-  if (r.href) return `<a class="more-row ev125-row" href="${esc(r.href)}" onclick="closeHamburger137()">${inner}</a>`;
+  const onCls187 = r.tab && r.tab === state.tab ? " row-on187" : "";
+  if (r.href) return `<a class="more-row ev125-row${onCls187}" href="${esc(r.href)}" onclick="closeHamburger137()">${inner}</a>`;
   const act = r.act || `return go('dashboard','${r.tab}')`;
-  return `<button type="button" class="more-row ev125-row" onclick="closeHamburger137(); ${act}">${inner}</button>`;
+  return `<button type="button" class="more-row ev125-row${onCls187}" onclick="closeHamburger137(); ${act}">${inner}</button>`;
 }
 function openHamburger137() {
   // Build -168: kill any outgoing panel on the spot (see
@@ -3078,11 +3117,41 @@ function openHamburger137() {
     ${drawer168HeadHtml("closeHamburger137")}
     <div class="ham137-head">${avaHtml122("idm126-ava", "idm126-ava", photo, initial)}<span class="idm126-who"><span class="idm126-name">${esc(name || "")}</span><span class="idm126-sub">${esc(roleWord)}</span></span><button type="button" class="linklike" onclick="closeHamburger137()" aria-label="Close">✕</button></div>
     ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(hamburgerRowHtml137).join("")}</div>`).join("")}
+    ${menuIdentityCard187(u, name)}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeHamburger137(); });
   document.body.appendChild(el);
   drawer168Lock();
   return false;
+}
+// Build -187 (scope addition 6): the menu ends with a pinned
+// identity card — who you are signed in as, ONE plain line of
+// state (the same statement the status surfaces use), and, for
+// dual-role accounts, the side switch in plain words. Profile
+// and account live here at the bottom, not mixed into the daily
+// destinations.
+function menuIdentityStateLine187(u) {
+  if (u.role === "admin") return "Admin — the whole platform";
+  if (u.status === "pending") return u.role === "business" ? "Application in review — approval comes first, and we email you the decision." : "Application in review — we email you the decision.";
+  if (u.role === "business" && u.business && u.business.scope === "national") {
+    return businessAccessState(u) === "active" ? "National brand — active in every market" : "National brand — approved; verification and activation come next";
+  }
+  if (u.role === "business" && isFoundingBusiness(u)) return `On the founding list — ${foundingBizPlace(u)} has not opened yet`;
+  if (u.role === "business") return `Active in ${u.market || "your market"}`;
+  if (u.role === "creator") return (u.founding && u.founding.marketLive) ? `Creator in ${u.market || "your market"} — your market is open` : `Creator on the founding roster for ${u.market || "your market"}`;
+  if (u.role === "partner") return "Partner";
+  return "";
+}
+function menuIdentityCard187(u, name) {
+  const other = u.linkedSide ? (u.role === "creator" ? "business" : "creator") : null;
+  const profTab = u.role === "admin" ? "Settings" : "Profile";
+  return `<div class="menu-idcard187">
+    <div class="menu-idcard187-who"><span class="menu-idcard187-name">${esc(name || "")}</span><span class="menu-idcard187-state">${esc(menuIdentityStateLine187(u))}</span></div>
+    <div class="menu-idcard187-acts">
+    ${other ? `<button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return switchSide180()">Switch to your ${other} side</button>` : ""}
+    <button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return go('dashboard','${profTab}')">Profile and account</button>
+    </div>
+  </div>`;
 }
 function closeHamburger137() {
   const el = document.getElementById("hamburger137");
@@ -3289,7 +3358,7 @@ function identityMenuRows126() {
   const u = state.user;
   if (!u) return [];
   const signout = { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" };
-  const dest = (icon, label, sub, tab) => ({ icon, label, sub, act: `return go('dashboard','${tab}')` });
+  const dest = (icon, label, sub, tab) => ({ icon, label, sub, tab, act: `return go('dashboard','${tab}')` });
   if (u.role === "admin") return [
     dest("profile", "Your account", "Your settings: sign-in, email and password", "Account"),
     signout,
@@ -3354,7 +3423,9 @@ function openIdentityMenu126() {
   el.innerHTML = `
   <div class="idm126-panel" role="dialog" aria-label="Your account menu">
     <div class="idm126-head">${avaHtml122("idm126-ava", "idm126-ava", photo, initial)}<span class="idm126-who"><span class="idm126-name">${esc(name || "")}</span><span class="idm126-sub">${esc(u.email || "")}${u.email ? " · " : ""}${esc(roleWord)}</span></span><button type="button" class="linklike" onclick="closeIdentityMenu126()" aria-label="Close">✕</button></div>
-    ${rows.map((r) => `<button type="button" class="more-row idm126-row" onclick="closeIdentityMenu126(); ${r.act}"><span class="more-ic">${bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span><span class="more-chev">›</span></button>`).join("")}
+    ${rows.map((r) => { const lock187 = navLock187(r.tab); return lock187
+      ? `<button type="button" class="more-row idm126-row nav-locked187" aria-disabled="true" onclick="closeIdentityMenu126(); return navLockedTap187('${lock187}')"><span class="more-ic">${bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub nav-lock187-note">${esc(lock187)}</span></span></button>`
+      : `<button type="button" class="more-row idm126-row" onclick="closeIdentityMenu126(); ${r.act}"><span class="more-ic">${bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span><span class="more-chev">›</span></button>`; }).join("")}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeIdentityMenu126(); });
   document.body.appendChild(el);
@@ -3373,6 +3444,16 @@ function closeIdentityMenu126() {
 async function switchSide180() {
   try {
     const data = await api("POST", "/auth/switch-side", {});
+    // Build -187 (scope addition 4): Maggie's queue, brief and
+    // conversation belong to the side that built them. They are
+    // cleared here exactly as sign-out clears them, so the new
+    // side never sees the other side's market, role or status
+    // (Jeff's creator-side Amsterdam line on his business side).
+    state.sigQueue = null;
+    state.sigQueueLinks = [];
+    state.sigQueueCount = 0;
+    state.sigThread = [];
+    state.natMe = null;
     state.user = data.user;
     state.view = "dashboard";
     state.tab = null;
@@ -3580,9 +3661,32 @@ function tabBarHtml() {
   // keeps its Everything rail button (Jeff's hold) and gains
   // the bar's Menu slot, which opens the hamburger.
   const prim = primaryTabs125();
-  const barIdx = {};
-  prim.forEach((tb, i) => { barIdx[tb] = i; });
   const redesigned137 = u.role === "creator" || u.role === "business";
+  // Build -187 (scope addition 7): the center raised + is the
+  // role's main action — business: start a new campaign;
+  // creator: find offers. Partner, admin, recruiter and the
+  // Biz Dev shell get no +: none has one honest primary action
+  // a stranger would read in five seconds. For a pending
+  // account the + stays visible and explains the unlock.
+  const plus187 = (() => {
+    if (!redesigned137) return null;
+    if (u.role === "business") {
+      if (u.status === "pending") return { label: "Campaign", aria: "Start a new campaign", act: "return navLockedTap187('Unlocks when your application is approved.')" };
+      if (u.business && u.business.scope === "national") return { label: "Campaign", aria: "Start a new campaign", act: "return go('dashboard','NatNew')" };
+      return { label: "Campaign", aria: "Start a new campaign", act: "return go('dashboard','Campaign Setup')" };
+    }
+    if (u.status === "pending") return { label: "Offers", aria: "Find offers", act: "return navLockedTap187('Unlocks when your application is approved.')" };
+    return { label: "Offers", aria: "Find offers", act: "return go('dashboard','Find Offers')" };
+  })();
+  const barIdx = {};
+  (plus187 ? [...prim.slice(0, 2), "__plus187", ...prim.slice(2)] : prim).forEach((tb, i) => { barIdx[tb] = i; });
+  const plusBtn187 = plus187 ? `
+    <button type="button" class="tab-item tab-bar137 tab-plus187" style="--bar-ord:${barIdx["__plus187"]}" onclick="${plus187.act}" aria-label="${plus187.aria}">
+      <span class="tab-ic tab-plus-ic187">+</span>
+      <span class="tab-label"><span class="lbl-full">${plus187.label}</span><span class="lbl-short">${plus187.label}</span></span>
+    </button>` : "";
+  const railPrimary187 = plus187 ? `
+    <button type="button" class="rail-primary187" onclick="${plus187.act}">${plus187.aria}</button>` : "";
   const btnHtml = (it, cls, ix) => {
     // Build -125 display names ride the -41 dual-span mechanism:
     // the full label on the wide rail, the design's one-word
@@ -3591,7 +3695,8 @@ function tabBarHtml() {
     const short = NAV_LABEL_125[it.tab] || RAIL_SHORT[it.tab] || full;
     const isSig = it.tab === "Sig";
     const bi = barIdx[it.tab];
-    const click = isSig && redesigned137 ? "return sigBarGo137()" : `return go('dashboard','${it.tab}')`;
+    const lock187 = navLock187(it.tab);
+    const click = lock187 ? `return navLockedTap187('${lock187}')` : isSig && redesigned137 ? "return sigBarGo137()" : `return go('dashboard','${it.tab}')`;
     // Build -137: for the redesigned roles the desktop rail
     // lists destinations in tabItemsFor order — an inline
     // order (the item's list position) beats the -125
@@ -3599,9 +3704,9 @@ function tabBarHtml() {
     // re-sequences by --bar-ord (CSS !important there).
     const style137 = redesigned137 ? ` style="${bi != null ? `--bar-ord:${bi};` : ""}order:${ix}"` : (bi != null ? ` style="--bar-ord:${bi}"` : "");
     return `
-    <button type="button" class="tab-item ${cls}${bi != null ? " tab-bar137" : ""}${isSig ? " tab-sig137" : ""} ${it.on ? "on" : ""}"${style137} onclick="${click}" aria-label="${esc(full)}">
+    <button type="button" class="tab-item ${cls}${bi != null ? " tab-bar137" : ""}${isSig ? " tab-sig137" : ""} ${it.on ? "on" : ""}${lock187 ? " tab-locked187" : ""}"${style137} onclick="${click}" aria-label="${esc(full)}"${lock187 ? ` aria-disabled="true" title="${esc(lock187)}"` : ""}>
       <span class="tab-ic">${it.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
-      <span class="tab-label"><span class="lbl-full">${esc(full)}</span><span class="lbl-short">${esc(short)}</span></span>
+      <span class="tab-label"><span class="lbl-full">${esc(full)}</span><span class="lbl-short">${esc(short)}</span>${lock187 ? `<span class="lbl-lock">${esc(lock187)}</span>` : ""}</span>
     </button>`;
   };
   const seen137 = new Set();
@@ -3632,7 +3737,7 @@ function tabBarHtml() {
   const sub = u.market ? marketDisplayName(u.market) : roleWord;
   const railhead = `<div class="tab-railhead"><span class="brand-lockup"><img src="/assets/logo.png" alt="Magpie"></span><span class="trh-sub">${esc(roleWord)}</span></div>`;
   const railfoot = `<div class="tab-railfoot"><div class="tab-user tab-user-btn" role="button" tabindex="0" title="Your account" aria-label="Your account menu" onclick="return openIdentityMenu126()">${avaHtml122("tu-ava", "tu-ava", photo, initial)}<span><span class="tu-name">${esc(nm || "")}</span><br><span class="tu-sub">${esc(sub)}</span></span></div></div>`;
-  return `${railhead}<div class="tab-main">${btns}${signout}</div>${railfoot}`;
+  return `${railhead}<div class="tab-main">${btns}${plusBtn187}${railPrimary187}${signout}</div>${railfoot}`;
 }
 
 // The slim V3 top bar: avatar chip + account name on the left;
@@ -4790,7 +4895,10 @@ async function sigBoxSend(ev, key) {
 }
 function sigBoxFlow(i) {
   const f = sigFlowsFor()[i];
-  if (f && f.act) f.act();
+  // Build -187 (scope addition 4): close the Maggie sheet first.
+  // The flow's navigation used to happen UNDER the open sheet,
+  // so the button looked dead (Jeff's "Post an offer" tap).
+  if (f && f.act) { closeSigSheet137(); f.act(); }
   return false;
 }
 // The top of every role home (Build -130 Part 7): the working
@@ -5760,14 +5868,34 @@ function sigFlowsFor() {
   const biz = u.role === "business";
   const live = biz ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
   const flow = (label, keys, act) => ({ label, keys, act });
-  if (biz) return [
+  if (biz) {
+    // Build -187 (scope addition 4): the walk-to doors are
+    // state- and scope-true. A pending business has no usable
+    // doors (its only surface is its status page), so Maggie
+    // offers none rather than a button into the pending wall.
+    if (u.status === "pending") return [];
+    // A national business gets the national tabs by name: the
+    // market tab names do not exist on its dashboard, and its
+    // founding state cannot use Find creators yet (activation
+    // opens it), so that door is only offered when it works.
+    if (u.business && u.business.scope === "national") {
+      const natFlows = [
+        flow("Start a campaign", ["campaign", "new campaign", "start a campaign", "post an offer", "draft"], () => go("dashboard", "NatNew")),
+        flow("Finish your brand profile", ["brand", "profile", "logo", "website"], () => go("dashboard", "NatBrand")),
+        flow("See your results", ["result", "report", "numbers", "how am i doing"], () => go("dashboard", "NatReports")),
+      ];
+      if (businessAccessState(u) === "active") natFlows.splice(1, 0, flow("Find creators", ["find creator", "browse creator", "discover", "invite a creator", "find creators"], () => go("dashboard", "NatDiscover")));
+      return natFlows;
+    }
+    return [
     flow("Post an offer", ["post an offer", "new offer", "create offer", "make an offer"], () => go("dashboard", "Campaign Setup")),
     flow("Review applicants", ["applicant", "review", "applied", "decide", "answer"], () => { state.offersSeg = "applicants"; go("dashboard", "My Offers"); }),
     flow("Find creators", ["find creator", "browse creator", "discover", "invite a creator", "find creators"], () => go("dashboard", "Discover")),
     flow("Redeem a visit", ["redeem", "counter", "code", "check in", "check-in"], () => go("dashboard", "Counter")),
     flow("Set the staff PIN", ["pin", "staff"], () => go("dashboard", "Settings")),
     flow("See your results", ["result", "analytics", "how am i doing", "numbers", "roas"], () => go("dashboard", "Analytics")),
-  ];
+    ];
+  }
   if (live) return [
     flow("See offers near you", ["offer", "offers near", "see offers"], () => go("dashboard", "Find Offers")),
     flow("Answer an invite", ["invite", "invited", "answer an"], () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); }),
@@ -5808,6 +5936,11 @@ function sigCtx() {
       ctx.localPct = u.creator.localAudiencePct != null ? u.creator.localAudiencePct : null;
     } catch (e) { ctx.audParts = []; ctx.audTotal = 0; ctx.localPct = null; }
   }
+  // Build -187 (scope addition 5): when Maggie is opened from
+  // the campaign composer, the draft in progress rides her
+  // context, so she helps with THIS campaign, not campaigns in
+  // general.
+  if (biz && state.sigCampaignCtx187) ctx.campaignDraft = state.sigCampaignCtx187;
   // Build -68: a business's own plan facts ride the context so
   // Sig answers "what does my plan include?" from the record,
   // never from the generic plan table.
@@ -5847,13 +5980,13 @@ function sigBankFor(biz) {
         return `${head} Your founding rate holds while your plan stays active. Unused visits roll one month, then expire, and the minimum is 3 months. Paid bookings and licensing are on every plan.`;
       } },
     { id: "howitworks", q: "How does Magpie work for a business?", ph: ["how does magpie work", "how it works", "what is magpie", "how does this work", "how does signl work", "what is signl"], g: [["magpie", "platform", "this", "signl"], ["work", "works", "start", "process"]], s: [],
-      a: (c) => "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post to the terms on the booking. On a comped visit, the goal is one post plus one story within 48 hours of the visit. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count. Bookings that start on Magpie stay on Magpie, where the Visit Guarantee and payment protection apply." + (c.founding ? " While your market is founding, what you build saves as a draft for opening day; nothing is sent to a creator before the market opens." : ""), flow: "Post an offer" },
+      a: (c) => "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post to the terms on the booking. On a comped visit, the goal is one post plus one story within 48 hours of the visit. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count. Bookings that start on Magpie stay on Magpie, where the Visit Guarantee and payment protection apply." + (c.founding ? " While your market is founding, what you build saves as a draft for opening day; nothing is sent to a creator before the market opens." : ""), flow: (c) => c.national ? "Start a campaign" : (c.status === "pending" ? null : "Post an offer") },
     { id: "campaigns", q: "How do campaigns work?", ph: ["how do campaigns work", "campaign work", "how do offers work", "run a campaign", "how do i campaign"], g: [["campaign", "campaigns", "offer", "offers"], ["work", "run", "start", "post", "send", "make"]], s: ["campaign"],
       a: (c) => {
         let t = "Two ways. Post an open call: you post it to your market, creators who fit can apply, and you pick from the stack. Or invite a creator: pick one by name in Find creators, and the invite goes only to them. Either way the creator visits, posts to the terms on the booking (on a comped visit the goal is within 48 hours), and you see the post and its numbers here.";
         if (c.founding) t += " While your market is founding, both ways save as drafts for opening day. Nothing is sent to a creator until your market opens.";
         return t;
-      }, flow: "Post an offer" },
+      }, flow: (c) => c.national ? "Start a campaign" : (c.status === "pending" ? null : "Post an offer") },
     { id: "ugc", q: "Is this UGC? Can I reuse a creator's post?", ph: ["ugc", "reuse", "repost", "run it as an ad", "use their post", "whitelist"], g: [["post", "content", "photo", "video"], ["reuse", "repost", "ad", "ads", "marketing", "license", "licence", "rights", "use"]], s: ["ugc", "licensing", "licence"],
       a: "In plain terms, yes: this is UGC, but local. Creators post on their own accounts, and the license is what lets you reuse it. A comped visit is native share only: you may reshare it with credit, nothing more. Paid bookings include one standard license: 90 days from the post date to repost and run ads, never longer. That licence is included and automatic: a dated record created with the booking, never a form to fill in and never an add-on. A comped post can be licensed at the creator's listed fee for 90 days from the creator's approval; the creator approves each use and keeps 97%. To keep using a post past its 90 days, use Extend or license separately on the post: the same creator-approved request at their listed fee, a fresh 90 days from approval." },
     { id: "paidlane", q: "How do paid bookings work?", ph: ["paid booking", "book a creator", "pay a creator", "how much do creators charge", "creator rate"], g: [["paid", "pay", "book", "rate", "charge"], ["creator", "booking", "how", "work"]], s: [],
@@ -5871,11 +6004,11 @@ function sigBankFor(biz) {
     { id: "metrics", q: "How do I see my results?", ph: ["roas", "my results", "analytics", "metrics", "return on", "how am i doing", "track results"], g: [["results", "numbers", "performance", "sales", "returns"], ["see", "track", "measure", "show", "doing"]], s: ["roas", "analytics", "metrics"],
       a: "Your dashboard follows every visit: the post, its reach and engagement, refreshed as a day 7, 14, and 30 series. When a visit code is redeemed, the sale your staff rang up is counted in dollars on your dashboard, so your return on spend is a number, not a guess. Nothing is shown before it is real, so a campaign that has not run shows no numbers at all.", flow: "See your results" },
     { id: "marketbiz", q: "When does my market open?", ph: ["market open", "when can i start", "join now", "launch", "my city"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "join", "coming"]], s: [],
-      a: (c) => c.live ? "Your market is open and your business is active. You can post offers and invite creators now." : "Businesses join the founding list now and pick a plan at sign-up; no card is charged during founding. Businesses sign up when we are ready to launch, market by market as each founding roster completes. When yours activates, you land in Find creators with the founding roster ready, and you get an email the moment it opens." },
+      a: (c) => c.national ? "Your national account is not in a market queue. The order for your account is: application approved, brand verification (a person on the Magpie team checks your website and store by hand), then activation. When you are activated, Find creators and campaigns open, and we email you." : (c.live ? "Your market is open and your business is active. You can post offers and invite creators now." : "Businesses join the founding list now and pick a plan at sign-up; no card is charged during founding. Businesses sign up when we are ready to launch, market by market as each founding roster completes. When yours activates, you land in Find creators with the founding roster ready, and you get an email the moment it opens.") },
     { id: "counting", q: "How will my results be counted?", ph: ["how will my results be counted", "results counted", "how do you count", "how is it counted", "count my results"], g: [["results", "receipt", "count", "sales"], ["counted", "count", "measured", "measure", "work"]], s: ["receipt"],
       a: "Every visit carries a code your staff enter at the counter. That counts the visit and starts the creator's 48 hour post clock, and their post links back to the visit. Your receipt then keeps three lines separate: visits and posts that happened, the sales your register reported on visit days, and any modeled estimate, labeled as one. Counted, recorded, and modeled numbers are never blended into one figure. Set one of your usual open days under Results, in Proof Controls, and visit days measure against it in real dollars.", flow: "See your results" },
     { id: "opens", q: "What happens when my market opens?", ph: ["what happens when my market opens", "what happens when", "market opens", "opening day", "when it opens"], g: [["market", "opening"], ["opens", "open", "happens", "day"]], s: [],
-      a: (c) => c.live ? "Your market is open and your business is active. Campaigns can go out and creators can be booked now." : `We email you the day ${c.market || "your market"} opens. Your account turns on, the campaigns you saved as drafts can go out, your plan starts, and your founding rate and $${c.planCredit || 100} first-month credit apply. Until that day, nothing is due and nothing is sent to a creator.` },
+      a: (c) => c.national ? "Once your brand is verified and Magpie activates your account, your campaigns can go out to creators in every market. We email you the day it happens. Until then your drafts wait, and nothing is sent to a creator." : (c.live ? "Your market is open and your business is active. Campaigns can go out and creators can be booked now." : `We email you the day ${c.market || "your market"} opens. Your account turns on, the campaigns you saved as drafts can go out, your plan starts, and your founding rate and $${c.planCredit || 100} first-month credit apply. Until that day, nothing is due and nothing is sent to a creator.`) },
     { id: "delete-account", q: "How do I delete my account?", ph: ["delete my account", "delete account", "remove my account", "close my account", "erase my account"], g: [["delete", "remove", "close", "erase"], ["account"]], s: [],
       a: (c) => "Before you do: keeping your account keeps your founding rate locked for as long as your plan stays active. Deleting gives that up, and any banked founding credit (like the $100 first-month credit) is lost with it." + (c.founding ? " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new." : "") + " If you still want to go ahead: open Settings, then Account, and choose \"Delete my account\" at the bottom. That screen says exactly what goes (your profile, sign-in, referral links and notification settings) and what happens to anything still in flight: open offers and deals close, and bookings that have not happened yet are cancelled, with any held amount going back to you. You confirm by typing DELETE, so it cannot happen by accident." },
     { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "staff pin", "change my email"], g: [["password", "email", "account", "contact", "support", "human", "help", "pin"], ["change", "reset", "forgot", "update", "talk", "reach", "set"]], s: ["support"],
@@ -6323,7 +6456,7 @@ async function sigAskSubmit(ev) {
 function wireSigThread(root) {
   if (!root) return;
   root.querySelectorAll("[data-sigflow]").forEach((btn) => {
-    btn.onclick = () => { const f = sigFlowsFor()[Number(btn.getAttribute("data-sigflow"))]; if (f && f.act) f.act(); };
+    btn.onclick = () => { const f = sigFlowsFor()[Number(btn.getAttribute("data-sigflow"))]; if (f && f.act) { closeSigSheet137(); f.act(); } };
   });
   root.querySelectorAll("[data-sigask]").forEach((btn) => {
     btn.onclick = () => { const input = document.getElementById("sig-ask-input"); if (input) input.value = btn.getAttribute("data-sigask"); sigAskSubmit(); };
@@ -11737,11 +11870,11 @@ function renderBusinessFoundingStatus() {
   <section class="wcard" id="pending-home" style="margin-top:14px">
     <p><span class="badge info">Application in review</span> <span class="badge">National account</span></p>
     <h2 style="margin-top:8px">Welcome to Magpie, ${esc(bz.brandName || bz.businessName || "your brand")}.</h2>
-    <p><strong>${esc(bz.brandName || bz.businessName || "Your brand")} is on the founding list.</strong> Your account can reach creators in every Magpie market, not just one city. Your application is in review, and every founding application gets a decision or a clear status within 2 business days.</p>
+    <p><strong>Your application is in review.</strong> ${esc(bz.brandName || bz.businessName || "Your brand")} can reach creators in every Magpie market, not just one city. Every application gets a decision or a clear status within 2 business days. After approval the order is brand verification, then activation, and this page shows where you are.</p>
     <h3 class="mt">What happens next</h3>
     <ol style="padding-left:20px">
       <li>We review your application. You will get a decision or a clear status within 2 business days.</li>
-      <li>When your application is approved, we check your website and your store. That check earns the Verified brand mark creators look for.</li>
+      <li>When your application is approved, a person on the Magpie team checks your website and your store by hand. That check earns the Verified brand mark creators look for.</li>
       <li>When we activate your account, this page opens into your full home: your brand profile, your campaigns, and creators across the country who can raise a hand for them.</li>
     </ol>
     <h3 class="mt">What you can do now</h3>
@@ -24215,7 +24348,13 @@ function compNudgeUpdate() {
       ? "A fair comp for many local spots. Bigger experiences pull stronger creators; a paid booking is the other lane."
       : "That value reads strong for a post and a story. It will get weighed seriously.";
 }
+function offerRailPreview187() {
+  const host = document.getElementById("offer-peek-rail187");
+  if (!host) return;
+  try { host.innerHTML = `<div class="panel"><p class="ui-kicker" style="margin-top:0">What creators see</p>${mirrorOfferCardHtml(offerPreviewOffer(), { preview: true })}</div>`; } catch (e) { /* the form is mid-render */ }
+}
 function offerCoachUpdate() {
+  offerRailPreview187();
   offerDraftSync();
   compNudgeUpdate();
   const g = offerGuidance();
@@ -24953,7 +25092,7 @@ async function loadCampaignSetup() {
   <div id="offer-peek" style="display:none"></div>
   </div>
   </div>
-  <aside class="camp-rail">${campRailHtml(mode, g, myPlan, planObj)}</aside>
+  <aside class="camp-rail">${campRailHtml(mode, g, myPlan, planObj)}<div id="offer-peek-rail187" style="margin-top:14px"></div></aside>
   </div></div>
   <div id="aud-block"></div>
   <div class="wcard" style="margin-top:18px"><h3 style="margin-top:0">Already made one?</h3><p class="small muted" style="margin:0">Current and past campaigns, who applied, and what they did live in Your campaigns.</p><p style="margin:10px 0 0"><button type="button" class="btn ghost" onclick="return go('dashboard','My Offers')">Open Your campaigns</button></p></div>
@@ -29650,9 +29789,17 @@ async function activateMarketBusinesses(market) {
 // email, Make tester / Remove tester, View profile, Partner
 // attribution, Delete account); Approve / Reject appear only on results that
 // are genuinely pending applications.
-let adminAppView = null; // "deck" | "list"; null = deck while a queue exists, else list
+let adminAppView = null; // legacy: superseded by the per-section views below (kept so nothing else breaks)
+// Build -187 (scope addition 2, Jeff 2026-11-16): the
+// Applications tab is split into a Business applications
+// section and a Creator applications section — each with its
+// own queue, its own counts, its own search and its own
+// Deck/List view. View and search state is per section.
+let adminAppViewByRole187 = { creator: null, business: null }; // "deck" | "list"; null = deck while that section's queue exists, else list
+let adminAppSearch187 = { creator: "", business: "" };
 let adminDeckNote = "";
 let adminDeckNoteBad = false;
+let adminDeckNoteRole = ""; // Build -187: which section's deck the note belongs to
 let adminDeckSession = { decided: 0, approved: 0, rejected: 0 };
 let adminUserSearchState = { q: "", market: "", users: null, total: 0 };
 // Client mirror of the server's minimum-audience rule start
@@ -29660,7 +29807,11 @@ let adminUserSearchState = { q: "", market: "", users: null, total: 0 };
 // are grandfathered and approve normally at any known total.
 const ADMIN_MIN_RULE_SINCE = Date.parse("2026-11-02T01:17:00.000Z");
 
-function adminAppSetView(v) { adminAppView = v; loadApplications(); }
+function adminAppSetView(v, role) {
+  if (role && adminAppViewByRole187[role] !== undefined) adminAppViewByRole187[role] = v;
+  else { adminAppViewByRole187.creator = v; adminAppViewByRole187.business = v; }
+  loadApplications();
+}
 
 function adminKnownTotal(u) {
   const a = u && u.creator ? u.creator.audience : null;
@@ -29864,34 +30015,37 @@ async function saveCardAttribution(prefix, userId) {
 }
 
 // ---- The deck ----
-function adminDeckHtml(pend) {
+// Build -187 (scope addition 2): there is one deck per section
+// now, so the deck renders for a role and its working elements
+// carry the role in their ids — the two decks never collide.
+function adminDeckHtml(pend, role) {
   if (!pend.length) {
     return `<div class="panel admin-deck-done">
       <h3 style="margin-top:0">Queue clear</h3>
       <p class="muted">Nothing is waiting on a decision.${adminDeckSession.decided ? ` You decided ${adminDeckSession.decided} this session: ${adminDeckSession.approved} approved, ${adminDeckSession.rejected} rejected.` : ""}</p>
-      <button class="btn ghost" onclick="adminAppSetView('list')">See decided applications</button>
+      <button class="btn ghost" onclick="adminAppSetView('list', '${role}')">See decided applications</button>
     </div>`;
   }
   const u = pend[0];
   const under = adminUnderMinTotal(u);
-  return `${adminDeckNote ? `<p class="admin-deck-note${adminDeckNoteBad ? " bad" : ""}">${esc(adminDeckNote)}</p>` : ""}
+  return `${adminDeckNote && adminDeckNoteRole === role ? `<p class="admin-deck-note${adminDeckNoteBad ? " bad" : ""}">${esc(adminDeckNote)}</p>` : ""}
     <p class="muted small" style="margin:0 0 10px"><strong>${pend.length} left</strong> &middot; ${adminDeckSession.decided} decided this session</p>
     <div class="panel admin-user-card admin-deck-card">
       ${adminUserCardFactsHtml(u)}
       <div class="admin-deck-decide">
         <button class="btn admin-deck-btn" onclick="adminDeckDecide('${u.id}', 'approve')">Approve</button>
-        <button class="btn ghost admin-deck-btn" onclick="adminDeckToggleReject('${u.id}')">Reject</button>
+        <button class="btn ghost admin-deck-btn" onclick="adminDeckToggleReject('${u.id}', '${role}')">Reject</button>
       </div>
       ${under ? `<p class="muted small" style="margin:8px 0 0">Their total is under the 500 minimum, so approving will be refused and this application stays pending — unless you override the minimum for this record.</p>` : ""}
       ${under || u.minimumOverride ? `<div style="margin-top:8px">${adminMinOverrideHtml(u, "deck")}</div>` : ""}
-      <div id="admin-deck-reject"></div>
-      <button class="btn ghost small-btn" style="margin-top:14px" onclick="adminDeckToggleMore()">More actions</button>
-      <div id="admin-deck-actions" style="display:none">${adminCardActionsHtml(u, "deck")}</div>
+      <div id="admin-deck-reject-${role}"></div>
+      <button class="btn ghost small-btn" style="margin-top:14px" onclick="adminDeckToggleMore('${role}')">More actions</button>
+      <div id="admin-deck-actions-${role}" style="display:none">${adminCardActionsHtml(u, "deck")}</div>
     </div>`;
 }
 
-function adminDeckToggleMore() {
-  const host = document.getElementById("admin-deck-actions");
+function adminDeckToggleMore(role) {
+  const host = document.getElementById(`admin-deck-actions-${role}`);
   if (host) host.style.display = host.style.display === "none" ? "" : "none";
 }
 
@@ -29902,12 +30056,12 @@ function adminRejectReasonOptionsHtml() {
   return `<option value="">No reason given</option>${ADMIN_CARD_REJECT_REASONS.map((r) => `<option>${esc(r)}</option>`).join("")}`;
 }
 
-function adminDeckToggleReject(userId) {
-  const host = document.getElementById("admin-deck-reject");
+function adminDeckToggleReject(userId, role) {
+  const host = document.getElementById(`admin-deck-reject-${role}`);
   if (!host) return;
   if (host.innerHTML) { host.innerHTML = ""; return; }
   host.innerHTML = `<div class="admin-deck-rejectbox">
-    <div class="field"><label>Reason (optional, named in their rejection email)</label><select id="admin-deck-rej-reason">${adminRejectReasonOptionsHtml()}</select></div>
+    <div class="field"><label>Reason (optional, named in their rejection email)</label><select id="admin-deck-rej-reason-${role}">${adminRejectReasonOptionsHtml()}</select></div>
     <button class="btn admin-deck-btn danger" onclick="adminDeckDecide('${userId}', 'reject')">Send rejection</button>
   </div>`;
 }
@@ -29917,7 +30071,7 @@ async function adminDeckDecide(userId, decision) {
   const label = src ? (src.role === "creator" && src.creator && src.creator.handle ? "@" + src.creator.handle : src.name) : "That application";
   let reason = "";
   if (decision === "reject") {
-    const sel = document.getElementById("admin-deck-rej-reason");
+    const sel = document.getElementById(`admin-deck-rej-reason-${src ? src.role : ""}`);
     reason = sel ? sel.value : "";
     // The reject guard (Build -150): confirm before the write;
     // cancelling leaves the card and its reason box untouched.
@@ -29930,11 +30084,13 @@ async function adminDeckDecide(userId, decision) {
     if (decision === "approve") adminDeckSession.approved += 1; else adminDeckSession.rejected += 1;
     adminDeckNote = decision === "approve" ? `Approved ${label}.` : `Rejected ${label}.`;
     adminDeckNoteBad = false;
+    adminDeckNoteRole = src ? src.role : "";
   } catch (e) {
     // The server's own refusal (the under-500 answer lands
     // here) shows on the deck and the card does not advance.
     adminDeckNote = e.message;
     adminDeckNoteBad = true;
+    adminDeckNoteRole = src ? src.role : "";
   }
   loadApplications();
 }
@@ -29963,7 +30119,7 @@ function adminUserCardHtml(u) {
     : u.status === "rejected" ? '<span class="badge bad">Rejected</span>'
     : `<span class="badge">${esc(u.status || "")}</span>`;
   return `<div class="panel admin-user-card">
-    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum && !u.minimumOverride ? ' <span class="badge bad">Under the 500 minimum</span>' : ""}${u.minimumOverride ? ' <span class="badge info">500 minimum overridden</span>' : ""} <span class="badge">${esc(u.role || "")}</span>${u.linkedAccountId ? ` <span class="badge info">Dual account: ${u.linkedSide ? `${esc(u.linkedSide.role)} side too (${esc(u.linkedSide.status)})` : `${u.role === "creator" ? "business" : "creator"} side too`}</span>` : ""}</div>
+    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum && !u.minimumOverride ? ' <span class="badge bad">Under the 500 minimum</span>' : ""}${u.minimumOverride ? ' <span class="badge info">500 minimum overridden</span>' : ""} <span class="badge">${esc(u.role || "")}</span>${u.linkedAccountId ? ` <span class="badge info">Dual account: ${u.linkedSide ? `${esc(u.linkedSide.role)} side too${u.linkedSide.label ? ` — ${esc(u.linkedSide.label)}` : ""} (${esc(u.linkedSide.status)})` : `${u.role === "creator" ? "business" : "creator"} side too`}</span>` : ""}</div>
     ${adminUserCardFactsHtml(u)}
     ${u.status === "pending" ? `<div class="admin-card-decide">
       <button class="btn" onclick="adminCardApprove('${u.id}')">Approve</button>
@@ -30112,6 +30268,13 @@ async function loadApplications() {
       // record whose typed city already belongs to a market shows
       // the resolver's suggestion with a one-tap filing action.
       // An ambiguous city names its candidates, one button each.
+      // Build -187 (scope addition 2): a dual-role record names
+      // its other side and that side's status, and points at the
+      // section where the other side's application lives, so the
+      // split never loses either half of an account.
+      const dualRef = u.linkedSide
+        ? `<br><span class="badge info">Dual account</span><br><span class="small">${esc(u.linkedSide.role === "business" ? "Business" : "Creator")} side: ${esc(u.linkedSide.label || (u.linkedSide.role === "business" ? "their business" : "their creator page"))} (${esc(u.linkedSide.status)}) — see ${u.linkedSide.role === "business" ? "Business" : "Creator"} applications</span>`
+        : "";
       const suggestion = u.marketSuggestion && u.marketSuggestion.status === "unique"
         ? `<br><span class="small">Suggested: ${esc(u.marketSuggestion.market)} (from ${esc(u.marketSuggestion.city)})</span><br><button class="btn small-btn" style="margin-top:4px" onclick="fileUnderMarket('${u.id}', '${esc(u.marketSuggestion.market)}')">File under ${esc(u.marketSuggestion.market)}</button>`
         : u.marketSuggestion && u.marketSuggestion.status === "ambiguous"
@@ -30119,7 +30282,7 @@ async function loadApplications() {
           : "";
       return `<tr>
         <td><strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.email)}</span></td>
-        <td>${esc(u.role)}${standing}${businessState}</td><td>${esc(marketDisplayName(u.market))}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span>${suggestion}</td>
+        <td>${esc(u.role)}${standing}${businessState}${dualRef}</td><td>${esc(marketDisplayName(u.market))}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span>${suggestion}</td>
         <td class="small">${detail}</td>
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
@@ -30135,35 +30298,103 @@ async function loadApplications() {
     // card actions look their record up here.
     state.adminAppsPend = pend;
     state.adminAppsDec = dec;
-    if (!adminAppView) adminAppView = pend.length ? "deck" : "list";
+    // Build -187 (scope addition 2): the queue splits by role —
+    // a Business applications section and a Creator applications
+    // section, each with its own counts, search and Deck/List
+    // view. Records of any other role (an admin-created partner,
+    // say) keep a home in the Other block below the sections so
+    // the split never silently drops a record.
+    state.adminAppRow187 = row;
+    state.adminAppsByRole187 = {
+      business: { pend: pend.filter((u) => u.role === "business"), dec: dec.filter((u) => u.role === "business") },
+      creator: { pend: pend.filter((u) => u.role === "creator"), dec: dec.filter((u) => u.role === "creator") },
+      other: { pend: pend.filter((u) => u.role !== "business" && u.role !== "creator"), dec: dec.filter((u) => u.role !== "business" && u.role !== "creator") },
+    };
+    for (const role of ["business", "creator"]) {
+      if (!adminAppViewByRole187[role]) adminAppViewByRole187[role] = state.adminAppsByRole187[role].pend.length ? "deck" : "list";
+    }
     // Market choices for Find a user. A failed read keeps the
     // choices already loaded; the queue never depends on it.
     try {
       const md = await api("GET", "/admin/markets");
       state.adminMarketNames = (md.markets || []).map((m) => ({ name: m.name, label: m.label }));
     } catch (e) { /* keep prior choices */ }
-    const listHtml = `
-      <h3>Pending (${pend.length})</h3>
-      ${pend.length ? `<div class="table-wrap panel"><table class="apps-table"><colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:31%"><col style="width:10%"><col style="width:20%"></colgroup><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${pend.map(row).join("")}</table></div>` : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}
-      <h3 class="mt">Decided (${dec.length})</h3>
-      ${dec.length ? `<div class="table-wrap panel"><table class="apps-table"><colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:31%"><col style="width:10%"><col style="width:20%"></colgroup><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${dec.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
+    const sectionHtml = (role, title) => {
+      const d = state.adminAppsByRole187[role];
+      const view = adminAppViewByRole187[role];
+      return `<section class="apps-section187" id="apps-sec-${role}">
+      <div class="apps-sec-head187">
+        <h2 style="margin:0">${title}</h2>
+        <span class="muted small"><strong>${d.pend.length} pending</strong> &middot; ${d.dec.length} decided</span>
+      </div>
+      <div class="apps-sec-tools187">
+        <input id="apps-search-${role}" type="search" placeholder="Search this section: name, email${role === "business" ? ", business name" : ", @handle"}" value="${esc(adminAppSearch187[role])}" oninput="adminAppSearchApply187('${role}')">
+        <span class="admin-apps-toggle" style="margin:0">
+          <button class="btn small-btn ${view === "deck" ? "" : "ghost"}" onclick="adminAppSetView('deck', '${role}')">Deck</button>
+          <button class="btn small-btn ${view === "list" ? "" : "ghost"}" onclick="adminAppSetView('list', '${role}')">List</button>
+        </span>
+        <span class="muted small">Deck: one application at a time. List: the full queue. Same applications, same order.</span>
+      </div>
+      <div id="apps-body-${role}">${adminAppSectionBody187(role)}</div>
+    </section>`;
+    };
+    const other = state.adminAppsByRole187.other;
+    const otherHtml = (other.pend.length || other.dec.length) ? `<h3 class="mt">Other accounts (${other.pend.length + other.dec.length})</h3><p class="muted small">Accounts that are neither a business nor a creator application. They stay reachable here and in Find a user.</p>${adminAppListHtml187(other.pend, other.dec)}` : "";
     el.innerHTML = `
       <div id="admin-refile-panel"></div>
       ${adminUserSearchPanelHtml()}
       ${filterBanner}
-      <div class="admin-apps-toggle">
-        <button class="btn small-btn ${adminAppView === "deck" ? "" : "ghost"}" onclick="adminAppSetView('deck')">Deck</button>
-        <button class="btn small-btn ${adminAppView === "list" ? "" : "ghost"}" onclick="adminAppSetView('list')">List</button>
-        <span class="muted small">Deck: one application at a time. List: the full queue. Same applications, same order.</span>
-      </div>
-      ${adminAppView === "deck" ? adminDeckHtml(pend) : listHtml}
-      ${adminAppView === "deck" ? `<p class="muted small">Decided applications are in the List view.</p>` : ""}`;
+      ${sectionHtml("business", "Business applications")}
+      ${sectionHtml("creator", "Creator applications")}
+      ${otherHtml}`;
     renderAdminRefilePanel();
     renderAdminUserResults();
     if (adminUserSearchState.users) adminUserSearch(true);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+// ---------- Admin: Applications sections (Build -187, scope addition 2) ----------
+// Each section's body renders from the arrays loadApplications
+// cached on state, so a section search re-renders only that
+// section's body — the search input itself is never replaced,
+// so typing never loses focus or caret.
+function adminAppSearchText187(u) {
+  return [
+    u.name || "", u.email || "", u.market || "", u.city || "",
+    u.business ? [u.business.businessName || "", u.business.brandName || "", u.business.category || ""].join(" ") : "",
+    u.creator ? "@" + (u.creator.handle || "") : "",
+  ].join(" ").toLowerCase();
+}
+function adminAppListHtml187(pend, dec) {
+  const row = state.adminAppRow187;
+  if (!row) return "";
+  const table = (list, lastTh) => `<div class="table-wrap panel"><table class="apps-table"><colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:31%"><col style="width:10%"><col style="width:20%"></colgroup><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>${lastTh}</th></tr>${list.map(row).join("")}</table></div>`;
+  return `
+      <h3>Pending (${pend.length})</h3>
+      ${pend.length ? table(pend, "Decision") : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}
+      <h3 class="mt">Decided (${dec.length})</h3>
+      ${dec.length ? table(dec, "Status") : `<p class="muted">None yet.</p>`}`;
+}
+function adminAppSectionBody187(role) {
+  const d = (state.adminAppsByRole187 || {})[role];
+  if (!d) return "";
+  const q = (adminAppSearch187[role] || "").trim().toLowerCase();
+  const match = (u) => !q || adminAppSearchText187(u).includes(q);
+  const pend = d.pend.filter(match);
+  const dec = d.dec.filter(match);
+  const view = adminAppViewByRole187[role] || (d.pend.length ? "deck" : "list");
+  const note = q ? `<p class="muted small" style="margin:0 0 8px">Showing ${pend.length + dec.length} of ${d.pend.length + d.dec.length} in this section for &ldquo;${esc((adminAppSearch187[role] || "").trim())}&rdquo;.</p>` : "";
+  if (view === "deck") return note + adminDeckHtml(pend, role) + `<p class="muted small">Decided applications are in this section's List view.</p>`;
+  return note + adminAppListHtml187(pend, dec);
+}
+function adminAppSearchApply187(role) {
+  const inp = document.getElementById(`apps-search-${role}`);
+  adminAppSearch187[role] = inp ? inp.value : "";
+  const host = document.getElementById(`apps-body-${role}`);
+  if (host) host.innerHTML = adminAppSectionBody187(role);
+  return false;
 }
 
 // ---------- Admin: Requests (Build -53) ----------
@@ -36326,7 +36557,10 @@ async function renderBrandProfilePage() {
 // ---------- business: the national dashboard ----------
 const NAT_TABS = ["Home", "NatCampaigns", "NatNew", "NatDiscover", "NatReports", "NatBrand"];
 function natTabsHtml(active) {
-  const item = (tab, label) => `<button class="${tab === active ? "active" : ""}" onclick="go('dashboard','${tab}')">${label}</button>`;
+  const lock187 = navLock187("NatDiscover");
+  const item = (tab, label) => tab === "NatDiscover" && lock187
+    ? `<button class="tab-locked187" aria-disabled="true" title="${esc(lock187)}" onclick="return navLockedTap187('${lock187}')">${label}</button>`
+    : `<button class="${tab === active ? "active" : ""}" onclick="go('dashboard','${tab}')">${label}</button>`;
   return `<div class="tabs">${item("Home", "Home")}${item("NatCampaigns", "Campaigns")}${item("NatNew", "New campaign")}${item("NatDiscover", "Find creators")}${item("NatReports", "Reports")}${item("NatBrand", "Brand profile")}</div>`;
 }
 function renderNationalBusinessDash() {
@@ -36349,12 +36583,12 @@ function renderNationalBusinessDash() {
   if (tab === "Sig") return renderSigTab();
   if (tab === "Settings") return renderSettingsTab();
   if (tab === "Help") return renderHelpTab();
-  if (tab === "Messages") return loadThreads();
+  if (tab === "Messages") return isFoundingBusiness(u) ? renderNatFoundingMessages187() : loadThreads();
   const el = document.getElementById("tab-body");
   const head = `${natHeadHtml(u)}${natTabsHtml(tab)}`;
   if (tab === "Home") { el.innerHTML = head + `<div id="nat-home">${skelHtml("Loading your campaigns...", 2)}</div>`; loadNatHome(); }
   if (tab === "NatCampaigns") { el.innerHTML = head + `<div id="nat-campaigns">${skelHtml("Loading your campaigns...", 2)}</div>`; loadNatCampaigns(); }
-  if (tab === "NatNew") { el.innerHTML = head + natComposerHtml(null); }
+  if (tab === "NatNew") { el.innerHTML = head + natComposerHtml(null); natPreviewRefresh187(); }
   if (tab === "NatDiscover") { el.innerHTML = head + `<div id="nat-discover">${skelHtml("Loading creators...", 2)}</div>`; loadNatDiscover(); }
   if (tab === "NatReports") { el.innerHTML = head + `<div id="nat-reports">${skelHtml("Loading your reports...", 1)}</div>`; loadNatReports(); }
   if (tab === "NatBrand") { el.innerHTML = head + natBrandEditorHtml(u); natMkSync("brand"); }
@@ -36362,11 +36596,19 @@ function renderNationalBusinessDash() {
 function natHeadHtml(u) {
   const bz = u.business || {};
   const initial = (bz.brandName || bz.businessName || "N").charAt(0).toUpperCase();
+  // Build -187 (scope addition 3): the avatar is flex:none — as a
+  // plain flex item it shrank horizontally against the wide text
+  // column and rendered as a tall oval. The head is the brand
+  // name plus ONE status line; the explanation of the hand check
+  // lives in the verification panel below, not in a paragraph
+  // stack under the name.
+  const active = businessAccessState(u) === "active";
+  const statusLine = `${active ? "Your account is active" : "Your account is not active yet"} · ${bz.verifiedAt ? "Verified by Magpie" : "Not verified yet"}`;
   return `<div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px">
-    ${bz.logoUrl ? `<img src="${esc(bz.logoUrl)}" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar-initial',textContent:'${esc(initial)}',style:'width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem'}))">` : `<span class="avatar-initial" style="width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem">${esc(initial)}</span>`}
-    <div>
+    ${bz.logoUrl ? `<img src="${esc(bz.logoUrl)}" alt="" style="width:48px;height:48px;flex:none;border-radius:50%;object-fit:cover" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar-initial',textContent:'${esc(initial)}',style:'width:48px;height:48px;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem'}))">` : `<span class="avatar-initial" style="width:48px;height:48px;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem">${esc(initial)}</span>`}
+    <div style="min-width:0">
       <h2 style="margin:0">${esc(bz.brandName || bz.businessName || "Your brand")}</h2>
-      <div class="small muted">National account — your account can reach creators in every Magpie market, not just one city. ${bz.verifiedAt ? `<span style="color:var(--mint-deep)">Verified by Magpie</span>` : `Not verified yet: Magpie checks your website and store before your campaigns can go out.`}</div>
+      <div class="small muted">${esc(statusLine)}</div>
     </div>
   </div>`;
 }
@@ -36392,14 +36634,29 @@ async function loadNatHome() {
     const d = await api("GET", "/national/me");
     const a = d.account;
     const founding = a.accessState !== "active";
+    // Build -187 (scope additions 3 + 4): Maggie's queue on this
+    // home is built from THIS side's record only — brand profile,
+    // verification, first draft — so her brief and Next steps on
+    // a national business side can never carry another side's
+    // market, role or status.
+    const nq = [];
+    if (!(a.brandAbout || a.logoUrl)) nq.push({ text: "Finish your brand profile. Creators check your logo, your website and what your brand is about before they raise a hand.", btn: "Open brand profile", act: () => go("dashboard", "NatBrand") });
+    if (!a.verified) nq.push({ text: "Brand verification is done by a person on the Magpie team, who checks your website and your store by hand. The Verified by Magpie mark is what creators look for.", btn: "See my brand profile", act: () => go("dashboard", "NatBrand") });
+    if (!d.counts.campaigns) nq.push({ text: "Write your first campaign draft. It takes a few minutes, and Maggie can draft the words with you in the composer.", btn: "Start a campaign", act: () => go("dashboard", "NatNew") });
+    state.sigQueue = nq;
+    state.sigQueueLinks = [];
+    state.sigQueueCount = nq.length;
+    const zeroCampaigns = !d.counts.campaigns;
     host.innerHTML = `
-      ${founding ? `<div class="panel" style="margin-top:10px"><strong>Your account is on the founding list.</strong><p class="small" style="margin:6px 0 0">Campaigns go out when Magpie activates your account. You can write drafts and finish your brand profile now, so you are ready the day it opens.</p></div>` : ""}
-      ${!a.verified ? `<div class="panel" style="margin-top:10px"><strong>One step before campaigns can go out: brand verification.</strong><p class="small" style="margin:6px 0 0">Magpie checks that your website is really yours and that a real store sits behind it. Creators see the Verified by Magpie mark, and your campaigns open up once it is on.</p></div>` : ""}
+      ${founding ? `<div class="panel" style="margin-top:10px"><strong>Your application is approved. Your account is not active yet.</strong><p class="small" style="margin:6px 0 0">Two steps remain before your campaigns can go out, in this order: brand verification, checked by hand below, and then activation by Magpie. You can write campaign drafts and finish your brand profile now, so you are ready the day both are done.</p></div>` : ""}
+      ${!a.verified ? `<div class="panel" style="margin-top:10px"><strong>One step before campaigns can go out: brand verification.</strong><p class="small" style="margin:6px 0 0">A person on the Magpie team checks by hand that your website is really yours and that a real store sits behind it. Creators see the Verified by Magpie mark, and your campaigns open up once it is on.</p></div>` : ""}
       <div class="panel" style="margin-top:10px">
         <div class="flex-between"><strong>Your campaigns</strong><button type="button" class="btn small-btn" onclick="go('dashboard','NatNew')">New campaign</button></div>
-        <p class="small muted" style="margin:6px 0 0">${d.counts.open} open · ${natNoun(d.counts.draft, "draft")} · ${natNoun(d.counts.hands, "hand")} raised across your campaigns · ${natNoun(d.counts.picksToMake, "pick")} still to make</p>
+        ${zeroCampaigns
+          ? `<p class="small muted" style="margin:6px 0 0">No campaigns yet. Your first one takes a few minutes: say what creators get, what you ask, and how many you will pick.</p>`
+          : `<p class="small muted" style="margin:6px 0 0">${d.counts.open} open · ${natNoun(d.counts.draft, "draft")} · ${natNoun(d.counts.hands, "hand")} raised across your campaigns · ${natNoun(d.counts.picksToMake, "pick")} still to make</p>`}
       </div>
-      ${(d.campaigns || []).map((c) => natCampaignRowHtml(c)).join("") || `<p class="muted" style="margin-top:12px">No campaigns yet. Your first one takes a few minutes: say what creators get, what you ask, and how many you will pick.</p>`}`;
+      ${(d.campaigns || []).map((c) => natCampaignRowHtml(c)).join("")}`;
   } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
 }
 async function loadNatCampaigns() {
@@ -36431,6 +36688,7 @@ async function natEditCampaign(id) {
     const d = await api("GET", `/national/campaigns/${id}`);
     const el = document.getElementById("tab-body");
     el.innerHTML = `${natHeadHtml(state.user)}${natTabsHtml("NatCampaigns")}` + natComposerHtml(d.campaign);
+    natPreviewRefresh187();
   } catch (e) { alert(e.message); }
   return false;
 }
@@ -36443,10 +36701,11 @@ function natComposerHtml(c) {
   return `<form onsubmit="return natSaveCampaign(event, ${c ? `'${c.id}'` : "null"})">
     <h3 style="margin:14px 0 4px">${c ? "Edit campaign" : "New campaign"}</h3>
     <p class="small muted" style="margin:0 0 10px">Creators see this exactly as you write it. Say the thing itself: "3 products of your choice, free" lands better than any category word.</p>
-    <label class="nfld178"><span>Headline, in plain words</span><input id="nc-title" value="${esc((c && c.title) || "")}" placeholder="Try our liquid vitamins, free"></label>
-    <label class="nfld178"><span>What the creator gets</span><input id="nc-get" value="${esc((c && c.whatYouGet) || "")}" placeholder="3 products of your choice, free"></label>
-    <label class="nfld178"><span>What you ask for, in one line</span><input id="nc-ask" value="${esc((c && c.whatWeAsk) || "")}" placeholder="Post 1 video and 1 story about your honest experience, and tag the brand"></label>
-    <label class="nfld178"><span>How many creators you will pick</span><input id="nc-picks" type="number" min="1" step="1" value="${c ? c.picksCount : ""}"></label>
+    ${natMaggieCard187()}
+    <label class="nfld178"><span>Headline, in plain words</span><input id="nc-title" value="${esc((c && c.title) || "")}" placeholder="Try our liquid vitamins, free" oninput="natPreviewRefresh187()"><span class="small muted">The first line creators read. Name the thing, not the category.</span></label>
+    <label class="nfld178"><span>What the creator gets</span><input id="nc-get" value="${esc((c && c.whatYouGet) || "")}" placeholder="3 products of your choice, free" oninput="natPreviewRefresh187()"><span class="small muted">State it as a thing a person receives, with the count.</span></label>
+    <label class="nfld178"><span>What you ask for, in one line</span><input id="nc-ask" value="${esc((c && c.whatWeAsk) || "")}" placeholder="Post 1 video and 1 story about your honest experience, and tag the brand" oninput="natPreviewRefresh187()"><span class="small muted">One line: the posts you want and the tag.</span></label>
+    <label class="nfld178"><span>How many creators you will pick</span><input id="nc-picks" type="number" min="1" step="1" value="${c ? c.picksCount : ""}" oninput="natPreviewRefresh187()"><span class="small muted">Creators raise a hand to say they are interested. This is how many of them you will pick and send the product to.</span></label>
     <label class="nfld178"><span>Creators raise a hand by</span><input id="nc-deadline" type="datetime-local" value="${esc(deadline)}"></label>
     <label class="nfld178"><span>The details (what you make, when gifts ship, when posts are due after delivery)</span><textarea id="nc-details" rows="4">${esc((c && c.details) || "")}</textarea></label>
     <div class="nfld178"><span>Who it is for (categories — ordering only; every approved creator can still raise a hand)</span>
@@ -36458,7 +36717,101 @@ function natComposerHtml(c) {
     <p style="margin-top:12px"><button type="submit" class="btn">Save draft</button>
     ${c && c.status === "draft" ? `<button type="button" class="btn ghost" onclick="return natSaveAndPublish(event, '${c.id}')">Save and publish</button>` : ""}
     ${!c ? `<span class="small muted"> Publishing happens from the campaign list once the draft reads right.</span>` : ""}</p>
-  </form>`;
+  </form>
+  <div class="nat-preview187">
+    <button type="button" class="btn ghost small-btn nat-preview-toggle187" onclick="return natPreviewToggle187(this)">See what creators see</button>
+    <div id="nat-preview187" class="nat-preview-body187"></div>
+  </div>`;
+}
+
+// Build -187 (scope additions 4 + 5): Maggie inside the national
+// composer. The entry is always visible, whatever the account
+// state; her draft fills EMPTY fields only and never overwrites
+// typed work without an explicit yes, and Ask Maggie opens her
+// with the current draft riding in her context (sigCtx carries
+// state.sigCampaignCtx187). When the account cannot publish yet
+// she says what unlocks it instead of vanishing.
+function natMaggieCard187() {
+  const u = state.user || {};
+  const founding = isFoundingBusiness(u);
+  return `<section class="wcard" style="margin:0 0 14px">
+    <div style="display:flex;gap:12px;align-items:center">${sigAvatarHtml("greet")}<div><p class="ui-kicker" style="margin:0">Draft this with Maggie</p><h3 style="margin:2px 0 0">Maggie can write the first draft</h3></div></div>
+    <p class="small muted" style="margin:10px 0 0">She drafts the headline, what creators get and what you ask, from your brand profile. She fills empty fields only: anything you have already typed stays yours unless you tell her to replace it.</p>
+    ${founding ? `<p class="small" style="margin:8px 0 0">Your account is not active yet, so this saves as a draft. A campaign can go out once your brand is verified and Magpie activates your account.</p>` : ""}
+    <div class="cta-row" style="justify-content:flex-start;margin-top:12px">
+      <button class="btn" type="button" onclick="return natMaggieDraft187()">Draft the words with Maggie</button>
+      <button class="btn ghost" type="button" onclick="return natAskMaggie187()">Ask Maggie</button>
+    </div>
+    <p class="small" id="nat-maggie-note187" style="margin:10px 0 0"></p>
+  </section>`;
+}
+function natMaggieWords187() {
+  const bz = (state.user && state.user.business) || {};
+  const brand = bz.brandName || bz.businessName || "our products";
+  const about = (bz.brandAbout || bz.about || "").trim();
+  const thing = about ? about.split(/[.!]/)[0].slice(0, 60).trim() : "";
+  return {
+    title: thing ? `Try ${thing.charAt(0).toLowerCase()}${thing.slice(1)}, free` : `Try ${brand}, free`,
+    whatYouGet: "A free product package from " + brand + ", yours to keep",
+    whatWeAsk: "Post 1 video and 1 story about your honest experience, and tag " + brand,
+    picksCount: 10,
+  };
+}
+function natMaggieDraft187() {
+  const w = natMaggieWords187();
+  const note = document.getElementById("nat-maggie-note187");
+  const fields = [["nc-title", w.title], ["nc-get", w.whatYouGet], ["nc-ask", w.whatWeAsk]];
+  const filled = [];
+  const kept = [];
+  for (const [id, val] of fields) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (el.value.trim()) kept.push(el.previousElementSibling ? id : id);
+    else { el.value = val; filled.push(id); }
+  }
+  const picks = document.getElementById("nc-picks");
+  if (picks && !picks.value) { picks.value = w.picksCount; filled.push("nc-picks"); }
+  natPreviewRefresh187();
+  if (note) {
+    if (!kept.length) note.textContent = "Maggie drafted the words below from your brand profile. Change anything before you save.";
+    else if (!filled.length) note.textContent = "Every field already has your words, so Maggie changed nothing. Clear a field and tap again, and she will draft just that one.";
+    else note.textContent = "Maggie filled the empty fields and left your typed words alone.";
+  }
+  return false;
+}
+function natAskMaggie187() {
+  const g = (id) => { const el = document.getElementById(id); return el ? el.value : ""; };
+  state.sigCampaignCtx187 = { scope: "national", title: g("nc-title"), whatYouGet: g("nc-get"), whatWeAsk: g("nc-ask"), picksCount: g("nc-picks") };
+  return sigBarGo137();
+}
+// The live preview renders through nationalCampaignCardHtml,
+// the exact card creators get, fed a draft-shaped campaign.
+function natPreviewCampaign187() {
+  const g = (id) => { const el = document.getElementById(id); return el ? el.value : ""; };
+  const u = state.user || {};
+  const bz = u.business || {};
+  const dl = g("nc-deadline");
+  return {
+    id: "preview187", brandName: bz.brandName || bz.businessName || "Your brand", verified: !!bz.verifiedAt,
+    logoUrl: bz.logoUrl || null, title: g("nc-title") || "Your headline shows here",
+    whatYouGet: g("nc-get") || "What the creator gets shows here", whatWeAsk: g("nc-ask") || "What you ask shows here",
+    picksCount: parseInt(g("nc-picks"), 10) || 0, raiseByAt: dl || null,
+    raiseExplainer: "Raise your hand = tap to say you are interested. It is not an application and it does not promise you the spot.",
+    pickedLine: "", myHand: { status: "none", line: "" }, status: "draft",
+  };
+}
+function natPreviewRefresh187() {
+  const host = document.getElementById("nat-preview187");
+  if (host) host.innerHTML = `<p class="ui-kicker" style="margin:0 0 8px">What creators see</p><div style="pointer-events:none">${nationalCampaignCardHtml(natPreviewCampaign187())}</div>`;
+  return false;
+}
+function natPreviewToggle187(btn) {
+  const host = document.getElementById("nat-preview187");
+  if (!host) return false;
+  const open = host.style.display !== "none" && host.innerHTML !== "";
+  if (open) { host.style.display = "none"; btn.textContent = "See what creators see"; }
+  else { host.style.display = ""; natPreviewRefresh187(); btn.textContent = "Hide the preview"; }
+  return false;
 }
 function natComposerBody() {
   const dl = document.getElementById("nc-deadline").value;
@@ -36714,6 +37067,20 @@ async function natSaveBrand(ev) {
     renderNationalBusinessDash();
   } catch (e) { alert(e.message); }
   return false;
+}
+
+// Build -187 (scope addition 3): a founding national business's
+// Conversations shows an honest empty state, never the founding
+// status notice. A conversation starts on a campaign, and this
+// says exactly that and nothing about account status.
+function renderNatFoundingMessages187() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `${natHeadHtml(state.user)}${natTabsHtml("Messages")}
+  <section class="wcard" style="margin-top:12px">
+    <h3 style="margin-top:0">No conversations yet</h3>
+    <p>Conversations live on a campaign. When a creator raises a hand for one of your campaigns and you pick them, your conversation opens here, attached to that campaign, so the talk always sits next to the work.</p>
+  </section>`;
 }
 
 // ---------- admin: the National room ----------

@@ -1908,3 +1908,106 @@ body.drawer168-open { overflow: hidden; }
   .tr-right > button:not(.tr-ev125) { order: 4; margin-left: 0; }
   .tr-brand { order: 5; margin-left: auto; }
 }
+
+/* ============================================================
+   Build -187 (scope addition): locked nav items. A destination
+   a not-yet-active account can see but cannot use yet renders
+   grayed with its unlock note on the item; tapping it shows
+   the note (navLockedTap187) instead of navigating. Menu rows
+   carry the note as their sub line; rail items carry it as a
+   small line under the label on the wide rail (the phone bar
+   keeps the item grayed and the tap shows the note).
+   ============================================================ */
+.nav-locked187 { opacity: .55; }
+.nav-locked187 .more-ic, .tab-locked187 .tab-ic { filter: grayscale(1); }
+.nav-lock187-note { color: var(--ink3); font-weight: 600; }
+.tab-locked187 { opacity: .55; }
+.tab-locked187 .lbl-lock { display: none; }
+@media (min-width: 768px) {
+  .tab-locked187 .tab-label { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+  .tab-locked187 .lbl-lock { display: block; font-size: .7rem; font-weight: 600; color: var(--ink3); line-height: 1.25; }
+}
+.tabs .tab-locked187 { opacity: .55; }
+
+/* Build -187 (scope addition 2): the Applications tab's two
+   sections. Each section carries its own head (title + counts),
+   its own search + Deck/List tools, and its own body. */
+.apps-section187 { margin-top: 26px; }
+.apps-sec-head187 { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.apps-sec-tools187 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 12px; }
+.apps-sec-tools187 input[type="search"] { flex: 1 1 220px; max-width: 380px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+
+/* Build -187 (scope additions 6 + 7): the shell type treatment.
+   Inter carries the navigation surfaces (menus, phone bar,
+   desktop rail, group headers, identity card) with the quiet
+   discipline of the reference: medium-weight labels, small
+   quiet group headers, generous row spacing, one obvious
+   active state (a soft blue-to-green tinted pill). Content
+   surfaces keep the app's existing type. */
+#tabbar, .ham137-panel, #everything-panel125, .ev125-panel, .idm126, .sigsheet137 {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+#tabbar .tab-item, .ham137-panel .more-row, .ev125-panel .more-row, .sheet-row {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.ev125-group h5 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--ink3, #8a8f98);
+  margin: 18px 4px 6px;
+}
+.ham137-panel .more-row, .ev125-panel .more-row { padding-top: 13px; padding-bottom: 13px; }
+.row-on187 {
+  background: linear-gradient(90deg, rgba(0, 106, 252, .10), rgba(0, 190, 130, .10));
+  border-radius: 12px;
+}
+@media (min-width: 768px) {
+  #tabbar .tab-item.on { background: linear-gradient(90deg, rgba(0, 106, 252, .10), rgba(0, 190, 130, .10)); border-radius: 12px; }
+}
+.menu-idcard187 {
+  margin-top: 22px;
+  border-top: 1px solid var(--line);
+  padding: 16px 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.menu-idcard187-who { display: flex; flex-direction: column; gap: 2px; }
+.menu-idcard187-name { font-weight: 600; font-size: 15px; }
+.menu-idcard187-state { font-size: 12.5px; color: var(--ink2, #5b6068); line-height: 1.45; }
+.menu-idcard187-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+/* The center raised + (mobile) and the rail's primary button
+   (desktop): one primary action per role, same destination. */
+.tab-plus187 { display: none; }
+@media (max-width: 767.98px) {
+  .tab-plus187 { display: flex; }
+  .tab-plus-ic187 {
+    width: 46px; height: 46px; border-radius: 50%;
+    background: linear-gradient(135deg, #2b7de9, #2fd08c);
+    color: #fff; font-size: 27px; font-weight: 500; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: -18px;
+    box-shadow: 0 6px 16px rgba(0, 90, 200, .35);
+    border: 2px solid #fff;
+  }
+}
+.rail-primary187 { display: none; }
+@media (min-width: 768px) {
+  .rail-primary187 {
+    display: block; width: calc(100% - 16px); margin: 14px 8px 4px;
+    padding: 12px 10px; border: none; border-radius: 12px; cursor: pointer;
+    background: linear-gradient(135deg, #2b7de9, #2fd08c);
+    color: #fff; font-family: 'Inter', system-ui, sans-serif;
+    font-size: 14px; font-weight: 600; text-align: center;
+  }
+}
+/* National composer preview (scope addition 5): on phones the
+   preview sits behind its toggle; the card itself is the real
+   creator card, untouched. */
+.nat-preview187 { margin-top: 16px; }
+.nat-preview-body187 { margin-top: 12px; }

@@ -182,8 +182,8 @@ function publishGateErrors(campaign, bizUser) {
   const errs = [];
   if (!bizUser || !isNationalBusiness(bizUser)) { errs.push("Only a national account can publish a national campaign."); return errs; }
   if (bizUser.status !== "approved") errs.push("Your account is still being reviewed. Campaigns can go out once Magpie approves your account.");
-  if (!bizUser.business || bizUser.business.accessState !== "active") errs.push("Your account is on the founding list. Campaigns go out when Magpie activates your account.");
-  if (!bizUser.business || !bizUser.business.verifiedAt) errs.push("Magpie has not verified your brand yet. Verification is quick: we check your website and your store, and then your campaigns can go out.");
+  if (!bizUser.business || bizUser.business.accessState !== "active") errs.push("Your account is not active yet. Campaigns go out when Magpie activates your account.");
+  if (!bizUser.business || !bizUser.business.verifiedAt) errs.push("Magpie has not verified your brand yet. A person on the Magpie team checks your website and your store by hand, and then your campaigns can go out.");
   const b = bizUser.business || {};
   if (!b.logoUrl) errs.push("Add your logo before this campaign can go out. Creators check it.");
   if (!b.website) errs.push("Add your website before this campaign can go out. Creators check it.");
@@ -837,7 +837,7 @@ async function handleNationalApi(ctx) {
 
   // ----- discovery across all markets (spec §6) -----
   if (seg[1] === "discover" && method === "GET") {
-    if (deps.businessAccessState(user) !== "active") return err(403, "Your account is on the founding list. Finding creators opens when Magpie activates your account.");
+    if (deps.businessAccessState(user) !== "active") return err(403, "Your account is not active yet. Finding creators opens when Magpie activates your account.");
     const marketFilter = query.market ? (MARKETS.find((m) => m.name === normalizeMarketName(String(query.market))) || {}).name || null : null;
     if (query.market && !marketFilter) return err(400, "That is not one of the Magpie markets.");
     const catWanted = query.category ? (canonicalFromList(String(query.category), CREATOR_CATEGORIES) || String(query.category)) : null;

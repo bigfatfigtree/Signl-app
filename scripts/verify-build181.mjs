@@ -142,7 +142,7 @@ try {
   check("draft saves", draft.status === 201, JSON.stringify(draft.data).slice(0, 160));
   const campId = draft.data.campaign.id;
   const pubEarly = await brand("POST", `/api/national/campaigns/${campId}/publish`, {});
-  check("publish refused while still founding (not activated)", pubEarly.status === 400 && /founding/i.test(pubEarly.data.error || ""), JSON.stringify(pubEarly.data).slice(0, 200));
+  check("publish refused while still founding (not activated)", pubEarly.status === 400 && /not active yet|activat/i.test(pubEarly.data.error || ""), JSON.stringify(pubEarly.data).slice(0, 200));
   const actEarly = await admin("POST", "/api/admin/businesses/activate", { userId: brandId });
   check("activation alone opens the account shell", actEarly.status === 200 && actEarly.data.user.business.accessState === "active");
   const pubUnverified = await brand("POST", `/api/national/campaigns/${campId}/publish`, {});

@@ -202,6 +202,138 @@ async function main() {
   check("creator (quick, just finished) landing: roster done state, NOT the account view", doneHtml.includes("You're on the roster") && NOT_ACCOUNT(doneHtml), doneHtml.slice(0, 200));
   check("claim done state keeps its next-step actions", doneHtml.includes("Add your rates and best work") && doneHtml.includes("Go to my dashboard"));
 
+  console.log("== scope addition: locked nav items (Jeff, 2026-11-16) ==");
+  const lockSeg = seg(appJs, "function businessAccessState(u)", "function renderNav()");
+  check("navLock187 + navLockedTap187 exist beside businessAccessState", lockSeg.includes("function navLock187(tab)") && lockSeg.includes("function navLockedTap187(note)"));
+  check("pending lock note names approval", lockSeg.includes("Unlocks when your application is approved."));
+  check("national founding lock note names activation", lockSeg.includes("Unlocks when Magpie activates your account."));
+  check("national lock covers Discover, Favorites and NatDiscover only", lockSeg.includes('tab === "Discover"') && lockSeg.includes('tab === "Favorites"') && lockSeg.includes('tab === "NatDiscover"'));
+  const navLockFor = (user, tab) => {
+    const sandbox = { state: { user }, bdShellActive: () => false, showToast: () => {} };
+    sandbox.window = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(lockSeg + `\n;navLock187(${JSON.stringify(tab)});`, sandbox, { timeout: 5000 });
+    return vm.runInContext(`navLock187(${JSON.stringify(tab)})`, sandbox, { timeout: 5000 });
+  };
+  check("pending business: every destination locked on approval", navLockFor(mktUser, "Discover") === "Unlocks when your application is approved." && navLockFor(mktUser, "Settings") === "Unlocks when your application is approved." && navLockFor(natUser, "Home") === "Unlocks when your application is approved.");
+  check("pending creator: destinations locked on approval", navLockFor(qcUser, "Profile") === "Unlocks when your application is approved." && navLockFor(fullUser, "Find Offers") === "Unlocks when your application is approved.");
+  const natApproved = { ...natUser, status: "approved" };
+  check("approved national founding: Discover/Favorites/NatDiscover locked on activation", navLockFor(natApproved, "Discover") === "Unlocks when Magpie activates your account." && navLockFor(natApproved, "Favorites") === "Unlocks when Magpie activates your account." && navLockFor(natApproved, "NatDiscover") === "Unlocks when Magpie activates your account.");
+  check("approved national founding: working surfaces stay unlocked", navLockFor(natApproved, "Home") === "" && navLockFor(natApproved, "Campaign Setup") === "" && navLockFor(natApproved, "Profile") === "" && navLockFor(natApproved, "Messages") === "");
+  const natActive = { ...natUser, status: "approved", business: { ...natUser.business, accessState: "active" } };
+  check("active national: discovery unlocked", navLockFor(natActive, "Discover") === "" && navLockFor(natActive, "NatDiscover") === "");
+  const mktApproved = { ...mktUser, status: "approved" };
+  check("approved market founding: discovery stays unlocked (roster renders while founding)", navLockFor(mktApproved, "Discover") === "" && navLockFor(mktApproved, "Campaign Setup") === "");
+  const fullApproved = { ...fullUser, status: "approved" };
+  check("approved creator: nothing locked", navLockFor(fullApproved, "Find Offers") === "" && navLockFor(fullApproved, "Earnings") === "");
+  check("hamburger rows render the lock (grayed + note, no navigation)", seg(appJs, "function hamburgerRowHtml137(r)", "function openHamburger137()").includes("nav-locked187") && seg(appJs, "function hamburgerRowHtml137(r)", "function openHamburger137()").includes("navLockedTap187"));
+  check("everything rows render the lock", seg(appJs, "function everythingRowHtml125(r)", "function openEverything125()").includes("nav-locked187"));
+  check("identity menu rows carry their tab and render the lock", seg(appJs, "function identityMenuRows126()", "function openIdentityMenu126()").includes("sub, tab, act:") && seg(appJs, "function openIdentityMenu126()", "function closeIdentityMenu126()").includes("navLock187(r.tab)"));
+  check("rail/bar items render the lock with the note line", seg(appJs, "function tabBarHtml()", "// The slim V3 top bar").includes("tab-locked187") && seg(appJs, "function tabBarHtml()", "// The slim V3 top bar").includes("lbl-lock"));
+  check("national tab strip locks Find creators while founding", seg(appJs, "function natTabsHtml(active)", "function renderNationalBusinessDash()").includes('navLock187("NatDiscover")'));
+  const themeV3 = fs.readFileSync(path.join(ROOT, "public/theme-v3.css"), "utf8");
+  check("locked styles ship (nav-locked187 + tab-locked187 + lbl-lock)", themeV3.includes(".nav-locked187") && themeV3.includes(".tab-locked187") && themeV3.includes(".lbl-lock"));
+
+  console.log("== scope addition: verification copy matches the mechanism ==");
+  // The mechanism (netlify/functions/lib/national.js): verification
+  // is a manual admin action — an admin ticks a three-item
+  // checklist (website resolves and belongs to the brand, name
+  // matches, a real store exists) and the server stamps
+  // verifiedAt/verifiedBy. Nothing fetches the website; only
+  // national accounts can be verified at all.
+  const nationalJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/national.js"), "utf8");
+  check("mechanism pin: verify is admin-only with a human checklist", nationalJs.includes('action === "verify"') && nationalJs.includes("Finish the verification checklist first") && nationalJs.includes("verifiedBy: user.id"));
+  check("mechanism pin: market businesses carry no Verified brand check", nationalJs.includes("Only a national account carries the Verified brand check."));
+  check("pending national step names the by-hand check", natHtml.includes("a person on the Magpie team checks your website and your store by hand"), natHtml.slice(0, 300));
+  check("pending national step drops the old claim", !natHtml.includes("we check your website and your store"));
+  check("app copy: no surface still promises the unqualified check", !appJs.includes("we check your website") && !appJs.includes("Magpie checks your website") && !appJs.includes("Magpie checks that your website"));
+  check("app copy: national head + home panel name the by-hand check", appJs.includes("a person on the Magpie team checks your website and store by hand") && appJs.includes("A person on the Magpie team checks by hand that your website is really yours"));
+  check("publish gate copy names the by-hand check, no speed promise", nationalJs.includes("A person on the Magpie team checks your website and your store by hand, and then your campaigns can go out.") && !nationalJs.includes("Verification is quick"));
+
+  console.log("== scope addition 2: admin applications split ==");
+  // Source pins: two sections, per-section search + body, the
+  // cross-reference in the row, the server-side linkedSide.
+  check("applications render two sections (Business first, Creator second)", appJs.includes('sectionHtml("business", "Business applications")') && appJs.includes('sectionHtml("creator", "Creator applications")') && appJs.indexOf('sectionHtml("business"') < appJs.indexOf('sectionHtml("creator"'));
+  check("each section carries its own search input + body", appJs.includes('id="apps-search-${role}"') && appJs.includes('id="apps-body-${role}"') && appJs.includes("function adminAppSectionBody187(role)") && appJs.includes("function adminAppSearchApply187(role)"));
+  check("each section shows its own counts (pending first)", appJs.includes("<strong>${d.pend.length} pending</strong> &middot; ${d.dec.length} decided"));
+  check("per-section Deck/List views", appJs.includes("adminAppViewByRole187") && appJs.includes("function adminDeckHtml(pend, role)"));
+  check("list rows cross-reference the dual-role other side", seg(appJs, "async function loadApplications()", "// ---------- Admin: Applications sections").includes("Dual account") && seg(appJs, "async function loadApplications()", "// ---------- Admin: Applications sections").includes("see ${u.linkedSide.role === \"business\" ? \"Business\" : \"Creator\"} applications"));
+  check("per-record actions still render per row (approve, reject, activate, tester)", (() => { const s = seg(appJs, "async function loadApplications()", "// ---------- Admin: Applications sections"); return s.includes("reviewApp('${u.id}','approve')") && s.includes("toggleRejectEditor('${u.id}')") && s.includes("activateBusiness('${u.id}')") && s.includes("setTester('${u.id}'"); })());
+  const routerJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/router.js"), "utf8");
+  check("applications payload names the dual-role sibling (role, status, label)", seg(routerJs, 'if (method === "GET" && seg[1] === "applications")', "Find a user (Build -116").includes("pub.linkedSide = { role: sib.role, status: sib.status, label }"));
+
+  // API: a dual-role pair + the section partition over the payload.
+  const dualCr = client();
+  const dualReg = await dualCr("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "dual187@fixtures.dev", password: "fixture-pass-187", handle: "dual187", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true });
+  check("dual fixture: creator side registers pending", !!dualReg.data.user && dualReg.data.user.status === "pending", JSON.stringify(dualReg.data).slice(0, 160));
+  const dualSide = await dualCr("POST", "/api/auth/add-side", { role: "business", name: "Dual Owner", businessName: "Dual Fixture Bakery", category: "Bakery", market: "Nashville", agreedTerms: true });
+  check("dual fixture: business side added pending, linked back", !!dualSide.data.user && dualSide.data.user.role === "business" && dualSide.data.user.status === "pending" && !!dualSide.data.user.linkedAccountId, JSON.stringify(dualSide.data).slice(0, 200));
+  const adm = client();
+  const admLogin = await adm("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+  check("admin login works", admLogin.status === 200, String(admLogin.status));
+  const appsRes = await adm("GET", "/api/admin/applications");
+  const allRows = [...(appsRes.data.pending || []), ...(appsRes.data.decided || [])];
+  const bizRows = allRows.filter((u) => u.role === "business");
+  const crRows = allRows.filter((u) => u.role === "creator");
+  check("section partition: every queue record is in exactly one role set", bizRows.length + crRows.length <= allRows.length && bizRows.every((u) => !crRows.includes(u)), `biz=${bizRows.length} cr=${crRows.length} all=${allRows.length}`);
+  check("section counts agree with the payload (business pending includes the fixture set)", bizRows.filter((u) => u.status === "pending").length === (appsRes.data.pending || []).filter((u) => u.role === "business").length && crRows.filter((u) => u.status === "pending").length === (appsRes.data.pending || []).filter((u) => u.role === "creator").length);
+  const dualBizRow = bizRows.find((u) => u.id === (dualSide.data.user || {}).id);
+  const dualCrRow = crRows.find((u) => u.id === (dualReg.data.user || {}).id);
+  check("business section record cross-references the creator side (role, identity, status)", !!dualBizRow && !!dualBizRow.linkedSide && dualBizRow.linkedSide.role === "creator" && dualBizRow.linkedSide.status === "pending" && dualBizRow.linkedSide.label === "@dual187", JSON.stringify(dualBizRow && dualBizRow.linkedSide));
+  check("creator section record cross-references the business side (role, identity, status)", !!dualCrRow && !!dualCrRow.linkedSide && dualCrRow.linkedSide.role === "business" && dualCrRow.linkedSide.status === "pending" && dualCrRow.linkedSide.label === "Dual Fixture Bakery", JSON.stringify(dualCrRow && dualCrRow.linkedSide));
+  check("unlinked records carry no cross-reference", !!mktUser && !allRows.find((u) => u.id === mktUser.id).linkedSide && !allRows.find((u) => u.id === qcUser.id).linkedSide);
+
+  console.log("== scope addition 3: conversations, national framing, national home ==");
+  const natJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/national.js"), "utf8");
+  check("national lane carries no founding-list framing in its gates", !natJs.includes("Your account is on the founding list"), "");
+  check("server founding refusal branches by scope (national variant exists)", routerJs.includes("FOUNDING_BUSINESS_MESSAGE_NATIONAL187") && routerJs.includes("function foundingBusinessMessage187(u)") && routerJs.includes("Your brand is not active yet."));
+  const natC = client();
+  await natC("POST", "/api/auth/login", { email: "nat187@fixtures.dev", password: "fixture-pass-187" });
+  const msgNat = await natC("GET", "/api/messages");
+  const msgNatBody = JSON.stringify(msgNat.data);
+  check("pending national business hitting messages gets the NATIONAL refusal (no plan, no line, no founding list)", msgNat.status === 403 && !/founding list|place in line|your plan/i.test(msgNatBody) && msgNatBody.includes("not active yet"), msgNatBody.slice(0, 160));
+  const mktC = client();
+  await mktC("POST", "/api/auth/login", { email: "mkt187@fixtures.dev", password: "fixture-pass-187" });
+  const msgMkt = await mktC("GET", "/api/messages");
+  const msgMktBody = JSON.stringify(msgMkt.data);
+  check("pending market business hitting messages keeps the market founding answer", msgMkt.status === 403 && msgMktBody.includes("founding list"), msgMktBody.slice(0, 120));
+  const natPatch = await natC("PATCH", "/api/me/profile", { brandName: "Nat Fixture", logoUrl: "https://example.com/logo.png", brandAbout: "Liquid vitamins, bottled." });
+  check("founding national business CAN save its brand page fields (the -80 whitelist covers national page fields)", natPatch.status === 200, JSON.stringify(natPatch.data).slice(0, 160));
+  const natPatchBad = await natC("PATCH", "/api/me/profile", { brandAbout: "ok", averageTicket: 42 });
+  check("founding national business still cannot save plan/product settings pre-activation", natPatchBad.status === 403, JSON.stringify(natPatchBad.data).slice(0, 160));
+  check("national founding Conversations is an honest empty state (no status notice)", appJs.includes("function renderNatFoundingMessages187()") && appJs.includes("No conversations yet") && appJs.includes('isFoundingBusiness(u) ? renderNatFoundingMessages187() : loadThreads()'));
+  check("national pending landing carries no founding-list framing", !seg(appJs, 'if (bz.scope === "national") {', "What you can do now").includes("founding list") && seg(appJs, 'if (bz.scope === "national") {', "What you can do now").includes("Your application is in review."));
+  check("national home founding panel uses the review-verification-activation order", appJs.includes("Your application is approved. Your account is not active yet.") && appJs.includes("brand verification, checked by hand below, and then activation by Magpie"));
+  check("national home campaigns zero state is human copy, not the debug stats line", appJs.includes("No campaigns yet. Your first one takes a few minutes: say what creators get, what you ask, and how many you will pick.") && appJs.includes("zeroCampaigns"));
+  check("national head: avatar cannot squash (flex:none) and head is name + one status line", appJs.includes("flex:none;border-radius:50%") && appJs.includes("const statusLine =") && !seg(appJs, "function natHeadHtml", "function natCampaignRowHtml").includes("Not verified yet: a person on the Magpie team checks"));
+  check("Maggie bank: market-open answers branch for national accounts", appJs.includes("Your national account is not in a market queue."));
+
+  console.log("== scope addition 4: Maggie identity, flows, next steps ==");
+  check("side switch clears the other side's Maggie queue, thread and national cache", seg(appJs, "async function switchSide180()", "function closeAddSide180").includes("state.sigQueue = null") && seg(appJs, "async function switchSide180()", "function closeAddSide180").includes("state.sigThread = []") && seg(appJs, "async function switchSide180()", "function closeAddSide180").includes("state.natMe = null"));
+  check("Maggie flow buttons close the sheet before navigating (no dead taps)", seg(appJs, "function sigBoxFlow(i)", "// The top of every role home").includes("closeSigSheet137(); f.act();"));
+  check("pending business gets no Maggie walk-to flows", seg(appJs, "function sigFlowsFor()", "function sigCtx()").includes('if (u.status === "pending") return [];'));
+  check("national business flows name the national tabs", seg(appJs, "function sigFlowsFor()", "function sigCtx()").includes('go("dashboard", "NatNew")') && seg(appJs, "function sigFlowsFor()", "function sigCtx()").includes('go("dashboard", "NatBrand")'));
+  check("bank walk-to labels resolve per scope (national gets Start a campaign)", appJs.includes('flow: (c) => c.national ? "Start a campaign" : (c.status === "pending" ? null : "Post an offer")'));
+  check("national home builds Maggie's queue from the business side only", appJs.includes("state.sigQueue = nq;") && appJs.includes("Brand verification is done by a person on the Magpie team"));
+
+  console.log("== scope addition 5: the composer ==");
+  check("national composer carries the Maggie card in every state", seg(appJs, "function natComposerHtml(c)", "function natComposerBody()").includes("natMaggieCard187()") && appJs.includes("Draft this with Maggie"));
+  check("Maggie's composer draft fills empty fields only", seg(appJs, "function natMaggieDraft187()", "function natAskMaggie187()").includes("if (el.value.trim()) kept.push") && seg(appJs, "function natMaggieDraft187()", "function natAskMaggie187()").includes("left your typed words alone"));
+  check("fresh national composer fields carry examples as placeholders, never values", seg(appJs, "function natComposerHtml(c)", "function natComposerBody()").includes('id="nc-title" value="${esc((c && c.title) || "")}" placeholder=') && seg(appJs, "function natComposerHtml(c)", "function natComposerBody()").includes('id="nc-get" value="${esc((c && c.whatYouGet) || "")}" placeholder='));
+  check("picks field explains itself in one line", appJs.includes("Creators raise a hand to say they are interested. This is how many of them you will pick"));
+  check("national preview renders through the real creator card renderer", seg(appJs, "function natPreviewRefresh187()", "function natPreviewToggle187").includes("nationalCampaignCardHtml(natPreviewCampaign187())"));
+  check("market composer rail preview renders through the real mirror card renderer", appJs.includes("function offerRailPreview187()") && appJs.includes("mirrorOfferCardHtml(offerPreviewOffer(), { preview: true })") && appJs.includes('id="offer-peek-rail187"'));
+  check("Ask Maggie from the composer carries the draft in her context", appJs.includes("state.sigCampaignCtx187") && seg(appJs, "function sigCtx()", "// The canon bank").includes("ctx.campaignDraft = state.sigCampaignCtx187"));
+
+  console.log("== scope additions 6 + 7: shell type, menu pattern, center + ==");
+  const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
+  check("Inter loads with the shell fonts (same Google Fonts pattern)", indexHtml.includes("family=Inter:wght@400;500;600;700"));
+  check("shell type treatment pins (Inter on nav, quiet group headers, active pill, identity card, plus, rail primary)", themeV3.includes("font-family: 'Inter', system-ui, sans-serif") && themeV3.includes(".ev125-group h5") && themeV3.includes(".row-on187") && themeV3.includes(".menu-idcard187") && themeV3.includes(".tab-plus187") && themeV3.includes(".rail-primary187"));
+  check("menu ends with the identity card; dual-role switch lives there in plain words", appJs.includes("${menuIdentityCard187(u, name)}") && appJs.includes("Switch to your ${other} side") && appJs.includes("function menuIdentityStateLine187(u)"));
+  check("center + destinations per role (business composer, national composer, creator find offers)", seg(appJs, "const plus187 = (() => {", "const barIdx = {};").includes('go(\'dashboard\',\'Campaign Setup\')') && seg(appJs, "const plus187 = (() => {", "const barIdx = {};").includes('go(\'dashboard\',\'NatNew\')') && seg(appJs, "const plus187 = (() => {", "const barIdx = {};").includes('go(\'dashboard\',\'Find Offers\')'));
+  check("pending + explains the unlock instead of navigating", seg(appJs, "const plus187 = (() => {", "const barIdx = {};").includes("navLockedTap187('Unlocks when your application is approved.')"));
+  check("the + is labeled under the button (Campaign / Offers)", appJs.includes('class="tab-item tab-bar137 tab-plus187"') && seg(appJs, "const plus187 = (() => {", "const barIdx = {};").includes('label: "Campaign"') && seg(appJs, "const plus187 = (() => {", "const barIdx = {};").includes('label: "Offers"'));
+
   await stopServer();
   console.log(`\nverify-build187: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
