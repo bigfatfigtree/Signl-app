@@ -410,6 +410,10 @@ function repLeadPayload(lead, opts) {
       jeffHandles: !!flags.jeffHandles,
       chain: !!flags.chain,
       noEmail: !lead.email,
+      // Build -188 (PL-21): the category hold, exposed so the
+      // route builder (and the client) can keep held leads out
+      // of the workable day.
+      categoryHold: !!flags.categoryHold,
     },
     founding: {
       status: lead.founding ? lead.founding.status : "Not claimed",
@@ -657,11 +661,18 @@ function todayStr() { return nowIso().slice(0, 10); }
 async function dayPlan(seat) {
   const leads = (await leadsOfMarket(seat.marketId)).filter((l) => leadInSeatBook(l, seat));
   const today = todayStr();
-  const due = leads.filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today && l.stage !== STAGE_CLAIMED && l.stage !== "Said no" && l.stage !== "Not a fit")
+  // Build -188 (PL-21): category-held leads are not workable
+  // today — their own nextAction says "do not approach yet" —
+  // so they leave the route, the stop list and the counts
+  // entirely and surface in their own on-hold list until the
+  // hold clears. (The due list also gains the do-not-contact
+  // exclusion the unvisited list already had.)
+  const held188 = (l) => !!(l.flags && l.flags.categoryHold);
+  const due = leads.filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today && l.stage !== STAGE_CLAIMED && l.stage !== "Said no" && l.stage !== "Not a fit" && !held188(l) && !(l.flags && (l.flags.doNotContact || l.flags.jeffHandles)))
     .sort((a, b) => String(a.nextAction.date).localeCompare(String(b.nextAction.date)));
   // The day's working cluster: the zone holding the most
   // not-yet-visited leads; due follow-ups in that zone join it.
-  const unvisited = leads.filter((l) => l.stage === "Not visited yet" && !(l.flags && (l.flags.doNotContact || l.flags.jeffHandles)));
+  const unvisited = leads.filter((l) => l.stage === "Not visited yet" && !(l.flags && (l.flags.doNotContact || l.flags.jeffHandles)) && !held188(l));
   const clusters = clusterLeads(unvisited);
   const main = clusters.length ? clusters.slice().sort((a, b) => b.items.length - a.items.length)[0] : null;
   const stops = [];
@@ -676,6 +687,9 @@ async function dayPlan(seat) {
     date: today,
     zoneLabel: main ? main.zone : (due.length ? (due[0].neighborhood || "Follow-ups") : null),
     stops: stops.map((l) => repLeadPayload(l)),
+    // Build -188 (PL-21): held leads, listed separately so the
+    // rep can see WHY they are not on the route.
+    onHold: leads.filter(held188).map((l) => repLeadPayload(l)),
     doneCount: stops.filter((l) => doneIds.has(l.id)).length,
     totalCount: stops.length,
     clusters: clusters.map((c) => ({ zone: c.zone, count: c.items.length })),
@@ -981,7 +995,33 @@ function jeffKit161(marketName) {
 }
 function kitFor(seat) {
   if (seat && seat.hqSeat) return jeffKit161(seat.marketName);
+  // Build -188 (PL-06): a rep's kit follows the seat's SELECTED
+  // market, the way Jeff's always did. Tony's KIT above is his
+  // Hampton Roads original and stays byte-for-byte for his home
+  // market (Build -157 pins its words); any other market gets a
+  // clone with the market swapped and Tony's voice kept. The
+  // print pieces are Hampton Roads print runs (his name, his
+  // code, Hampton Roads words baked into the PDFs), so a
+  // non-home market shows no print section rather than another
+  // market's cards — the same rule Jeff's kits follow.
+  if (seat && seat.marketName && seat.marketName !== "Hampton Roads") return repKit188(seat.marketName);
   return KIT;
+}
+const repKitCache188 = new Map();
+function repKit188(marketName) {
+  const M = marketName;
+  if (repKitCache188.has(M)) return repKitCache188.get(M);
+  const k = JSON.parse(JSON.stringify(KIT));
+  const swap = (v) => {
+    if (typeof v === "string") return v.split("Hampton Roads").join(M);
+    if (Array.isArray(v)) return v.map(swap);
+    if (v && typeof v === "object") { const o = {}; for (const key of Object.keys(v)) o[key] = swap(v[key]); return o; }
+    return v;
+  };
+  const out = swap(k);
+  out.printKit = [];
+  repKitCache188.set(M, out);
+  return out;
 }
 
 // ---------------- Show Mode bench ----------------
@@ -2601,7 +2641,9 @@ async function buildRepHome157(seat, user, opts) {
   ]);
   const today = todayStr();
   const followUps = leads
-    .filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today && !["Said no", "Not a fit"].includes(l.stage))
+    // Build -188 (PL-21): held leads are not due follow-ups
+    // either — same exclusion as the route.
+    .filter((l) => l.nextAction && l.nextAction.date && l.nextAction.date <= today && !["Said no", "Not a fit"].includes(l.stage) && !(l.flags && l.flags.categoryHold))
     .sort((a, b) => String(a.nextAction.date).localeCompare(String(b.nextAction.date)))
     .map((l) => repLeadPayload(l));
   const newLeads = leads.filter((l) => l.isNewForRep).map((l) => repLeadPayload(l));
@@ -2625,7 +2667,7 @@ async function buildRepHome157(seat, user, opts) {
   return {
     rep: { firstName: String(user.name || "").split(" ")[0] || "Rep", marketName: seat.marketName, marketId: seat.marketId, markets: seatMarkets(seat), hqSeat: !!seat.hqSeat, repCode: seat.repCode, seatState: seat.seatState, pinSet: !!seat.pinHash },
     date: today, brief,
-    plan: { zoneLabel: plan.zoneLabel, stops: plan.stops, doneCount: plan.doneCount, totalCount: plan.totalCount, clusters: plan.clusters },
+    plan: { zoneLabel: plan.zoneLabel, stops: plan.stops, doneCount: plan.doneCount, totalCount: plan.totalCount, clusters: plan.clusters, onHold: plan.onHold || [] },
     followUps, newLeads, progress,
     numbers: { claimedThisMonth: leads.filter((l) => l.founding && l.founding.claimedAt && monthOf(l.founding.claimedAt) === monthOf(nowIso())).length, visitsThisWeek, moneyBuilding: money.accrued },
     unfinished,
@@ -2718,10 +2760,14 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
       seat.lastMarketId = reqMkt161;
       await store().set(`bdevrep:${seat.userId}`, seat);
     }
-  } else if (!reqMkt161 && seat.lastMarketId && seat.lastMarketId !== seat.marketId) {
-    const remembered = effectiveSeat(seat, seat.lastMarketId);
-    if (remembered) effSeat = remembered;
   }
+  // Build -188 (PL-07): the remembered-city fallback is GONE.
+  // It made a rep whose home market is Hampton Roads land on
+  // Nashville forever (the last city he ever peeked at), with
+  // his home book unreachable in the rendered flow. A request
+  // with no explicit ?mkt= now always means the seat's HOME
+  // market; switching is an in-session act (the city chips),
+  // never a silent inheritance from a past session.
 
   // GET /bdev/home — the payload builder is shared with HQ's
   // read-only preview (buildRepHome157); behavior is unchanged

@@ -13304,7 +13304,7 @@ function renderCreatorDash() {
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Find Offers") body = wsHead("Find offers", { sub: "Open visits from businesses in your markets, stated like prices. Grab the ones that fit.", subKey: "cr-findoffers" }) + `<div id="cr-findoffers">${skelHtml("Loading open offers...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
-  if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u);
+  if (tab === "Profile") body = wsHead("My profile", { chip: (u.creator && u.creator.publicPage === true) ? livePill("Live") : `<span class="live-pill off">Public page off</span>`, sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u);
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
@@ -13360,7 +13360,7 @@ function renderFoundingHome() {
   const placeBadge = u.market === unlistedLabel() ? esc(u.city || u.market) : esc(marketDisplayName(u.market));
   let body = "";
   if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
-  if (tab === "Find Offers") body = wsHead("Find offers", { sub: "Open visits from businesses in your markets, stated like prices. Grab the ones that fit.", subKey: "cr-findoffers" }) + `<div id="cr-findoffers">${skelHtml("Loading open offers...", 2)}</div>`;
+  if (tab === "Find Offers") body = wsHead("Find offers", { sub: "Offers land here the day your market opens. When it opens, this is where businesses post visits and you grab the ones that fit.", subKey: "cr-findoffers" }) + `<div id="cr-findoffers">${skelHtml("Loading open offers...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div><div id="founding-buzz"></div><div id="founding-depth"></div>`;
   if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u);
@@ -22879,7 +22879,7 @@ function renderFindOffers() {
     </div>
     <p class="fo-count"><strong>${list.length}</strong> open visit${list.length === 1 ? "" : "s"} near you</p>
     ${ea && ea.opensAt ? `<p class="small" style="margin:0 0 10px">A new offer just posted in your market. Charter creators, the founding class (creators approved before their market launched), see new offers first; this one opens to everyone ${esc(fmtDay(ea.opensAt))}.</p>` : ""}
-    ${list.length ? `<div class="mirror-grid">${list.map((o, i) => mirrorOfferCardHtml(o, i === 0 ? { lead: true } : undefined)).join("")}</div>` : `<div class="empty-state"><h3>No open visits match</h3><p>Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets.</p></div>`}
+    ${list.length ? `<div class="mirror-grid">${list.map((o, i) => mirrorOfferCardHtml(o, i === 0 ? { lead: true } : undefined)).join("")}</div>` : `<div class="empty-state"><h3>No open visits match</h3><p>${(state.user && state.user.founding && !state.user.founding.marketLive) ? "Your market has not opened yet, so no business can post here yet. Offers land here the day your market opens, and we email you the moment it does." : "Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets."}</p></div>`}
     ${applied.length ? `<h3 style="margin:22px 0 10px">You applied</h3><div class="mirror-grid">${applied.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : ""}
     <div id="cr-national-lane"></div>
     ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3><div class="mirror-grid">${q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })).join("")}</div>` : ""}
@@ -30435,7 +30435,7 @@ async function loadAdminRequests() {
     const s = data.summary;
     const summaryStrip = s ? `
       <h3>Founding roster counts</h3>
-      <p class="muted small">Creators only, counted from the records. Approved + profile complete is the launch number: only those creators show up for businesses.</p>
+      <p class="muted small">Creators only, counted from the records. Approved is the launch number: a market opens at 50 approved. Approved + complete shows how many of them businesses can book today.</p>
       <div class="table-wrap panel"><table><tr><th>Market</th><th>Counts</th></tr>
       ${s.markets.map((m) => `<tr><td>${esc(m.label)}</td><td><strong>${m.pending}</strong> pending &middot; <strong>${m.approved}</strong> approved &middot; <strong>${m.approvedComplete}</strong> approved + complete</td></tr>`).join("")}
       <tr><td><strong>All markets</strong></td><td><strong>${s.all.pending}</strong> pending &middot; <strong>${s.all.approved}</strong> approved &middot; <strong>${s.all.approvedComplete}</strong> approved + complete</td></tr>
@@ -34638,7 +34638,13 @@ const bd = {
   addOpen: false, nearNote: "",
   // Build -161: multi-market seats (Jeff's). mkt is the working
   // city; single-market seats never set it and nothing changes.
-  mkt: (() => { try { return localStorage.getItem("bd161:mkt") || ""; } catch (e) { return ""; } })(),
+  // Build -188 (PL-07): the working market starts UNSET on a
+  // fresh load — never seeded from a past session's stored
+  // pick. The first /bdev call carries no ?mkt=, the server
+  // answers with the seat's HOME market, and bdSyncSeat161
+  // adopts it. Switching cities is an in-session act via the
+  // chips (bdSetMkt); it no longer follows the rep home.
+  mkt: "", 
   markets: [], hqSeat: false,
 };
 
@@ -34927,6 +34933,7 @@ async function bdLoadHome(el) {
     ${(d.plan.clusters || []).length ? `<p class="muted small">Neighborhoods with unvisited shops: ${d.plan.clusters.map((c) => `${esc(c.zone)} (${c.count})`).join(" · ")}</p>` : ""}
   </section>
   ${(d.followUps || []).length ? `<section><h3 class="bd-h">Follow-ups due <span class="badge info">${d.followUps.length}</span></h3>${d.followUps.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
+  ${(d.plan.onHold || []).length ? `<section><h3 class="bd-h">On hold <span class="badge info">${d.plan.onHold.length}</span></h3><p class="muted small" style="margin:0 0 8px">These leads are on a category hold. They stay off your route and out of your counts until Jeff clears the hold.</p>${d.plan.onHold.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
   ${(d.alarms && d.alarms.length) ? `<section class="panel bd-alarm-panel"><h3 style="margin-top:0">Maggie noticed</h3><p class="muted small" style="margin:0 0 8px">A few doors are still waiting on you. No rush — here's what Maggie spotted.</p>${d.alarms.map((a) => `<div class="bd-logrow"><strong>${esc(a.name)}</strong><br><span>${esc(a.line || "")}</span> <button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return bdOpenLead('${a.leadId}')">Open</button></div>`).join("")}</section>` : ""}
   ${(d.queue && d.queue.length) ? `<section><h3 class="bd-h">Your next best doors</h3>${d.queue.map((item) => bdQueueCard(item)).join("")}<button type="button" class="btn ghost" onclick="return bdShowTrips()">I've got some time — where should I go?</button><div id="bd-trips-slot"></div></section>` : `<div id="bd-trips-slot"></div>`}
   ${d.scoreboard ? `<section class="panel"><h3 style="margin-top:0">Your last week, in one look</h3>${(d.scoreboard.lines || []).map((line) => `<p style="margin:6px 0">${esc(line)}</p>`).join("")}<p class="muted small" style="margin:8px 0 0">Week of ${esc(d.scoreboard.weekOf || "")}</p></section>` : ""}
@@ -35791,16 +35798,16 @@ async function bdLoadMoney(el) {
     <p style="margin:0 0 6px">Your rate this month: <strong>${m.ratePct}%</strong></p>
     <p class="muted" style="margin:0 0 6px">Kept book: ${m.kept} business${m.kept === 1 ? "" : "es"}${m.shrank ? " — the book shrank this month, so this month pays the base rate. Tiers need a no-shrink month." : m.kept >= 25 ? " — book held or grew ✓, tier test passed on size." : ""}</p>
     <p class="muted" style="margin:0">New activations this month: ${m.newThisMonth || 0} of 5 <span class="bd-dots">${[1, 2, 3, 4, 5].map((i) => `<span class="bd-dot ${i <= (m.newThisMonth || 0) ? "on" : ""}"></span>`).join("")}</span> — 5 in a month earns +3 points that month. Any rate is capped at 38%.</p>
-    <p class="muted small">Once Hampton Roads opens, this test runs on active businesses. Right now it sits at the base rate.</p>
+    <p class="muted small">Once ${esc(d.marketName || "Hampton Roads")} opens, this test runs on active businesses. Right now it sits at the base rate.</p>
     ${d.nextTier ? `<p style="margin:10px 0 0">At ${d.nextTier.at} kept businesses (no shrink), your rate becomes ${d.nextTier.rate}%. You're at ${d.nextTier.have}.</p>` : ""}
   </section>
   <section class="panel">
-    <h3 style="margin-top:0">Vesting — your Hampton Roads seat</h3>
+    <h3 style="margin-top:0">Vesting — your ${esc(d.marketName || "Hampton Roads")} seat</h3>
     <p style="margin:0 0 4px">15 businesses activated by you: <strong>${v.byCount.have} of 15</strong></p>
     <div class="bd-progress"><span style="width:${Math.min(100, (v.byCount.have / 15) * 100)}%"></span></div>
     <p style="margin:10px 0 4px">Or 3 straight months of 3+ activations: <strong>month ${v.byStreak.have} of 3</strong></p>
     <div class="bd-progress"><span style="width:${Math.min(100, (v.byStreak.have / 3) * 100)}%"></span></div>
-    ${v.vested ? `<p class="bd-pending" style="margin-top:10px">Vested ✓ — you now also earn 5% on other businesses that open in Hampton Roads, whoever brought them in.</p>` : `<p class="muted small" style="margin:10px 0 0">Vesting starts counting when Hampton Roads opens and businesses activate. Founding claims are your pipeline above — they are not vesting progress, and this screen never blurs the two.</p>`}
+    ${v.vested ? `<p class="bd-pending" style="margin-top:10px">Vested ✓ — you now also earn 5% on other businesses that open in ${esc(d.marketName || "Hampton Roads")}, whoever brought them in.</p>` : `<p class="muted small" style="margin:10px 0 0">Vesting starts counting when ${esc(d.marketName || "Hampton Roads")} opens and businesses activate. Founding claims are your pipeline above — they are not vesting progress, and this screen never blurs the two.</p>`}
   </section>`;
 }
 

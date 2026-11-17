@@ -503,6 +503,10 @@ function buildCreatorFacts(d) {
     // the audience answer can show where the followers live.
     audienceStack: Object.entries(d.audienceStack || {}).filter(([, n]) => Number(n) > 0).map(([id, n]) => ({ id, label: AUDIENCE_PLATFORM_LABELS[id] || id, count: Number(n) })).sort((a, b) => b.count - a.count),
     localPct: c.localAudiencePct != null ? c.localAudiencePct : null,
+    // Build -188 (PL-14): the public page's real switch, so the
+    // "Profile live" chip can read the same fact the public
+    // page itself reads.
+    publicPage: c.publicPage === true,
     // Build -140: geography-breakdown state (router-computed
     // from the shared definition), driving the home prompts.
     geoBreakdown: d.geoBreakdown || null,
@@ -1955,17 +1959,31 @@ function buildHomeState(role, f) {
     // the points. Complete but with platforms still estimated:
     // name those platforms and what a real rate changes.
     const geoChip = f.geoBreakdown;
-    if (geoChip && !geoChip.complete) {
+    // Build -188 (PL-13): the headline local % and the per-platform
+    // breakdown are two different facts, and Maggie asks for each
+    // only when THAT fact is missing. A creator who already gave
+    // the headline number (the Momentum checklist's local-% item
+    // reads the same field) must never be told to "add your
+    // Instagram local %" as if she never gave a number: she is
+    // asked for the breakdown, in breakdown words.
+    if (f.localPct == null) {
+      chips.push("Add your local audience %: the share of your followers who live in your market. Businesses book on local proof, and it is the number this platform ranks on. +10 Momentum when it is done.");
+    } else if (geoChip && !geoChip.complete) {
       const miss = [];
-      for (const k of geoChip.missingPlatforms || []) miss.push(`your ${AUDIENCE_PLATFORM_LABELS[k] || k} local %`);
+      for (const k of geoChip.missingPlatforms || []) miss.push(`a local % for ${AUDIENCE_PLATFORM_LABELS[k] || k}`);
       if (geoChip.splitsMissing) miss.push("your market splits");
-      if (miss.length) chips.push(`Add ${miss.join(" and ")}: businesses book on local proof, and filling it in stops you being under-counted. +10 Momentum when it is done.`);
+      if (miss.length) chips.push(`Your headline local % is set. What is missing is the breakdown: add ${miss.join(" and ")}. It stops you being under-counted. +10 Momentum when it is done.`);
     } else if (geoChip && geoChip.unfilledPlatforms && geoChip.unfilledPlatforms.length) {
       const names = geoChip.unfilledPlatforms.slice(0, 3).map((k) => AUDIENCE_PLATFORM_LABELS[k] || k);
       chips.push(`${names.join(", ")} ${names.length === 1 ? "has" : "have"} no local % yet, so those followers are estimated at your confirmed ${geoChip.R != null ? geoChip.R : ""}% — add the real % and they count for real. +10 Momentum per platform.`);
     }
     chips.push(`${fmt(f.momentumPoints)} Momentum points`);
-    chips.push(f.profileComplete ? "Profile live" : (f.missingLabels && f.missingLabels.length ? `Profile: ${fmt(f.missingLabels.length)} ${plural(f.missingLabels.length, "step")} to finish` : "Profile not finished"));
+    // Build -188 (PL-14): "Profile live" only when the public
+    // page is actually on. A finished profile with the page off
+    // says so, in those words.
+    chips.push(f.profileComplete
+      ? (f.publicPage ? "Profile live" : "Profile finished: your public page is off")
+      : (f.missingLabels && f.missingLabels.length ? `Profile: ${fmt(f.missingLabels.length)} ${plural(f.missingLabels.length, "step")} to finish` : "Profile not finished"));
     // Build -98 proactive prompts, real records only: payout
     // setup is owed while paid-lane activity or recorded
     // earnings exist and payouts are not ready; and a finished

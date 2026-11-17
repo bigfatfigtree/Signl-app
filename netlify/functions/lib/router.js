@@ -16959,6 +16959,15 @@ async function handleRegister(event, linkCtx) {
       termsVersion: TERMS_VERSION,
       marketingEmailConsent: true,
       marketingConsentAt: ts,
+      // Build -188 (PL-14): quick claims have always switched the
+      // public booking page ON at sign-up (Build -61); the full
+      // form never set the field, so a finished full-form creator
+      // read "Profile live" on Home while her public page said
+      // "Profile not public." One rule for both doors: the page
+      // is on from sign-up, and the Profile toggle turns it off
+      // at any time (that explicit off is never overridden).
+      publicPage: true,
+      publicPageAt: ts,
       hasPhoto: false,
       photoUploadedAt: null,
       igConnected: false,
@@ -29540,12 +29549,17 @@ async function route(event) {
       // creators businesses can actually see). Creators only;
       // testers never count toward the roster, matching the markets
       // endpoint. Computed from the records on every read.
-      const LAUNCH_MARKET_LABELS = [
-        ["Virginia Beach", "Virginia Beach (Hampton Roads)"],
-        ["Richmond", "Richmond"],
-        ["Raleigh", "Raleigh/The Triangle"],
-        ["Washington DC", "Washington DC"],
-      ];
+      // Build -188 (PL-18): the summary strip used to be hardcoded
+      // to four legacy markets (2026-10-21) and could not show
+      // Nashville, the #1 launch market. It now derives from the
+      // launch-market set (Jeff's daily-push markets, 2026-11-16),
+      // Nashville first, Hampton Roads second, labels read from
+      // the canonical MARKETS table so the strip and Admin
+      // Markets can never name a market differently.
+      const LAUNCH_MARKET_ORDER188 = ["Nashville", "Virginia Beach", "Atlanta", "Miami", "New York City", "Los Angeles", "Toronto"];
+      const LAUNCH_MARKET_LABELS = LAUNCH_MARKET_ORDER188
+        .map((name) => { const m = MARKETS.find((x) => x.name === name); return m ? [m.name, m.label] : null; })
+        .filter(Boolean);
       const rosterCounts = (list) => ({
         pending: list.filter((u) => u.status === "pending").length,
         approved: list.filter((u) => u.status === "approved" && !isTester(u)).length,

@@ -115,6 +115,8 @@ a { color: var(--ink); }
 .badge.elite { background: var(--ink); border-color: var(--ink); color: #fff; }
 .live-pill { background: #E7F7EE; color: #0E7A4A; }
 .live-pill i { background: #00B67A; }
+.live-pill.off { background: var(--paper2); color: var(--ink2); }
+.live-pill.off i { background: var(--ink3, #999); }
 .beta-pill { background: var(--accent-soft); color: #9A2E00; }
 .delta-pill { background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); }
 
