@@ -85,5 +85,47 @@ const soloLead = { ...lead, id: "lead-184b", sharedBook: false, playbook: JSON.p
 const soloPayload = repLeadPayload(soloLead, { full: true, viewerRepCode: "HQ-JEFF" });
 check("a NON-shared lead is never re-voiced", soloPayload.playbook.opener.startsWith("I'm Tony"), soloPayload.playbook.opener);
 
+console.log("== pack census: the REAL playbooks, both directions ==");
+// The fixture battery above can only test phrases it knows.
+// This census runs every playbook in the shipped packs through
+// the re-voicer — the check that would have caught the first
+// -184 table's Hampton Roads gap (Tony's comma openers and
+// named greetings were not in the table).
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+const LIB = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "netlify", "functions", "lib");
+const stringsOf = (v, acc = []) => {
+  if (typeof v === "string") acc.push(v);
+  else if (Array.isArray(v)) v.forEach((x) => stringsOf(x, acc));
+  else if (v && typeof v === "object") Object.values(v).forEach((x) => stringsOf(x, acc));
+  return acc;
+};
+const census = (file, marketName) => {
+  const pack = JSON.parse(fs.readFileSync(path.join(LIB, file), "utf8"));
+  const leads = (pack.leads || []).filter((l) => l.playbook);
+  let strings = 0;
+  const survivors = { jeffSeesTony: [], tonySeesJeff: [], tonySeesJeffOpener: [] };
+  for (const lead of leads) {
+    for (const s of stringsOf(lead.playbook)) {
+      strings++;
+      const forJeff = revoicePlaybookForViewer({ s }, "HQ-JEFF", marketName).s;
+      const forTony = revoicePlaybookForViewer({ s }, "HR-TONY", marketName).s;
+      if (/Tony/.test(forJeff)) survivors.jeffSeesTony.push(forJeff.slice(0, 90));
+      if (/Jeff/.test(forTony.split("Jeff's go").join(""))) survivors.tonySeesJeff.push(forTony.slice(0, 90));
+      if (/I'm Jeff|this is Jeff|Jeff Rimmer here|Jeff here, I run|Jeff Rimmer\nFounder/.test(forTony)) survivors.tonySeesJeffOpener.push(forTony.slice(0, 90));
+    }
+  }
+  return { count: leads.length, strings, survivors };
+};
+const hr = census("bizdev-enrich-hr-157.json", "Hampton Roads");
+check(`HR pack census ran (${hr.count} playbooks, ${hr.strings} strings)`, hr.count === 32 && hr.strings > 500, `${hr.count}/${hr.strings}`);
+check("HR -> Jeff: zero 'Tony' survives anywhere", hr.survivors.jeffSeesTony.length === 0, hr.survivors.jeffSeesTony.slice(0, 3).join(" | "));
+check("HR -> Tony: zero first-person Jeff openers/signatures survive (legit HQ mentions may stay)", hr.survivors.tonySeesJeffOpener.length === 0, hr.survivors.tonySeesJeffOpener.slice(0, 3).join(" | "));
+const nash = census("bizdev-enrich-nashville.json", "Nashville");
+check(`Nashville pack census ran (${nash.count} playbooks, ${nash.strings} strings)`, nash.count === 57 && nash.strings > 1500, `${nash.count}/${nash.strings}`);
+check("Nashville -> Jeff: zero 'Tony' survives", nash.survivors.jeffSeesTony.length === 0, nash.survivors.jeffSeesTony.slice(0, 3).join(" | "));
+check("Nashville -> Tony: zero 'Jeff' survives outside 'Jeff's go'", nash.survivors.tonySeesJeff.length === 0, nash.survivors.tonySeesJeff.slice(0, 3).join(" | "));
+
 console.log(`\nverify-build184: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

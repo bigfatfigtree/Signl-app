@@ -509,9 +509,13 @@ function playbookVoicePairs(marketName) {
     ["this is Jeff Rimmer — I run Magpie", "this is Tony Johnson — I'm with Magpie"],
     ["I'm Jeff — I run Magpie", "I'm Tony — I'm with Magpie"],
     ["Hi, this is Jeff with Magpie", "Hi, this is Tony with Magpie"],
+    ["this is Jeff with Magpie", "this is Tony with Magpie"],
     ["Jeff here, I run Magpie", "Tony here, I'm with Magpie"],
     ["Jeff Rimmer here, founder of Magpie", "Tony Johnson here — I'm with Magpie"],
     ["I'm Jeff — I'm local, I run Magpie", "I'm Tony — I'm local, I'm with Magpie"],
+    ["Hey — I'm Jeff, I run Magpie", "Hey — I'm Tony, I'm local and I'm with Magpie"],
+    ["Hey — I'm Jeff, local, I run Magpie", "Hey — I'm Tony, local, with Magpie"],
+    ["Jeff here, I'm local with Magpie", "Tony here, I'm local with Magpie"],
     ["I'm Jeff Rimmer — I live here in Hampton Roads, and I run Magpie", "I'm Tony Johnson — I live here in Hampton Roads, and I'm helping Magpie"],
     ["Jeff Rimmer\nFounder, Magpie", `Tony Johnson\nMagpie — ${market}`],
     ["Jeff Rimmer\nFounder, Magpie", "Tony Johnson\nMagpie — Nashville"],
@@ -520,6 +524,18 @@ function playbookVoicePairs(marketName) {
     ["— Jeff", "— Tony"],
   ];
 }
+// One-directional extras, applied AFTER the pairs: Tony's
+// Hampton Roads originals use first-person shapes Jeff never
+// wrote (the comma opener, the "here in Hampton Roads" email
+// head), so several Tony shapes collapse onto Jeff's lines with
+// no reverse mapping needed. (Review fix: the first -184 table
+// missed these and Jeff still read Tony's openers on the whole
+// HR book.)
+const PLAYBOOK_VOICE_EXTRA_TO_JEFF = [
+  ["this is Tony Johnson — I'm local, I'm with Magpie", "this is Jeff Rimmer — I run Magpie"],
+  ["I'm Tony, I'm with Magpie here in Hampton Roads", "I'm Jeff, I run Magpie here in Hampton Roads"],
+  ["I'm Tony — I'm with Magpie here in Hampton Roads", "I'm Jeff — I run Magpie here in Hampton Roads"],
+];
 function revoicePlaybookForViewer(pb, viewerRepCode, marketName) {
   if (!pb || typeof pb !== "object") return pb;
   const viewer = PLAYBOOK_VOICES[viewerRepCode];
@@ -527,9 +543,16 @@ function revoicePlaybookForViewer(pb, viewerRepCode, marketName) {
   const toJeff = viewerRepCode === "HQ-JEFF";
   const GO = "\u0001JEFFSGO\u0001";
   const swap = (s) => {
-    let out = s.split("Jeff's go").join(GO);
+    // Curly apostrophes never match the (straight-quote) pairs;
+    // normalize them on the way through.
+    let out = s.split("\u2019").join("'").split("Jeff's go").join(GO);
     for (const [jeffPhrase, tonyPhrase] of playbookVoicePairs(marketName)) {
       out = out.split(toJeff ? tonyPhrase : jeffPhrase).join(toJeff ? jeffPhrase : tonyPhrase);
+    }
+    if (toJeff) {
+      for (const [tonyPhrase, jeffPhrase] of PLAYBOOK_VOICE_EXTRA_TO_JEFF) {
+        out = out.split(tonyPhrase).join(jeffPhrase);
+      }
     }
     return out.split(GO).join("Jeff's go");
   };
