@@ -3726,7 +3726,23 @@ async function eraseAccount(target, via) {
   }
   // Every session signs out, then the identity itself.
   await auth.revokeSessionsForUser(id);
-  if (target.email) await store.del(`email:${String(target.email).toLowerCase()}`);
+  // Dual-role (Build -180): erasing one side must not strand the
+  // other. The sibling keeps the email (the sign-in index repoints
+  // to it) and loses its link; a single-role account erases
+  // exactly as before.
+  const sibAfterErase = await linkedSiblingOf(target);
+  if (target.email) {
+    const emailKey = `email:${String(target.email).toLowerCase()}`;
+    if (sibAfterErase) {
+      delete sibAfterErase.linkedAccountId;
+      delete sibAfterErase.linkedAt;
+      sibAfterErase.updatedAt = nowIso();
+      await store.set(`user:${sibAfterErase.id}`, sibAfterErase);
+      await store.set(emailKey, { userId: sibAfterErase.id });
+    } else {
+      await store.del(emailKey);
+    }
+  }
   await store.del(`user:${id}`);
   await logEvent({ type: "account_deleted", actorId: null, actorRole: null, subjectId: null, market: null, data: { role, via } });
   return { deleted: true, role };
@@ -5849,6 +5865,53 @@ function publicUser(u) {
 async function allUsers() {
   const rows = await store.list("user:");
   return rows.map((r) => r.value);
+}
+
+// ---------- dual-role accounts (Build -180, Jeff, 2026-11-16) ----------
+// One person may hold BOTH a creator side and a business side under
+// one email and one sign-in. Each side stays its own user record
+// (its own role, status, payload, review state); the two records
+// are linked by linkedAccountId, share one password, and the
+// session's userId names the ACTIVE side, so every read downstream
+// is scoped to that side by construction. Spec:
+// dual-role-toggle-spec-2026-11-16.md (goal hidden_files).
+
+// The sibling record, only when the link is mutual and the emails
+// match. Anything else (a half-written or stale link) reads as no
+// sibling, so a damaged link degrades to a single-role account
+// instead of breaking sign-in. Point gets only: no prefix scans.
+async function linkedSiblingOf(user) {
+  if (!user || !user.linkedAccountId) return null;
+  const sib = await store.get(`user:${user.linkedAccountId}`);
+  if (!sib || sib.id === user.id) return null;
+  if (String(sib.email || "").toLowerCase() !== String(user.email || "").toLowerCase()) return null;
+  if (sib.linkedAccountId !== user.id) return null;
+  return sib;
+}
+
+// Decorates a client payload (withFounding/publicUser output) with
+// the other side's role + status, so the client can render the
+// side toggle without a second call. One point get, linked
+// accounts only.
+async function withLinkedSide(payload, rawUser) {
+  if (!payload || !rawUser) return payload;
+  const sib = await linkedSiblingOf(rawUser);
+  if (sib) payload.linkedSide = { role: sib.role, status: sib.status };
+  return payload;
+}
+
+// Password parity across the link: a change or reset on one side
+// writes the same salt/hash to the sibling, so one password opens
+// the account whichever side set it last. Returns the sibling (or
+// null) so callers can revoke its sessions too.
+async function syncLinkedPassword(user, salt, hash) {
+  const sib = await linkedSiblingOf(user);
+  if (!sib) return null;
+  sib.passwordSalt = salt;
+  sib.passwordHash = hash;
+  sib.updatedAt = nowIso();
+  await store.set(`user:${sib.id}`, sib);
+  return sib;
 }
 
 // Aggregate payload memo (2026-11-06, admin-home speed): the
@@ -16271,8 +16334,14 @@ async function visitRulesGate(user, b) {
 
 // ---------- route handlers ----------
 
-async function handleRegister(event) {
+async function handleRegister(event, linkCtx) {
   const b = parseBody(event);
+  // Dual-role add-a-side (Build -180): a signed-in account adding
+  // its other side arrives via handleAddSide, already
+  // authenticated; the account's own email stands in for the
+  // form's, and no password is collected or checked here.
+  const linkPrimarySeed = linkCtx && linkCtx.primaryUser ? linkCtx.primaryUser : null;
+  if (linkPrimarySeed) b.email = linkPrimarySeed.email;
   const role = b.role;
   if (role !== "creator" && role !== "business") return err(400, "role must be creator or business");
   // Two-step claim (Jeff, 2026-10-20): a creator may claim their
@@ -16304,7 +16373,7 @@ async function handleRegister(event) {
   // plan is recorded in-app, no card is charged, and payment stays
   // concierge, hand-sent by Jeff at activation.
   if (!isEmail(b.email || "")) return err(400, "A valid email is required");
-  if (typeof b.password !== "string" || b.password.length < 10) return err(400, "Password must be at least 10 characters");
+  if (!linkPrimarySeed && (typeof b.password !== "string" || b.password.length < 10)) return err(400, "Password must be at least 10 characters");
   if (!quickClaim && (!b.name || typeof b.name !== "string")) return err(400, "Name is required");
   const unlisted = b.market === UNLISTED;
   // A business in a not-yet-listed city joins the founding list
@@ -16328,9 +16397,44 @@ async function handleRegister(event) {
 
   const email = b.email.toLowerCase();
   const existing = await store.get(`email:${email}`);
-  if (existing) return err(409, "An account with this email already exists. Sign in instead, or use Forgot password on the sign-in page to reset it.");
+  // Dual-role (Build -180): an existing email is no longer an
+  // automatic dead end. If the person (or their linked sibling)
+  // already holds the requested role, the standing 409 stands. If
+  // they hold only the OTHER side, this registration becomes an
+  // add-a-side: ownership is proven by the account password (or by
+  // the signed-in session on the add-side route), the new record
+  // links to the existing one, and the two share one password from
+  // here on. The email index keeps pointing at the first side.
+  let linkPrimary = null;
+  if (!existing && linkPrimarySeed && linkPrimarySeed.role !== role) linkPrimary = linkPrimarySeed;
+  if (existing) {
+    const primary = await store.get(`user:${existing.userId}`);
+    const family = [];
+    if (primary) {
+      family.push(primary);
+      if (primary.linkedAccountId) {
+        const famSib = await store.get(`user:${primary.linkedAccountId}`);
+        if (famSib) family.push(famSib);
+      }
+    }
+    if (!primary || family.some((u) => u && u.role === role)) {
+      return err(409, "An account with this email already exists. Sign in instead, or use Forgot password on the sign-in page to reset it.");
+    }
+    if (linkPrimarySeed && family.some((u) => u.id === linkPrimarySeed.id)) {
+      linkPrimary = primary;
+    } else if (auth.verifyPassword(b.password || "", primary.passwordSalt, primary.passwordHash)) {
+      linkPrimary = primary;
+    } else {
+      return json(409, {
+        error: `You already have a Magpie ${primary.role === "business" ? "business" : "creator"} account with this email. To add your ${role} side to that same account, enter your account password here — or sign in and add it from your account menu.`,
+        code: "dual_role_password",
+      });
+    }
+  }
 
-  const { salt, hash } = auth.hashPassword(b.password);
+  const { salt, hash } = linkPrimary
+    ? { salt: linkPrimary.passwordSalt, hash: linkPrimary.passwordHash }
+    : auth.hashPassword(b.password);
   const id = crypto.randomUUID();
   const ts = nowIso();
   const user = {
@@ -16359,6 +16463,14 @@ async function handleRegister(event) {
     creator: null,
     business: null,
   };
+
+  // Dual-role (Build -180): an add-a-side record carries the link
+  // from birth; the primary's half of the link is written with the
+  // store writes below.
+  if (linkPrimary) {
+    user.linkedAccountId = linkPrimary.id;
+    user.linkedAt = ts;
+  }
 
   // Creator referral credit (Jeff, 2026-10-18): a sign-up that arrived
   // through another creator's invite link (?ref=<handle>) is credited
@@ -16775,7 +16887,21 @@ async function handleRegister(event) {
   }
 
   await store.set(`user:${id}`, user);
-  await store.set(`email:${email}`, { userId: id });
+  if (linkPrimary) {
+    // Dual-role (Build -180): the email index keeps pointing at
+    // the first side; the mutual link is what ties the two records
+    // together. (The !existing arm only runs if the index was
+    // somehow missing for an authenticated add-side: restore it,
+    // pointing at the first side, never the new one.)
+    linkPrimary.linkedAccountId = id;
+    linkPrimary.linkedAt = ts;
+    linkPrimary.updatedAt = ts;
+    await store.set(`user:${linkPrimary.id}`, linkPrimary);
+    if (!existing) await store.set(`email:${email}`, { userId: linkPrimary.id });
+    await logEvent({ type: "account_side_added", actorId: id, actorRole: role, subjectId: id, market: user.market, data: { linkedTo: linkPrimary.id, linkedRole: linkPrimary.role } });
+  } else {
+    await store.set(`email:${email}`, { userId: id });
+  }
   if (role === "creator") invalidateCheckedSets(); // Build -176: a new creator can join a market's checked set
   // Staff recruiter credit (Build -70): a creator who signs up
   // through a recruiter's link, or whose handle matches a prospect
@@ -16922,7 +17048,45 @@ async function handleRegister(event) {
 
   const token = await auth.createSession(id);
   const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
-  return json(201, { user: await withFounding(user) }, { "Set-Cookie": auth.sessionCookie(token, secure) });
+  const regPayload = await withFounding(user);
+  await withLinkedSide(regPayload, user);
+  return json(201, { user: regPayload }, { "Set-Cookie": auth.sessionCookie(token, secure) });
+}
+
+// Dual-role (Build -180): switch the session's active side. The
+// token stays the same; only its userId moves, so every downstream
+// read renders the other side. View-as sessions are read-only
+// peeks at someone else's account and never switch.
+async function handleSwitchSide(event, ctx) {
+  if (!ctx.user) return err(401, "Not signed in");
+  if (ctx.session && ctx.session.viewAs) return err(403, "You are viewing another account. Exit the view before switching sides.");
+  const sib = await linkedSiblingOf(ctx.user);
+  if (!sib) return err(409, "This account has only one side. Add the other side from your account menu first.");
+  const session = await auth.getSessionRecord(ctx.token);
+  if (!session) return err(401, "Not signed in");
+  session.userId = sib.id;
+  await store.set(`session:${ctx.token}`, session);
+  await logEvent({ type: "account_side_switched", actorId: sib.id, actorRole: sib.role, subjectId: sib.id, market: sib.market || null, data: { fromUserId: ctx.user.id } });
+  const payload = await withFounding(sib);
+  await withLinkedSide(payload, sib);
+  return json(200, { user: payload });
+}
+
+// Dual-role (Build -180): a signed-in account adds its other side.
+// The registration builders do the real work (same validation,
+// same review queue, same side effects as a fresh sign-up);
+// handleRegister's link path links the records instead of 409ing
+// on the shared email.
+async function handleAddSide(event, ctx) {
+  if (!ctx.user) return err(401, "Not signed in");
+  if (ctx.session && ctx.session.viewAs) return err(403, "You are viewing another account. Exit the view before adding a side.");
+  if (!["creator", "business"].includes(ctx.user.role)) return err(400, "Only creator and business accounts can hold two sides.");
+  const b = parseBody(event);
+  if (b.role === ctx.user.role) return err(409, `This account already has a ${ctx.user.role} side.`);
+  b.email = ctx.user.email;
+  delete b.password;
+  const ev = { ...event, body: JSON.stringify(b) };
+  return handleRegister(ev, { primaryUser: ctx.user });
 }
 
 const igPrefillHits = new Map();
@@ -16947,7 +17111,9 @@ async function handleLogin(event) {
   await logEvent({ type: "user_signed_in", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: {} });
   const token = await auth.createSession(user.id);
   const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
-  return json(200, { user: await withFounding(user) }, { "Set-Cookie": auth.sessionCookie(token, secure) });
+  const loginPayload = await withFounding(user);
+  await withLinkedSide(loginPayload, user);
+  return json(200, { user: loginPayload }, { "Set-Cookie": auth.sessionCookie(token, secure) });
 }
 
 async function handleLogout(event, ctx) {
@@ -17191,10 +17357,13 @@ async function handleReset(event) {
   // 7-day nudge) reads.
   if (user.invitePending) { user.inviteAcceptedAt = user.updatedAt; delete user.invitePending; }
   await store.set(`user:${user.id}`, user);
+  // Dual-role (Build -180): the linked side shares this password.
+  const sibAfterReset = await syncLinkedPassword(user, salt, pwHash);
   await store.del(`pwreset:${hash}`);
   await store.del(`pwreset-user:${user.id}`);
   // The credential changed: every existing session signs out.
   await auth.revokeSessionsForUser(user.id);
+  if (sibAfterReset) await auth.revokeSessionsForUser(sibAfterReset.id);
   await logEvent({ type: "password_reset_completed", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: {} });
   return json(200, { ok: true });
 }
@@ -17212,6 +17381,10 @@ async function handleChangePassword(event, ctx) {
   user.passwordHash = hash;
   user.updatedAt = nowIso();
   await store.set(`user:${user.id}`, user);
+  // Dual-role (Build -180): the linked side shares this password;
+  // its other sessions sign out too.
+  const sibAfterChange = await syncLinkedPassword(user, salt, hash);
+  if (sibAfterChange) await auth.revokeSessionsForUser(sibAfterChange.id);
   // Keep this device signed in; every other session signs out.
   await auth.revokeSessionsForUser(user.id, ctx.token);
   await logEvent({ type: "password_changed", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: {} });
@@ -24615,6 +24788,8 @@ async function route(event) {
 
   // Auth
   if (method === "POST" && seg[0] === "auth" && seg[1] === "register") return handleRegister(event);
+  if (method === "POST" && seg[0] === "auth" && seg[1] === "add-side") return handleAddSide(event, ctx);
+  if (method === "POST" && seg[0] === "auth" && seg[1] === "switch-side") return handleSwitchSide(event, ctx);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "login") return handleLogin(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "logout") return handleLogout(event, ctx);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "exit-view") return handleExitView(event, ctx);
@@ -24634,6 +24809,7 @@ async function route(event) {
   if (method === "GET" && seg[0] === "auth" && seg[1] === "me") {
     if (!user) return err(401, "Not signed in");
     const meUser = await withFounding(user);
+    await withLinkedSide(meUser, user);
     // View-as decoration (Build -67): the client shows the
     // persistent read-only banner from this marker. It carries
     // only what the banner prints (whose account, that it is
