@@ -76,6 +76,14 @@ const bizJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/bizdev.js")
 const sigJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/sigdata.js"), "utf8");
 const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
+const themeCss = fs.readFileSync(path.join(ROOT, "public/theme-v3.css"), "utf8");
+// PL-03: the pill ships as a chip, lifts clear of interactive
+// elements, and content gets bottom clearance where it floats.
+check("PL-03 pill collapses to the avatar chip by default", appJs.includes("state.fabMini !== false") && themeCss.includes("#agent-fab.fab-mini"));
+check("PL-03 overlap guard lifts the chip clear", appJs.includes("function fabAvoid188()"));
+check("PL-03 bottom clearance where the pill floats", themeCss.includes("body.fab-on188 #app { padding-bottom: 92px; }"));
+// PL-04: the Lineup panel lands below the sticky bar.
+check("PL-04 lineup slot carries scroll clearance under the bar", themeCss.includes("#lineup-slot, #fo-lineup-slot { scroll-margin-top: 84px; }"));
 check("stamp: BUILD_ID is 2026.11.17-188", buildJs.includes('exports.BUILD_ID = "2026.11.17-188"'));
 check("stamp: shell carries 2026.11.17-188 x4", (indexHtml.match(/2026\.11\.17-188/g) || []).length === 4);
 check("PL-01: FOUNDING_LAUNCH_BAR is 50", /const FOUNDING_LAUNCH_BAR = 50;/.test(routerJs));
