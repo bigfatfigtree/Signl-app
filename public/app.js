@@ -10659,6 +10659,25 @@ function signlInstallBannerHtml() {
   </div>`;
 }
 
+// Build -182: the Instagram follow block on the claim done
+// screen. An honor-system invitation, never a gate: no API can
+// confirm a follow, so nothing in the flow waits on it, checks
+// it, or records it. It lives ONLY on the done screen (the
+// Build -85 rule keeps the claim itself at three short screens
+// and a done state, nothing else), in the same shape as the
+// install banner above: offered once, dismissible, remembered.
+function magpieIgFollowDismissed() { try { return localStorage.getItem("magpie_ig_follow_dismissed") === "1"; } catch (e) { return false; } }
+function dismissMagpieIgFollow() { try { localStorage.setItem("magpie_ig_follow_dismissed", "1"); } catch (e) {} const b = document.getElementById("magpie-ig-follow"); if (b) b.remove(); return false; }
+function magpieIgFollowHtml() {
+  if (magpieIgFollowDismissed()) return "";
+  return `<div class="panel" id="magpie-ig-follow" style="margin-top:14px;text-align:left">
+    <strong>${T("Follow Magpie on Instagram", "Sigue a Magpie en Instagram")}</strong>
+    <p class="small muted" style="margin:6px 0 10px">${T("Launch news, founding creators and the first offers land on @magpielocal first.", "Las novedades del lanzamiento, los creadores fundadores y las primeras ofertas llegan primero a @magpielocal.")}</p>
+    <a class="btn" href="https://instagram.com/magpielocal" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none">${T("Follow @magpielocal", "Seguir a @magpielocal")}</a>
+    <a href="#" class="small" style="margin-left:10px" onclick="return dismissMagpieIgFollow()">${T("Not now", "Ahora no")}</a>
+  </div>`;
+}
+
 function renderClaimDone() {
   const done = state.claimDone || { firstName: "", total: 0, complete: false, under: false };
   const line2 = done.under
@@ -10684,6 +10703,7 @@ function renderClaimDone() {
       <button class="btn ghost" type="button" style="width:100%;margin-top:10px" onclick="return claimGoDashboard()">${T("Go to my dashboard", "Ir a mi panel")}</button>
       <p class="small muted" style="margin:10px 0 0">${T("Finish your profile there so businesses can find you — or just close this, and we'll email you.", "Termina tu perfil ahí para que los negocios puedan encontrarte, o cierra esto y te escribiremos por correo.")}</p>
       ${signlInstallBannerHtml()}
+      ${magpieIgFollowHtml()}
     </div>
   </section>`;
 }
