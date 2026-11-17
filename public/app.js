@@ -9966,7 +9966,9 @@ function claimFmtCount(n) {
   return (Math.max(0, parseInt(n, 10) || 0)).toLocaleString("en-US");
 }
 function claimDots(step) {
-  return `<div class="c85-dots" aria-hidden="true">${[1, 2, 3, 4].map((n) => `<span class="c85-dot${n === step ? " on" : ""}"></span>`).join("")}</div>`;
+  // Build -187: the dots alone never told a stranger how much was
+  // left. The words ride with them: Step N of 4, in plain language.
+  return `<div class="c85-dots"><span aria-hidden="true">${[1, 2, 3, 4].map((n) => `<span class="c85-dot${n === step ? " on" : ""}"></span>`).join("")}</span><span class="small muted" style="margin-left:8px">${T(`Step ${step} of 4`, `Paso ${step} de 4`)}</span></div>`;
 }
 
 // Resolve the link's handle against its public Instagram
@@ -11005,6 +11007,7 @@ function renderJoinCreator() {
     <div class="form-mint">${T("Ranked by local reach, not followers — the share of your audience that lives here.", "Ordenado por alcance local, no por seguidores: la parte de tu audiencia que vive aquí.")}</div>
     <div class="form-body">
     <p class="muted">${T("Build your full profile now. When your market opens, founding creators get priority. This is your real profile, not a waitlist.", "Crea tu perfil completo ahora. Cuando tu mercado abra, los creadores fundadores tienen prioridad. Este es tu perfil real, no una lista de espera.")}</p>
+    <p class="small muted">${T("How this works: one form, in four short parts: about you, where you are, your audience, and what you create. After you join, you land on a page that explains exactly what happens next.", "Cómo funciona: un formulario, en cuatro partes cortas: sobre ti, dónde estás, tu audiencia y lo que creas. Al terminar, llegas a una página que explica exactamente qué sigue.")}</p>
     <p class="small muted">${T("City missing? Pick \"My city is not listed yet\" and sign up anyway.", "¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\" y regístrate igual.")}</p>
     <div class="lrow"><span class="ldot"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post: the goal is within 48 hours of your visit.", "— comidas, servicios y experiencias, por una publicación honesta: la meta es dentro de 48 horas de tu visita.")}</span></div></div>
     <div class="lrow"><span class="ldot off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— separate bookings at your own rate. You keep 97%.", "— reservas aparte a tu tarifa. Te quedas con el 97%.")}</span></div></div>
@@ -11309,8 +11312,14 @@ async function doRegisterCreator(e) {
       const me = await api("GET", "/auth/me");
       state.user = me.user;
     } catch (e2) { /* keep the registration response */ }
+    // Build -187: a fresh signup lands on its home / pending
+    // what-happens-next state, never on a leftover tab (and
+    // never on Account or Settings). render() routes a pending
+    // creator to the pending welcome state from here.
     state.view = "dashboard";
+    state.tab = null;
     render();
+    window.scrollTo(0, 0);
   } catch (err) {
     submitBusy(form, false);
     errBox(err.message);
@@ -11337,6 +11346,7 @@ function renderForBusinesses() {
     <h2>For Businesses: join the founding list</h2>
     <p><strong>Free to join. No card taken. We turn your account on by hand when your city opens.</strong></p>
     <p>Join the founding business list. We hold your place while your market's roster is built. Founding pricing is locked while you stay subscribed, and activation runs in application order.</p>
+    <p class="small">How this works: one short form, about 2 minutes. First tell us where you operate, then a few facts about your business, then you are done. After you join, you land on a page that explains exactly what happens next. We review every application by hand.</p>
     </div>
     <div class="form-body">
     <div class="plan-cards" id="jb-plans">${plans}</div>
@@ -11346,7 +11356,7 @@ function renderForBusinesses() {
     <form onsubmit="return registerBusiness(event)">
       <div class="fgroup tint">
         <p class="fg-kicker">Your business</p>
-        <div class="field"><label>Where do you operate?</label>${chipSelectHtml("jb-scope", [{ value: "market", label: "One market: we serve one city area" }, { value: "national", label: "National: we operate across markets" }], "market", "jbScopeSync181", false)}<p class="small muted">National is for brands whose products ship or sell across markets. Creators see your brand name and logo only, never your name or email.</p></div>
+        <div class="field"><label>Where do you operate?</label>${chipSelectHtml("jb-scope", [{ value: "market", label: "One market: we serve one city area" }, { value: "national", label: "National: we operate across markets" }], "market", "jbScopeSync181", false)}<p class="small muted">National is for brands whose products ship or sell across markets. Creators see your brand name and logo only, never your name or email. National brands: pick National here and ignore the plans above. National accounts have no plan yet, and nothing is charged.</p></div>
         <div id="jb-national-fields" style="display:none">
           <div class="field"><label>Brand name (what creators see)</label><input id="jb-brand" placeholder="Your brand as customers know it, if different from the business name"></div>
           <div class="field"><label>Your website</label><input id="jb-website" type="url" placeholder="https://yourbrand.com"><p class="small muted">Magpie checks the brand before creators can see it. Until a person on our team verifies your brand, it stays hidden from creators.</p></div>
@@ -11529,7 +11539,7 @@ function jbConvoRender() {
   } else {
     inputHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="jb-convo-input" type="${step.type}" placeholder="${esc(step.ph || "")}" style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter'){event.preventDefault();jbConvoAnswerText('${esc(step.key)}');}"><button class="btn small-btn" type="button" onclick="jbConvoAnswerText('${esc(step.key)}')">${step.optional ? "Continue" : "Next"}</button></div>`;
   }
-  host.innerHTML = `${logHtml}<p class="small" style="margin:10px 0 6px"><strong>Maggie:</strong> ${esc(step.q)}</p>${inputHtml}`;
+  host.innerHTML = `${logHtml}<p class="small muted" style="margin:10px 0 0">Question ${st.idx + 1} of ${steps.length}</p><p class="small" style="margin:4px 0 6px"><strong>Maggie:</strong> ${esc(step.q)}</p>${inputHtml}`;
   const inp = document.getElementById("jb-convo-input");
   if (inp) inp.focus();
 }
@@ -11702,11 +11712,19 @@ function selectPlan(id) {
 // The founding business status page (Build -68): now ONLY
 // the pending-review screen. An approved founding business
 // routes into the real dashboard with the full rail; a
-// business still in review gets the status card and its
-// account block, and nothing else stacked under it. The
-// preview stack that used to live here was cut with the old
-// one-long-page shell; its pieces live in their real views
-// now (see the migration map in the Build -68 spec).
+// business still in review gets this welcome / what-happens-next
+// state, and nothing else stacked under it.
+// Build -187 (Jeff, 2026-11-16, after his own national signup):
+// this page used to append the full account-settings panel
+// (accountHtml: signed-in-as, change-password form, delete my
+// account) under the status card, so a brand-new business
+// landed on what read as the account settings page. That block
+// is gone. A fresh signup lands HERE: a welcome, what we are
+// doing, what they can do now, and what happens when approved.
+// Account settings live in the dashboard's Settings tab, the
+// same place every approved account finds them. The one-line
+// signed-in-as note below (id fbz-account) is information only:
+// no form, no password fields, no delete button.
 function renderBusinessFoundingStatus() {
   const u = state.user;
   const bz = u.business || {};
@@ -11715,29 +11733,35 @@ function renderBusinessFoundingStatus() {
   // open, and it has no plan yet (spec §5.1).
   if (bz.scope === "national") {
     app.innerHTML = `<div class="wrap" style="max-width:680px">
-  ${wsHead("Status", { sub: "Where your national account stands." })}
-  <section class="wcard" style="margin-top:14px">
+  ${wsHead("Home", { sub: "You are signed up. Here is what happens next." })}
+  <section class="wcard" id="pending-home" style="margin-top:14px">
     <p><span class="badge info">Application in review</span> <span class="badge">National account</span></p>
-    <h2 style="margin-top:8px">${esc(bz.brandName || bz.businessName || "Your brand")} is on the founding list</h2>
-    <p>Your account can reach creators in every Magpie market, not just one city. Your application is in review, and every founding application gets a decision or a clear status within 2 business days.</p>
+    <h2 style="margin-top:8px">Welcome to Magpie, ${esc(bz.brandName || bz.businessName || "your brand")}.</h2>
+    <p><strong>${esc(bz.brandName || bz.businessName || "Your brand")} is on the founding list.</strong> Your account can reach creators in every Magpie market, not just one city. Your application is in review, and every founding application gets a decision or a clear status within 2 business days.</p>
     <h3 class="mt">What happens next</h3>
     <ol style="padding-left:20px">
-      <li>Magpie reviews your application. You will get a decision or a clear status within 2 business days.</li>
-      <li>When your application is approved, Magpie checks your website and your store. That check earns the Verified brand mark creators look for.</li>
-      <li>When Magpie activates your account, you can post campaigns that creators across the country can raise a hand for.</li>
+      <li>We review your application. You will get a decision or a clear status within 2 business days.</li>
+      <li>When your application is approved, we check your website and your store. That check earns the Verified brand mark creators look for.</li>
+      <li>When we activate your account, this page opens into your full home: your brand profile, your campaigns, and creators across the country who can raise a hand for them.</li>
     </ol>
-    <p class="muted small">Sign back in any time to check your status. Questions: hello@magpielocal.com</p>
-    <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
-  </section>
-  <div id="fbz-account">${accountHtml(u)}</div></div>`;
+    <h3 class="mt">What you can do now</h3>
+    <ul style="padding-left:20px">
+      <li>Nothing more is needed from you right now. Your sign-up is complete.</li>
+      <li>Watch ${esc(u.email)}: your decision or status lands there within 2 business days.</li>
+      <li>Sign back in any time to check where things stand. This page is your home until your account opens.</li>
+    </ul>
+    <p class="small muted" id="fbz-account">You are signed in as ${esc(u.email)}. Password and account settings live under Settings once your account opens.</p>
+    <div class="mt"><button class="btn" onclick="signOut()">Sign out for now</button></div>
+    <p class="muted small" style="margin-top:12px">Questions: hello@magpielocal.com</p>
+  </section></div>`;
     return;
   }
   const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
   app.innerHTML = `<div class="wrap" style="max-width:680px">
-  ${wsHead("Status", { sub: "Where your founding enrollment stands." })}
-  <section class="wcard" style="margin-top:14px">
+  ${wsHead("Home", { sub: "You are signed up. Here is what happens next." })}
+  <section class="wcard" id="pending-home" style="margin-top:14px">
     <p><span class="badge info">Application in review</span></p>
-    <h2 style="margin-top:8px">${esc(bz.businessName || "Your business")} is on the founding list</h2>
+    <h2 style="margin-top:8px">Welcome to Magpie, ${esc(bz.businessName || "your business")}.</h2>
     <p>You joined the <strong>Founding business list, ${esc(bizPlace)}</strong>. Your application is in review, and every founding application gets a decision or a clear status within 2 business days.</p>
     ${marketResolvedNote(u)}
     <div class="panel" style="margin-top:16px">
@@ -11748,14 +11772,20 @@ function renderBusinessFoundingStatus() {
     </div>
     <h3 class="mt">What happens next</h3>
     <ol style="padding-left:20px">
-      <li>Magpie reviews your application. You will get a decision or a clear status within 2 business days.</li>
+      <li>We review your application. You will get a decision or a clear status within 2 business days.</li>
       <li>When your application is approved, this page opens into the full app: your plan, the creator roster in ${esc(bizPlace)}, and your first campaign, which you can save as a draft for opening day.</li>
-      <li>When your market opens, Magpie activates founding businesses by hand, in application order.</li>
+      <li>When your market opens, we activate founding businesses by hand, in application order.</li>
     </ol>
-    <p class="muted small">Sign back in any time to check your status. Questions: hello@magpielocal.com</p>
-    <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
-  </section>
-  <div id="fbz-account">${accountHtml(u)}</div></div>`;
+    <h3 class="mt">What you can do now</h3>
+    <ul style="padding-left:20px">
+      <li>Nothing more is needed from you right now. Your sign-up is complete.</li>
+      <li>Watch ${esc(u.email)}: your decision or status lands there within 2 business days.</li>
+      <li>Sign back in any time to check where things stand. This page is your home until your account opens.</li>
+    </ul>
+    <p class="small muted" id="fbz-account">You are signed in as ${esc(u.email)}. Password and account settings live under Settings once your account opens.</p>
+    <div class="mt"><button class="btn" onclick="signOut()">Sign out for now</button></div>
+    <p class="muted small" style="margin-top:12px">Questions: hello@magpielocal.com</p>
+  </section></div>`;
 }
 
 // ---------- founding business preview (first 60 seconds, Jeff, 2026-10-29) ----------
@@ -12217,11 +12247,26 @@ function renderPending() {
   app.innerHTML = `
   <section class="panel center" style="max-width:560px;margin:40px auto">
     ${celebAva}
+    <p class="small muted" style="margin:0 0 4px">${T("Welcome to Magpie — you are signed up.", "Bienvenido a Magpie: ya estás registrado.")}</p>
     <h2>${claimedOnly ? T("Your spot is claimed", "Tu lugar está reclamado") : T("Founding profile received", "Perfil fundador recibido")}</h2>
     ${claimedOnly
       ? `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding spot in", "Tu lugar de fundador en")} <strong>${place}</strong> ${T("is claimed and your application is in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está reclamado y tu solicitud está en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>
     <p class="muted" style="text-align:left">${T("Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.", "Tu perfil aún no está terminado, y es así a propósito: cuando te aprobemos, te escribimos por correo, y terminas tu perfil desde la lista de tu panel (tu ciudad, tus conteos de audiencia, qué parte es local, tu foto). Un perfil terminado es lo que ven los negocios, así que ese paso es lo que te hace contratable.")}</p>`
       : `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding creator profile for", "Tu perfil de creador fundador para")} <strong>${place}</strong> ${T("is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está creado y en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>`}
+    ${isCreator ? `<div style="text-align:left;margin-top:14px" id="pending-home">
+      <h3 style="margin:0 0 6px">${T("What happens next", "Qué sigue")}</h3>
+      <ol style="padding-left:20px;margin:0">
+        <li>${T("We review your application by hand. You get a decision or a clear status within 2 business days, by email.", "Revisamos tu solicitud a mano. Recibes una decisión o un estado claro en 2 días laborables, por correo.")}</li>
+        <li>${T("When you are approved, we email you and this page opens into your full home: Maggie first, then your highlights and your next steps.", "Cuando te aprueben, te escribimos y esta página se abre a tu panel completo: Maggie primero, luego tus destacados y tus próximos pasos.")}</li>
+        <li>${T("When your market opens to businesses, finished profiles are what businesses find and book.", "Cuando tu mercado abra para los negocios, los perfiles terminados son los que los negocios encuentran y reservan.")}</li>
+      </ol>
+      <h3 style="margin:14px 0 6px">${T("What you can do now", "Lo que puedes hacer ahora")}</h3>
+      <ul style="padding-left:20px;margin:0">
+        <li>${T("Nothing more is required. Your sign-up is complete and your place in line is held.", "No se requiere nada más. Tu registro está completo y tu lugar en la fila está guardado.")}</li>
+        ${claimedOnly ? `<li>${T("Use the box below: your booking page is already live, and you can set your paid rate and add your photo on this page.", "Usa el cuadro de abajo: tu página de reservas ya está activa, y puedes poner tu tarifa pagada y agregar tu foto en esta página.")}</li>` : `<li>${T("Add your photo below if you have not yet. It is the first thing businesses see.", "Agrega tu foto abajo si aún no lo haces. Es lo primero que ven los negocios.")}</li>`}
+        <li>${T("Sign back in any time to check where things stand. This page is your home until you are approved.", "Entra cuando quieras para ver cómo va todo. Esta página es tu panel hasta que te aprueben.")}</li>
+      </ul>
+    </div>` : ""}
     ${isCreator && u.underMinimum ? `<div class="notice blue" style="text-align:left"><strong>${T("Your application is in line, and one thing is holding it:", "Tu solicitud está en la fila, y una cosa la está deteniendo:")}</strong> ${T("Magpie starts at 500 total followers across your platforms, and your total right now is", "Magpie empieza con 500 seguidores en total, sumando todas tus plataformas, y tu total ahora mismo es")} ${esc(fmtNum(u.underMinimum.total || 0))}. ${T("Nothing else is wrong, and your spot in line is kept. When your audience reaches 500 total, email hello@magpielocal.com and we will move your application forward from the same spot.", "Nada más está mal, y tu lugar en la fila se mantiene. Cuando tu audiencia llegue a 500 en total, escribe a hello@magpielocal.com y moveremos tu solicitud desde el mismo lugar.")}</div>` : ""}
     ${isCreator ? `<p><strong>${T(CREATOR_FREE_LINE, "Unirte a Magpie es gratis para los creadores. Siempre.")}</strong></p>` : ""}
     ${isCreator && !u.underMinimum ? `<p class="small">${T("One founding standard: Magpie starts at 500 total followers across your platforms.", "Un estándar fundador: Magpie empieza con 500 seguidores en total, sumando todas tus plataformas.")}</p>` : ""}
