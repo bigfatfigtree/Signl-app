@@ -23,6 +23,7 @@
 //      side's facts).
 // Run: node scripts/verify-build180.mjs
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -261,6 +262,59 @@ try {
   check("adding a side the account already holds -> 409", addAgain.status === 409, JSON.stringify(addAgain.data).slice(0, 160));
   const backAgain = await carol("POST", "/api/auth/switch-side", {});
   check("new dual account switches back to the creator side", backAgain.status === 200 && backAgain.data.user.role === "creator");
+
+  console.log("== the Google-prefill path does not bypass the password gate ==");
+  // The independent reviewer's scenario, pinned: an account
+  // created through the real API + a live Google prefill token
+  // (minted in the DB exactly as the OAuth callback writes it)
+  // + a WRONG password must still hit dual_role_password.
+  const gina = client();
+  const ginaReg = await gina("POST", "/api/auth/register", {
+    role: "business", name: "Gina Fixture", email: "gina@fixtures.dev", password: "gina-pass-123",
+    businessName: "Gina Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
+  });
+  check("gina's business registers", ginaReg.status === 201, JSON.stringify(ginaReg.data).slice(0, 140));
+  await stopServer();
+  const dbG = readDb();
+  const gToken = "build180-glink-token";
+  const gHash = crypto.createHash("sha256").update(gToken).digest("hex");
+  dbG[`glink:${gHash}`] = { sub: "google-sub-180", email: "gina@fixtures.dev", name: "Gina Fixture", createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600e3).toISOString() };
+  fs.writeFileSync(DB, JSON.stringify(dbG, null, 1));
+  startServer();
+  check("server restarts for the Google-gate probe", await waitUp());
+  const gClaim = await client()("POST", "/api/auth/register", {
+    role: "creator", quickClaim: true, email: "gina@fixtures.dev", password: "wrong-password-99",
+    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, googleLinkToken: gToken,
+  });
+  check("googleLinkToken + wrong password -> 409 dual_role_password", gClaim.status === 409 && gClaim.data.code === "dual_role_password", JSON.stringify(gClaim.data).slice(0, 200));
+  check("the Google path created nothing either", usersWithEmail(readDb(), "gina@fixtures.dev").length === 1);
+  const gClaim2 = await client()("POST", "/api/auth/register", {
+    role: "creator", quickClaim: true, email: "gina@fixtures.dev", password: "gina-pass-123",
+    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, googleLinkToken: gToken,
+  });
+  check("googleLinkToken + the account password links the side (and the identity)", (gClaim2.status === 201 || gClaim2.status === 200) && gClaim2.data.user.role === "creator" && !!gClaim2.data.user.linkedSide, JSON.stringify(gClaim2.data).slice(0, 200));
+  const gRec = usersWithEmail(readDb(), "gina@fixtures.dev").find((u) => u.role === "creator");
+  check("the linked side carries the Google identity link", !!gRec && !!(gRec.google && gRec.google.sub === "google-sub-180"));
+
+  console.log("== erasing one side keeps the other ==");
+  // Carol is dual by now (creator + the business side she added).
+  // Sign in (lands on her primary, the creator), switch to the
+  // business side, erase THAT side.
+  const carol2 = client();
+  const carolLogin = await carol2("POST", "/api/auth/login", { email: "carol@fixtures.dev", password: "carol-pass-123" });
+  check("carol signs back in on her primary (creator) side", carolLogin.status === 200 && carolLogin.data.user.role === "creator");
+  await carol2("POST", "/api/auth/switch-side", {});
+  const erase = await carol2("DELETE", "/api/me/account", { confirmText: "DELETE" });
+  check("self-erase of the business side succeeds", erase.status === 200 && erase.data.deleted === true, JSON.stringify(erase.data).slice(0, 160));
+  const dbE = readDb();
+  const carolFam = usersWithEmail(dbE, "carol@fixtures.dev");
+  check("the creator side survives, unlinked", carolFam.length === 1 && carolFam[0].role === "creator" && !carolFam[0].linkedAccountId, JSON.stringify(carolFam.map((u) => u.role)));
+  check("the email index re-points at the surviving side", dbE["email:carol@fixtures.dev"] && dbE["email:carol@fixtures.dev"].userId === carolFam[0].id);
+  const carol3 = client();
+  const relogin = await carol3("POST", "/api/auth/login", { email: "carol@fixtures.dev", password: "carol-pass-123" });
+  check("the surviving side still signs in with the shared password", relogin.status === 200 && relogin.data.user.role === "creator" && !relogin.data.user.linkedSide, JSON.stringify(relogin.data).slice(0, 160));
+  const noSwitch2 = await carol3("POST", "/api/auth/switch-side", {});
+  check("after the erase the account is single-role again", noSwitch2.status === 409);
 
   console.log("== counts stay honest ==");
   const db3 = readDb();
