@@ -4713,9 +4713,10 @@ async function adminMarketRows() {
         if (u.role !== "creator" || u.status !== "approved" || isTester(u)) continue;
         const total = audienceTotalOf(u.creator || {});
         for (const e of listedMarketsFor(u)) {
-          const r = reachByMarket[e.market] || (reachByMarket[e.market] = { creators: 0, followers: 0 });
+          const r = reachByMarket[e.market] || (reachByMarket[e.market] = { creators: 0, followers: 0, fromElsewhere: 0 });
           r.creators += 1;
           r.followers += total;
+          if (canonicalMarketName(u.market) !== e.market) r.fromElsewhere += 1;
         }
       }
       // Build -130: per-market local numbers over the signed-up
@@ -4776,6 +4777,7 @@ async function adminMarketRows() {
           // (see reachByMarket above). Labelled in the UI as
           // combined followers (as reported by creators).
           creatorsListed: (reachByMarket[m.name] || {}).creators || 0,
+          creatorsListedFromElsewhere: (reachByMarket[m.name] || {}).fromElsewhere || 0,
           combinedFollowers: (reachByMarket[m.name] || {}).followers || 0,
           // Build -130: this market's local numbers (see
           // localByMarket above). avgLocalPct is null when no
@@ -15206,7 +15208,7 @@ async function setupChecklistFor(bizUser) {
   const pos = posViewOf(bz);
   const items = [
     { id: "square", label: "Connect your Square register", why: "Connect your register so visits count themselves: code visits and come-backs are read from the register, and nobody types anything at the till.", done: !!(reg && reg.connected) },
-    { id: "till", label: "Tell us which till you run", why: pos ? `You told us: ${pos.label}${pos.other ? ` (${pos.other})` : ""}. Visit codes count at your till today, whichever system it is.` : "Square, Clover, Toast, Lightspeed, or something else. You can skip this; it only changes how visits get counted later. Codes count at every till today.", done: !!pos },
+    { id: "till", label: "Tell us what you use at the register", why: pos ? `You told us: ${pos.label}${pos.other ? ` (${pos.other})` : ""}. Visit codes count at your till today, whichever system it is.` : "Square, Clover, Toast, Lightspeed, or something else. You can skip this; it only changes how visits get counted later. Codes count at every till today.", done: !!pos },
     { id: "baseline", label: "Write down a usual day", why: "Pick one of your usual open days and about how many customers you get. Your receipt measures visit days against it, in real dollars.", done: !!(bz.baseline && bz.baseline.dayLabel) },
     { id: "pin", label: "Set your staff PIN", why: "Your team uses this PIN with the creator's code to mark the visit at the counter. That tap is what counts the visit.", done: !!pin },
     { id: "counter_card", label: "Print the counter card", why: "The card for the register: it teaches the one question and how a creator's code gets redeemed.", done: !!rec.counterCardPrintedAt },
@@ -25463,6 +25465,7 @@ async function route(event) {
     let facts = null;
     try { facts = await buildSigFacts(user, full); } catch (e) { facts = null; }
     if (!facts) return json(200, { role: user.role, displayName: "", market: user.market || null, chips: [] });
+    try { facts.unreadThreads = await unreadThreadCount(user); } catch (e) { /* the chip simply stays off */ }
     const home = sigdata.buildHomeState(user.role, facts);
     const displayName = user.role === "business"
       ? ((user.business && user.business.businessName) || user.name || "")
@@ -25810,7 +25813,11 @@ async function route(event) {
     // recreated (its country is immutable in Stripe); the
     // refresh path below handles it whatever its country.
     if (!storedPayouts(record).accountId && !connect.payoutCountryFor(record)) {
-      return err(503, "Payout setup for your market is handled with help from the Magpie team for now. Paid bookings are recorded in the app and settled by hand until self-serve setup opens for your market.");
+      // Build -189 (PL-62): self-serve payout setup does not
+      // exist for this market's country, and that is a state,
+      // not a fault: answer 200 with the concierge path named,
+      // so the app shows the path instead of an error.
+      return json(200, { url: null, concierge: true, payouts: payoutsClientView(record), message: "Payout setup for your market is handled with help from the Magpie team for now. Paid bookings are recorded in the app and settled by hand until self-serve setup opens for your market." });
     }
     try {
       let payouts = storedPayouts(record);
@@ -26513,7 +26520,14 @@ async function route(event) {
         changes.streets = [Array.isArray(c.streets) ? c.streets : [], cleanStreets];
         c.streets = cleanStreets;
       }
-      if (Array.isArray(b.categories)) c.categories = [...new Set(b.categories.map((x) => canonicalFromList(x, CREATOR_CATEGORIES)).filter((x) => !!x))];
+      if (Array.isArray(b.categories)) {
+        // Build -189 (PL-60): a category that is not on the
+        // canonical list refuses the save with the values named,
+        // instead of silently dropping them on the floor.
+        const unknownCats189 = b.categories.map((x) => String(x || "").trim()).filter((x) => x && !canonicalFromList(x, CREATOR_CATEGORIES));
+        if (unknownCats189.length) return err(400, `These categories are not on the list: ${unknownCats189.join(", ")}. Nothing was saved. Pick from: ${CREATOR_CATEGORIES.join(", ")}.`);
+        c.categories = [...new Set(b.categories.map((x) => canonicalFromList(x, CREATOR_CATEGORIES)).filter((x) => !!x))];
+      }
       if (b.categoriesLocked !== undefined) c.categoriesLocked = b.categoriesLocked === true;
       if (b.catPromptSeen === true) { c.catPromptSeenAt = new Date().toISOString(); if (["all", "pick", "onething"].includes(b.catPromptChoice)) c.catPromptChoice = b.catPromptChoice; }
       if (Array.isArray(b.compCategories)) {

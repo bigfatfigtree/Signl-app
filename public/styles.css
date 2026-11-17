@@ -9,7 +9,7 @@
   --line: #DFE7DF;
   --text: #0B0D0C;
   --muted: #5F7265;
-  --grad: linear-gradient(94deg, #A9E8C9 0%, #B9F1D6 100%);
+  --grad: linear-gradient(92deg, #006AFC, #0AA6C2, #00B67A, #2FE07E);
   --mint: #A9E8C9;
   --mint-deep: #006AFC;
   --blue: #006AFC;
@@ -24,14 +24,14 @@ html, body { margin: 0; padding: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: Manrope, system-ui, sans-serif;
+  font-family: Instrument Sans, system-ui, sans-serif;
   font-size: 16px;
   line-height: 1.5;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
-h1, h2, h3, .display { font-family: Manrope, sans-serif; }
+h1, h2, h3, .display { font-family: Instrument Sans, sans-serif; }
 a { color: var(--blue); }
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
@@ -73,7 +73,7 @@ a { color: var(--blue); }
   .bn-item {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     background: none; border: 0; cursor: pointer; color: var(--muted);
-    font-family: Manrope, sans-serif; padding: 4px 2px; min-height: 48px;
+    font-family: Instrument Sans, sans-serif; padding: 4px 2px; min-height: 48px;
     -webkit-tap-highlight-color: transparent;
   }
   .bn-icon { display: flex; align-items: center; justify-content: center; height: 24px; }
@@ -94,7 +94,7 @@ main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 28px 18
 
 .btn {
   display: inline-block; border: 0; cursor: pointer; text-decoration: none;
-  font-family: Manrope, sans-serif; font-weight: 700; font-size: 1rem;
+  font-family: Instrument Sans, sans-serif; font-weight: 700; font-size: 1rem;
   padding: 13px 26px; border-radius: 999px; color: #0B0D0C;
   background: var(--grad); background-size: 160% 100%;
 }
@@ -134,7 +134,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); bord
 .plan-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
 .plan-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; cursor: pointer; background: var(--panel-2); }
 .plan-card.selected { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
-.plan-card .price { font-family: Manrope; font-size: 1.7rem; font-weight: 900; }
+.plan-card .price { font-family: Instrument Sans; font-size: 1.7rem; font-weight: 900; }
 .founding-badge-row { margin: 6px 0 8px; }
 .founding-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; background: #A9E8C9; border: 1px solid #8FD3AC; color: #0B0D0C; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.02em; }
 .plan-card ul { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
@@ -156,11 +156,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); bord
 
 .stat-row { display: flex; gap: 22px; flex-wrap: wrap; }
 .stat { min-width: 110px; }
-.stat .num { font-family: Manrope; font-weight: 900; font-size: 1.9rem; }
+.stat .num { font-family: Instrument Sans; font-weight: 900; font-size: 1.9rem; }
 .stat .lbl { color: var(--muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; }
 
 .code-display {
-  font-family: Manrope; font-weight: 900; letter-spacing: 0.08em;
+  font-family: Instrument Sans; font-weight: 900; letter-spacing: 0.08em;
   font-size: clamp(1.7rem, 6vw, 2.6rem); text-align: center;
   background: var(--panel-2); border: 1px dashed #B7C6B7; border-radius: var(--radius);
   padding: 16px 10px; margin: 12px 0;
@@ -202,14 +202,14 @@ th { color: var(--muted); font-weight: 600; }
 .avatar { width: 40px; height: 40px; object-fit: cover; border-radius: 50%; border: 1px solid var(--line); vertical-align: middle; margin-right: 8px; }
 
 .footer { border-top: 1px solid var(--line); padding: 26px 18px 40px; text-align: center; color: var(--muted); }
-.footer p:first-child { font-family: Manrope; font-weight: 700; color: var(--text); }
+.footer p:first-child { font-family: Instrument Sans; font-weight: 700; color: var(--text); }
 .flex-between { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
 .mt { margin-top: 14px; }
 .mb { margin-bottom: 14px; }
 .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .heart { background: none; border: 0; font-size: 1.3rem; cursor: pointer; color: var(--muted); }
 .heart.on { color: var(--red); }
-.countdown { font-family: Manrope; font-weight: 700; }
+.countdown { font-family: Instrument Sans; font-weight: 700; }
 
 /* Business preview (admin) + creator showcase: photo tile, best
    work cards, track record, business reviews (2026-10-19). */
@@ -251,7 +251,7 @@ th { color: var(--muted); font-weight: 600; }
 .avatar-initial {
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--grad); color: #0B0D0C; font-weight: 800;
-  font-family: Manrope, sans-serif;
+  font-family: Instrument Sans, sans-serif;
 }
 .profile-photo.avatar-initial { font-size: 3rem; }
 .showcase-block { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; }

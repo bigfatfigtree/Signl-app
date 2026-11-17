@@ -2035,6 +2035,24 @@ function buildHomeState(role, f) {
       if (stale) chips.push(`${(stale.name || "A seat").split(" ")[0]} hasn't accepted their invite yet`);
     }
   }
+  // Build -189 (PL-49): one queue order for business and
+  // creator homes, the order a person works a day in: people
+  // waiting on you first (approvals and answers owed), then
+  // unanswered messages, then your own profile gaps, then
+  // things expiring, then standing status. The chips
+  // themselves are unchanged; only their order is.
+  if (role === "business" || role === "creator") {
+    const dec = [], msg = [], gap = [], exp = [], sta = [];
+    for (const chip of chips) {
+      const t = String(chip);
+      if (/ending soon|expiring|unused this month|visits left this month/i.test(t)) exp.push(chip);
+      else if (/applicant|invite|license request|waiting on your answer/i.test(t)) dec.push(chip);
+      else if (/^Add your|^Set up|^Set your|^Connect|^Finish your|missing|no local % yet|posts? owed|lower local share|Profile: .*to finish|Profile finished:|standing hours|setup step/i.test(t)) gap.push(chip);
+      else sta.push(chip);
+    }
+    if (f.unreadThreads) msg.push(`${fmt(f.unreadThreads)} ${plural(f.unreadThreads, "conversation")} waiting on your reply`);
+    return { chips: [...dec, ...msg, ...gap, ...exp, ...sta] };
+  }
   return { chips };
 }
 

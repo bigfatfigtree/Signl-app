@@ -4,7 +4,7 @@
    (mint #A9E8C9, deep mint #8FD3AC, accent blue #006AFC —
    the deep-green accent was retired 2026-10-26 — pale mint #B9F1D6 /
    #E3F5EA tints, ink #0B0D0C, off-white #FAFCFA pages, sage
-   secondary text, hairline borders, Manrope everywhere, pill
+   secondary text, hairline borders, Instrument Sans everywhere, pill
    buttons, large radii, soft shadows, black topbar / hero bands /
    footer). Tokens mirror the :root of the Slotted landing page.
    Body text on light stays ink; mint is for fills, accents and
@@ -62,12 +62,12 @@ html { scroll-behavior: smooth; }
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Manrope', system-ui, sans-serif;
+  font-family: 'Instrument Sans', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 h1, h2, h3, .display {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Instrument Sans', sans-serif;
   color: var(--ink);
   letter-spacing: -0.02em;
 }
@@ -75,7 +75,7 @@ h1 { font-weight: 800; }
 h2, h3 { font-weight: 800; }
 a { color: #006AFC; }
 .muted { color: var(--ink2); }
-.num { font-family: 'Manrope', sans-serif; }
+.num { font-family: 'Instrument Sans', sans-serif; }
 .grad-text { color: var(--mint-deep); }
 
 /* ---------- header / nav ---------- */
@@ -118,7 +118,7 @@ main { max-width: 1080px; }
 
 /* ---------- buttons ---------- */
 .btn {
-  font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700; font-size: 15px;
   display: inline-flex; align-items: center; justify-content: center; gap: 9px;
   min-height: 50px; padding: 0 24px; border-radius: 999px;
   background: var(--mint); color: var(--ink); border: 1px solid transparent;
@@ -180,7 +180,7 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 1px var(--ink), var(--sh-lg);
 }
 .plan-card .price {
-  font-family: 'Manrope', sans-serif; font-weight: 700; color: var(--ink);
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700; color: var(--ink);
 }
 .plan-card ul { color: var(--ink2); }
 
@@ -228,12 +228,12 @@ input:focus, select:focus, textarea:focus {
 .chip:hover { background: var(--grad-soft); }
 .stack-chip {
   background: #fff; border: 1px solid var(--line); color: var(--ink2);
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Instrument Sans', sans-serif;
 }
 
 /* ---------- stats ---------- */
 .stat .num {
-  font-family: 'Manrope', sans-serif; font-weight: 700; color: var(--ink);
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700; color: var(--ink);
 }
 .stat .lbl { color: var(--ink3); }
 
@@ -247,7 +247,7 @@ input:focus, select:focus, textarea:focus {
 .stat-cell { padding: 26px 24px 22px; border-right: 1px solid var(--line2); }
 .stat-cell:last-child { border-right: none; }
 .stat-cell .stat-num {
-  font-family: 'Manrope', sans-serif; font-weight: 700;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700;
   font-size: clamp(1.9rem, 3.4vw, 2.6rem); line-height: 1; color: var(--ink);
 }
 .stat-cell .stat-num em { font-style: normal; color: var(--mint-deep); }
@@ -255,7 +255,7 @@ input:focus, select:focus, textarea:focus {
 
 /* ---------- redemption credential ---------- */
 .code-display {
-  font-family: 'Manrope', sans-serif; font-weight: 700; letter-spacing: .08em;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700; letter-spacing: .08em;
   background: var(--bg); color: var(--ink);
   border: 1.5px dashed #B7C6B7; border-radius: var(--r-md);
 }
@@ -263,7 +263,7 @@ input:focus, select:focus, textarea:focus {
   background: #fff; border: 1px solid var(--line); border-radius: 14px;
   box-shadow: var(--sh-sm);
 }
-.countdown { font-family: 'Manrope', sans-serif; font-weight: 700; }
+.countdown { font-family: 'Instrument Sans', sans-serif; font-weight: 700; }
 
 /* ---------- notices ---------- */
 .notice {
@@ -313,7 +313,7 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
 .avatar { border: 1px solid var(--line); }
 .avatar-initial {
   background: var(--mint); color: var(--ink); font-weight: 800;
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Instrument Sans', sans-serif;
 }
 
 /* ---------- footer ---------- */
@@ -321,7 +321,7 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
   background: var(--black); border-top: 1px solid var(--hair-d); color: #9AA79E;
 }
 .footer .muted { color: #9AA79E; }
-.footer p:first-child { color: #fff; font-family: 'Manrope', sans-serif; font-weight: 800; }
+.footer p:first-child { color: #fff; font-family: 'Instrument Sans', sans-serif; font-weight: 800; }
 
 .heart { color: var(--ink3); }
 .heart.on { color: #C2482B; }
@@ -336,7 +336,7 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
 .preview-banner .muted { color: #9AA79E; }
 .preview-tag {
   background: var(--mint); color: var(--ink);
-  font-family: 'Manrope', sans-serif; letter-spacing: .1em;
+  font-family: 'Instrument Sans', sans-serif; letter-spacing: .1em;
 }
 .showcase-block { border-top: 1px solid var(--line2); }
 
@@ -352,7 +352,7 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
   background: var(--mint); color: var(--ink); border-color: transparent; font-weight: 800;
 }
 .earn-points {
-  font-family: 'Manrope', sans-serif; font-weight: 700; color: #006AFC;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700; color: #006AFC;
 }
 .earn-points.neg { color: var(--red); }
 /* Earn-row deep links (Jeff, 2026-10-27): a row that can be
@@ -377,7 +377,7 @@ button.earn-row {
   padding: 10px 0; border-bottom: 1px solid var(--line2); font-size: .93rem;
 }
 .ledger .lg-row:last-child { border-bottom: none; }
-.ledger .pts { font-family: 'Manrope', sans-serif; font-weight: 700; white-space: nowrap; }
+.ledger .pts { font-family: 'Instrument Sans', sans-serif; font-weight: 700; white-space: nowrap; }
 .ledger .pts.plus { color: #006AFC; }
 .ledger .pts.minus { color: var(--red); }
 .meter { height: 10px; border-radius: 99px; background: var(--bg2); overflow: hidden; }
@@ -403,11 +403,11 @@ button.earn-row {
   position: relative; overflow: hidden; margin-bottom: 20px;
 }
 .ui-kicker {
-  font-family: 'Manrope', sans-serif; font-size: .7rem; font-weight: 700;
+  font-family: 'Instrument Sans', sans-serif; font-size: .7rem; font-weight: 700;
   letter-spacing: .16em; text-transform: uppercase; color: var(--ink3);
 }
 .ui-title {
-  font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.3rem;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 1.3rem;
   letter-spacing: -.015em; margin: 8px 0 4px; color: var(--ink);
 }
 .ui-sub { color: var(--ink2); font-size: .94rem; line-height: 1.55; }
@@ -418,7 +418,7 @@ button.earn-row {
 }
 .ui-row:last-child { border-bottom: none; }
 .ui-row .k { color: var(--ink2); }
-.ui-row .v { font-weight: 700; text-align: right; font-family: 'Manrope', sans-serif; }
+.ui-row .v { font-weight: 700; text-align: right; font-family: 'Instrument Sans', sans-serif; }
 .check-list { list-style: none; display: grid; gap: 12px; padding: 0; margin: 0; }
 .check-list li { display: flex; gap: 12px; align-items: flex-start; font-size: .96rem; line-height: 1.5; }
 .check-list .ck {
@@ -431,16 +431,16 @@ button.earn-row {
 .count-pill {
   display: inline-flex; align-items: center; gap: 8px;
   background: var(--grad-soft); border: 1px solid var(--line); border-radius: 999px;
-  padding: 8px 16px; font-family: 'Manrope', sans-serif; font-weight: 700; font-size: .9rem;
+  padding: 8px 16px; font-family: 'Instrument Sans', sans-serif; font-weight: 700; font-size: .9rem;
 }
 .tally-input {
   border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
-  padding: 10px 14px; font-family: 'Manrope', sans-serif; font-size: .92rem;
+  padding: 10px 14px; font-family: 'Instrument Sans', sans-serif; font-size: .92rem;
   width: 130px; color: var(--ink);
 }
 .roas-hero { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
 .roas-num {
-  font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 3.4rem;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 3.4rem;
   line-height: 1; letter-spacing: -.03em; color: var(--mint-deep);
 }
 
@@ -476,7 +476,7 @@ button.earn-row {
 .cc-mono {
   width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
   background: var(--black);
-  font-family: 'Manrope', sans-serif; font-weight: 900; font-size: 4.2rem; letter-spacing: -.02em;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 900; font-size: 4.2rem; letter-spacing: -.02em;
 }
 .cc-mono span { color: var(--mint); }
 .cc-tier {
@@ -493,10 +493,10 @@ button.earn-row {
 }
 .cc-id { padding: 17px 6px 0; }
 .cc-name {
-  font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.34rem;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 1.34rem;
   line-height: 1.12; letter-spacing: -.018em; color: var(--ink);
 }
-.cc-handle { font-family: 'Manrope', sans-serif; font-size: .92rem; color: var(--ink3); margin-top: 3px; }
+.cc-handle { font-family: 'Instrument Sans', sans-serif; font-size: .92rem; color: var(--ink3); margin-top: 3px; }
 .cc-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
 .cc-chip {
   font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
@@ -509,12 +509,12 @@ button.earn-row {
   background: var(--mint-pale); border: 1px solid #CDE9D8; border-radius: 18px;
 }
 .cc-local .big {
-  font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 2.9rem; line-height: .95;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 2.9rem; line-height: .95;
   color: var(--mint-deep);
 }
 .cc-local .lbl { font-size: .82rem; color: var(--ink2); margin-top: 5px; }
 /* Build -175: the absolute local count inside the local block. */
-.cc-localcount { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.15rem; color: var(--ink); margin-top: 7px; }
+.cc-localcount { font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 1.15rem; color: var(--ink); margin-top: 7px; }
 .cc-local .src {
   font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
   color: var(--ink3); margin-top: 3px;
@@ -525,13 +525,13 @@ button.earn-row {
   text-transform: uppercase; color: var(--ink3);
 }
 .cc-meta .v {
-  font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 1.24rem;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700; font-size: 1.24rem;
   color: var(--ink); margin-top: 2px;
 }
 .cc-platforms { display: flex; gap: 8px; margin-top: 15px; padding: 0 6px; flex-wrap: wrap; }
 .cc-plat {
   display: inline-flex; align-items: center; gap: 7px;
-  font-family: 'Manrope', sans-serif; font-size: .78rem; font-weight: 600; color: var(--ink2);
+  font-family: 'Instrument Sans', sans-serif; font-size: .78rem; font-weight: 600; color: var(--ink2);
   border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; background: #fff;
 }
 .cc-track {
@@ -563,8 +563,8 @@ button.earn-row {
 .visit-card.active { border-top: 4px solid transparent; }
 .vc-head { display: flex; gap: 12px; align-items: center; }
 .vc-head img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 2px solid #fff; box-shadow: var(--sh-sm); }
-.vc-name { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1rem; line-height: 1.15; letter-spacing: -.01em; color: var(--ink); }
-.vc-sub { font-family: 'Manrope', sans-serif; font-size: .78rem; color: var(--ink3); }
+.vc-name { font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 1rem; line-height: 1.15; letter-spacing: -.01em; color: var(--ink); }
+.vc-sub { font-family: 'Instrument Sans', sans-serif; font-size: .78rem; color: var(--ink3); }
 .vc-chip {
   align-self: flex-start; font-size: .64rem; font-weight: 700; letter-spacing: .16em;
   text-transform: uppercase; color: var(--ink);
@@ -576,7 +576,7 @@ button.earn-row {
   padding: 15px 17px; box-shadow: var(--sh-sm);
 }
 .vc-hero .big {
-  font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 2.3rem; line-height: 1;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 2.3rem; line-height: 1;
   color: var(--mint-deep);
 }
 .vc-hero .lbl { font-size: .78rem; color: var(--ink2); margin-top: 5px; }
@@ -585,7 +585,7 @@ button.earn-row {
   background: var(--card); border: 1px solid var(--line); border-radius: 16px;
   padding: 11px 15px; font-size: .85rem; color: var(--ink2);
 }
-.vc-row b { color: var(--ink); font-family: 'Manrope', sans-serif; font-weight: 700; }
+.vc-row b { color: var(--ink); font-family: 'Instrument Sans', sans-serif; font-weight: 700; }
 .vc-action { margin-top: auto; }
 .vc-action .btn { width: 100%; text-align: center; }
 
@@ -594,7 +594,7 @@ button.earn-row {
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
   background: var(--ink); color: #DDE7DD; border-radius: var(--r-md); padding: 18px 20px;
 }
-.code-box .cb-code { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 1.3rem; letter-spacing: .1em; }
+.code-box .cb-code { font-family: 'Instrument Sans', sans-serif; font-weight: 700; font-size: 1.3rem; letter-spacing: .1em; }
 .code-box .cb-lbl { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; opacity: .65; }
 
 /* Business card: same geometry as creators, plan state instead of tier.
@@ -608,7 +608,7 @@ button.earn-row {
   background: var(--mint); opacity: 1;
 }
 .biz-card .b-num {
-  font-family: 'Manrope', sans-serif; font-weight: 700; font-size: .95rem; letter-spacing: .2em;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700; font-size: .95rem; letter-spacing: .2em;
   color: var(--mint-deep);
 }
 
@@ -616,7 +616,7 @@ button.earn-row {
 .creator-card.paused { opacity: .55; filter: grayscale(.7); }
 .creator-card.paused .btn { pointer-events: none; }
 .saved { color: #006AFC; font-weight: 600; font-size: .9rem; }
-.pv-tick { font-family: 'Manrope', sans-serif; font-weight: 700; }
+.pv-tick { font-family: 'Instrument Sans', sans-serif; font-weight: 700; }
 .rules { color: #006AFC; }
 
 /* ---------- home dashboards (concept merge, 2026-10-20) ----------
@@ -627,12 +627,12 @@ button.earn-row {
    horizontal scroll, and action buttons keep a 44px tap height. */
 .home-metrics { margin: 18px 0 20px; }
 .home-title {
-  font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.45rem;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 1.45rem;
   letter-spacing: -.02em; margin: 6px 0 4px; color: var(--ink); line-height: 1.15;
 }
 .home-h { margin: 4px 0 8px; font-size: 1.12rem; }
 .home-count {
-  font-family: 'Manrope', sans-serif; font-weight: 700;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700;
   font-size: clamp(1.65rem, 8vw, 2.4rem); line-height: 1.05; color: var(--ink);
 }
 /* The active-visit step tracker: 2 by 2 on a phone, one row of
@@ -667,7 +667,7 @@ button.earn-row {
 .home-money { display: grid; gap: 12px; grid-template-columns: 1fr; margin-top: 6px; }
 @media (min-width: 760px) { .home-money { grid-template-columns: repeat(3, 1fr); } }
 .hm-pile { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 16px; }
-.hm-num { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 1.6rem; color: var(--ink); }
+.hm-num { font-family: 'Instrument Sans', sans-serif; font-weight: 700; font-size: 1.6rem; color: var(--ink); }
 .hm-lbl { font-size: .84rem; color: var(--ink2); margin-top: 5px; line-height: 1.45; }
 /* Preview pipeline funnel: 2 columns on a phone (the fifth stage
    wraps full width), 5 across on desktop. Never a scroll row. */
@@ -678,7 +678,7 @@ button.earn-row {
   .pv-funnel .pv-stage:last-child { grid-column: auto; }
 }
 .pv-stage { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 14px 12px; text-align: center; }
-.pv-stage-num { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 1.7rem; color: var(--ink); }
+.pv-stage-num { font-family: 'Instrument Sans', sans-serif; font-weight: 700; font-size: 1.7rem; color: var(--ink); }
 .pv-stage-lbl { font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink); margin-top: 3px; }
 .pv-stage-sub { font-size: .76rem; color: var(--ink3); margin-top: 2px; }
 /* Phone tightening for the shared stat band when it carries a
@@ -713,12 +713,12 @@ button.earn-row {
   width: 104px; height: 104px; border-radius: 16px; flex: 0 0 104px;
   background: var(--mint); display: flex; align-items: center; justify-content: center;
 }
-.proof-mono span { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 2.4rem; color: var(--ink); }
+.proof-mono span { font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 2.4rem; color: var(--ink); }
 .proof-id { flex: 1; min-width: 0; }
-.proof-name { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.9rem; line-height: 1.1; }
+.proof-name { font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 1.9rem; line-height: 1.1; }
 .proof-handle { font-weight: 600; color: var(--ink2); margin-top: 3px; }
 .proof-place { color: var(--ink2); margin-top: 2px; }
-.proof-brand { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.3rem; letter-spacing: .04em; }
+.proof-brand { font-family: 'Instrument Sans', sans-serif; font-weight: 800; font-size: 1.3rem; letter-spacing: .04em; }
 .proof-hoods { margin: 20px 0 0; font-weight: 600; }
 .proof-stats { margin-top: 22px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
 .proof-biz { margin-top: 18px; }
@@ -751,7 +751,7 @@ button.earn-row {
 #bottomnav.signed-in .bn-item {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   background: none; border: 0; cursor: pointer; color: #9AA79E;
-  font-family: 'Manrope', sans-serif; padding: 4px 2px; min-height: 48px;
+  font-family: 'Instrument Sans', sans-serif; padding: 4px 2px; min-height: 48px;
   -webkit-tap-highlight-color: transparent;
 }
 #bottomnav.signed-in .bn-icon { display: flex; align-items: center; justify-content: center; height: 24px; position: relative; }
@@ -864,16 +864,16 @@ main { padding-top: 26px; }
 .dash-hero > * { position: relative; z-index: 1; }
 .dash-hero h1, .dash-hero h2, .dash-hero h3 { color: #fff; }
 .dh-kicker {
-  font-family: 'Manrope', sans-serif; font-size: .68rem; font-weight: 700;
+  font-family: 'Instrument Sans', sans-serif; font-size: .68rem; font-weight: 700;
   letter-spacing: .18em; text-transform: uppercase; color: rgba(255,255,255,.82);
 }
 .dh-name {
-  font-family: 'Manrope', sans-serif; font-weight: 800;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800;
   font-size: clamp(1.65rem, 6vw, 2.25rem); letter-spacing: -.02em;
   line-height: 1.08; margin-top: 6px;
 }
 .dh-sub {
-  font-family: 'Manrope', sans-serif; font-size: .94rem;
+  font-family: 'Instrument Sans', sans-serif; font-size: .94rem;
   color: rgba(255,255,255,.88); margin-top: 5px; line-height: 1.45;
 }
 .dh-row {
@@ -881,7 +881,7 @@ main { padding-top: 26px; }
   gap: 16px; flex-wrap: wrap; margin-top: 16px;
 }
 .dh-num {
-  font-family: 'Manrope', sans-serif; font-weight: 800; color: var(--mint);
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800; color: var(--mint);
   font-size: clamp(2.2rem, 9vw, 2.9rem); line-height: .95;
 }
 .dh-num-lbl { font-size: .8rem; color: rgba(255,255,255,.85); margin-top: 4px; }
@@ -1011,7 +1011,7 @@ main { padding-top: 26px; }
 }
 .es-badge svg { width: 26px; height: 26px; }
 .empty-state h3 {
-  font-family: 'Manrope', sans-serif; font-weight: 800;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800;
   font-size: 1.28rem; margin: 0 0 6px;
 }
 .empty-state p { color: var(--ink2); line-height: 1.55; max-width: 420px; margin: 0 auto; }
@@ -1038,7 +1038,7 @@ main { padding-top: 26px; }
 }
 @keyframes vxDraw { to { stroke-dashoffset: 0; } }
 .success-hero h3 {
-  font-family: 'Manrope', sans-serif; font-weight: 800;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 800;
   font-size: 1.35rem; margin: 0 0 6px;
 }
 .success-hero p { color: var(--ink2); }
@@ -1054,7 +1054,7 @@ main { padding-top: 26px; }
   text-transform: uppercase; color: var(--ink2);
 }
 .due-banner .db-num {
-  font-family: 'Manrope', sans-serif; font-weight: 700;
+  font-family: 'Instrument Sans', sans-serif; font-weight: 700;
   font-size: 1.45rem; color: var(--ink); line-height: 1;
 }
 .due-banner.late { background: #F9E9E4; border-color: #EDC4B6; }
@@ -1986,7 +1986,7 @@ body.rail-on #bottomnav { display: none !important; }
    itself, at every width, phones included. Long labels wrap
    to two short lines inside the 78px rail. */
 .rail-label {
-  font: 700 .58rem 'Manrope', sans-serif; letter-spacing: .01em;
+  font: 700 .58rem 'Instrument Sans', sans-serif; letter-spacing: .01em;
   line-height: 1.08; text-align: center; white-space: normal;
 }
 .rail-badge {
@@ -1998,7 +1998,7 @@ body.rail-on #bottomnav { display: none !important; }
 .rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 9px; padding-top: 10px; }
 .rail-avatar {
   width: 38px; height: 38px; border-radius: 50%; border: 0; cursor: pointer;
-  background: var(--black); color: #fff; font: 800 .85rem 'Manrope', sans-serif;
+  background: var(--black); color: #fff; font: 800 .85rem 'Instrument Sans', sans-serif;
   display: flex; align-items: center; justify-content: center;
 }
 .rail-avatar:hover { background: var(--black2); }
@@ -2010,7 +2010,7 @@ body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 .tr-ava { width: 34px; height: 34px; border-radius: 50%; background: var(--mint-pale); color: var(--ink); font-weight: 800; font-size: .8rem; display: flex; align-items: center; justify-content: center; flex: none; }
 .tr-name { font-weight: 700; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tr-right { margin-left: auto; display: flex; align-items: center; gap: 16px; flex: none; }
-.tr-right a, .tr-right button { color: var(--ink2); font: 600 .86rem 'Manrope', sans-serif; background: none; border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; padding: 0; }
+.tr-right a, .tr-right button { color: var(--ink2); font: 600 .86rem 'Instrument Sans', sans-serif; background: none; border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; padding: 0; }
 .tr-right svg { width: 17px; height: 17px; }
 
 /* --- Workspace scaffold: huge title, underline tabs, toolbars --- */
@@ -2020,7 +2020,7 @@ body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 .ws-action { margin: 16px 0 2px; }
 .ws-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--line); margin: 18px 0 6px; overflow-x: auto; scrollbar-width: none; }
 .ws-tabs::-webkit-scrollbar { display: none; }
-.ws-tab { border: 0; background: none; padding: 0 1px 10px; font: 700 .95rem 'Manrope', sans-serif; color: var(--ink3); cursor: pointer; white-space: nowrap; position: relative; }
+.ws-tab { border: 0; background: none; padding: 0 1px 10px; font: 700 .95rem 'Instrument Sans', sans-serif; color: var(--ink3); cursor: pointer; white-space: nowrap; position: relative; }
 .ws-tab .cnt { font-weight: 600; margin-left: 4px; }
 .ws-tab:hover { color: var(--ink); }
 .ws-tab.on { color: var(--mint-deep); }
@@ -2037,8 +2037,8 @@ body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 .ws-tools .sp { flex: 1; }
 .ws-search { flex: 1 1 200px; min-width: 170px; display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 0 13px; color: var(--ink3); }
 .ws-search svg { width: 17px; height: 17px; flex: none; }
-.ws-search input { border: 0; outline: 0; flex: 1; min-width: 0; padding: 11px 0; font: 600 .92rem 'Manrope', sans-serif; background: transparent; color: var(--ink); }
-.ws-select { background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; font: 600 .9rem 'Manrope', sans-serif; color: var(--ink); }
+.ws-search input { border: 0; outline: 0; flex: 1; min-width: 0; padding: 11px 0; font: 600 .92rem 'Instrument Sans', sans-serif; background: transparent; color: var(--ink); }
+.ws-select { background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; font: 600 .9rem 'Instrument Sans', sans-serif; color: var(--ink); }
 .btn.ws-primary { background: var(--black); color: #fff; border-color: var(--black); border-radius: 11px; padding: 11px 18px; }
 .btn.ws-primary:hover { background: var(--black2); }
 .btn.ws-outline { background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 11px; padding: 10px 15px; }
@@ -2049,7 +2049,7 @@ body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 
 /* iOS-style segmented switch (short either/or choices) */
 .segsw { display: inline-flex; background: #EDF1ED; border-radius: 999px; padding: 3px; gap: 2px; }
-.segsw button { border: 0; background: transparent; padding: 6px 15px; border-radius: 999px; font: 700 .84rem 'Manrope', sans-serif; color: var(--ink2); cursor: pointer; }
+.segsw button { border: 0; background: transparent; padding: 6px 15px; border-radius: 999px; font: 700 .84rem 'Instrument Sans', sans-serif; color: var(--ink2); cursor: pointer; }
 .segsw button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(11,13,12,.14); }
 
 /* --- White cards, KPI cards, empty states --- */
@@ -2079,7 +2079,7 @@ body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 .sig-title { font-weight: 800; font-size: 1.07rem; letter-spacing: -.01em; }
 .sig-sub { color: var(--ink2); font-size: .88rem; margin-top: 2px; }
 .sig-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 15px; }
-.sig-pill { background: #fff; border: 0; border-radius: 999px; padding: 9px 15px; font: 700 .86rem 'Manrope', sans-serif; color: var(--ink); cursor: pointer; display: inline-flex; gap: 8px; align-items: center; box-shadow: 0 1px 2px rgba(11,13,12,.07); }
+.sig-pill { background: #fff; border: 0; border-radius: 999px; padding: 9px 15px; font: 700 .86rem 'Instrument Sans', sans-serif; color: var(--ink); cursor: pointer; display: inline-flex; gap: 8px; align-items: center; box-shadow: 0 1px 2px rgba(11,13,12,.07); }
 .sig-pill:hover { box-shadow: 0 2px 8px rgba(11,13,12,.12); }
 .sig-pill .n { background: var(--mint-deep); color: #fff; border-radius: 999px; min-width: 19px; height: 19px; padding: 0 5px; font-size: .72rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
 .sig-pill.dis { cursor: default; color: var(--ink2); box-shadow: none; border: 1px dashed var(--line); }
@@ -2101,7 +2101,7 @@ body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 
 /* --- Feed: filter chips + date-grouped list card --- */
 .feed-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
-.fchip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font: 700 .84rem 'Manrope', sans-serif; color: var(--ink2); cursor: pointer; }
+.fchip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font: 700 .84rem 'Instrument Sans', sans-serif; color: var(--ink2); cursor: pointer; }
 .fchip:hover { border-color: var(--ink3); color: var(--ink); }
 .fchip.on { background: var(--black); border-color: var(--black); color: #fff; }
 .feed-list { background: #fff; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; margin: 12px 0; }
@@ -2141,7 +2141,7 @@ body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 .kebab-wrap { position: relative; flex: none; }
 .kebab-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink2); cursor: pointer; font-size: 1.05rem; line-height: 1; }
 .kebab-menu { position: absolute; right: 0; top: calc(100% + 6px); background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 14px 34px rgba(11,13,12,.14); padding: 6px; min-width: 216px; z-index: 40; }
-.kebab-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 9px 11px; border: 0; background: none; border-radius: 9px; font: 600 .9rem 'Manrope', sans-serif; color: var(--ink); cursor: pointer; text-align: left; }
+.kebab-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 9px 11px; border: 0; background: none; border-radius: 9px; font: 600 .9rem 'Instrument Sans', sans-serif; color: var(--ink); cursor: pointer; text-align: left; }
 .kebab-menu button:hover { background: var(--tint2); }
 .kebab-menu button.danger { color: #B4453F; }
 .kebab-menu .km-sep { border-top: 1px solid var(--line2); margin: 5px 4px; }
@@ -2697,7 +2697,7 @@ body.v3-on .kpi-card .kpi-sub { color: rgba(255,255,255,.66); }
 /* The counter banner is an ink field: its copy and button must read
    as ink-field elements (muted light copy, mint action). */
 body.v3-on .counter-cta p, body.v3-on .counter-cta .muted { color: rgba(255,255,255,.72); }
-body.v3-on .counter-cta .btn.ws-primary { background: var(--mint); color: var(--ink); border-color: var(--mint); }
+body.v3-on .counter-cta .btn.ws-primary { background: var(--black); color: #fff; border-color: var(--black); }
 
 /* Dashboard links speak in the deep Magpie green, never default blue. */
 body.v3-on #tab-body a:not(.btn) { color: var(--mint-deep); }

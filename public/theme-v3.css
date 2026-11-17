@@ -29,8 +29,8 @@
   --line: #E8E6E1;
   --line2: #F0EFEA;
   --hover: #F7F7F4;
-  --accent: #FF4D00;
-  --accent-soft: #FFF0E8;
+  --accent: #006AFC;
+  --accent-soft: #EAF3FF;
   --grad: linear-gradient(92deg, #185BFF 0%, #0AA6C2 38%, #00B67A 72%, #22C55E 100%);
   /* Legacy tokens, re-pointed */
   --black: #171512;
@@ -38,15 +38,15 @@
   --panel-d: #171512;
   --mint: #BFE9D2;
   --mint-b: #D8F3E3;
-  --mint-pale: #FFF0E8;
+  --mint-pale: #E9FBF1;
   --mint-soft: #7BD8AE;
   --mint-deep: #0AA6C2;
   --mint-dot: #00B67A;
   --hair-d: #3A372F;
-  --bg: #FAF7F1;
-  --bg2: #F3EEE3;
+  --bg: #FFFFFF;
+  --bg2: #F4F8F6;
   --panel: #FFFFFF;
-  --panel-2: #F3EEE3;
+  --panel-2: #F4F8F6;
   --text: #171512;
   --muted: #6F6A61;
   --blue: #0AA6C2;
@@ -83,13 +83,13 @@ a { color: var(--ink); }
   box-shadow: none; transition: background .15s ease, border-color .15s ease;
 }
 .btn:hover { transform: none; background: var(--black2); box-shadow: none; }
-.btn.ws-primary { background: var(--grad); color: #fff; border: 0; border-radius: 999px; padding: 0 22px; }
-.btn.ws-primary:hover { background: var(--grad); filter: brightness(1.05); }
+.btn.ws-primary { background: var(--black); color: #fff; border: 1px solid var(--black); border-radius: 999px; padding: 0 22px; }
+.btn.ws-primary:hover { background: var(--black2); }
 .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); box-shadow: none; }
 .btn.ghost:hover { background: var(--hover); }
 .btn.ws-outline { background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; }
 .btn.ws-outline:hover { border-color: var(--ink3); background: #fff; }
-.btn.danger { background: #F9E9E4; color: var(--red); border: 1px solid #EDD5CB; }
+.btn.danger { background: #FDECEC; color: var(--red); border: 1px solid #D9E4EC; }
 .btn:disabled { opacity: .5; }
 
 /* ---------- cards & panels: hairlines, no shadows ---------- */
@@ -108,8 +108,8 @@ a { color: var(--ink); }
 .notice.blue { background: var(--paper2); border-color: var(--line); color: var(--ink); }
 .badge { background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); }
 .badge.ok { background: #E7F7EE; border-color: #CDEBD8; color: #0E7A4A; }
-.badge.warn { background: #FFF3E4; border-color: #F0DFC2; color: #8A5A00; }
-.badge.bad { background: #F9E9E4; border-color: #EDD5CB; color: #A83A1E; }
+.badge.warn { background: #FFF8E6; border-color: #F0DFC2; color: #8A5A00; }
+.badge.bad { background: #FDECEC; border-color: #D9E4EC; color: #A83A1E; }
 .badge.info { background: var(--paper2); border-color: var(--line); color: var(--ink2); }
 .badge.tier { background: var(--ink); border-color: var(--ink); color: #fff; }
 .badge.elite { background: var(--ink); border-color: var(--ink); color: #fff; }
@@ -117,7 +117,7 @@ a { color: var(--ink); }
 .live-pill i { background: #00B67A; }
 .live-pill.off { background: var(--paper2); color: var(--ink2); }
 .live-pill.off i { background: var(--ink3, #999); }
-.beta-pill { background: var(--accent-soft); color: #9A2E00; }
+.beta-pill { background: var(--accent-soft); color: #0B5CAB; }
 .delta-pill { background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); }
 
 /* ---------- segmented tabs (design .seg) ---------- */
@@ -136,7 +136,7 @@ a { color: var(--ink); }
 }
 .ws-tab.on, .tabs button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(23,21,18,.08); }
 .ws-tab .cnt { background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); border-radius: 999px; font-size: .68rem; font-weight: 800; padding: 1px 7px; }
-.ws-tab.on .cnt { background: var(--accent-soft); border-color: #FFD8C2; color: #9A2E00; }
+.ws-tab.on .cnt { background: var(--accent-soft); border-color: #CFE8FF; color: #0B5CAB; }
 
 /* ---------- forms ---------- */
 .field input, .field select, .field textarea,
@@ -149,13 +149,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink3); outline: 
 .field label { color: var(--ink2); }
 
 /* ---------- shapes: numbers as shapes (design vocabulary) ---------- */
-.donut119 { --p: 50; width: 62px; height: 62px; border-radius: 50%; background: conic-gradient(#0AA6C2 calc(var(--p) * 1%), #EFE9DD 0); display: grid; place-items: center; flex: 0 0 auto; }
+.donut119 { --p: 50; width: 62px; height: 62px; border-radius: 50%; background: conic-gradient(#0AA6C2 calc(var(--p) * 1%), #EDF1EE 0); display: grid; place-items: center; flex: 0 0 auto; }
 .donut119 > span { background: #fff; border-radius: 50%; width: 44px; height: 44px; display: grid; place-items: center; font-weight: 800; font-size: .8rem; color: var(--ink); }
 .donut119.sm { width: 46px; height: 46px; }
 .donut119.sm > span { width: 32px; height: 32px; font-size: .66rem; }
 .lbar119 { height: 6px; background: var(--line2); border-radius: 99px; overflow: hidden; }
 .lbar119 > i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #185BFF, #00B67A); }
-.ring119 { --p: 0; width: 46px; height: 46px; border-radius: 50%; background: conic-gradient(#00B67A calc(var(--p) * 1%), #EFE9DD 0); display: grid; place-items: center; flex: 0 0 auto; }
+.ring119 { --p: 0; width: 46px; height: 46px; border-radius: 50%; background: conic-gradient(#00B67A calc(var(--p) * 1%), #EDF1EE 0); display: grid; place-items: center; flex: 0 0 auto; }
 .ring119 > span { background: #fff; border-radius: 50%; width: 34px; height: 34px; display: grid; place-items: center; font-weight: 800; font-size: .62rem; color: var(--ink); }
 .sdot119 { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 .status119 { display: inline-flex; align-items: center; gap: 6px; font-size: .7rem; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); white-space: nowrap; }
@@ -175,7 +175,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink3); outline: 
 .nx-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .nx-head .nx-title { font-weight: 800; font-size: 1rem; letter-spacing: -.01em; }
 .nx-head .nx-sub { color: var(--ink2); font-size: .85rem; }
-.nx-hero { border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: linear-gradient(180deg, #fff, #FFFBF3); margin-top: 12px; }
+.nx-hero { border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: linear-gradient(180deg, #fff, #FFFFFF); margin-top: 12px; }
 .nx-hero .nx-hero-t { font-size: 1.02rem; font-weight: 700; letter-spacing: -.01em; margin: 0 0 4px; }
 .nx-hero .nx-hero-s { color: var(--ink2); font-size: .88rem; line-height: 1.5; margin: 0 0 12px; }
 .nx-row { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line2); flex-wrap: wrap; }
@@ -213,7 +213,7 @@ body.v3-on #founding-dash .kpi-card .kpi-num { color: var(--ink); }
 .offer-card { background: #fff; border: 1px solid var(--line); box-shadow: none; border-radius: 18px; }
 
 /* ---------- shell: top bar ---------- */
-#topbar2 { background: rgba(250,247,241,.92); border-bottom: 1px solid var(--line2); }
+#topbar2 { background: #FFFFFF; border-bottom: 1px solid var(--line2); }
 .tb2-name { font-family: 'Instrument Sans', system-ui, sans-serif; }
 .tb2-btn { border: 1px solid var(--line); background: #fff; color: var(--ink); font-family: 'Instrument Sans', system-ui, sans-serif; box-shadow: none; }
 .tb2-btn:hover { border-color: var(--ink3); }
@@ -399,9 +399,9 @@ td, th { border-color: var(--line2); }
    removed from theme-v2 (verify suites pin its strings); the
    approved Paper system simply wins every contested property. */
 
-/* rails: near-white (#FDFBF7 in the design), never ink */
-body.v3-on #tabbar, body.v3-slim #tabbar { background: #FDFBF7; box-shadow: none; }
-body.rail-on #rail { background: #FDFBF7; }
+/* rails: near-white (#FFFFFF in the design), never ink */
+body.v3-on #tabbar, body.v3-slim #tabbar { background: #FFFFFF; box-shadow: none; }
+body.rail-on #rail { background: #FFFFFF; }
 body.v3-on .tab-item, body.v3-slim .tab-item { color: var(--ink2); margin: 0; justify-content: flex-start; }
 body.v3-on .tab-item.on, body.v3-slim .tab-item.on { background: var(--accent-soft); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); }
 body.v3-on .tab-item.on .tab-label, body.v3-slim .tab-item.on .tab-label { color: var(--ink); }
@@ -415,7 +415,7 @@ body.v3-on .tab-badge { box-shadow: none; }
 }
 
 /* top bar on slim/founding shells: paper, not ink */
-body.v3-on #topbar2, body.v3-slim #topbar2 { background: rgba(250,247,241,.92); border-bottom: 1px solid var(--line2); }
+body.v3-on #topbar2, body.v3-slim #topbar2 { background: #FFFFFF; border-bottom: 1px solid var(--line2); }
 body.v3-on .tb2-id, body.v3-slim .tb2-id { color: var(--ink); }
 body.v3-on .tb2-name, body.v3-slim .tb2-name { color: var(--ink); }
 body.v3-on .tb2-ava.txt, body.v3-slim .tb2-ava.txt { background: var(--grad); color: #fff; }
@@ -446,8 +446,8 @@ body.v3-on :is([data-dash], #creator-home, #founding-dash) .feed-day { backgroun
 body.v3-on :is([data-dash], #creator-home, #founding-dash) .feed-row { padding-left: 14px; padding-right: 14px; }
 
 /* admin chrome: the rail is paper here too, KPI tiles white */
-body.admin-on #rail { background: #FDFBF7; }
-body.rail-on #rail { background: #FDFBF7; border-right: 1px solid var(--line); }
+body.admin-on #rail { background: #FFFFFF; }
+body.rail-on #rail { background: #FFFFFF; border-right: 1px solid var(--line); }
 body.rail-on .rail-item { color: var(--ink2); }
 body.rail-on .rail-item:hover { background: var(--hover); color: var(--ink); }
 body.rail-on .rail-item.on { background: var(--accent-soft); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); }
@@ -567,7 +567,7 @@ body.admin-on .preview-cta .btn.ghost:hover { background: var(--hover); border-c
   body.admin-on #admin-secbar {
     display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
     position: sticky; top: 0; z-index: 55;
-    background: rgba(250,247,241,.96); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    background: rgba(255,255,255,.97); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line2);
     padding: 8px 10px;
   }
@@ -1607,7 +1607,7 @@ img.maggie-char-img { object-fit: cover; }
 .thread-avwrap { --avs: 42px; position: relative; flex: none; width: var(--avs); height: var(--avs); }
 .thread-avwrap.lg { --avs: 48px; }
 .thread-av { width: var(--avs); height: var(--avs); border-radius: 50%; display: block; }
-.thread-av.init { display: flex; align-items: center; justify-content: center; background: #A9E8C9; border: 1px solid #8FD3AC; color: #0B0D0C; font: 800 1.02rem 'Manrope', sans-serif; }
+.thread-av.init { display: flex; align-items: center; justify-content: center; background: #A9E8C9; border: 1px solid #8FD3AC; color: #0B0D0C; font: 800 1.02rem 'Instrument Sans', sans-serif; }
 .thread-avwrap img.thread-av { position: absolute; inset: 0; object-fit: cover; background: #fff; }
 .thread-head { display: flex; gap: 11px; align-items: flex-start; }
 .thread-head-main { flex: 1; min-width: 0; }
@@ -1729,10 +1729,10 @@ img.maggie-char-img { object-fit: cover; }
 .bd-h { margin: 22px 0 10px; font-size: 1.05rem; }
 .bd-toprow { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
 .bd-brief p { margin: 6px 0; font-size: 15px; line-height: 1.5; }
-.bd-offline { background: var(--accent-soft); border: 1px solid #F3D9C8; border-radius: 12px; padding: 10px 14px; font-size: 14px; }
+.bd-offline { background: var(--accent-soft); border: 1px solid #D9EDE4; border-radius: 12px; padding: 10px 14px; font-size: 14px; }
 .bd-banner { border-radius: 12px; padding: 10px 14px; font-size: 14px; font-weight: 600; margin: 0 0 10px; }
-.bd-banner-stop { background: #F7E9E4; color: #8C2D12; border: 1px solid #EDD5CB; }
-.bd-banner-warn { background: #FFF7E8; color: #6B5310; border: 1px solid #EDDFC0; }
+.bd-banner-stop { background: #FDECEC; color: #8C2D12; border: 1px solid #D9E4EC; }
+.bd-banner-warn { background: #FFF8E6; color: #6B5310; border: 1px solid #EDDFC0; }
 .bd-progress { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; margin: 8px 0; }
 .bd-progress span { display: block; height: 100%; background: var(--ink); border-radius: 99px; }
 .bd-dayline { font-size: 15px; margin: 0 0 4px; }
@@ -1842,7 +1842,7 @@ img.maggie-char-img { object-fit: cover; }
   .abd-rollup-table td[data-label="City"]::before { content: ""; }
 }
 #abd-preview { position: fixed; inset: 0; z-index: 3000; background: #fff; overflow-y: auto; }
-.abd-pv-banner { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--accent-soft, #FFF4E8); border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 14.5px; }
+.abd-pv-banner { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--accent-soft, #F2F8FF); border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 14.5px; }
 .abd-pv-frame { max-width: 430px; margin: 0 auto; padding: 16px 14px 48px; box-sizing: border-box; }
 .abd-pv-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 @media (max-width: 480px) {
@@ -2028,3 +2028,197 @@ body.drawer168-open { overflow: hidden; }
    creator card, untouched. */
 .nat-preview187 { margin-top: 16px; }
 .nat-preview-body187 { margin-top: 12px; }
+
+/* ================= Build -189 (Wave 2 cleanup) ================= */
+/* PL-33: the admin mobile pill row is retired. One nav system for
+   admin at every width: the rail (drawer on phones) + grouped menu. */
+body.admin-on #admin-secbar { display: none !important; }
+
+/* PL-79: sticky headers are opaque. Nothing translucent floats
+   over scrolling content. */
+#topbar2, #tabbar { -webkit-backdrop-filter: none; backdrop-filter: none; }
+#topbar2 { background: #fff; }
+
+/* PL-65: the public site footer never renders inside the signed-in
+   app (v3 shells only exist signed in). */
+body.v3-on .footer, body.v3-slim .footer { display: none !important; }
+
+/* PL-39 (a)+(c): opened menus use quiet icon+label rows, and the
+   current destination carries a soft pill inside the menu too,
+   not just on bars and rails. */
+.more-row {
+  border: 0; background: transparent; box-shadow: none; border-radius: 12px;
+  padding: 9px 10px; gap: 10px; min-height: 44px;
+}
+.more-row:hover { background: var(--hover); }
+body.v3-on .more-row .more-ic, body.v3-slim .more-row .more-ic {
+  width: 30px; height: 30px; flex-basis: 30px; border-radius: 9px;
+  background: var(--hover); color: var(--ink);
+}
+.more-row .more-ic svg { width: 17px; height: 17px; }
+.more-row .more-label { font-size: .95rem; font-weight: 650; }
+.ev125-row .more-sub { display: none; }
+.ev125-row .more-sub.nav-lock187-note { display: block; }
+.more-row .more-chev { display: none; }
+.more-row.row-on187, .more-row.on {
+  background: var(--accent-soft); color: var(--ink);
+}
+.more-row.row-on187 .more-ic { background: #fff; }
+.more-group-t { margin: 14px 10px 4px; }
+.more-idcard187 { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 12px; }
+.mi-ava189 {
+  width: 38px; height: 38px; border-radius: 50%; flex: none;
+  background: var(--grad); color: #fff; font-weight: 800; font-size: 1rem;
+  display: inline-flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.mi-ava189 { position: relative; }
+.mi-ava189 img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* PL-39 (d): group labels inside the desktop rails. */
+.rail-group189 {
+  font: 700 .68rem 'Instrument Sans', system-ui, sans-serif; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--ink3); padding: 12px 12px 3px;
+}
+.tab-rail .rail-group189:first-child { padding-top: 2px; }
+
+/* PL-27: the app's own control treatment on the surfaces that
+   still used native OS controls. Radios and checkboxes in the
+   filter rails draw as app controls; selects carrying .ctl189
+   (and the Find creators sort/filter selects) get the app's
+   bordered, rounded treatment with a drawn chevron. */
+.rail-row input[type="radio"], .rail-row input[type="checkbox"],
+.shop-rail input[type="radio"], .shop-rail input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none;
+  width: 18px; height: 18px; margin: 0 2px 0 0; cursor: pointer;
+  border: 2px solid var(--ink3); background: #fff; position: relative; top: 2px;
+}
+.rail-row input[type="radio"], .shop-rail input[type="radio"] { border-radius: 50%; }
+.rail-row input[type="checkbox"], .shop-rail input[type="checkbox"] { border-radius: 5px; }
+.rail-row input[type="radio"]:checked, .shop-rail input[type="radio"]:checked {
+  border-color: var(--black); background: var(--black);
+  box-shadow: inset 0 0 0 3.5px #fff;
+}
+.rail-row input[type="checkbox"]:checked, .shop-rail input[type="checkbox"]:checked {
+  border-color: var(--black); background: var(--black);
+}
+.rail-row input[type="checkbox"]:checked::after, .shop-rail input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 4.5px; top: 1.5px; width: 5px; height: 9px;
+  border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(42deg);
+}
+select.ctl189, .sr-sel select {
+  appearance: none; -webkit-appearance: none;
+  border: 1.5px solid var(--line); border-radius: 10px; background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23171512' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  padding: 8px 30px 8px 12px; font: 600 .86rem 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink); cursor: pointer; min-height: 38px;
+}
+/* PL-73: the sort select never truncates its current value. */
+.sr-sel select { min-width: 168px; }
+
+/* PL-09: a picked radio row reads clearly: dark text on the
+   light selected fill (never mint on peach again). */
+.radio-chip:has(input:checked) {
+  background: var(--accent-soft) !important; color: var(--ink) !important;
+  border-color: var(--azure) !important; font-weight: 650;
+}
+
+/* PL-30: a creator with no photo gets the brand gradient and
+   their local number as the visual, matching the gradient banner
+   on the business-page preview. */
+.cc-photo.no-photo, .dcard-photo.no-photo {
+  background: var(--grad) !important; border: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.cc-mono189, .dcard-mono189 {
+  color: #fff; font-weight: 800; letter-spacing: -.01em; text-align: center; line-height: 1.05;
+}
+.cc-mono189 { font-size: 1.9rem; }
+.dcard-mono189 { font-size: 2.6rem; }
+.cc-mono189 small, .dcard-mono189 small { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .92; margin-top: 4px; }
+
+/* PL-36: designed empty states for the Biz Dev book. */
+.abd-empty189 {
+  display: flex; gap: 12px; align-items: flex-start;
+  border: 1.5px dashed var(--line); border-radius: 14px; padding: 16px; margin-top: 8px;
+  background: #fff;
+}
+.abd-empty189 .ae-ic {
+  width: 36px; height: 36px; flex: none; border-radius: 10px;
+  background: var(--accent-soft); color: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.abd-empty189 .ae-ic svg { width: 19px; height: 19px; }
+.abd-empty189 .ae-t { font-weight: 700; }
+.abd-empty189 .ae-s { color: var(--ink2); font-size: .9rem; margin-top: 2px; }
+.abd-empty189 .btn { margin-top: 8px; }
+
+/* PL-74: funnel bars carry the brand gradient, not flat teal. */
+.fn2-bar i { background: var(--grad) !important; }
+
+/* PL-16: skeleton blocks never read as a bare "Loading..." line. */
+.skel-wrap { min-height: 120px; }
+
+/* PL-67: phone type steps up a size; the wall of small grey text
+   was the loudest mobile complaint in the audit. */
+@media (max-width: 760px) {
+  body.v3-on, body.v3-slim { font-size: 15.5px; }
+  body.v3-on .small, body.v3-slim .small { font-size: .86rem; }
+  body.v3-on h1, body.v3-slim h1 { font-size: 1.55rem; }
+  body.v3-on h2, body.v3-slim h2 { font-size: 1.3rem; }
+}
+
+/* PL-29(b): the creator editor's sticky save bar floats clear of
+   the content above it and the phone tab bar below it. */
+#tab-body form .save-bar { margin-bottom: 14px; box-shadow: 0 8px 24px rgba(11,13,12,.14); }
+.sec-save189 { display: flex; justify-content: flex-end; padding-top: 10px; }
+
+/* PL-64: one logo per screen on desktop. The rail head carries
+   the brand; the floated top-bar lockup (v3 shells) and the
+   admin top-row lockup stand down where a rail is on screen. */
+@media (min-width: 1024px) {
+  body.v3-on .tb2-brand { display: none !important; }
+  body.rail-on .tr-brand { display: none !important; }
+}
+/* PL-39d: rail group labels exist in the desktop rail only; the
+   phone bar (same DOM) never shows them. */
+.rail-group189 { display: none; }
+@media (min-width: 768px) {
+  #tabbar .rail-group189, #rail .rail-group189 { display: block; }
+  #rail .rail-group189 { padding: 12px 4px 3px; text-align: left; }
+}
+
+/* PL-09: one composer form language, both lanes: a clean white
+   single form; the tinted section panels inside read white too. */
+.camp-form189 { background: #fff; }
+#offer-composer .fgroup.tint { background: #fff; }
+/* PL-70: placeholders are quieter than answers. */
+.camp-form189 input::placeholder, .camp-form189 textarea::placeholder { font-weight: 400; color: #9A958A; }
+/* PL-30: the no-photo monogram container fills its panel. */
+.cc-mono, .dcard-mono { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+
+/* PL-25/29: tinted form panels read white app-wide. */
+.fgroup.tint { background: #fff; }
+
+/* Build -189 (PL-66): data-dense desktop surfaces get the
+   width they need. The signed-in wrap widens, and the
+   national home lays its panels out in two columns instead
+   of one long stack. */
+@media (min-width: 1024px) {
+  body.v3-on .wrap { max-width: min(1240px, 100%); }
+  #nat-home { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  #nat-home > .panel, #nat-home > section.panel { margin-top: 0 !important; }
+  #nat-home > .nat-dash-note, #nat-home > p { grid-column: 1 / -1; }
+}
+
+/* Build -189 (PL-30, shelf tiles): the Find creators shelf
+   tile's no-photo state is the brand gradient with the
+   creator's local audience % as the visual, the same
+   treatment as the card and deck treatments above. */
+.shelf-photo .shelf-nophoto189 {
+  background: var(--grad); color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+}
+.shelf-nophoto-pct { font-size: 2.6rem; font-weight: 800; line-height: 1; letter-spacing: -.01em; }
+.shelf-nophoto-cap { font-size: .78rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; opacity: .92; }
+.shelf-nophoto-init { font-size: 3.4rem; font-weight: 800; }

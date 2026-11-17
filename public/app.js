@@ -2487,7 +2487,7 @@ const RAIL_SHORT = { Content: "Posts", Plan: "Wallet", Profile: "Profile", Numbe
 RAIL_SHORT["My Offers"] = "Campaigns";
 // Build -77: the Impact Portal's Businesses tab is ten letters;
 // the 72px phone rail shows its compact form.
-RAIL_SHORT["Businesses"] = "Business";
+RAIL_SHORT["Businesses"] = "Businesses";
 // Build -95: the Regulars tab's full label is "My Regulars";
 // the 72px phone rail shows its compact form.
 RAIL_SHORT["Regulars"] = "Regulars";
@@ -2495,7 +2495,7 @@ RAIL_SHORT["Regulars"] = "Regulars";
 // the 72px phone rail shows its compact form. The tracking
 // tab keeps the "Campaigns" short form it has carried since
 // Build -68.
-RAIL_SHORT["Campaign Setup"] = "Start";
+RAIL_SHORT["Campaign Setup"] = "Start a campaign";
 // Build -119 (Jeff, 2026-11-04, the approved redesign): the
 // phone bottom bar carries the design's one-word labels —
 // Discover reads "Creators", Visits reads "Visits" — while
@@ -2558,12 +2558,32 @@ function tabItemsFor() {
     // Build -178: a national account has no plan, so the Plan
     // destination never appears in its rail at all.
     const isNat178 = u.business && u.business.scope === "national";
-    const railRows = isNat178 ? rows.filter((r) => r.tab !== "Plan") : rows;
-    return [
+    const bizHead189 = [
       { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
+    ];
+    if (isNat178) {
+      // Build -189 (PL-08): ONE nav system for national accounts.
+      // The rail, bar and menu carry the national destination
+      // set under national labels; no market destination (Plan,
+      // Visits, Posts & licenses, Regulars) rides along at any
+      // brightness, and no second in-page strip duplicates it.
+      return [
+        ...bizHead189,
+        { icon: "deck", label: "Campaigns", tab: "NatCampaigns", on: t === "NatCampaigns" },
+        { icon: "notice", label: "New campaign", tab: "NatNew", on: t === "NatNew" },
+        { icon: "users", label: "Find creators", tab: "NatDiscover", on: t === "NatDiscover" },
+        { icon: "bars", label: "Reports", tab: "NatReports", on: t === "NatReports" },
+        { icon: "building", label: "Brand profile", tab: "NatBrand", on: t === "NatBrand" },
+        { icon: "bubble", label: "Messages", tab: "Messages", on: t === "Messages", badge: b.messages || 0 },
+        { icon: "sliders", label: "Settings", tab: "Settings", on: t === "Settings" },
+        { icon: "help", label: "Help", tab: "Help", on: t === "Help" },
+      ];
+    }
+    return [
+      ...bizHead189,
       { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
-      ...extraIn137(railRows, ["Campaign Setup", "My Offers", "Visits & Posts", "Profile", ...(isNat178 ? [] : ["Plan"]), "Analytics", ...(isNat178 ? [] : ["Regulars"]), "Content", "Favorites", "Messages", "Settings", "Help"], ["Home", "Sig", "Discover"]),
+      ...extraIn137(rows, ["Campaign Setup", "My Offers", "Visits & Posts", "Profile", "Plan", "Analytics", "Regulars", "Content", "Favorites", "Messages", "Settings", "Help"], ["Home", "Sig", "Discover"]),
     ];
   }
   if (u.role === "creator") {
@@ -2736,12 +2756,15 @@ const PRIMARY_TABS_125 = {
 function primaryTabs125() {
   const u = state.user;
   if (!u) return [];
+  // Build -189 (PL-08): a national account's phone bar carries
+  // its own daily stops, the national set, not the market set.
+  if (u.role === "business" && u.business && u.business.scope === "national") return ["Home", "NatCampaigns", "Sig", "NatDiscover", "NatBrand"];
   if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) return PRIMARY_TABS_125.pilot;
   return PRIMARY_TABS_125[u.role] || [];
 }
 // The bar's one-word display labels (design): the internal
 // tab ids stay stable; only what the person reads changes.
-const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Find", "My Offers": "Campaigns", Performance: "Stats", Businesses: "Business", "Find Offers": "Find", Offers: "Offers" };
+const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Find creators", "My Offers": "Campaigns", Performance: "Reports", Businesses: "Businesses", "Find Offers": "Find", Offers: "Offers" };
 // Where the identity row (photo + name) lands per role: the
 // person's own home base — the creator's real profile, the
 // business's page, the partner's account. (Build -125: it
@@ -2778,19 +2801,20 @@ function everythingGroups125() {
       { title: "Review & people", rows: [
         R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
-        R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages"),
-        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
-        R("building", "National", "National brand accounts, verification and campaigns", "National"),
-        R("building", "Partners", "Media partners and their deals", "Partners"),
+        R("pin", "Markets", "Every market, ranked", "Markets"),
+        { icon: "person", label: "Creators", sub: "Every creator, with the local numbers", act: "return adminCreatorsGo125()" },
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
         R("users", "Outreach", "Campaigns and sends", "Outreach"),
+        R("building", "Partners", "Media partners and their deals", "Partners"),
+        R("building", "National", "National brand accounts, verification and campaigns", "National"),
+        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
         R("users", "Campaign", "The current campaign", "Campaign"),
+        R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages"),
       ] },
       { title: "Watch", rows: [
-        R("list", "Event Log", "Everything that happened", "Event Log"),
-        R("shield", "Compliance", "Posts, deadlines and strikes", "Compliance"),
         R("stats", "Stats", "Charts, money and the books", "Stats"),
-        { icon: "person", label: "Creators", sub: "Every creator, with the local numbers", act: "return adminCreatorsGo125()" },
+        R("shield", "Compliance", "Posts, deadlines and strikes", "Compliance"),
+        R("list", "Event Log", "Everything that happened", "Event Log"),
       ] },
       { title: "Run the platform", rows: [
         R("notice", "Marketing", "Campaign email to your own lists", "Marketing"),
@@ -2901,9 +2925,10 @@ function everythingRowHtml125(r) {
     return `<button type="button" class="more-row ev125-row nav-locked187" aria-disabled="true" onclick="closeEverything125(); return navLockedTap187('${lock187}')">${innerL}</button>`;
   }
   const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
-  if (r.href) return `<a class="more-row ev125-row" href="${esc(r.href)}" onclick="closeEverything125()">${inner}</a>`;
+  const onCls189 = r.tab && r.tab === state.tab ? " row-on187" : "";
+  if (r.href) return `<a class="more-row ev125-row${onCls189}" href="${esc(r.href)}" onclick="closeEverything125()">${inner}</a>`;
   const act = r.act || `return go('dashboard','${r.tab}')`;
-  return `<button type="button" class="more-row ev125-row" onclick="closeEverything125(); ${act}">${inner}</button>`;
+  return `<button type="button" class="more-row ev125-row${onCls189}" onclick="closeEverything125(); ${act}">${inner}</button>`;
 }
 function openEverything125() {
   // Build -168: a reopen never animates the old panel out —
@@ -2922,6 +2947,7 @@ function openEverything125() {
     ${drawer168HeadHtml("closeEverything125")}
     <div class="ev125-head"><strong>Everything</strong><span class="muted small">All you can do</span><button type="button" class="linklike" onclick="closeEverything125()" aria-label="Close">✕</button></div>
     ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(everythingRowHtml125).join("")}</div>`).join("")}
+    ${state.user ? menuIdentityCard187(state.user, state.user.role === "business" && state.user.business ? state.user.business.businessName : state.user.role === "partner" && state.user.partner ? state.user.partner.name : state.user.name) : ""}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeEverything125(); });
   document.body.appendChild(el);
@@ -2978,6 +3004,29 @@ function hamburgerGroups137() {
       ] },
     ];
   }
+  if (u.role === "business" && u.business && u.business.scope === "national") {
+    // Build -189 (PL-08): the national menu is the national set,
+    // same destinations and labels as the national rail.
+    return [
+      { title: "Start", rows: [
+        R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
+        R("sig", "Maggie", "Your attention list", "Sig"),
+      ] },
+      { title: "Campaigns", rows: [
+        R("deck", "Campaigns", "Your campaigns and the hands they raised", "NatCampaigns", { badge: wc.bizApps || 0 }),
+        R("notice", "New campaign", "Write a new campaign", "NatNew"),
+        R("users", "Find creators", "Every approved creator, by market", "NatDiscover"),
+        R("bars", "Reports", "What your campaigns did", "NatReports"),
+      ] },
+      { title: "Account", rows: [
+        R("building", "Brand profile", "Your logo, website and story", "NatBrand"),
+        R("bubble", "Messages", "Conversations on your campaigns", "Messages", { badge: b.messages || 0 }),
+        R("sliders", "Settings", "Account and notifications", "Settings"),
+        R("help", "Help", "How Magpie works, in plain words", "Help"),
+        { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
+      ] },
+    ];
+  }
   if (u.role === "business") {
     return [
       { title: "Sell", rows: [
@@ -3006,7 +3055,7 @@ function hamburgerGroups137() {
   if (u.role === "partner" && !state.pilotScopeId) {
     return [
       { title: "Start", rows: [
-        R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
+        R("home", "Overview", "Maggie, your highlights, your next steps", "Home"),
         R("sig", "Maggie", "Your numbers and next moves, in plain sentences", "Sig"),
       ] },
       { title: "Your market", rows: [
@@ -3039,20 +3088,20 @@ function hamburgerGroups137() {
       { title: "Review & people", rows: [
         R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
-        R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages", { badge: b.messages || 0 }),
-        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
-        R("building", "National", "National brand accounts, verification and campaigns", "National"),
+        R("pin", "Markets", "Every market, ranked", "Markets"),
         R("users", "Creators", "Every creator, with the local numbers", "Creators"),
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
-        R("building", "Partners", "Media partners and their deals", "Partners"),
         R("users", "Outreach", "Campaigns and sends", "Outreach"),
+        R("building", "Partners", "Media partners and their deals", "Partners"),
+        R("building", "National", "National brand accounts, verification and campaigns", "National"),
+        R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
         R("users", "Campaign", "The current campaign", "Campaign"),
+        R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages", { badge: b.messages || 0 }),
       ] },
       { title: "Watch", rows: [
-        R("pin", "Markets", "Every market, ranked", "Markets"),
         R("stats", "Stats", "Charts, money and the books", "Stats"),
-        R("list", "Event Log", "Everything that happened", "Event Log"),
         R("shield", "Compliance", "Posts, deadlines and strikes", "Compliance"),
+        R("list", "Event Log", "Everything that happened", "Event Log"),
       ] },
       { title: "Run the platform", rows: [
         R("notice", "Marketing", "Campaign email to your own lists", "Marketing"),
@@ -3145,7 +3194,10 @@ function menuIdentityStateLine187(u) {
 function menuIdentityCard187(u, name) {
   const other = u.linkedSide ? (u.role === "creator" ? "business" : "creator") : null;
   const profTab = u.role === "admin" ? "Settings" : "Profile";
+  const photo189 = selfAvatarUrl122(u);
+  const initial189 = String(name || u.name || "").trim().charAt(0).toUpperCase() || "S";
   return `<div class="menu-idcard187">
+    <span class="mi-ava189" aria-hidden="true">${photo189 ? `<img src="${esc(photo189)}" alt="" onerror="this.remove()">` : ""}${esc(initial189)}</span>
     <div class="menu-idcard187-who"><span class="menu-idcard187-name">${esc(name || "")}</span><span class="menu-idcard187-state">${esc(menuIdentityStateLine187(u))}</span></div>
     <div class="menu-idcard187-acts">
     ${other ? `<button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return switchSide180()">Switch to your ${other} side</button>` : ""}
@@ -3251,7 +3303,7 @@ function bdOpenDrawer168() {
   el.innerHTML = `
   <div class="ham137-panel" role="dialog" aria-label="Menu">
     ${drawer168HeadHtml("closeBdDrawer168")}
-    <div class="ham137-head">${avaHtml122("idm126-ava", "idm126-ava", selfAvatarUrl122(u), String(u.name || "").trim().charAt(0).toUpperCase() || "S")}<span class="idm126-who"><span class="idm126-name">${esc(u.name || "")}</span><span class="idm126-sub">Biz Dev${seat.repCode ? ` · ${esc(seat.repCode)}` : ""}</span></span><button type="button" class="linklike" onclick="closeBdDrawer168()" aria-label="Close">✕</button></div>
+    <div class="ham137-head">${avaHtml122("idm126-ava", "idm126-ava", selfAvatarUrl122(u), String(u.name || "").trim().charAt(0).toUpperCase() || "S")}<span class="idm126-who"><span class="idm126-name">${esc(u.name || "")}</span><span class="idm126-sub">${u.role === "admin" ? `Sell mode (your HQ seat)${seat.repCode ? ` · ${esc(seat.repCode)}` : ""}` : `Biz Dev${seat.repCode ? ` · ${esc(seat.repCode)}` : ""}`}</span></span><button type="button" class="linklike" onclick="closeBdDrawer168()" aria-label="Close">✕</button></div>
     ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(bdDrawerRowHtml168).join("")}</div>`).join("")}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeBdDrawer168(); });
@@ -3626,6 +3678,19 @@ function avaHtml122(txtCls, imgCls, url, initial) {
   if (!url) return base;
   return `<span class="ava122w">${base}<img class="${imgCls} ava122i" src="${esc(url)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
 }
+// Build -189 (PL-39d): the desktop rail's group for each tab,
+// per role. One nav language: these are the same group names
+// the menus use. Tabs with no group ride under the last label.
+function railGroup189(tab) {
+  const u = state.user;
+  if (!u) return "";
+  const M = {
+    creator: { Dashboard: "Start here", Sig: "Start here", "Find Offers": "Find work", Offers: "Find work", Earnings: "Find work", "My Visits": "Find work", Profile: "You", Numbers: "You", Momentum: "You", Bench: "You", Messages: "You", Settings: "You", Help: "You" },
+    business: { Home: "Start here", Sig: "Start here", Discover: "Campaigns", "Campaign Setup": "Campaigns", "My Offers": "Campaigns", NatCampaigns: "Campaigns", NatNew: "Campaigns", NatDiscover: "Campaigns", NatReports: "Campaigns", "Visits & Posts": "Run the place", Profile: "Your business", Plan: "Your business", Analytics: "Your business", Regulars: "Your business", Content: "Your business", Favorites: "Your business", NatBrand: "Your business", Messages: "Account", Settings: "Account", Help: "Account" },
+    partner: { Home: "Start here", Markets: "Grow", Earnings: "Grow", Sig: "Your market", Creators: "Your market", Businesses: "Your market", Messages: "Your market", Performance: "Your market", Links: "Grow", Team: "Grow", Account: "Account", Help: "Account" },
+  };
+  return (M[u.role] || {})[tab] || "";
+}
 function tabBarHtml() {
   // Build -155: the rep shell's phone bar — Home · My Leads ·
   // Seller Kit · My Money · Menu, same .tab-item language as
@@ -3734,7 +3799,16 @@ function tabBarHtml() {
     </button>` : "";
   const btns = [
     ...(redesigned137 ? [] : [`<button type="button" class="tab-item tab-ev125" onclick="return openEverything125()" aria-label="Everything — all sections"><span class="tab-ic">${bnIcon("more")}</span><span class="tab-label">Everything</span></button>`]),
-    ...items.filter((it) => { if (seen137.has(it.tab)) return false; seen137.add(it.tab); return true; }).map((it, ix) => btnHtml(it, barIdx[it.tab] != null ? "tab-primary" : "tab-secondary", ix)),
+    ...(() => {
+      const out189 = [];
+      let lastGroup189 = null;
+      items.filter((it) => { if (seen137.has(it.tab)) return false; seen137.add(it.tab); return true; }).forEach((it, ix) => {
+        const g189 = railGroup189(it.tab);
+        if (g189 && g189 !== lastGroup189) { const ord189 = redesigned137 ? ix : (barIdx[it.tab] != null ? 10 : 30); out189.push(`<div class="rail-group189" aria-hidden="true" style="order:${ord189}">${esc(g189)}</div>`); lastGroup189 = g189; }
+        out189.push(btnHtml(it, barIdx[it.tab] != null ? "tab-primary" : "tab-secondary", ix));
+      });
+      return out189;
+    })(),
     menuBtn137,
   ].join("");
   // Sign out rides directly under the last destination, below
@@ -4260,7 +4334,7 @@ function railItems() {
   }
   if (u.role === "business") {
     add("a", "home", "Home", "return go('dashboard','Home')", t === "Home" || !t, b.visits);
-    add("a", "inbox", "Requests", "return go('dashboard','Requests')", t === "Requests", b.offers);
+    add("a", "inbox", "Applicants", "return go('dashboard','Requests')", t === "Requests" || t === "My Offers", b.offers);
     add("a", "stats", "Analytics", "return go('dashboard','Analytics')", t === "Analytics");
     add("b", "users", "Discover", "return go('dashboard','Discover')", t === "Discover" || t === "Favorites");
     add("b", "offers", "Offers", "return go('dashboard','My Offers')", t === "My Offers", b.offers);
@@ -4310,8 +4384,9 @@ function renderRail() {
   // bar; it stays in the rail, the section bar and the menu.
   const ADMIN_RAIL_PRIMARY_125 = ["Home", "Applications", "Sig", "Stats", "Markets"];
   const railItems125 = items.slice();
+  const ADMIN_SEC_LABELS_189 = { a: "Review & people", b: "Run the platform", c: "Team" };
   const rows = railItems125.map((it) => {
-    const sec = lastSec && it.sec !== lastSec ? `<div class="rail-sep"></div>` : "";
+    const sec = it.sec !== lastSec ? `<div class="rail-group189 rail-group-admin189" aria-hidden="true">${esc(ADMIN_SEC_LABELS_189[it.sec] || "")}</div>` : "";
     lastSec = it.sec;
     const disp = railLabel119(it.label);
     const active = it.active;
@@ -4344,21 +4419,12 @@ function renderRail() {
 // CSS-gated to phone widths; the desktop rail already lists
 // every section with its label.
 function syncAdminSecbar121() {
-  let bar = document.getElementById("admin-secbar");
-  const u = state.user;
-  const items = u && u.role === "admin" && !state.preview && state.shell !== "bizdev" ? railItems() : null;
-  if (!items || !items.length) { if (bar) bar.remove(); return; }
-  if (!bar) {
-    bar = document.createElement("nav");
-    bar.id = "admin-secbar";
-    bar.setAttribute("aria-label", "Admin sections");
-    const anchor = document.getElementById("toprow");
-    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(bar, anchor.nextSibling);
-    else document.body.appendChild(bar);
-  }
-  bar.innerHTML = items.map((it) => `<button type="button" class="sec-chip121${it.active ? " on" : ""}" onclick="${it.onclick}">${esc(it.label)}${it.badge ? `<span class="sec-badge121">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`).join("");
-  const on = bar.querySelector(".sec-chip121.on");
-  if (on) { try { bar.scrollLeft = Math.max(0, on.offsetLeft - (bar.clientWidth - on.clientWidth) / 2); } catch (e) { /* no-op */ } }
+  // Build -189 (PL-33): the scrolling pill row is retired. Admin
+  // has ONE nav system at every width: the rail (a drawer on
+  // phones) plus the grouped menu. This stays as cleanup so a
+  // bar rendered by an older build never lingers in the DOM.
+  const bar = document.getElementById("admin-secbar");
+  if (bar) bar.remove();
 }
 
 // The quiet top row inside the content column (Grin pattern):
@@ -4729,6 +4795,32 @@ const MOMENTUM_GLOSS = "Momentum — you reply fast and show up. Businesses see 
 function standingLevelName(points) {
   const p = Number(points) || 0;
   return p >= 750 ? "Cornerstone" : p >= 300 ? "Standout" : p >= 100 ? "Regular" : "Starter";
+}
+// Build -189 (PL-31): a real chart for Admin Stats: full-width
+// filled area under the brand gradient stroke, a baseline axis,
+// and the peak value labeled, so the panel reads as a chart at
+// a glance instead of whitespace with a hairline.
+function astChart189(values) {
+  const vals = (values || []).map((v) => Math.max(0, Number(v) || 0));
+  if (!vals.length) return `<p class="small muted">No signups in this period.</p>`;
+  const W = 640, H = 150, PAD = 8, base = H - 22;
+  const max = Math.max(...vals, 1);
+  const stepX = vals.length > 1 ? (W - PAD * 2) / (vals.length - 1) : 0;
+  const pts = vals.map((v, i) => [PAD + i * stepX, base - (v / max) * (base - 18)]);
+  const line = pts.map((pt, i) => `${i ? "L" : "M"}${pt[0].toFixed(1)},${pt[1].toFixed(1)}`).join(" ");
+  const area = `${line} L${(PAD + (vals.length - 1) * stepX).toFixed(1)},${base} L${PAD},${base} Z`;
+  const peakI = vals.indexOf(max);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Signups over time chart, peak ${max} in one period">
+    <defs><linearGradient id="astFill189" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0AA6C2" stop-opacity=".28"/><stop offset="1" stop-color="#0AA6C2" stop-opacity=".02"/></linearGradient>
+    <linearGradient id="astLine189" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#006AFC"/><stop offset="1" stop-color="#2FE07E"/></linearGradient></defs>
+    <path d="${area}" fill="url(#astFill189)"/>
+    <path d="${line}" fill="none" stroke="url(#astLine189)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <line x1="${PAD}" y1="${base}" x2="${W - PAD}" y2="${base}" stroke="#D9DEE6" stroke-width="1"/>
+    <circle cx="${pts[peakI][0].toFixed(1)}" cy="${pts[peakI][1].toFixed(1)}" r="3.5" fill="#006AFC"/>
+    <text x="${Math.min(Math.max(pts[peakI][0], 22), W - 22)}" y="${Math.max(pts[peakI][1] - 8, 10)}" text-anchor="middle" font-size="12" font-weight="700" fill="#171512">${max}</text>
+    <text x="${PAD}" y="${H - 6}" font-size="10.5" fill="#6F6A61">start of period</text>
+    <text x="${W - PAD}" y="${H - 6}" text-anchor="end" font-size="10.5" fill="#6F6A61">today</text>
+  </svg>`;
 }
 function sparkSvg119(values, color) {
   const v = (values || []).map(Number).filter((x) => Number.isFinite(x));
@@ -11685,7 +11777,7 @@ function renderForBusinesses() {
         <div class="field"><label>Business ZIP (optional)</label><input id="jb-zip" inputmode="numeric" maxlength="5" placeholder="For example: 23452"><p class="small muted">Used to group nearby creators by distance bands. Bands only, never an exact distance.</p></div>
       </div>
         <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything Magpie should know when reviewing your application"></textarea></div>
-        <div class="field"><label>Which till do you run? (optional)</label>${chipSelectHtml("jb-pos", [{ value: "", label: "Skip for now" }, { value: "square", label: "Square" }, { value: "clover", label: "Clover" }, { value: "toast", label: "Toast" }, { value: "lightspeed", label: "Lightspeed" }, { value: "other", label: "Another system" }, { value: "none", label: "No register system" }], "", null, false)}<input id="jb-pos-other" placeholder="If another system, which one?" style="margin-top:6px"><p class="small muted">You can skip this; it only changes how visits get counted later. Visit codes count at every till today.</p></div>
+        <div class="field"><label>What do you use at the register? (optional)</label>${chipSelectHtml("jb-pos", [{ value: "", label: "Skip for now" }, { value: "square", label: "Square" }, { value: "clover", label: "Clover" }, { value: "toast", label: "Toast" }, { value: "lightspeed", label: "Lightspeed" }, { value: "other", label: "Another system" }, { value: "none", label: "No register system" }], "", null, false)}<input id="jb-pos-other" placeholder="If another system, which one?" style="margin-top:6px"><p class="small muted">You can skip this; it only changes how visits get counted later. Visit codes count at every till today.</p></div>
       </div>
       ${igAssistCardHtml("jb", "business")}
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
@@ -11998,7 +12090,7 @@ async function registerBusiness(e) {
 // and the founding-rate-held line only: the first-month price
 // is stated once, in the badge.
 function foundingBadgeHtml(p) {
-  return `<span class="founding-badge">FOUNDING: $100 CREDIT — FIRST MONTH $${fmtPrice(p.firstMonthPriceMonthly)}</span>`;
+  return `<span class="founding-badge">Founding offer: $100 credit, and your first month is $${fmtPrice(p.firstMonthPriceMonthly)}</span>`;
 }
 
 function selectPlan(id) {
@@ -13273,7 +13365,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
     <p><button class="btn small-btn ghost" onclick="${adminView ? "adminBackToRequests()" : preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to ${adminView ? "Applications" : "results"}</button></p>
     <div class="creator-card full">
       <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
-        ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
+        ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono">${p.localAudiencePct !== null && p.localAudiencePct !== undefined ? `<span class="cc-mono189">${p.localAudiencePct}%<small>local audience</small></span>` : `<span>${initial}</span>`}</div>`}
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
         ${p.paidRate ? `<span class="cc-paid">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}</span>` : ""}
       </div>
@@ -13354,6 +13446,17 @@ function openCreatorProfile(userId) {
   window.scrollTo(0, 0);
 }
 
+// Build -189 (PL-53): the Find creators market picker is scoped
+// to the business's own market (creators listed there include
+// everyone listed in it). A national account keeps every market.
+function discoverMarketOptions189(selected) {
+  const u = state.user;
+  if (u && u.role === "business" && !(u.business && u.business.scope === "national")) {
+    const m = (state.boot.markets || []).find((x) => x.name === u.market);
+    return `<option value="${esc(u.market || "")}" selected>${esc(m ? m.label : (u.market || ""))}</option>`;
+  }
+  return marketOptions(selected);
+}
 function backToDiscover() {
   loadDiscover();
 }
@@ -13388,7 +13491,7 @@ function creatorCard(c, viewer, opts) {
   return `
   <div class="creator-card${c.standing === "paused" ? " paused" : ""}">
     <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
-      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
+      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono">${p.localAudiencePct !== null && p.localAudiencePct !== undefined ? `<span class="cc-mono189">${p.localAudiencePct}%<small>local audience</small></span>` : `<span>${initial}</span>`}</div>`}
       ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
     </div>
     <div class="cc-id">
@@ -15244,7 +15347,7 @@ async function loadFoundingStatus() {
       <p>Your market is not taking business offers yet, and that is on purpose: Magpie opens each market with its founding roster in place. The moment ${esc(marketTalkNameClient(f.market))} opens, we email you at <strong>${esc(state.user.email)}</strong>.</p>
       ${f.priorityBand ? `<p><span class="badge tier badge-line" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} founding creators in ${esc(marketTalkNameClient(f.market))}</span></p>
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(marketTalkNameClient(f.market))} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
-      <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
+      <p class="muted">Your profile, your messages and Maggie are open now. Offers land the day your market opens, and visits follow from there. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`}`;
     // Build -64: the founding home's depth moved here (audit
     // F3). Home keeps status, next step, local reach, and the
@@ -16236,6 +16339,9 @@ async function startPayoutSetup() {
   try {
     const data = await api("POST", "/me/payouts/start", {});
     if (data && data.url) { window.location.href = data.url; return false; }
+    // Build -189 (PL-62): a concierge market answers with the
+    // path itself, shown as information, not as an error.
+    if (data && data.message) { laneErr(data.message); return false; }
     laneErr("Payout setup could not open. Try again.");
   } catch (err) { laneErr((err && err.message) || "Payout setup could not open. Try again."); }
   return false;
@@ -17000,11 +17106,11 @@ function creatorProfileHtml(u) {
           ${extraStackRowsHtml(c)}
         </div>
         <div class="pf-addrow"><select id="p-add-platform">${addPlatformOptions(c)}</select><button type="button" class="btn small-btn ghost" onclick="return pfAddPlatform()">Add platform</button></div>
-        <p class="small muted">Add every platform you are on — Pinterest, Twitch, your own website, any of them. Each one gets a handle, a link and a follower count, and every count stacks into your total audience.</p>
-        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points. <strong>Magpie starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
+        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform you add (Pinterest, Twitch, your own website, any of them). Businesses see the total and the breakdown. <strong>Magpie starts at 500 total followers across your platforms</strong>; until your total reaches 500, businesses cannot see you yet.</p>
       </div>
       <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="catpick">${cats}</div><p class="small muted" style="margin:6px 0 0">${T("More ticked categories means more kinds of businesses can find you. Most creators here are in almost all of them — your followers are your neighbors, and they'd watch you enjoy almost anything local.", "Más categorías marcadas significa que más tipos de negocios pueden encontrarte. La mayoría de los creadores aquí está en casi todas: tus seguidores son tus vecinos, y te verían disfrutar casi cualquier cosa local.")}</p></div>
       <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP} Once you add a local % for a platform in Your audience below, this number is worked out from those automatically.</p></div>
+      <div class="sec-save189"><button class="btn ghost small-btn" type="submit">Save changes</button></div>
       </div>
       <div class="fgroup tint" id="pf-about">
       <p class="fg-kicker">${T("About you", "Sobre ti")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
@@ -17022,7 +17128,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("Your neighborhood or area", "Tu vecindario o zona")}</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="${T("Optional, for example: Oceanfront, Ghent, Town Center", "Opcional, por ejemplo: Oceanfront, Ghent, Town Center")}" maxlength="80"><p class="small muted">${T("Businesses search by neighborhood. Keep it to the area you actually post from.", "Los negocios buscan por vecindario. Déjalo en la zona desde donde publicas de verdad.")}</p></div>
       <div class="field"><label>${T("Your three streets", "Tus tres calles")}</label>
         ${[0, 1, 2].map((i) => `<input id="p-street-${i}" value="${esc((c.streets || [])[i] || "")}" placeholder="${T("For example: Granby Street", "Por ejemplo: Granby Street")}" maxlength="60" style="margin-bottom:8px">`).join("")}
-        <p class="small muted">${T("Up to 3 streets or neighborhoods where you hang out, not where you live. They show on your profile, your book-me page (the page businesses book you through), and the Local List (the public list of bookable creators in your market), labeled My streets.", "Hasta 3 calles o vecindarios donde pasas el tiempo, no donde vives. Aparecen en tu perfil, tu página de reservas (la página donde los negocios te contratan) y la Lista Local (la lista pública de creadores contratables en tu mercado), como: Mis calles.")}</p>
+        <p class="small muted">${T("Up to 3 streets or neighborhoods where you hang out, not where you live. They show on your profile and your book-me page, labeled My streets.", "Hasta 3 calles o vecindarios donde pasas el tiempo, no donde vives. Aparecen en tu perfil y tu página de reservas, como: Mis calles.")}</p>
       </div>
       <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="p-realtor" ${isRealtorProfile(c) ? "checked" : ""} onchange="syncRealtorFields()"><span><strong>I am a licensed real estate agent</strong>: turning this on adds your brokerage and neighborhoods to your profile and shows businesses your Realtor badge.</span></label></div>
       <div id="p-realtor-block" style="display:${isRealtorProfile(c) ? "" : "none"}">
@@ -17034,6 +17140,7 @@ function creatorProfileHtml(u) {
       </div>
       <div class="field"><label>${T("Your university (if you are a student now)", "Tu universidad (si eres estudiante ahora)")}</label><input id="p-university" value="${esc(c.university || u.university || "")}" placeholder="${T("Start typing your school", "Empieza a escribir tu universidad")}" maxlength="120"><div class="uni-results" id="p-university-results"></div><p class="small muted">${T("Adding your school groups same-school referrals into your campus crew.", "Agregar tu universidad agrupa a tus referidos de la misma escuela en tu grupo de campus.")}${(c.university || u.university) && (c.universityStatus || u.universityStatus) === "current_student" ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
       <div class="field"><label>${T("Student status (optional)", "Estado de estudiante (opcional)")}</label>${universityStatusChipsHtml("p-university-status", c.universityStatus || u.universityStatus || "")}<p class="small muted">${T("The campus badge is for current students only, so it shows while your status is Current student.", "La insignia de campus es solo para estudiantes actuales, así que se muestra mientras tu estado sea Estudiante actual.")}</p></div>
+      <div class="sec-save189"><button class="btn ghost small-btn" type="submit">Save changes</button></div>
       </div>
       <div class="fgroup" id="pf-links">
       <p class="fg-kicker">${T("Your links", "Tus enlaces")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
@@ -17047,6 +17154,7 @@ function creatorProfileHtml(u) {
       </div>
       <div class="field"><label>${T("LinkedIn profile URL", "URL de tu perfil de LinkedIn")}</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="${T("Optional", "Opcional")}"></div>
       <div id="p-extra-links">${extraLinkRowsHtml(c)}</div>
+      <div class="sec-save189"><button class="btn ghost small-btn" type="submit">Save changes</button></div>
       </div>
       <div class="fgroup tint" id="pf-audience">
       <p class="fg-kicker">${T("Your audience", "Tu audiencia")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
@@ -17055,14 +17163,15 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("Typical post views", "Vistas típicas por publicación")}</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
       <div class="field"><label>${T("Top audience cities", "Ciudades principales de tu audiencia")}</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="${T("Up to 5, comma separated", "Hasta 5, separadas por comas")}"><p class="small muted">${T("Free text, shown on your profile in words. The market list right below is a different thing: it is the one that actually lists you in other markets.", "Texto libre, se muestra en tu perfil en palabras. La lista de mercados justo debajo es otra cosa: es la que realmente te incluye en otros mercados.")}</p></div>
       <div class="field"><label>${T("Your audience in other markets", "Tu audiencia en otros mercados")}</label>
-        <p class="small muted" id="p-am-help">${T("Optional. If a real share of your audience lives in another Magpie market, name the market and the %. Naming it does not list you there by itself — flip that market's switch on when you want its businesses to find you (at 5% or more you are listed and ranked there, and its offers reach you, not just home-market ones). Your home market is your local % in the four basics at the top, never a row here.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de Magpie, escribe el mercado y el %. Nombrarlo no te incluye allí por sí solo: activa el interruptor de ese mercado cuando quieras que sus negocios te encuentren (con 5% o más apareces y te posicionas allí, y sus ofertas te llegan, no solo las de tu mercado). Tu mercado principal es tu % local en los cuatro datos básicos de arriba, nunca una fila aquí.")}</p>
+        <p class="small muted" id="p-am-help">${T("Optional. If a real share of your audience lives in another Magpie market, name the market and the %. Flip that market's switch on when you want its businesses to find you: at 5% or more you are listed and ranked there, and its offers reach you.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de Magpie, escribe el mercado y el %. Activa el interruptor de ese mercado cuando quieras que sus negocios te encuentren: con 5% o más apareces y te posicionas allí, y sus ofertas te llegan.")}</p>
         <div id="p-am-rows">${(() => { const rows = (c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)); return (rows.length ? rows : [{}]).slice(0, 5).map((e) => amRowHtml(e.market || "", e.pct === undefined || e.pct === null ? "" : String(e.pct), e.market ? e.active !== false : false)).join(""); })()}</div>
         <button type="button" class="btn small-btn ghost" id="p-am-add" onclick="return amAddRow()"${(c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)).length >= 5 ? ' style="display:none"' : ""}>${T("Add another market", "Agregar otro mercado")}</button>
       </div>
       <div class="field"><label>${T("Your local % by platform", "Tu % local por plataforma")}</label>
-        <p class="small muted">${SETUP_BASIS_LINE} Businesses book creators on local proof: filling this in stops you being under-counted and puts you in front of businesses in every market you cover. Finish the whole breakdown — these %s plus your market splits above — and you earn +10 Momentum.</p>
+        <p class="small muted">${SETUP_BASIS_LINE} Filling this in stops you being under-counted. Finish the whole breakdown and you earn +10 Momentum.</p>
         <div id="p-lp-rows">${lpRowsHtml(c)}</div>
       </div>
+      <div class="sec-save189"><button class="btn ghost small-btn" type="submit">Save changes</button></div>
       </div>
       <div class="fgroup" id="pf-create">
       <p class="fg-kicker">${T("What you create", "Lo que creas")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
@@ -17085,6 +17194,7 @@ function creatorProfileHtml(u) {
       </div>
       <div class="field" id="pf-bio"><label>${T("Bio", "Biografía")}</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
       <div class="field"><label>${T("Your pitch line", "Tu línea de presentación")}</label><input id="p-pitch" value="${esc(c.pitchLine || "")}" maxlength="200" placeholder="${T("One line that introduces you, at the top of your profile", "Una línea que te presenta, arriba de tu perfil")}"><p class="small muted">${T("Maggie can draft it from your real profile: your categories, your local percentage, your streets. Accept it, edit it, or write your own.", "Maggie puede redactarla desde tu perfil real: tus categorías, tu porcentaje local, tus calles. Acéptala, edítala o escribe la tuya.")}</p><button type="button" class="btn small-btn ghost" onclick="return pitchDraftFill()">${T("Draft it with Maggie", "Redactarla con Maggie")}</button> <span id="p-pitch-note" class="small muted"></span></div>
+      <div class="sec-save189"><button class="btn ghost small-btn" type="submit">Save changes</button></div>
       </div>
       <div class="save-bar"><div id="save-warn"></div><button class="btn" type="submit">${T("Save profile", "Guardar perfil")}</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span></div>
     </form>
@@ -17635,9 +17745,9 @@ async function loadDealsInto(hostId, role) {
   try {
     const d = await api("GET", "/deals");
     const deals = d.deals || [];
-    host.innerHTML = deals.length
+    host.innerHTML = `<p class="small muted" style="margin:0 0 10px">A deal is a one-to-one offer between one business and one creator: the price, the post and the dates agreed between them, separate from campaigns and open offers.</p>` + (deals.length
       ? deals.map((x) => dealProposalCardHtml(x, role)).join("")
-      : `<div class="empty-card"><div class="ec-t">No deals yet</div><div class="ec-s">${role === "creator" ? "When a business sends you structured terms instead of a plain invite, the deal lands here: accept it, counter it once, or decline with a reason. No messages, no haggling." : "Send a deal from a creator's profile with Make an offer: structured terms they can accept, counter once, or decline. Accepted deals book the visit at exactly those terms."}</div></div>`;
+      : `<div class="empty-card"><div class="ec-t">No deals yet</div><div class="ec-s">${role === "creator" ? "When a business sends you structured terms instead of a plain invite, the deal lands here: accept it, counter it once, or decline with a reason. No messages, no haggling." : "Send a deal from a creator's profile with Make an offer: structured terms they can accept, counter once, or decline. Accepted deals book the visit at exactly those terms."}</div></div>`);
   } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
 }
 
@@ -19501,7 +19611,7 @@ async function loadFoundingBusinessHome() {
   const host = document.getElementById("fbz-sig-queue");
   if (host && document.getElementById("tab-body")) {
     const clF = state._setupChecklist;
-    const nxItems = items.filter((it) => !(clF && !clF.allDone && (it.text || "").indexOf("Your register isn't connected yet") === 0));
+    const nxItems = items.filter((it) => !(clF && !clF.allDone && ((it.text || "").indexOf("Your register isn't connected yet") === 0 || (it.text || "").indexOf("Your business page has no story yet") === 0)));
     if (nxItems.length) {
       host.innerHTML = nextSteps137Html(nxItems.slice(0, 3), []);
       wireSigQueue(host, nxItems.slice(0, 3), []);
@@ -19684,7 +19794,7 @@ const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Messages", "
 function coBrandHeadHtml(brand) {
   if (!brand || (!brand.displayName && !brand.logoUrl)) return "";
   return `<div class="pt-brand-head">
-    ${brand.logoUrl ? `<img class="pt-brand-logo" src="${esc(brand.logoUrl)}" alt="">` : ""}
+    ${brand.logoUrl ? `<img class="pt-brand-logo" src="${esc(brand.logoUrl)}" alt="" onerror="this.remove()">` : ""}
     <div>
       ${brand.displayName ? `<div class="pt-brand-name">${esc(brand.displayName)}</div>` : ""}
       <div class="pt-brand-powered">Powered by Magpie</div>
@@ -19727,8 +19837,9 @@ async function loadPartnerSummary(force) {
 // Build -125: the strip's third stop reads Wallet, like
 // everywhere else.
 function partnerStrip119(tab) {
-  const item = (id, label, t) => ({ label, on: tab === id, onclick: `return go('dashboard','${t}')` });
-  return wsTabs([item("Home", "Overview", "Home"), item("Businesses", "Businesses", "Businesses"), item("Earnings", "Wallet", "Earnings"), item("Performance", "Reports", "Performance")]);
+  // Build -189 (PL-34): retired, renders nothing. The partner
+  // shell's rail, bar and menu are the one nav system now.
+  return "";
 }
 function ptEarnSetSeg(v) { state.partnerEarnSeg = v; renderPartnerTab("Earnings"); return false; }
 function renderPartnerTab(tab) {
@@ -19753,12 +19864,10 @@ function renderPartnerTab(tab) {
   coBrandShellOn(el, pBrand);
   const pBrandHead = coBrandHeadHtml(pBrand);
   if (pBrandHead) el.insertAdjacentHTML("afterbegin", pBrandHead);
-  // Build -119: the area strip rides under the head on the
-  // four area screens (Overview, Businesses, Money, Reports).
-  if (["Home", "Businesses", "Earnings", "Performance"].includes(tab)) {
-    const h = el.querySelector(".ws-head");
-    if (h) h.insertAdjacentHTML("afterend", partnerStrip119(tab));
-  }
+  // Build -189 (PL-34): the in-page partner strip is deleted.
+  // One nav system per role: rail on desktop, bar + menu on
+  // phones. partnerStrip119 stays defined for older callers but
+  // renders nothing.
   if (tab === "Sig") wireScopedSig(el);
   if (tab === "Home") loadPartnerScopeHeads(d);
   if (tab === "Earnings") loadPartnerPacks();
@@ -19945,7 +20054,8 @@ function partnerHomeHtml(d) {
   state.sigQueueLinks = links;
   state.sigQueueCount = 0;
   return `
-  ${wsHead(p.name, { chip: partnerSampleChip(d), sub: "Start here. Your markets, your bench, your share: the creators and businesses who came in through your links, and the share they earn you.", subKey: "pt-home" })}
+  ${wsHead("Home", { chip: partnerSampleChip(d), sub: "Start here.", subKey: "pt-home" })}
+  <div class="home-greet"><div class="hg-hi">Hi, ${esc(p.name || "")}</div><div class="hg-line serif-line">Your markets, your bench, your share: the creators and businesses who came in through your links, and the share they earn you.</div></div>
   ${sigHero137Html(partnerSigLine(d))}
   ${highlights137Html([
     { label: "Creators claimed", sub: "Through your links", value: String(cs.claimed) },
@@ -19954,7 +20064,6 @@ function partnerHomeHtml(d) {
     { label: "Wallet", sub: `${sym}${fmtPrice(e.accruedMonthly)} accruing this month`, value: `${sym}${fmtPrice(e.accruedTotal)}`, tab: "Earnings" },
   ])}
   ${nextSteps137Html([], links)}
-  ${d.atFill ? `<p class="small muted" style="margin:12px 2px 0">At full fill, ${d.atFill.markets === 1 ? "your market holds" : `your ${d.atFill.markets} markets hold`} about ${fmtNum(d.atFill.businessesPerMarket * d.atFill.markets)} businesses, and your share runs about $${fmtNum(d.atFill.partnerYearly)} a year. Modeled, not promised: markets fill over time.</p>` : ""}
   ${partnerScopesCardHtml(d)}`;
 }
 
@@ -20079,7 +20188,7 @@ function partnerEarningsHtml(d) {
   ${e.hasPaidRevenue ? "" : `
   <div class="panel mt"><h3 style="margin-top:0">No paid revenue yet</h3>
   <p class="small muted">No business in your markets has a paid subscription on file yet, so nothing has accrued. The moment one does, it appears here at your ${e.sharePct == null ? "org's" : `${e.sharePct}%`} share. Amounts on this page are always labeled accrued until a payment actually happens.</p></div>`}
-  ${d.atFill ? `<p class="small muted">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled from the average partner market (about ${fmtNum(d.atFill.businessesPerMarket)} businesses at $2,958 a year), not a promise.</p>` : ""}
+  ${d.atFill ? `<p class="small muted">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled from the average partner market (about ${fmtNum(d.atFill.businessesPerMarket)} businesses at $2,958 a year). Modeled, not promised.</p>` : ""}
   ${(d.viewer && d.viewer.isTeamMember) ? "" : `<div class="panel mt">
     <h3 style="margin-top:0">Your month pack</h3>
     <p class="small muted" style="margin:0 0 10px">One file with your month: the accrual, the greater-of math with both candidates, what you have been paid and what is owed, and the business-by-business activity. A closed month's pack is frozen: it matches the numbers Magpie closed with, to the cent, and later changes arrive as adjustment rows instead of rewriting it. An open month downloads as a live snapshot and says so.</p>
@@ -20724,7 +20833,7 @@ async function loadBusinessHome() {
     // business is not nagged about a till before its own page
     // exists. The checklist item asks the same question in
     // place; this is the Sig-side nudge, once, from real state.
-    if (!bz.posProvider && bz.about) add(5, now, "Tell us which till you run: Square, Clover, Toast, Lightspeed, or another system. It only changes how visits get counted later; codes count at every till today.", "Answer on Home", () => go("dashboard", "Home"), "Which till do you run?");
+    if (!bz.posProvider && bz.about) add(5, now, "Tell us which till you run: Square, Clover, Toast, Lightspeed, or another system. It only changes how visits get counted later; codes count at every till today.", "Answer on Home", () => go("dashboard", "Home"), "What you use at the register");
     if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits: the creator shows their visit code at your counter, your team enters it with this PIN, and that is what counts the visit.", "Set PIN", () => go("dashboard", "Settings"), "Staff PIN not set");
     // Build -99 proactive prompt, real records only: the
     // setup checklist's register item is undone and Square is
@@ -20857,7 +20966,7 @@ async function loadBusinessHome() {
     // later (the checklist sits under Money, not in front of
     // the roster).
     const clOn = !!(d.setupChecklist && !d.setupChecklist.allDone);
-    const setupGap = (t) => clOn && (t.indexOf("Your business page is missing its About") === 0 || t.indexOf("Set your standing hours once") === 0 || t.indexOf("Set your staff PIN so your team can redeem") === 0 || t.indexOf("Your register isn't connected yet") === 0);
+    const setupGap = (t) => clOn && (t.indexOf("Your business page is missing its About") === 0 || t.indexOf("Set your standing hours once") === 0 || t.indexOf("Set your staff PIN so your team can redeem") === 0 || t.indexOf("Your register isn't connected yet") === 0 || t.indexOf("Tell us which till you run") === 0);
     const nxQueueAll = queue.filter((it) => !setupGap(it.text || ""));
     let nxQueue = nxQueueAll;
     if (nxQueueAll.length) {
@@ -20989,7 +21098,7 @@ async function renderRequestsTab(embed) {
   const el = document.getElementById(embed ? "offers-seg-body" : "tab-body");
   if (!el) return;
   if (!reqState) reqState = reqFreshState();
-  el.innerHTML = `${embed ? `<div class="req-banner">Every applicant gets an answer within 2 business days. That is the deal.</div>` : wsHead("Requests", { sub: "Creators waiting on your decision." })}<div id="req-main">${skelHtml("Loading requests...", 2)}</div>`;
+  el.innerHTML = `${embed ? `<div class="req-banner">Every applicant gets an answer within 2 business days. That is the deal.</div>` : wsHead("Applicants", { sub: "Creators waiting on your decision." })}<div id="req-main">${skelHtml("Loading applicants...", 2)}</div>`;
   try {
     if (!reqState.loaded) {
       const od = await api("GET", "/offers");
@@ -21013,7 +21122,7 @@ async function renderRequestsTab(embed) {
     }
     renderReqMain();
   } catch (err) {
-    el.innerHTML = `${reqEmbed ? "" : wsHead("Requests")}<div class="error-box">${esc(err.message)}</div>`;
+    el.innerHTML = `${reqEmbed ? "" : wsHead("Applicants")}<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 function reqFiltered(bucket) {
@@ -21883,7 +21992,7 @@ async function renderBizProfileTab() {
         </div>
         <div class="form-2col">
           <div class="field"><label>City</label><input id="bp-city" value="${esc(u.city || "")}"></div>
-          <div class="field"><label>Neighborhood / area</label><input id="bp-neighborhood" value="${esc(b.neighborhood || "")}" placeholder="For example: Oceanfront, Ghent"></div>
+          <div class="field"><label>Neighborhood / area</label><input id="bp-neighborhood" value="${esc(b.neighborhood || "")}" placeholder="For example: a neighborhood in ${esc(u.market || "your market")}"></div>
           <div class="field"><label>Business ZIP</label><input id="bp-zip" inputmode="numeric" maxlength="5" value="${esc(b.zip || "")}" placeholder="For example: 23452"><p class="small muted">Groups creators by distance bands from your door. Bands only, never an exact distance.</p></div>
         </div>
         <div class="field"><label>About your business</label><textarea id="bp-about" rows="3" placeholder="What you serve, what the visit feels like">${esc(b.about || "")}</textarea></div>
@@ -21927,7 +22036,7 @@ async function renderBizProfileTab() {
         <div class="field"><label>Key links (up to 6, one per line: Label | https://...)</label><textarea id="bp-pk-links" rows="4" placeholder="Menu | https://your-site.com/menu&#10;Book a table | https://your-site.com/book">${esc((pk.links || []).map((l) => `${l.label || ""} | ${l.url || ""}`).join("\n"))}</textarea></div>
         <div class="form-2col">
           <div class="field"><label>Your handle (for tagging)</label><input id="bp-pk-handle" value="${esc(pk.handle || "")}" placeholder="yourbusiness"></div>
-          <div class="field"><label>Hashtags (space separated, up to 6)</label><input id="bp-pk-tags" value="${esc((pk.hashtags || []).join(" "))}" placeholder="virginiabeach eatslocal"></div>
+          <div class="field"><label>Hashtags (space separated, up to 6)</label><input id="bp-pk-tags" value="${esc((pk.hashtags || []).join(" "))}" placeholder="yourtown eatslocal"></div>
         </div>
         <div class="field"><label>Talking points</label><textarea id="bp-pk-points" rows="3" maxlength="600" placeholder="Family owned since 1998. The patio seats 40 and dogs are welcome.">${esc(pk.talkingPoints || "")}</textarea></div>`; })()}
         <button class="btn ws-primary" onclick="saveBusinessProfile('optional')">Save optional</button> <span id="bp-ok-opt" class="saved"></span>
@@ -22518,7 +22627,7 @@ function shelfTileHtml(c, opts) {
   return `<div class="shelf-tile${topMatch ? " top-match" : ""}">
     ${topMatch ? `<span class="top-match-tag">Top match</span>` : ""}
     <div class="shelf-photo"${tap}>
-      ${avatarHtml(c, "shelf-photo-img")}
+      ${c.photoUrl ? avatarHtml(c, "shelf-photo-img") : `<span class="shelf-photo-img shelf-nophoto189" aria-hidden="true">${pct !== null && pct !== undefined ? `<span class="shelf-nophoto-pct">${pct}%</span><span class="shelf-nophoto-cap">local audience</span>` : `<span class="shelf-nophoto-init">${esc((c.name || "").trim().charAt(0).toUpperCase() || "S")}</span>`}</span>`}
       <span class="shelf-badges">${p.tierBand ? `<span class="shelf-badge">${esc(p.tierBand)}</span>` : ""}${c.foundingBand ? `<span class="shelf-badge">Founding</span>` : ""}</span>
       ${preview ? "" : `<button type="button" class="shelf-save${c.isFavorite ? " on" : ""}" onclick="event.stopPropagation(); shelfToggleFav('${c.userId}')" aria-label="Save ${esc(c.name || "creator")}">${c.isFavorite ? "Saved" : "Save"}</button>`}
     </div>
@@ -22996,9 +23105,9 @@ function renderFindOffers() {
   if (sort === "close") { const rank = { "Same neighborhood": 0, "Under 2 miles": 1, "Under 5 miles": 2 }; list = [...list].sort((a, b) => (rank[a.distanceBand] === undefined ? 3 : rank[a.distanceBand]) - (rank[b.distanceBand] === undefined ? 3 : rank[b.distanceBand])); }
   const applied = q.visible.filter((o) => o.myApplication);
   const ea = state.findOffersEarly;
-  const sortSel = (cls) => `<label class="fo-selfilter">Sort <select onchange="state.foSort=this.value; renderFindOffers()"><option value="new"${sort === "new" ? " selected" : ""}>Newest first</option>${hasDistance ? `<option value="close"${sort === "close" ? " selected" : ""}>Closest first</option>` : ""}<option value="value"${sort === "value" ? " selected" : ""}>Highest value</option></select></label>`;
+  const sortSel = (cls) => `<label class="fo-selfilter">Sort <select class="ctl189" onchange="state.foSort=this.value; renderFindOffers()"><option value="new"${sort === "new" ? " selected" : ""}>Newest first</option>${hasDistance ? `<option value="close"${sort === "close" ? " selected" : ""}>Closest first</option>` : ""}<option value="value"${sort === "value" ? " selected" : ""}>Highest value</option></select></label>`;
   el.innerHTML = `
-  <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-title">Find offers</span><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Visits')">My visits</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Offers')">My offers</button></span></div>
+  <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Visits')">My visits</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Offers')">My offers</button></span></div>
   <div class="shop-layout">
     <aside class="shop-rail${state.foRailOpen ? " open" : ""}" id="fo-rail">
       <div class="rail-head"><strong>Filters</strong><span><button type="button" class="btn small-btn ghost" onclick="return foClearAll()">Clear all</button> <button type="button" class="rail-x" aria-label="Close filters" onclick="state.foRailOpen=false; renderFindOffers()">×</button></span></div>
@@ -23013,13 +23122,13 @@ function renderFindOffers() {
       <div class="df-group">
         <div class="df-label">Category</div>
         <label class="rail-row"><input type="radio" name="fo-cat" ${!cat ? "checked" : ""} onchange="state.foCategory=''; renderFindOffers()"><span class="rr-tx">All categories</span><span class="rr-count">${base.length}</span></label>
-        ${cats.map((x) => `<label class="rail-row"><input type="radio" name="fo-cat" ${cat === x ? "checked" : ""} onchange="state.foCategory='${esc(x)}'; renderFindOffers()"><span class="rr-tx">${esc(x)}</span><span class="rr-count">${catCount(x)}</span></label>`).join("")}
+        ${cats.filter((x) => catCount(x) > 0 || cat === x).map((x) => `<label class="rail-row"><input type="radio" name="fo-cat" ${cat === x ? "checked" : ""} onchange="state.foCategory='${esc(x)}'; renderFindOffers()"><span class="rr-tx">${esc(x)}</span><span class="rr-count">${catCount(x)}</span></label>`).join("")}
       </div>
       <div class="df-group">
         <div class="df-label">Distance from you</div>
         <label class="rail-row"><input type="radio" name="fo-dist" ${!dist ? "checked" : ""} onchange="state.foDistance=''; renderFindOffers()"><span class="rr-tx">Anywhere in market</span><span class="rr-count">${base.length}</span></label>
         ${["Same neighborhood", "Under 2 miles", "Under 5 miles"].map((x) => `<label class="rail-row"><input type="radio" name="fo-dist" ${dist === x ? "checked" : ""} onchange="state.foDistance='${x}'; renderFindOffers()"><span class="rr-tx">${x}</span><span class="rr-count">${distCount(x)}</span></label>`).join("")}
-        <p class="rail-note">Bands come from the ZIPs and neighborhoods on file — an offer lands in a band only when both sides shared one.</p>
+        <details class="rail-details189"><summary>How distance bands work</summary><p class="rail-note">Bands come from the ZIPs and neighborhoods on file: an offer lands in a band only when both sides shared one.</p></details>
       </div>
       <div class="df-group">
         <div class="df-label">Good to know</div>
@@ -23263,7 +23372,7 @@ async function loadDiscover() {
   // "See everyone". The mode is only defaulted, never forced.
   const foundingDisc = isFoundingBusiness(u);
   el.innerHTML = `
-    <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-title">Find creators</span><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Favorites')">Your shortlist</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Regulars')">My Regulars</button></span></div>
+    <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Favorites')">Your shortlist</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Regulars')">My Regulars</button></span></div>
     ${wsHead("Find creators", { sub: "Shop local creators near you. Invite the ones who fit.", subKey: "biz-discover" })}
     <p class="small" style="margin:10px 0 0"><strong>Ranked by how local their audience is, not by follower count.</strong></p>
     ${foundingDisc ? `<p class="small muted" style="margin:4px 0 0">${esc(foundingBizPlace(u))}'s founding roster is still joining. New creators show up here as they finish their pages.</p>` : ""}
@@ -23274,13 +23383,13 @@ async function loadDiscover() {
       <div class="df-group rail-only-m">
         <div class="df-label">Where &amp; sort</div>
         <div class="filters disc-top">
-          <div><label>Market</label><select id="f-market-m" onchange="var m=document.getElementById('f-market'); if(m){m.value=this.value;} runDiscover()">${marketOptions(u.market)}</select></div>
-          <div><label>Sort by</label><select id="f-sort-m" onchange="var m=document.getElementById('f-sort'); if(m){m.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></div>
+          <div><label>Market</label><select id="f-market-m" class="ctl189" onchange="var m=document.getElementById('f-market'); if(m){m.value=this.value;} runDiscover()">${discoverMarketOptions189(u.market)}</select></div>
+          <div><label>Sort by</label><select id="f-sort-m" class="ctl189" onchange="var m=document.getElementById('f-sort'); if(m){m.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></div>
         </div>
       </div>
       <div class="df-group">
         <div class="df-label">Match to a campaign</div>
-        <div class="filters disc-top"><div><select id="f-campaign" onchange="return discCampaignSet(this.value)"><option value="">No campaign picked</option></select></div></div>
+        <div class="filters disc-top"><div><select id="f-campaign" class="ctl189" onchange="return discCampaignSet(this.value)"><option value="">No campaign picked</option></select></div></div>
         <p class="small muted" style="margin:4px 0 0">Every creator gets a match score for that campaign.</p>
       </div>
       <div class="df-group">
@@ -23320,14 +23429,15 @@ async function loadDiscover() {
       </div>
       <div class="df-group">
         <div class="df-label">Tier (their audience size)</div>
-        <div class="filters disc-top"><div><select id="f-tier" onchange="runDiscover()"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div></div>
+        <div class="filters disc-top"><div><select id="f-tier" class="ctl189" onchange="runDiscover()"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div></div>
+        <p class="rail-note">Tiers are audience-size bands, smallest to biggest: Neighbors, Locals, Headliners. Local reach counts for more than the band here.</p>
       </div>
     </div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
-      <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent" onchange="runDiscover()"></div>
-      <div><label>University (current students)</label><select id="f-university" onchange="runDiscover()"><option value="">All universities</option>${state.discoverUniversity ? `<option selected>${esc(state.discoverUniversity)}</option>` : ""}</select></div>
-      <div><label>Would accept as a comped visit</label><select id="f-comp" onchange="runDiscover()"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+      <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: a neighborhood in ${esc(u.market || "your market")}" onchange="runDiscover()"></div>
+      <div><label>University (current students)</label><select id="f-university" class="ctl189" onchange="runDiscover()"><option value="">All universities</option>${state.discoverUniversity ? `<option selected>${esc(state.discoverUniversity)}</option>` : ""}</select></div>
+      <div><label>Would accept as a comped visit</label><select id="f-comp" class="ctl189" onchange="runDiscover()"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
       <div><label>Total audience min</label><input type="number" id="f-fmin" min="0" placeholder="Any" onchange="runDiscover()"></div>
       <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any" onchange="runDiscover()"></div>
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto" onchange="runDiscover()"> Has a paid rate (paid bookings) only</label></div>
@@ -23338,8 +23448,8 @@ async function loadDiscover() {
     <div class="shop-main">
     <div class="shop-searchrow">
       <span class="sr-q"><input type="search" id="f-q" placeholder="Search name or handle" oninput="discQInput(this)"></span>
-      <span class="sr-sel"><select id="f-market" aria-label="Market" onchange="var m=document.getElementById('f-market-m'); if(m){m.value=this.value;} runDiscover()">${marketOptions(u.market)}</select></span>
-      <span class="sr-sel"><select id="f-sort" aria-label="Sort by" onchange="var m=document.getElementById('f-sort-m'); if(m){m.value=this.value;} runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></span>
+      <span class="sr-sel"><select id="f-market" class="ctl189" aria-label="Market" onchange="var m=document.getElementById('f-market-m'); if(m){m.value=this.value;} runDiscover()">${discoverMarketOptions189(u.market)}</select></span>
+      <span class="sr-sel"><select id="f-sort" class="ctl189" aria-label="Sort by" onchange="var m=document.getElementById('f-sort-m'); if(m){m.value=this.value;} runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></span>
       <button type="button" class="btn small-btn sr-filters" id="disc-rail-btn" onclick="return shopRailToggle('disc-rail')">Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}</button>
     </div>
     <div id="lineup-slot"></div>
@@ -23737,7 +23847,7 @@ function discoverStackCard(c) {
   const thumbs = (Array.isArray(c.photos) && c.photos.length ? c.photos : (c.photoUrl ? [c.photoUrl] : [])).slice(0, 3);
   return `<div class="dcard deck2-card${c.standing === "paused" ? " paused" : ""}">
     <div class="dcard-photo${c.photoUrl ? "" : " no-photo"}">
-      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="dcard-mono"><span>${initial}</span></div>`}
+      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="dcard-mono">${p.localAudiencePct !== null && p.localAudiencePct !== undefined ? `<span class="dcard-mono189">${p.localAudiencePct}%<small>local audience</small></span>` : `<span>${initial}</span>`}</div>`}
       ${p.tierBand ? `<span class="dcard-tier">${esc(p.tierBand)}</span>` : ""}
       ${c.previewPhoto ? `<span class="dcard-sample">Sample photo · preview</span>` : ""}
       <div class="dcard-scrim">
@@ -24094,7 +24204,8 @@ function campStartRowsHtml(mode, g) {
   const rec = SIG_PLAY_BY_CATEGORY[(state.user && state.user.business && state.user.business.category) || ""] || "weekend_fill";
   const plays = SIG_PLAYS.map((p) => `<button type="button" class="rail-row camp-pick${d.play === p.id ? " on" : ""}" onclick="applyPlayToDraft('${p.id}')"><span class="rr-tx">${esc(p.name)}${p.id === rec ? ` <span class="rr-tag">fits you</span>` : ""}</span></button>`).join("");
   const noPlay = d.play ? `<button type="button" class="rail-row camp-pick" onclick="applyPlayToDraft(null)"><span class="rr-tx">No play — start blank</span></button>` : "";
-  const tpls = mode === "open" ? (g.templates || []).map((t) => `<button type="button" class="rail-row camp-pick" onclick="applyTemplate('${esc(t.id)}')"><span class="rr-tx">${esc(t.label)}</span></button>`).join("") : "";
+  const seenTpl189 = new Set(SIG_PLAYS.map((p) => p.name.trim().toLowerCase()));
+  const tpls = mode === "open" ? (g.templates || []).filter((t) => { const k = String(t.label || "").trim().toLowerCase(); if (!k || seenTpl189.has(k)) return false; seenTpl189.add(k); return true; }).map((t) => `<button type="button" class="rail-row camp-pick" onclick="applyTemplate('${esc(t.id)}')"><span class="rr-tx">${esc(t.label)}</span></button>`).join("") : "";
   return plays + noPlay + tpls;
 }
 function campRailHtml(mode, g, myPlan, planObj) {
@@ -24682,7 +24793,7 @@ function campaignGuideParse(text) {
 function campaignGuideHtml() {
   const known = campaignGuideKnown();
   const cg = state.campaignGuide;
-  return `<section class="wcard" id="campaign-guide" style="border:2px solid #006AFC">
+  return `<section class="wcard" id="campaign-guide">
     <div style="display:flex;gap:12px;align-items:center">${sigAvatarHtml("greet")}<div><p class="ui-kicker" style="margin:0">Start with Maggie</p><h3 style="margin:2px 0 0">Tell Maggie what you want</h3></div></div>
     <p class="small muted" style="margin:10px 0 0">Say it in one sentence and Maggie builds the whole campaign: she fills in what she already knows about your business, asks only for what is missing, one question at a time, shows you the full draft, and saves it when you say yes. Then she walks you to the creators who match.</p>
     <div class="cg-starters"><span class="small muted">Tap one to start:</span> <button type="button" class="chip" onclick="return campaignGuideStart('Find me 15 creators who would take a comped meal')">Find me 15 creators who would take a comped meal</button> <button type="button" class="chip" onclick="return campaignGuideStart('I will pay 3 creators $100 each, I want fashion lovers')">I will pay 3 creators $100 each, I want fashion lovers</button></div>
@@ -25125,7 +25236,7 @@ async function loadCampaignSetup() {
   ${bizTemplatesHtml()}
   <div id="offers-live-only">
   ${foundingBiz ? `<p class="small" style="margin:14px 0 0"><strong>Building ahead:</strong> build a campaign now and it saves as a draft. Drafts go out the day ${esc(foundingBizPlace(state.user))} opens. Nothing is sent to a creator before then.</p>${sigDraftCardHtml(state.user)}` : ""}
-  <div class="panel" id="offer-composer" style="margin-top:18px">
+  <div class="panel camp-form189" id="offer-composer" style="margin-top:18px">
     <h3 style="margin-top:0">New campaign</h3>
     <div id="form-error"></div>
     <div class="field"><label>Who sees this offer ${infoBtn("lane")}</label>
@@ -26186,6 +26297,7 @@ function staffScanStop() {
 function renderPlanTab() {
   const el = document.getElementById("tab-body");
   const u = state.user;
+  const planObj189 = (state.boot && state.boot.plans || []).find((p) => p.id === (u.business && u.business.plan));
   const rl = u.business.reviewLinks || {};
   const plans = state.boot.plans.map((p) => `
     <div class="plan-card ${u.business.plan === p.id ? "selected" : ""}" id="plan-${esc(p.id)}" onclick="selectPlan('${esc(p.id)}')">
@@ -26203,7 +26315,7 @@ function renderPlanTab() {
   ${wseg === "bookings" ? `<div id="biz-wallet-bookings">${skelHtml("Loading your bookings...", 1)}</div>` : wseg === "receipts" ? `<p class="small muted" style="margin:10px 2px 0">Your monthly receipt: what was counted at the register, what posts recorded, and the visits you used — three kinds of numbers, never added together, ready to forward to your bookkeeper.</p><div id="biz-receipt-export"></div>` : `
   <div class="panel mt tint">
     <h3>Your plan</h3>
-    <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
+    <p>Current plan: <strong>${esc(u.business.planName || (planObj189 ? planObj189.name : "No plan picked yet"))}</strong>${u.business.planSelectedAt ? `, selected ${fmtDate(u.business.planSelectedAt)}` : ""}.</p>
     <p class="muted">${esc(u.business.billingStatus)}</p>
     <p class="small"><strong>${VISIT_GUARANTEE_LINE}</strong></p>
     ${paymentsLive()
@@ -26573,7 +26685,7 @@ function msgFoldersHtml() {
   const folders = state.msgFolders || [];
   const chip = (v, label) => `<button type="button" class="chip${msgFolder === v ? " on" : ""}" onclick="return msgSetFolder('${v}')">${esc(label)}</button>`;
   const active = folders.find((f) => f.id === msgFolder);
-  return `${chip("all", "All")}${chip("inbox", "Inbox")}${folders.map((f) => chip(f.id, f.name)).join("")}<button type="button" class="chip chip-add" onclick="return msgNewFolder()">+ New folder</button>${active ? `<span class="msg-folder-admin"><button type="button" class="linklike" onclick="return msgRenameFolder()">Rename</button><button type="button" class="linklike danger" onclick="return msgDeleteFolder()">Delete folder</button></span>` : ""}`;
+  return `${chip("all", "All")}${chip("inbox", "Inbox")}${folders.map((f) => chip(f.id, f.name)).join("")}<button type="button" class="chip chip-add" onclick="return msgNewFolder()">+ New folder</button>${active ? `<span class="msg-folder-admin"><button type="button" class="linklike" onclick="return msgRenameFolder()">Rename</button><button type="button" class="linklike danger" onclick="return msgDeleteFolder()">Delete folder</button></span>` : ""}<p class="small muted" style="margin:6px 0 0">Folders are labels you make: file any conversation under a name you choose. Inbox holds the ones you have not filed.</p>`;
 }
 function msgSetFolder(v) { msgFolder = v; renderThreadList(); return false; }
 async function msgNewFolder() {
@@ -26940,7 +27052,8 @@ function adminFinishPanelHtml() {
     </tr>`;
   }).join("");
   return `
-  <h3 class="mt">Finish Engine</h3>
+  <div class="panel" style="margin-top:14px">
+  <h3 style="margin-top:0">Finish Engine</h3>
   <p class="muted small">Unfinished creators get up to three messages (the blunt truth, the booking page, the founding first look), Maggie can finish a profile with a creator inside their message thread, and finishing fires one finish-moment message. The engine is <strong>${d.enabled ? "on" : "off"}</strong>${d.epochAt ? ` since ${String(d.epochAt).slice(0, 10)}` : ""}.
   <button type="button" class="btn small-btn ${d.enabled ? "ghost" : ""}" onclick="return adminFinishToggle(this)">${d.enabled ? "Turn engine off" : "Turn engine on"}</button></p>
   <p class="muted small">${c.audience || 0} approved and unfinished &middot; ${c.inSequence || 0} in the sequence &middot; ${c.conciergeActive || 0} finishing by message &middot; ${c.conciergePaused || 0} paused &middot; ${c.optedOut || 0} opted out &middot; ${c.finishMoments || 0} finish moments sent &middot; ${c.finished || 0} finished</p>
@@ -26952,7 +27065,8 @@ function adminFinishPanelHtml() {
     ${tplField("rescue3", "Rescue touch 3: the founding first look (unlaunched markets only)", 6)}
     ${tplField("finishMoment", "Finish moment", 5)}
     <p style="margin-top:10px"><button type="button" class="btn small-btn" onclick="return adminFinishSaveTemplates(this)">Save copy</button> <span id="admin-finish-tpl-result" class="muted small"></span></p>
-  </details>`;
+  </details>
+  </div>`;
 }
 async function adminFinishToggle(btn) {
   const d = adminFinish.data;
@@ -27257,10 +27371,10 @@ async function loadAdminMessages152() {
   if (!host) return;
   if (view === "many") {
     host.innerHTML = `
-    <div id="admin-campaigns-panel" class="mt"><div class="panel"><h3 style="margin-top:0">Sent to many</h3><p class="muted small">Loading...</p></div></div>
+    <div id="admin-campaigns-panel" class="mt"><div class="panel"><h3 style="margin-top:0">Sent to many</h3>${skelHtml("Loading campaigns...", 1)}</div></div>
     <h3 class="mt">Broadcast room</h3>
     <p class="muted small">One message into many people's inboxes at once.</p>
-    <div id="bc153-room"><p class="muted">Loading...</p></div>`;
+    <div id="bc153-room">${skelHtml("Loading the room...", 2)}</div>`;
     await adminMsgEnsureComposeData166();
     await renderAdminCampaigns163();
     try {
@@ -27908,7 +28022,7 @@ async function bc152OpenBroadcast(id, focusUserId) {
   adminBc153.focusUserId = focusUserId || null;
   if (adminBc153.view !== "detail") adminBc153.view = "detail";
   const host = document.getElementById("bc153-main");
-  if (host) host.innerHTML = `<p class="muted">Loading...</p>`;
+  if (host) host.innerHTML = skelHtml("Loading the conversation...", 1);
   try {
     getCache.delete("/admin/broadcasts/" + id);
     adminBc153.detail = await api("GET", "/admin/broadcasts/" + encodeURIComponent(id));
@@ -28140,9 +28254,9 @@ function renderAdmin() {
       <div class="admin-home-side">
         <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Maggie is reading the same numbers Admin shows...</p></div></div>
       </div>
-      <div class="admin-home-main"><div id="tab-body"><p class="muted">Loading...</p></div></div>
+      <div class="admin-home-main"><div id="tab-body">${skelHtml("Loading this room...", 2)}</div></div>
     </div>` : `
-    <div id="tab-body"><p class="muted">Loading...</p></div>`}`;
+    <div id="tab-body">${skelHtml("Loading this room...", 2)}</div>`}`;
   if (landing) { loadAdminSig(); loadAdminTotals126(); loadSigTopNudges(); }
   if (tab === "Account") renderAdminAccount126();
   if (tab === "Sig") renderAdminSig();
@@ -29596,7 +29710,7 @@ function campaignSectionHtml(meta, data) {
   <div class="panel camp-panel">
     <div class="flex-between"><h3 style="margin:0">${esc(meta.title)}</h3><span class="badge ${c.armed ? "ok" : "info"}">${c.armed ? "Armed" : "Paused"}</span></div>
     <p class="small muted" style="margin-top:8px">Campaign <strong>${esc(c.id || meta.campaignId)}</strong>. ${esc(meta.blurb)}${c.lastRunAt ? ` Last sweep: ${esc(fmtDate(c.lastRunAt))}.` : ""} Send window is ${c.windowOpenNow ? "open now" : "closed right now"}.</p>
-    ${c.lastError ? `<div class="error-box">${esc(c.lastError)}</div>` : ""}
+    ${c.lastError ? (c.storedFromMailbox && c.storedFromMailbox !== c.fromMailbox ? `<p class="small muted" style="margin-top:8px">Retired lane: this campaign's saved sender (${esc(CAMPAIGN_SENDER_ADDR[c.storedFromMailbox] || c.storedFromMailbox)}) is retired, so sends go from ${esc(CAMPAIGN_SENDER_ADDR[c.fromMailbox] || c.fromMailbox)} now. The last error on file belongs to the retired lane${c.lastRunAt ? ` (recorded ${esc(fmtDate(c.lastRunAt))})` : ""} and is history, not the current state: ${esc(c.lastError)}</p>` : `<div class="error-box">${esc(c.lastError)}</div>`) : ""}
     ${data.degraded ? `<div class="error-box">Campaign data could not be loaded just now, so this card is showing zeros. Refresh in a moment; nothing here was changed.</div>` : ""}
     <p class="small camp-counts">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong> &middot; Sent today: <strong>${c.sentToday != null ? c.sentToday : 0} of ${c.dailyCeiling || 150} (daily ceiling)</strong></p>
     ${c.sentTodayByLane ? `<p class="small muted">Sent today by lane: ${Object.entries(c.sentTodayByLane).map(([k, n]) => `${esc(CAMPAIGN_SENDER_ADDR[k] || k)}: <strong>${n}</strong>`).join(" &middot; ") || "none yet"}</p>` : ""}
@@ -29852,10 +29966,10 @@ function adminMarketCardHtml(m) {
   return `<div class="panel mkt-card">
     <div class="mkt-photo" style="background-image:url('${marketPhoto130(m)}'),var(--grad)" role="img" aria-label="${esc(m.label)}"></div>
     <div class="mkt-card-head"><div><strong class="mkt-name">${esc(m.label)}</strong><br><span class="muted small">${esc(m.country || "United States")}</span></div>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</div>
-    <div class="mkt-reach"><span class="mkt-reach-num">${fmtNum(m.combinedFollowers || 0)}</span> <span class="muted small">combined followers (as reported by creators), across ${fmtNum(m.creatorsListed || 0)} listed ${m.creatorsListed === 1 ? "creator" : "creators"}</span></div>
+    <div class="mkt-reach"><span class="mkt-reach-num">${fmtNum(m.combinedFollowers || 0)}</span> <span class="muted small">combined followers (as reported by creators), across ${fmtNum(m.creatorsListed || 0)} listed ${m.creatorsListed === 1 ? "creator" : "creators"}: approved creators listed in this market, whether they call it home or are listed here from another home market</span></div>
     <div class="mkt-reach"><span class="mkt-reach-num">${fmtNum(m.localFollowers || 0)}</span> <span class="muted small">local followers: the part of that audience that lives in ${esc(m.label)}, worked out from the local share each creator reports for this market</span></div>
     <p class="mkt-stats"><strong>${m.avgLocalPct === null || m.avgLocalPct === undefined ? "—" : m.avgLocalPct + "%"}</strong> avg % local <span class="muted small">(average share of a listed creator's audience that lives in their market)</span></p>
-    <p class="mkt-stats"><strong>${m.creatorsApproved} of 50 approved</strong> &middot; ${Math.max(0, 50 - (m.creatorsApproved || 0))} to go to launch &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> finished profiles &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></p>
+    <p class="mkt-stats"><strong>${m.creatorsApproved} of 50 approved creators</strong> <span class="muted small">(the launch count: approved creators who call this market home)</span> &middot; ${Math.max(0, 50 - (m.creatorsApproved || 0))} to go to launch &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> of them with finished profiles &middot; <strong>${m.creatorsPending}</strong> pending<br>${m.creatorsListedFromElsewhere ? `<span class="muted small">Plus <strong>${m.creatorsListedFromElsewhere}</strong> approved ${m.creatorsListedFromElsewhere === 1 ? "creator" : "creators"} listed in this market whose home market is elsewhere. They show on this market's public roster and in its listed counts above, and they count toward their home market's launch number.</span><br>` : ""}<span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></p>
     <div class="mkt-actions"><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button><div class="muted small" style="margin-top:4px">${m.live ? "Back to founding only: no new offers or bookings there." : "Opens publishing and bookings here. Founding businesses still activate separately."}</div>${m.businessesFounding ? `<button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}<button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleBench('${esc(m.name)}', ${m.benchOpen ? "false" : "true"})">${m.benchOpen ? "Close bench" : "Open bench"}</button><div class="muted small" style="margin-top:4px">Bench: creators seeing each other in this market. ${m.live ? "Open while the market is live." : m.benchOpen ? "Open by override, ahead of launch." : "Opens at launch unless you open it here."}</div></div>
   </div>`;
 }
@@ -30601,19 +30715,20 @@ async function loadAdminRequests() {
       <tr><td><strong>All markets</strong></td><td><strong>${s.all.pending}</strong> pending &middot; <strong>${s.all.approved}</strong> approved &middot; <strong>${s.all.approvedComplete}</strong> approved + complete</td></tr>
       </table></div>
       ${s.auto ? `<p class="muted small">Auto-decided under the standing rules: ${s.auto.approved} approved, ${s.auto.rejected} rejected all time; today ${s.auto.approvedToday} approved, ${s.auto.rejectedToday} rejected. Referred claims always wait for a person.</p>` : ""}` : "";
+    const devPanels189 = ["localhost", "127.0.0.1"].includes(location.hostname) || window.__MAGPIE_DEV__ === true;
     el.innerHTML = `
+      <h2 style="margin:0 0 4px">Requests</h2>
+      <p class="muted small" style="margin:0 0 12px">The finishing room: approved creators whose profiles are not finished yet, the engine that nudges them done, and the founding roster counts. Conversations themselves live in Messages.</p>
       <div class="panel">
         <h3 style="margin-top:0">Creator messages</h3>
         <p class="muted small">All conversations moved to Messages — every thread, every reply and every send to many people lives there now, in one place.</p>
         <button type="button" class="btn" onclick="return go('dashboard','Messages')">Open Messages</button>
       </div>
       <div id="admin-finish-panel"></div>
-      <div id="admin-demo-showcase"></div>
-      <div id="admin-test-offers"></div>
+      ${devPanels189 ? `<div id="admin-demo-showcase"></div><div id="admin-test-offers"></div>` : ""}
       ${summaryStrip}`;
     renderAdminFinishEngine();
-    loadDemoShowcasePanel();
-    loadTestOffersPanel();
+    if (devPanels189) { loadDemoShowcasePanel(); loadTestOffersPanel(); }
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -31137,7 +31252,7 @@ function adminCreators130Filter(q) {
 async function loadAdminCreators130() {
   const el = document.getElementById("tab-body");
   if (!el) return;
-  el.innerHTML = `<p class="muted">Loading…</p>`;
+  el.innerHTML = skelHtml("Loading creators...", 3);
   try {
     const data = await api("GET", "/admin/applications");
     const rows = [...(data.pending || []), ...(data.decided || [])]
@@ -31396,7 +31511,7 @@ function astRender() {
     <div class="panel">
       <h3 style="margin:0 0 2px">Signups over time</h3>
       <p class="muted small" style="margin:0 0 8px">New creators in this view, ${spanDays > 62 ? "per week" : "per day"}.</p>
-      ${sparkSvg119(buckets)}
+      ${astChart189(buckets)}
       <p class="small" style="margin:6px 0 0"><strong>${fmtNum(buckets.reduce((a, b) => a + b, 0))}</strong> signups in the period shown</p>
     </div>
     <div class="panel">
@@ -31445,7 +31560,7 @@ async function loadStats() {
       <div class="panel cc-filters">
         <div class="cc-filter-row">
           <label class="cc-flabel">When
-            <select onchange="astSetFilter('range', this.value)">
+            <select class="ctl189" onchange="astSetFilter('range', this.value)">
               <option value="all" ${astFilters.range === "all" ? "selected" : ""}>All time</option>
               <option value="30d" ${astFilters.range === "30d" ? "selected" : ""}>Last 30 days</option>
               <option value="this_month" ${astFilters.range === "this_month" ? "selected" : ""}>This month</option>
@@ -31453,10 +31568,10 @@ async function loadStats() {
             </select>
           </label>
           <label class="cc-flabel">Market
-            <select onchange="astSetFilter('market', this.value)">${astMarketOpts}</select>
+            <select class="ctl189" onchange="astSetFilter('market', this.value)">${astMarketOpts}</select>
           </label>
           <label class="cc-flabel">Status
-            <select onchange="astSetFilter('status', this.value)">
+            <select class="ctl189" onchange="astSetFilter('status', this.value)">
               <option value="all" ${astFilters.status === "all" ? "selected" : ""}>All creators</option>
               <option value="pending" ${astFilters.status === "pending" ? "selected" : ""}>Waiting on review</option>
               <option value="approved" ${astFilters.status === "approved" ? "selected" : ""}>Approved</option>
@@ -31478,17 +31593,17 @@ async function loadStats() {
       <div class="panel cc-filters">
         <div class="cc-filter-row">
           <label class="cc-flabel">Period
-            <select onchange="ccSetPeriod(this.value)">
+            <select class="ctl189" onchange="ccSetPeriod(this.value)">
               <option value="all" ${ccFilters.period === "all" ? "selected" : ""}>All time</option>
               <option value="this_month" ${ccFilters.period === "this_month" ? "selected" : ""}>This month</option>
               <option value="last_month" ${ccFilters.period === "last_month" ? "selected" : ""}>Last month</option>
             </select>
           </label>
           <label class="cc-flabel">Market
-            <select onchange="ccSetMarket(this.value)">${marketOpts}</select>
+            <select class="ctl189" onchange="ccSetMarket(this.value)">${marketOpts}</select>
           </label>
           <label class="cc-flabel">Partner
-            <select onchange="ccSetPartnerFilter(this.value)">
+            <select class="ctl189" onchange="ccSetPartnerFilter(this.value)">
               <option value="">All partners</option>
               ${(ccPartnerOpts || []).map((p) => `<option value="${esc(p.id)}" ${ccFilters.partner === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
             </select>
@@ -31563,7 +31678,7 @@ async function loadStats() {
         const s2 = sq.square;
         html += `
       <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Register connections (Square)</h3>
-      <p class="small">Server ${s2.configured ? "carries the Square app credentials" : "does not carry the Square app credentials, so connect renders the concierge state"}. Environment: <strong>${esc(s2.env || "")}</strong>${s2.env === "sandbox" ? " — SANDBOX: connections here are test registers, not live ones." : ""}</p>
+      <p class="small">${s2.configured ? "Square is connected on the server, so businesses can connect their registers." : "Square is not connected on the server yet, so businesses see the concierge state instead."}${s2.env === "sandbox" ? " Sandbox: connections here are test registers, not live ones." : ""}</p>
       ${s2.connections && s2.connections.length ? `<div class="table-wrap"><table>
         <tr><th>Business</th><th>Environment</th><th>Status</th><th>Connected</th><th>Last read-back</th><th>Locations</th></tr>
         ${s2.connections.map((c) => `<tr><td>${esc(c.businessName || c.businessId)}</td><td data-label="Environment">${esc(c.env || "")}</td><td data-label="Status">${esc(c.status || "")}</td><td data-label="Connected">${c.connectedAt ? esc(fmtDay(c.connectedAt)) : ""}</td><td data-label="Last read-back">${c.lastSyncAt ? esc(fmtDay(c.lastSyncAt)) : "never"}</td><td data-label="Locations">${(c.locations || []).map(esc).join(", ")}</td></tr>`).join("")}
@@ -31615,14 +31730,24 @@ async function astLoadSuggestions() {
     const asOf = d.generatedAt ? new Date(d.generatedAt) : null;
     host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 8px">Suggestions <span class="muted" style="font-weight:400">(${astSuggestList.length})</span></h3>${astSuggestList.map((s, i) => `
       <div class="kv sug-row" style="align-items:flex-start;gap:10px"><span>${esc(s.text)}<br><span class="small muted">${esc(astReceiptLine(s.receipt))}</span></span><span class="sug-acts">${s.action ? `<button type="button" class="btn small" onclick="return astOpenSuggestionIdx(${i})">${esc(s.action.label)}</button>` : ""}<button type="button" class="btn small ghost" onclick="return astDismissSuggestionIdx(${i})">Dismiss</button></span></div>`).join("")}
-      <p class="small muted" style="margin:8px 0 0">Every button is a door, not a trigger — the action happens on the screen it opens, under the usual approvals. A dismissed suggestion stays away until its numbers change or two weeks pass.${asOf ? ` As of ${esc(asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }))}.` : ""}</p></div>`;
+      <p class="small muted" style="margin:8px 0 0">Open one to act on it; nothing happens from this card alone. A dismissed suggestion stays away until its numbers change or two weeks pass.${asOf ? ` As of ${esc(asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }))}.` : ""}</p></div>`;
   } catch (e) {
     host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 4px">Suggestions</h3><p class="small muted" style="margin:0 0 8px">${esc(e.message || "Suggestions did not load.")}</p><button type="button" class="btn small" onclick="astLoadSuggestions(); return false">Try again</button></div>`;
   }
 }
 function astReceiptLine(r) {
   if (!r) return "";
-  return Object.entries(r).map(([k, v]) => `${k}: ${v}`).join(" · ");
+  // Build -189 (PL-31): receipts read as sentences, not as the
+  // raw counter object. Known counters get plain words; an
+  // unknown key is humanized, never printed camelCase.
+  const words189 = {
+    count: (v) => `${v} waiting`,
+    oldestDays: (v) => `the oldest has waited ${v} ${Number(v) === 1 ? "day" : "days"}`,
+    markets: (v) => `${v} ${Number(v) === 1 ? "market" : "markets"}`,
+    creators: (v) => `${v} ${Number(v) === 1 ? "creator" : "creators"}`,
+    businesses: (v) => `${v} ${Number(v) === 1 ? "business" : "businesses"}`,
+  };
+  return Object.entries(r).map(([k, v]) => words189[k] ? words189[k](v) : `${k.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()}: ${v}`).join(" · ");
 }
 async function astDismissSuggestionIdx(i) {
   const s = astSuggestList[i];
@@ -31905,7 +32030,7 @@ function ccLondonRaceHtml(r) {
     <p class="small muted" style="margin:4px 0 0">Outside the race field: ${r.outsideField.creators} creators, ${r.outsideField.businesses} businesses (counted in London's totals, filed under no district). London totals: ${r.totals.creators} creators, ${r.totals.businesses} businesses.</p>
     ${r.state === "not_started" && !r.startsAt ? `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
-      <input type="date" id="cc-race-start" aria-label="Race start date">
+      <input type="date" class="ctl189" id="cc-race-start" aria-label="Race start date">
       <button class="btn small-btn" onclick="return ccStartLondonRace()">Start the race</button>
       <span class="small muted">Set this when the London partner launches the race. The 8-week backstop runs from the date.</span>
     </div>` : ""}
@@ -32553,7 +32678,7 @@ async function adminLineLookup() {
   if (!out || !input) return;
   const handle = (input.value || "").trim();
   if (!handle) { out.innerHTML = `<p class="small">Type a creator handle first.</p>`; return; }
-  out.innerHTML = `<p class="small">Loading...</p>`;
+  out.innerHTML = skelHtml("Looking up the line...", 1);
   try {
     const d = await api("GET", "/admin/line/" + encodeURIComponent(handle.replace(/^@/, "")));
     const gens = (d.generations || []).map((g) => `<div class="kv"><span>Line ${g.generation} (${g.pointsEach} points each)</span><b>${g.members.length ? g.members.map((m) => "@" + esc(m.handle)).join(", ") : "nobody yet"}</b></div>`).join("");
@@ -34735,7 +34860,7 @@ async function loadAdminOutreach() {
     el.innerHTML = `<h2>Outreach</h2>
     <p class="muted small">Your own queues, the same console your recruiters use. Pick a market, work the list, mark what happened. Drafts sign as you.</p>
     <p>${markets.map((m) => `<button class="btn small-btn ${rcState.market === m ? "" : "ghost"}" style="margin:0 6px 6px 0" onclick="rcAdminSetMarket('${esc(m)}')">${esc(m)}</button>`).join("")}</p>
-    <div id="admin-outreach-body"><p class="muted">Loading...</p></div>`;
+    <div id="admin-outreach-body">${skelHtml("Loading outreach...", 2)}</div>`;
     loadAdminOutreachQueue();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -35090,9 +35215,14 @@ async function bdLoadHome(el) {
   const stops = d.plan.stops || [];
   const nextUp = stops[0];
   const restStops = stops.slice(1);
+  // Build -189 (PL-47): one door, one list. A lead already on
+  // today's route does not repeat in the next-best-doors queue.
+  const stopIds189 = new Set(stops.map((l) => l && l.id).filter(Boolean));
+  const queue189 = (d.queue || []).filter((item) => { const l = item.lead || item; return !(l && stopIds189.has(l.id)); });
   const dayLine = stops.length ? `${d.plan.doneCount} of ${d.plan.totalCount} done today` : "No visits planned today";
   el.innerHTML = `
   <div class="bd-toprow"><strong>${esc(d.rep.marketName)}</strong><span class="muted">${esc(d.rep.firstName)} · ${esc(d.date)}</span></div>
+  <p class="small muted" style="margin:2px 0 8px">Viewing: ${esc(d.rep.marketName)} · Your seat: ${esc(d.rep.repCode || "")}${d.rep.hqSeat ? " (HQ)" : ""}</p>
   ${bdCitySwitcherHtml()}
   ${bdIsAdminSeller161() ? `<p class="small" style="margin:0 0 10px">You're selling as HQ-JEFF. <button type="button" class="linklike" onclick="return bdGoManage161()">Back to Manage</button></p>` : ""}
   ${offline ? `<p class="bd-offline">You're seeing a saved copy — no signal right now. Anything you log saves on this phone and sends itself later.</p>` : ""}
@@ -35108,6 +35238,14 @@ async function bdLoadHome(el) {
     </div>
   </section>
   ${bdOutbox().length ? `<div class="bd-banner bd-banner-warn">${bdOutbox().length} saved item${bdOutbox().length === 1 ? "" : "s"} on this phone waiting for signal.</div>` : ""}
+  <section class="panel">
+    <h3 style="margin-top:0">${esc(d.rep.marketName)} founding progress</h3>
+    <p class="bd-gate-big">Creators: ${p.creators} of ${p.gateLow} approved needed to open ${esc(d.rep.marketName)}${p.creators < p.gateLow ? ` — ${p.gateLow - p.creators} to go` : " — the launch number is in"}</p>
+    <div class="bd-progress"><span style="width:${pct}%"></span></div>
+    <div class="bd-buckets">${buckets}</div>
+    <p style="margin:10px 0 2px">Businesses on the founding list: <strong>${p.foundingClaimed}</strong></p>
+    <p class="muted small" style="margin:0">We open when the founding creator roster is full.</p>
+  </section>
   ${(d.unfinished || []).length ? `<section class="panel"><h3 style="margin-top:0">Finish today's logs</h3><p class="muted small" style="margin:0 0 8px">${d.unfinished.length} visit${d.unfinished.length === 1 ? "" : "s"} started but not logged. They stay here until they're done.</p>${d.unfinished.map((u) => `<button type="button" class="btn ghost small-btn" style="margin:0 6px 6px 0" onclick="return bdOpenLead('${u.leadId}')">Finish the log</button>`).join("")}<p class="small" style="margin:8px 0 0">Today so far: ${d.numbers.visitsThisWeek} visits this week · ${d.numbers.claimedThisMonth} founding spots claimed this month.</p></section>` : ""}
   <section>
     <h3 class="bd-h">Today's visits</h3>
@@ -35120,17 +35258,9 @@ async function bdLoadHome(el) {
   ${(d.followUps || []).length ? `<section><h3 class="bd-h">Follow-ups due <span class="badge info">${d.followUps.length}</span></h3>${d.followUps.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
   ${(d.plan.onHold || []).length ? `<section><h3 class="bd-h">On hold <span class="badge info">${d.plan.onHold.length}</span></h3><p class="muted small" style="margin:0 0 8px">These leads are on a category hold. They stay off your route and out of your counts until Jeff clears the hold.</p>${d.plan.onHold.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
   ${(d.alarms && d.alarms.length) ? `<section class="panel bd-alarm-panel"><h3 style="margin-top:0">Maggie noticed</h3><p class="muted small" style="margin:0 0 8px">A few doors are still waiting on you. No rush — here's what Maggie spotted.</p>${d.alarms.map((a) => `<div class="bd-logrow"><strong>${esc(a.name)}</strong><br><span>${esc(a.line || "")}</span> <button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return bdOpenLead('${a.leadId}')">Open</button></div>`).join("")}</section>` : ""}
-  ${(d.queue && d.queue.length) ? `<section><h3 class="bd-h">Your next best doors</h3>${d.queue.map((item) => bdQueueCard(item)).join("")}<button type="button" class="btn ghost" onclick="return bdShowTrips()">I've got some time — where should I go?</button><div id="bd-trips-slot"></div></section>` : `<div id="bd-trips-slot"></div>`}
+  ${queue189.length ? `<section><h3 class="bd-h">Your next best doors</h3>${queue189.map((item) => bdQueueCard(item)).join("")}<button type="button" class="btn ghost" onclick="return bdShowTrips()">I've got some time — where should I go?</button><div id="bd-trips-slot"></div></section>` : `<div id="bd-trips-slot"></div>`}
   ${d.scoreboard ? `<section class="panel"><h3 style="margin-top:0">Your last week, in one look</h3>${(d.scoreboard.lines || []).map((line) => `<p style="margin:6px 0">${esc(line)}</p>`).join("")}<p class="muted small" style="margin:8px 0 0">Week of ${esc(d.scoreboard.weekOf || "")}</p></section>` : ""}
   ${(d.newLeads || []).length ? `<section><h3 class="bd-h">New leads for you</h3>${d.newLeads.map((l) => bdLeadCard(l)).join("")}</section>` : ""}
-  <section class="panel">
-    <h3 style="margin-top:0">${esc(d.rep.marketName)} founding progress</h3>
-    <p class="bd-gate-big">Creators: ${p.creators} of ${p.gateLow} approved needed to open ${esc(d.rep.marketName)}${p.creators < p.gateLow ? ` — ${p.gateLow - p.creators} to go` : " — the launch number is in"}</p>
-    <div class="bd-progress"><span style="width:${pct}%"></span></div>
-    <div class="bd-buckets">${buckets}</div>
-    <p style="margin:10px 0 2px">Businesses on the founding list: <strong>${p.foundingClaimed}</strong></p>
-    <p class="muted small" style="margin:0">We open when the founding creator roster is full.</p>
-  </section>
   <section class="panel">
     <h3 style="margin-top:0">My numbers</h3>
     <div class="bd-numbers">
@@ -36057,7 +36187,7 @@ const abd = { data: null, leads: [], contacts: [], orders: [], contactQ: "", pre
 async function loadAdminBizdev155() {
   const el = document.getElementById("tab-body");
   if (!el) return;
-  el.innerHTML = `<p class="muted">Loading the seller system...</p>`;
+  el.innerHTML = skelHtml("Loading the seller system...", 3);
   try {
     // Build -170: the overview and the lead list are independent
     // reads — fetch them together instead of one after the other.
@@ -36186,15 +36316,25 @@ function abdSetContactQuery(v) {
   if (host) host.innerHTML = abdContactsHtml();
   return false;
 }
+// Build -189 (PL-36): a designed empty state: icon, one line,
+// and the action that fills the panel.
+function abdEmpty189(icon, title, line, actionHtml) {
+  return `<div class="abd-empty189"><span class="ae-ic">${bnIcon(icon)}</span><div><div class="ae-t">${esc(title)}</div><div class="ae-s">${esc(line)}</div>${actionHtml || ""}</div></div>`;
+}
+function abdClearLeadFilters189() {
+  abd.leadFilter = { q: "", category: "", city: "", neighborhood: "", status: "", rep: "" };
+  abdRender();
+  return false;
+}
 function abdContactsHtml() {
   const q = String(abd.contactQ || "").toLowerCase();
   const list = (abd.contacts || []).filter((c) => !q || [c.name, c.business, c.city, c.role, c.ownerName].join(" ").toLowerCase().includes(q));
-  if (!list.length) return `<p class="muted small" style="margin:0">No contacts match.</p>`;
+  if (!list.length) return abdEmpty189("users", "No contacts match", "Contacts appear here as leads and sellers add the people on each record.", "");
   return list.map((c) => bdContactCard(c, { ro: true, ownerTag: true })).join("");
 }
 function abdOrdersHtml() {
   const list = abd.orders || [];
-  if (!list.length) return `<p class="muted small" style="margin:0">No orders recorded yet. When a seller records one, it shows here.</p>`;
+  if (!list.length) return abdEmpty189("receipt", "No orders recorded yet", "When a seller records an order in their book, it shows here.", "");
   return list.map((o) => bdOrderCard(o, { ownerTag: true })).join("");
 }
 // Build -161: compact rows. The status control stays inline in
@@ -36206,7 +36346,7 @@ function abdLeadRowsHtml() {
   if (!d) return "";
   const repName = (id) => { const r = (d.reps || []).find((x) => x.userId === id); return r ? `${r.name} (${r.repCode})` : id; };
   const rows = abdFilteredLeads();
-  if (!rows.length) return `<p class="muted small" style="margin:0">No leads match those filters.</p>`;
+  if (!rows.length) return abdEmpty189("search", "No leads match those filters", "Loosen a filter, or clear them all to see the whole book.", `<button type="button" class="btn ghost small-btn" onclick="return abdClearLeadFilters189()">Clear filters</button>`);
   const multiRep = (d.reps || []).length > 1;
   return rows.map((l) => {
     const open = !!abd.manageOpen[l.id];
@@ -36455,7 +36595,7 @@ function abdRender(el) {
   <div class="panel">
     <strong>Reps</strong>
     <p class="muted small" style="margin:4px 0 8px">Your sellers. Open any seat to see exactly what that rep sees.</p>
-    ${(d.reps || []).map((r) => { const first = String(r.name || "").trim().split(/\s+/)[0] || "rep"; const sb = (d.scoreboards || []).find((x) => x.repId === r.userId); const al = (d.alarmSummary || []).find((x) => x.repId === r.userId); const isMe = state.user && r.userId === state.user.id; const marketsLine = r.hqSeat && (r.markets || []).length > 1 ? ` · sells in ${(r.markets || []).map((m) => esc(m.marketName)).join(" + ")}` : ` · ${esc(r.marketName)}`; return `<div class="bd-logrow"><strong>${esc(r.name)}</strong>${isMe ? ` <span class="badge info">That's you — HQ seat</span>` : ""} · ${esc(r.email)}${marketsLine} · code ${esc(r.repCode)} · ${esc(r.seatState)}${r.hqSeat ? ` · no commission accrues on this seat` : ""}${r.warningMonth ? ` · ⚠ warning month ${esc(r.warningMonth)}` : ""}${r.atRisk ? ` · ⚠ ${esc(r.atRisk)}` : ""} ${isMe ? `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return bdGoSell161()">Open Sell mode</button>` : `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return abdPreviewOpen('${r.userId}')">See ${esc(first)}'s view</button>`}${sb ? `<div class="muted small" style="margin-top:4px">Last week: ${(sb.lines || []).map((line) => esc(line)).join(" ")}</div>` : ""}${al ? `<div class="muted small" style="margin-top:2px">Follow-up pings: ${Number(al.count || 0)} waiting (${esc(al.date || "")})</div>` : ""}</div>`; }).join("") || `<p class="muted small">No seats yet.</p>`}
+    ${(d.reps || []).map((r) => { const first = String(r.name || "").trim().split(/\s+/)[0] || "rep"; const sb = (d.scoreboards || []).find((x) => x.repId === r.userId); const al = (d.alarmSummary || []).find((x) => x.repId === r.userId); const isMe = state.user && r.userId === state.user.id; const marketsLine = r.hqSeat && (r.markets || []).length > 1 ? ` · sells in ${(r.markets || []).map((m) => esc(m.marketName)).join(" + ")}` : ` · ${esc(r.marketName)}`; return `<div class="bd-logrow"><strong>${esc(r.name)}</strong>${isMe ? ` <span class="badge info">That's you — HQ seat</span>` : ""} · ${esc(r.email)}${marketsLine} · code ${esc(r.repCode)} · ${esc(r.seatState)}${r.hqSeat ? ` · no commission accrues on this seat` : ""}${r.warningMonth ? ` · ⚠ warning month ${esc(r.warningMonth)}` : ""}${r.atRisk ? ` · ⚠ ${esc(r.atRisk)}` : ""} ${isMe ? `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return bdGoSell161()">Open Sell mode</button>` : `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return abdPreviewOpen('${r.userId}')">See ${esc(first)}'s view</button>`}${sb ? `<div class="muted small" style="margin-top:4px">Last week: ${(sb.lines || []).map((line) => esc(line)).join(" ")}</div>` : ""}${al ? `<div class="muted small" style="margin-top:2px">Follow-up pings: ${Number(al.count || 0)} waiting (${esc(al.date || "")})</div>` : ""}</div>`; }).join("") || abdEmpty189("users", "No seats yet", "Assign the first seat with the form just below: an account email and a rep code.", "")}
     <div class="form-2col" style="margin-top:10px">
       <div class="field"><label>Account email</label><input id="abd-seat-email" placeholder="rep@example.com"></div>
       <div class="field"><label>Rep code</label><input id="abd-seat-code" placeholder="HR-TONY"></div>
@@ -36490,7 +36630,7 @@ function abdRender(el) {
   <div class="panel">
     <strong>Do not contact (two-way with outreach)</strong>
     <p class="muted small">A name closed on either side is closed on both. Dashboard-originated entries are exported here for the outreach state merge.</p>
-    ${(d.dnc || []).map((r) => `<div class="bd-logrow">${esc(r.label || r.key)} <span class="muted small">· ${esc(r.source || "")} · ${esc(String(r.createdAt).slice(0, 10))}</span> <button type="button" class="linklike" onclick="return abdDncRemove('${esc(r.key)}')">remove</button></div>`).join("") || `<p class="muted small">None.</p>`}
+    ${(d.dnc || []).map((r) => `<div class="bd-logrow">${esc(r.label || r.key)} <span class="muted small">· ${esc(r.source || "")} · ${esc(String(r.createdAt).slice(0, 10))}</span> <button type="button" class="linklike" onclick="return abdDncRemove('${esc(r.key)}')">remove</button></div>`).join("") || abdEmpty189("shield", "No one is closed", "Names closed on either side land here. Add the first with the field below.", "")}
     <div style="margin-top:8px"><input id="abd-dnc-label" placeholder="Business name to close" style="width:260px"> <button type="button" class="btn small-btn" onclick="return abdDncAdd()">Add + lock matching leads</button></div>
   </div>
   <div class="panel">
@@ -36498,11 +36638,11 @@ function abdRender(el) {
     <p class="muted small" style="margin:4px 0 0">Every lead in every book. Filter it down; work a lead from its row.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
       <input type="search" placeholder="Find a business or contact" value="${esc(abd.leadFilter.q || "")}" oninput="abdSetLeadQuery(this.value)" aria-label="Search leads" style="min-width:200px">
-      <select onchange="abdSetLeadFilter('category',this.value)" aria-label="Category filter"><option value="">All categories</option>${[...new Set(abd.leads.map((l) => l.category).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}" ${abd.leadFilter.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
-      <select onchange="abdSetLeadFilter('city',this.value)" aria-label="City filter"><option value="">All cities</option>${[...new Set(abd.leads.map((l) => l.city).filter(Boolean))].map((c) => `<option value="${esc(c)}" ${abd.leadFilter.city === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
-      <select onchange="abdSetLeadFilter('neighborhood',this.value)" aria-label="Neighborhood filter"><option value="">All neighborhoods</option>${[...new Set(abd.leads.map((l) => l.neighborhood).filter(Boolean))].map((n) => `<option value="${esc(n)}" ${abd.leadFilter.neighborhood === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
-      <select onchange="abdSetLeadFilter('status',this.value)" aria-label="Status filter"><option value="">All statuses</option>${BD_STATUSES.map((s) => `<option value="${esc(s)}" ${abd.leadFilter.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
-      ${(d.reps || []).length > 1 ? `<select onchange="abdSetLeadFilter('rep',this.value)" aria-label="Rep filter"><option value="">All reps</option>${(d.reps || []).map((r) => `<option value="${r.userId}" ${abd.leadFilter.rep === r.userId ? "selected" : ""}>${esc(r.name)} (${esc(r.repCode)})</option>`).join("")}</select>` : ""}
+      <select class="ctl189" onchange="abdSetLeadFilter('category',this.value)" aria-label="Category filter"><option value="">All categories</option>${[...new Set(abd.leads.map((l) => l.category).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}" ${abd.leadFilter.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      <select class="ctl189" onchange="abdSetLeadFilter('city',this.value)" aria-label="City filter"><option value="">All cities</option>${[...new Set(abd.leads.map((l) => l.city).filter(Boolean))].map((c) => `<option value="${esc(c)}" ${abd.leadFilter.city === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      <select class="ctl189" onchange="abdSetLeadFilter('neighborhood',this.value)" aria-label="Neighborhood filter"><option value="">All neighborhoods</option>${[...new Set(abd.leads.map((l) => l.neighborhood).filter(Boolean))].map((n) => `<option value="${esc(n)}" ${abd.leadFilter.neighborhood === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+      <select class="ctl189" onchange="abdSetLeadFilter('status',this.value)" aria-label="Status filter"><option value="">All statuses</option>${BD_STATUSES.map((s) => `<option value="${esc(s)}" ${abd.leadFilter.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+      ${(d.reps || []).length > 1 ? `<select class="ctl189" onchange="abdSetLeadFilter('rep',this.value)" aria-label="Rep filter"><option value="">All reps</option>${(d.reps || []).map((r) => `<option value="${r.userId}" ${abd.leadFilter.rep === r.userId ? "selected" : ""}>${esc(r.name)} (${esc(r.repCode)})</option>`).join("")}</select>` : ""}
     </div>
     <div id="abd-lead-list" style="margin-top:8px">${abdLeadRowsHtml()}
     </div>
@@ -36769,11 +36909,11 @@ async function renderBrandProfilePage() {
 // ---------- business: the national dashboard ----------
 const NAT_TABS = ["Home", "NatCampaigns", "NatNew", "NatDiscover", "NatReports", "NatBrand"];
 function natTabsHtml(active) {
-  const lock187 = navLock187("NatDiscover");
-  const item = (tab, label) => tab === "NatDiscover" && lock187
-    ? `<button class="tab-locked187" aria-disabled="true" title="${esc(lock187)}" onclick="return navLockedTap187('${lock187}')">${label}</button>`
-    : `<button class="${tab === active ? "active" : ""}" onclick="go('dashboard','${tab}')">${label}</button>`;
-  return `<div class="tabs">${item("Home", "Home")}${item("NatCampaigns", "Campaigns")}${item("NatNew", "New campaign")}${item("NatDiscover", "Find creators")}${item("NatReports", "Reports")}${item("NatBrand", "Brand profile")}</div>`;
+  // Build -189 (PL-08): retired. National accounts navigate by
+  // the shared shell (rail, bar, menu) carrying the national
+  // destination set; a second in-page strip duplicated it with
+  // a third "New campaign" path and a second logo.
+  return "";
 }
 function renderNationalBusinessDash() {
   const u = state.user;
@@ -36797,8 +36937,8 @@ function renderNationalBusinessDash() {
   if (tab === "Help") return renderHelpTab();
   if (tab === "Messages") return isFoundingBusiness(u) ? renderNatFoundingMessages187() : loadThreads();
   const el = document.getElementById("tab-body");
-  const head = `${natHeadHtml(u)}${natTabsHtml(tab)}`;
-  if (tab === "Home") { el.innerHTML = head + `<div id="nat-home">${skelHtml("Loading your campaigns...", 2)}</div>`; loadNatHome(); }
+  const head = `${natHeadHtml(u)}`;
+  if (tab === "Home") { el.innerHTML = head + sigHomeTopHtml() + `<div id="nat-home">${skelHtml("Loading your campaigns...", 2)}</div>`; loadNatHome(); }
   if (tab === "NatCampaigns") { el.innerHTML = head + `<div id="nat-campaigns">${skelHtml("Loading your campaigns...", 2)}</div>`; loadNatCampaigns(); }
   if (tab === "NatNew") { el.innerHTML = head + natComposerHtml(null); natPreviewRefresh187(); }
   if (tab === "NatDiscover") { el.innerHTML = head + `<div id="nat-discover">${skelHtml("Loading creators...", 2)}</div>`; loadNatDiscover(); }
@@ -36863,12 +37003,14 @@ async function loadNatHome() {
       ${founding ? `<div class="panel" style="margin-top:10px"><strong>Your application is approved. Your account is not active yet.</strong><p class="small" style="margin:6px 0 0">Two steps remain before your campaigns can go out, in this order: brand verification, checked by hand below, and then activation by Magpie. You can write campaign drafts and finish your brand profile now, so you are ready the day both are done.</p></div>` : ""}
       ${!a.verified ? `<div class="panel" style="margin-top:10px"><strong>One step before campaigns can go out: brand verification.</strong><p class="small" style="margin:6px 0 0">A person on the Magpie team checks by hand that your website is really yours and that a real store sits behind it. Creators see the Verified by Magpie mark, and your campaigns open up once it is on.</p></div>` : ""}
       <div class="panel" style="margin-top:10px">
-        <div class="flex-between"><strong>Your campaigns</strong><button type="button" class="btn small-btn" onclick="go('dashboard','NatNew')">New campaign</button></div>
+        <div class="flex-between"><strong>Your campaigns</strong></div>
+        <p class="small muted" style="margin:6px 0 0">Creators raise a hand to say they are interested. Nothing is booked and nothing ships until you pick.</p>
         ${zeroCampaigns
           ? `<p class="small muted" style="margin:6px 0 0">No campaigns yet. Your first one takes a few minutes: say what creators get, what you ask, and how many you will pick.</p>`
           : `<p class="small muted" style="margin:6px 0 0">${d.counts.open} open · ${natNoun(d.counts.draft, "draft")} · ${natNoun(d.counts.hands, "hand")} raised across your campaigns · ${natNoun(d.counts.picksToMake, "pick")} still to make</p>`}
       </div>
       ${(d.campaigns || []).map((c) => natCampaignRowHtml(c)).join("")}`;
+    loadSigTopNudges();
   } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
 }
 async function loadNatCampaigns() {
@@ -36899,7 +37041,7 @@ async function natEditCampaign(id) {
   try {
     const d = await api("GET", `/national/campaigns/${id}`);
     const el = document.getElementById("tab-body");
-    el.innerHTML = `${natHeadHtml(state.user)}${natTabsHtml("NatCampaigns")}` + natComposerHtml(d.campaign);
+    el.innerHTML = `${natHeadHtml(state.user)}` + natComposerHtml(d.campaign);
     natPreviewRefresh187();
   } catch (e) { alert(e.message); }
   return false;
@@ -36910,12 +37052,12 @@ function natComposerHtml(c) {
   const cats = (state.boot && state.boot.creatorCategories) || [];
   const picked = new Set((c && c.categories) || []);
   const deadline = c && c.raiseByAt ? String(c.raiseByAt).slice(0, 16) : "";
-  return `<form onsubmit="return natSaveCampaign(event, ${c ? `'${c.id}'` : "null"})">
+  return `<form class="camp-form189" onsubmit="return natSaveCampaign(event, ${c ? `'${c.id}'` : "null"})">
     <h3 style="margin:14px 0 4px">${c ? "Edit campaign" : "New campaign"}</h3>
-    <p class="small muted" style="margin:0 0 10px">Creators see this exactly as you write it. Say the thing itself: "3 products of your choice, free" lands better than any category word.</p>
+    <p class="small muted" style="margin:0 0 10px">Creators see this exactly as you write it. Say the thing itself: "2 products of your choice, free" lands better than any category word.</p>
     ${natMaggieCard187()}
-    <label class="nfld178"><span>Headline, in plain words</span><input id="nc-title" value="${esc((c && c.title) || "")}" placeholder="Try our liquid vitamins, free" oninput="natPreviewRefresh187()"><span class="small muted">The first line creators read. Name the thing, not the category.</span></label>
-    <label class="nfld178"><span>What the creator gets</span><input id="nc-get" value="${esc((c && c.whatYouGet) || "")}" placeholder="3 products of your choice, free" oninput="natPreviewRefresh187()"><span class="small muted">State it as a thing a person receives, with the count.</span></label>
+    <label class="nfld178"><span>Headline, in plain words</span><input id="nc-title" value="${esc((c && c.title) || "")}" placeholder="For example: Try our best seller, free" oninput="natPreviewRefresh187()"><span class="small muted">The first line creators read. Name the thing, not the category.</span></label>
+    <label class="nfld178"><span>What the creator gets</span><input id="nc-get" value="${esc((c && c.whatYouGet) || "")}" placeholder="For example: 2 products of your choice, free" oninput="natPreviewRefresh187()"><span class="small muted">State it as a thing a person receives, with the count.</span></label>
     <label class="nfld178"><span>What you ask for, in one line</span><input id="nc-ask" value="${esc((c && c.whatWeAsk) || "")}" placeholder="Post 1 video and 1 story about your honest experience, and tag the brand" oninput="natPreviewRefresh187()"><span class="small muted">One line: the posts you want and the tag.</span></label>
     <label class="nfld178"><span>How many creators you will pick</span><input id="nc-picks" type="number" min="1" step="1" value="${c ? c.picksCount : ""}" oninput="natPreviewRefresh187()"><span class="small muted">Creators raise a hand to say they are interested. This is how many of them you will pick and send the product to.</span></label>
     <label class="nfld178"><span>Creators raise a hand by</span><input id="nc-deadline" type="datetime-local" value="${esc(deadline)}"></label>
@@ -37122,7 +37264,7 @@ async function loadNatDiscover() {
     if (f.q) qs.set("q", f.q);
     const d = await api("GET", `/national/discover${qs.toString() ? "?" + qs.toString() : ""}`);
     host.innerHTML = `
-      <p class="small muted" style="margin:10px 0">Every approved creator with a finished profile, in every market. Pick a market to see who is strong there, ranked by how many of their followers live in that market. Saving someone to your shortlist is just for you — they are not contacted and never see it. Campaigns are how you reach creators: post one and they raise a hand.</p>
+      <p class="small muted" style="margin:10px 0">Every approved creator with a finished profile, in every market. Pick a market to see who is strong there, ranked by how many of their followers live in that market. Saving someone to your shortlist is just for you — they are not contacted and never see it. Campaigns are how you reach creators: post one and they raise a hand. Nothing is booked and nothing ships until you pick.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
         <input type="search" placeholder="Search a name or handle" value="${esc(f.q)}" oninput="state.natDiscover.q=this.value" onchange="loadNatDiscover()" style="flex:1;min-width:180px">
         <select onchange="state.natDiscover.market=this.value; loadNatDiscover()"><option value="">All markets${d.focusMarkets && d.focusMarkets.length ? " (your focus markets first)" : ""}</option>${(d.markets || []).map((m) => `<option value="${esc(m)}" ${f.market === m ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>
@@ -37149,6 +37291,7 @@ async function loadNatReports() {
   try {
     const d = await api("GET", "/national/reports");
     host.innerHTML = `
+      <p class="small" style="margin:10px 0 0">Two views of the same hands. <strong>By home market</strong> counts each creator once, in the market they call home. <strong>By listed market</strong> counts a creator in every market they are listed in, so those numbers add up to more than your creator total.</p>
       <p class="small muted" style="margin:10px 0">${esc(d.resultsLabel)}</p>
       ${(d.campaigns || []).map((c) => `<div class="panel" style="margin-top:10px"><strong>${esc(c.title)}</strong>
         <p class="small" style="margin:6px 0 0">${natNoun(c.hands, "hand")} raised · ${c.picks} of ${c.picksCount} picked · gifts: ${Object.entries(c.fulfillmentStates || {}).map(([k, v]) => `${esc(natFulfillLabel(k))} ${v}`).join(", ") || "none yet"}${c.attributed && c.attributed.orders ? `<br>${c.attributed.orders} orders, $${Number(c.attributed.revenue || 0).toLocaleString("en-US")} in sales — ${esc(c.attributed.source)}` : ""}</p></div>`).join("") || `<p class="muted">No campaigns yet, so no reports yet.</p>`}
@@ -37288,7 +37431,7 @@ async function natSaveBrand(ev) {
 function renderNatFoundingMessages187() {
   const el = document.getElementById("tab-body");
   if (!el) return;
-  el.innerHTML = `${natHeadHtml(state.user)}${natTabsHtml("Messages")}
+  el.innerHTML = `${natHeadHtml(state.user)}
   <section class="wcard" style="margin-top:12px">
     <h3 style="margin-top:0">No conversations yet</h3>
     <p>Conversations live on a campaign. When a creator raises a hand for one of your campaigns and you pick them, your conversation opens here, attached to that campaign, so the talk always sits next to the work.</p>

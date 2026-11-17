@@ -1473,13 +1473,13 @@ function queueScore157(lead, bench, today) {
   if (lead.source === "Champion intro" || lead.warmIntro) { score += 100; why.push("Warm intro — these go first"); }
   const overdue = !!(lead.nextAction && lead.nextAction.date && lead.nextAction.date < today);
   if (overdue) { score += 40; why.push("Their follow-up is late"); }
-  if (lead.dmName) { score += 25; why.push("Owner's name is on file"); }
-  if (lead.phone1 || lead.phone2 || lead.email || lead.instagram) { score += 15; why.push("Easy to reach"); }
+  if (lead.dmName) { score += 25; }
+  if (lead.phone1 || lead.phone2 || lead.email || lead.instagram) { score += 15; }
   if (creatorsToShow(lead, bench).length) { score += 15; why.push("Creators to show them"); }
   if (lead.hqTier === "A") { score += 12; why.push("Top of Jeff's list"); }
   else if (lead.hqTier === "B") { score += 6; }
   if (lead.stage === "Not visited yet") { score += 4; }
-  return { score, why: why.length ? why.join(", ") : "In your book, ready when you are" };
+  return { score, why: why.join(", ") };
 }
 
 function buildQueue157(leads, bench) {
