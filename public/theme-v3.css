@@ -1986,7 +1986,10 @@ body.drawer168-open { overflow: hidden; }
 .tab-plus187 { display: none; }
 @media (max-width: 767.98px) {
   .tab-plus187 { display: flex; }
-  .tab-plus-ic187 {
+  /* Specificity note: body.v3-on #tabbar .tab-item .tab-ic sets
+     background:none for the icon spans, so the + circle's rule
+     must outrank it or the gradient never paints. */
+  body.v3-on #tabbar .tab-item .tab-plus-ic187 {
     width: 46px; height: 46px; border-radius: 50%;
     background: linear-gradient(135deg, #2b7de9, #2fd08c);
     color: #fff; font-size: 27px; font-weight: 500; line-height: 1;
