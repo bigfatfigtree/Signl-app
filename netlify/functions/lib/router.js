@@ -7901,9 +7901,21 @@ const REFILE207_KEY = "config:refile207";
 const REFILE207_DIAG_KEY = "config:diag207";
 const REFILE207_MARKET = "Charlottesville";
 let refile207Done = false;
+let refile207InFlight = false;
 async function maybeRefileCharlottesville207() {
-  if (refile207Done) return;
-  if (await store.get(REFILE207_KEY)) { refile207Done = true; return; }
+  if (refile207Done || refile207InFlight) return;
+  refile207InFlight = true;
+  try { await runRefileCharlottesville207(); } finally { refile207InFlight = false; }
+}
+async function runRefileCharlottesville207() {
+  // Claim before scanning (the -173 lesson, applied to this pass's
+  // own race: two concurrent first requests must not both scan and
+  // overwrite each other's diagnostic). A claim with no diagnostic
+  // after 10 minutes is treated as a crashed run and taken over.
+  const claim = await store.get(REFILE207_KEY);
+  if (claim && claim.done) { refile207Done = true; return; }
+  if (claim && claim.startedAt && Date.now() - Date.parse(claim.startedAt) < 10 * 60 * 1000) return;
+  await store.set(REFILE207_KEY, { started: true, startedAt: nowIso() });
   const rows = await allUsers();
   const diag = { ranAt: nowIso(), build: 207, scanned: 0, filed: 0, skippedAmbiguous: 0, skippedOtherMarket: 0, skippedNone: 0, records: [] };
   for (const target of rows) {

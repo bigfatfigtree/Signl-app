@@ -59,7 +59,8 @@ const r3 = resolveTypedCity("Crozet", { state: "Virginia", country: "United Stat
 check("typed Crozet + VA hint files into Charlottesville", r3.status === "unique" && r3.market === "Charlottesville", JSON.stringify(r3));
 
 console.log("== Charlottesville refile pass (the app's own data path) ==");
-check("refile pass exists and is flag-gated", routerJs.includes("async function maybeRefileCharlottesville207()") && routerJs.includes('const REFILE207_KEY = "config:refile207";') && routerJs.includes("if (await store.get(REFILE207_KEY))"));
+check("refile pass exists and is flag-gated", routerJs.includes("async function maybeRefileCharlottesville207()") && routerJs.includes('const REFILE207_KEY = "config:refile207";') && routerJs.includes("const claim = await store.get(REFILE207_KEY);") && routerJs.includes("if (claim && claim.done) { refile207Done = true; return; }"));
+check("refile pass claims before scanning and cannot race itself", routerJs.includes("let refile207InFlight = false;") && routerJs.includes('await store.set(REFILE207_KEY, { started: true, startedAt: nowIso() });'));
 check("refile pass is narrowed to Charlottesville only", routerJs.includes('const REFILE207_MARKET = "Charlottesville";') && routerJs.includes('if (res.market !== REFILE207_MARKET) { diag.skippedOtherMarket += 1; continue; }'));
 check("refile pass stamps the sweep's filing shape", routerJs.includes('target.marketResolvedFrom = "refile_loader207";') && routerJs.includes('via: "refile_loader207"'));
 check("refile pass is invoked fire-and-forget in the preamble", routerJs.includes("await maybeRefileCharlottesville207(); } catch (e) { /* refile is best-effort off the request path */ }"));
