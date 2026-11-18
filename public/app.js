@@ -5583,8 +5583,9 @@ function renderSettingsTab() {
     <div class="field"><label>Budget per month ($)</label><input type="number" id="me-talent-budget" min="0" step="1" value="${esc(String(u.business.monthlyTalentBudget == null ? 500 : u.business.monthlyTalentBudget))}"></div>
     <button class="btn" onclick="saveTalentBudget()">Save budget</button> <span id="tb-ok" class="saved"></span>` : ""}
   </div>
-  <div class="panel mt tint">
-    <h3>Your referral program</h3>
+  <div class="panel mt tint ux-closed" data-uxfold>
+    <div class="uxfold-bar"><h3 style="margin:0">Your referral program</h3><button type="button" class="uxfold-btn" aria-expanded="false" onclick="return uxFold(this)"><span data-uxfold-txt>Show</span></button></div>
+    <div class="uxfold-body">
     <p class="small muted">Already run a referral program in your booking or register system? Keep it, and let Magpie feed it. Save your tracked referral link once and it rides on every opportunity and booked visit: creators see it on their cards and carry it in their posts, so the bookings land in the dashboard you already use. Magpie never touches referral money, and any rewards stay yours to run, under your program's terms.</p>
     <div class="field"><label>Your tracked referral link</label><input id="rp-url" type="url" value="${esc(u.business.referralUrl || "")}" placeholder="https://your-booking-or-register-link"></div>
     <div class="form-2col">
@@ -5593,6 +5594,7 @@ function renderSettingsTab() {
     </div>
     ${(u.business.referralUrl || u.business.referralCode) ? `<p class="small"><strong>Active:</strong> creators will see this on your opportunities and on their booked visits.</p>` : ""}
     <button class="btn" onclick="saveMyReferralProgram()">Save referral program</button> <span id="rp-ok" class="saved"></span>
+    </div>
   </div>
   <div class="panel mt">
     <h3>Audience code discount</h3>
@@ -5917,13 +5919,13 @@ async function renderEarningsTab() {
   <div class="empty-card"><div class="ec-t">No cash yet</div><div class="ec-s">Paid bookings you complete pay out here, in cash. Comped visits land under Comps instead — they build your Momentum and your record.</div><div class="mt">${(state.user.creator || {}).paidRate ? `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Set your paid rate</button>`}</div></div>`}
   <p class="small muted" style="margin:14px 2px 0">Paid bookings pay your listed rate. You keep 97%.</p>
   ${pending.length ? `<h3 style="margin:18px 0 0">Waiting on you</h3>
-  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${pending.map((l) => licRow(l, true)).join("")}</div>` : ""}
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(pending.map((l) => licRow(l, true)), 8)}</div>` : ""}
   <h3 style="margin:22px 0 0">On its way</h3>
-  ${pendingBk.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pendingBk.map(bkRow119).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">Nothing is being held right now. A paid booking holds its money here until your post is live.</p>`}
+  ${pendingBk.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(pendingBk.map(bkRow119), 8)}</div>` : `<p class="small muted" style="margin:8px 2px 0">Nothing is being held right now. A paid booking holds its money here until your post is live.</p>`}
   <h3 style="margin:22px 0 0">Paid bookings</h3>
-  ${releasedBk.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${releasedBk.map(bkRow119).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings have paid out yet. Your rate is set at ${ownCurrencySymbol()}${fmtPrice(state.user.creator.paidRate)}; when a business books you paid and the post lands, it pays out here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}
+  ${releasedBk.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(releasedBk.map(bkRow119), 8)}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings have paid out yet. Your rate is set at ${ownCurrencySymbol()}${fmtPrice(state.user.creator.paidRate)}; when a business books you paid and the post lands, it pays out here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}
   <h3 style="margin:22px 0 0">License requests</h3>
-  ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${decided.map((l) => licRow(l, false)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No licenses decided yet. Requests you approve pay out here.</p>`}`;
+  ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(decided.map((l) => licRow(l, false)), 8)}</div>` : `<p class="small muted" style="margin:8px 2px 0">No licenses decided yet. Requests you approve pay out here.</p>`}`;
     const compsHtml = `
   ${compBookings.length || couponBookings.length ? `
   <div class="kpi-grid c3">
@@ -5933,13 +5935,13 @@ async function renderEarningsTab() {
   </div>
   <p class="small muted" style="margin:14px 2px 0">Comps are worth real money at the business — they are just not cash, so they never mix into your cash totals.</p>
   ${compBookings.length ? `<h3 style="margin:18px 0 0">Comped visits</h3>
-  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${compBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")}${b.whatComped ? ` · ${esc(b.whatComped)}` : ""}${b.redeemedAt ? ` · visited ${esc(fmtDay(b.redeemedAt))}` : ""}</div></div>${b.dollarCap ? `<span class="lib-amt">${ownCurrencySymbol()}${fmtMoney(b.dollarCap)} value</span>` : ""}<span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Visited"}</span></div>`).join("")}</div>` : ""}
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(compBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")}${b.whatComped ? ` · ${esc(b.whatComped)}` : ""}${b.redeemedAt ? ` · visited ${esc(fmtDay(b.redeemedAt))}` : ""}</div></div>${b.dollarCap ? `<span class="lib-amt">${ownCurrencySymbol()}${fmtMoney(b.dollarCap)} value</span>` : ""}<span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Visited"}</span></div>`), 8)}</div>` : ""}
   ${couponBookings.length ? `<h3 style="margin:22px 0 0">Coupon deals</h3>
   <p class="small muted" style="margin:8px 2px 0">Coupons you accepted as payment for a post. The value is store value at the business, not cash, so it never counts as cash earned.</p>
-  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${couponBookings.map(couponRow).join("")}</div>` : ""}` : `
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(couponBookings.map(couponRow), 8)}</div>` : ""}` : `
   <div class="empty-card"><div class="ec-t">No comps yet</div><div class="ec-s">When a business hosts you — a meal, a service, an experience — the visit and its value land here, kept apart from your cash.</div><div class="mt"><button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button></div></div>`}`;
     const historyHtml = `
-  ${hist.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${hist.map(histRow).join("")}</div>
+  ${hist.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(hist.map(histRow), 10)}</div>
   <p class="small muted" style="margin:10px 2px 0">Cash earned: $${fmtMoney(total)}. Comp value received: ${ownCurrencySymbol()}${fmtMoney(compTotal)}. Two different piles — they are never added together.</p>` : `
   <div class="empty-card"><div class="ec-t">Nothing here yet</div><div class="ec-s">Every paid booking, license and comped visit lands here, dated, cash and comps side by side but never mixed.</div></div>`}`;
     el.innerHTML = `
@@ -6176,6 +6178,38 @@ function uxMore(btn) {
 }
 function uxMoreBtn(total) {
   return `<button type="button" class="ux-more-btn" data-label="Show all ${total}" onclick="return uxMore(this)">Show all ${total}</button>`;
+}
+// ---------- Build -203: cap helpers over the -199 kit ----------
+// Presentation only, same contract as the -199 helpers: these
+// mark already-rendered markup past a cap with .ux-extra +
+// hidden and add the kit's Show all button inside a
+// [data-uxmore] wrapper. They fetch nothing and count nothing,
+// so no number on screen can change by opening a cap.
+// uxMark203: hide = true stamps the FIRST tag of one item's
+// html; the item stays in the DOM with every action working,
+// one tap on Show all away.
+function uxMark203(html, hide) {
+  if (!hide) return html;
+  return String(html).replace(/<(\w+)([^>]*)>/, (m, tag, attrs) => {
+    if (/class="/.test(attrs)) return `<${tag}${attrs.replace(/class="([^"]*)"/, 'class="$1 ux-extra"')} hidden>`;
+    if (/class='/.test(attrs)) return `<${tag}${attrs.replace(/class='([^']*)'/, "class='$1 ux-extra'")} hidden>`;
+    return `<${tag}${attrs} class="ux-extra" hidden>`;
+  });
+}
+// uxCap203: a flow list (cards, rows of divs) — first `cap`
+// items show, the rest ride behind Show all.
+function uxCap203(htmls, cap) {
+  const list = htmls || [];
+  if (list.length <= cap) return list.join("");
+  return `<div data-uxmore>${list.map((h, i) => uxMark203(h, i >= cap)).join("")}${uxMoreBtn(list.length)}</div>`;
+}
+// uxGrid203: same cap for a CSS-grid list — the grid element
+// itself stays intact inside the [data-uxmore] wrapper, so the
+// columns never change; only the items past the cap hide.
+function uxGrid203(htmls, cap, gridCls) {
+  const list = htmls || [];
+  if (list.length <= cap) return `<div class="${gridCls}">${list.join("")}</div>`;
+  return `<div data-uxmore><div class="${gridCls}">${list.map((h, i) => uxMark203(h, i >= cap)).join("")}</div>${uxMoreBtn(list.length)}</div>`;
 }
 // uxFold: a [data-uxfold] section's body folds shut; the header
 // button flips between Show and Hide.
@@ -17772,7 +17806,7 @@ async function loadCreatorOffers() {
   } else if (seg === "booked" || seg === "done") {
     const rows = bkAll.filter((b) => seg === "done" ? visitSegOf(b, "creator") === "done" : (visitSegOf(b, "creator") === "upcoming" || visitSegOf(b, "creator") === "needs"));
     body.innerHTML = rows.length
-      ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map((b) => visitsRowWrap(b, "creator", visitSegOf(b, "creator"))).join("")}</div>`
+      ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(rows.map((b) => visitsRowWrap(b, "creator", visitSegOf(b, "creator"))), 6)}</div>`
       : `<div class="empty-card"><div class="ec-t">${seg === "done" ? "Nothing finished yet" : "Nothing booked yet"}</div><div class="ec-s">${seg === "done" ? "Visits you complete land here, with their posts." : "When a business books you, the visit lands here with its code."}</div></div>`;
   } else {
     body.innerHTML = `<div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div>`;
@@ -18696,7 +18730,7 @@ async function loadMyApplications() {
       backfill_accepted: `<span class="badge ok">Booked</span>`,
       withdrawn: `<span class="badge">Withdrawn</span>`,
     }[a.status] || esc(a.status));
-    el.innerHTML = `<h3>My applications</h3>` + apps.map((a) => `
+    el.innerHTML = `<h3>My applications</h3>` + uxCap203(apps.map((a) => `
       <div class="card mb slot-card">
         <div class="slot-top">
           <div class="slot-body">
@@ -18719,7 +18753,7 @@ async function loadMyApplications() {
             ${a.status === "applied" ? `<button class="btn small-btn ghost" onclick="withdrawApplication('${a.id}')">Withdraw</button>` : ""}
           </div>
         </div>
-      </div>`).join("");
+      </div>`), 8);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -18904,7 +18938,7 @@ async function loadMyVisits(role) {
     } else if (!rows.length) {
       bodyHtml = `<div class="empty-card"><div class="ec-t">Nothing here</div><div class="ec-s">${esc(segEmptyLine(seg, role))}</div></div>`;
     } else {
-      bodyHtml = `<div class="vx-stagger">${rows.map((b) => visitsRowWrap(b, role, seg)).join("")}</div>`;
+      bodyHtml = `<div class="vx-stagger">${uxCap203(rows.map((b) => visitsRowWrap(b, role, seg)), 8)}</div>`;
     }
     el.innerHTML = flash + codeWarn + head + bizTop + segTabs + bodyHtml;
     if (state.visitFocus) {
@@ -20104,8 +20138,8 @@ function teamSeatsHtml(d) {
   for (const p of d.pilots || []) kindOptions.push(`<option value="pilot:${esc(p.id)}">Pilot seat: ${esc(p.name)}</option>`);
   if (!d.isFunder) for (const m of d.markets || []) kindOptions.push(`<option value="recruiter:${esc(m)}">Recruiter in ${esc(m)}</option>`);
   return `
-  ${live.length ? live.map(row).join("") : `<div class="panel"><p style="margin:0">No seats yet. Invite your first person below; they get their own login for your scopes only.</p></div>`}
-  ${seats.some((s) => s.status === "revoked") ? `<h3 style="margin:16px 0 6px">Revoked</h3>${seats.filter((s) => s.status === "revoked").map(row).join("")}` : ""}
+  ${live.length ? uxCap203(live.map(row), 8) : `<div class="panel"><p style="margin:0">No seats yet. Invite your first person below; they get their own login for your scopes only.</p></div>`}
+  ${seats.some((s) => s.status === "revoked") ? `<h3 style="margin:16px 0 6px">Revoked</h3>${uxCap203(seats.filter((s) => s.status === "revoked").map(row), 8)}` : ""}
   <div class="panel mt">
     <h3 style="margin-top:0">Invite someone</h3>
     <div class="form-2col">
@@ -20318,22 +20352,22 @@ function partnerCreatorsHtml(d) {
   const rows = d.creators.roster;
   return `
   ${wsHead("Your creators", { sub: "The bench your links brought in. Contact details stay private, always.", subKey: "pt-creators" })}
-  ${rows.length ? rows.map((c) => `
+  ${rows.length ? uxCap203(rows.map((c) => `
   <div class="card mb">
     <div class="flex-between"><strong>@${esc(c.handle)}</strong><span class="badge ${c.status === "approved" ? "ok" : "info"}">${c.status === "approved" ? (c.complete ? "Complete" : "Approved") : "Claimed"}</span></div>
     <p class="small muted" style="margin:6px 0 0">${esc(c.tier || "")}${c.localAudiencePct !== null ? ` · Local ${c.localAudiencePct}%` : ""}${c.spanishAudiencePct !== null && c.spanishAudiencePct !== undefined ? ` · Spanish ${c.spanishAudiencePct}%` : ""} · ${esc(c.market)}${c.sample ? ` · <span class="badge warn">Sample</span>` : ""}</p>
-  </div>`).join("") : partnerFillsIn("Share your creator link and your bench starts here.")}`;
+  </div>`), 8) : partnerFillsIn("Share your creator link and your bench starts here.")}`;
 }
 
 function partnerBusinessesHtml(d) {
   const rows = d.businesses.list;
   return `
   ${wsHead("Your businesses", { sub: "Businesses that joined through your links, and where they stand.", subKey: "pt-businesses" })}
-  ${rows.length ? rows.map((b) => `
+  ${rows.length ? uxCap203(rows.map((b) => `
   <div class="card mb">
     <div class="flex-between"><strong>${esc(b.businessName)}</strong><span class="badge ${b.accessState === "active" ? "ok" : "info"}">${b.accessState === "active" ? "Active" : "Founding list"}</span></div>
     <p class="small muted" style="margin:6px 0 0">${esc(b.category || "")}${b.planName ? ` · ${esc(b.planName)} plan` : ""} · ${esc(b.market)}${b.sample ? ` · <span class="badge warn">Sample</span>` : ""}</p>
-  </div>`).join("") : partnerFillsIn("Send a business your link and it appears here.")}`;
+  </div>`), 8) : partnerFillsIn("Send a business your link and it appears here.")}`;
 }
 
 function partnerPerformanceHtml(d) {
@@ -20430,7 +20464,7 @@ function ptPackSyncLink() {
 function partnerLinksHtml(d) {
   return `
   ${wsHead("Links & assets", { sub: "Your tracked links. Anyone who joins through them is credited to you, permanently.", subKey: "pt-links" })}
-  ${d.links.map((l) => `
+  ${uxCap203(d.links.map((l) => `
   <div class="card mb">
     <div class="flex-between"><strong>${esc(l.market)}</strong>${d.partner.demo ? `<span class="badge warn">Sample</span>` : ""}</div>
     <p class="small" style="margin:10px 0 4px"><strong>Creator claim link</strong></p>
@@ -20442,7 +20476,7 @@ function partnerLinksHtml(d) {
     <p class="small muted" style="margin:0 0 4px">For businesses: lands on the founding business signup for ${esc(l.market)}, credited to you. Different link, different landing.</p>
     <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.business)}</p>
     <button class="btn small-btn ghost" onclick="copyPartnerLink('${esc(l.business)}', this)">Copy link</button>
-  </div>`).join("")}
+  </div>`), 6)}
   <div class="panel">
     <h3 style="margin-top:0">How your share works</h3>
     <p class="small">You keep <strong>${d.partner.sharePct == null ? "your org's share" : `${d.partner.sharePct}%`}</strong> of the subscription revenue from businesses in your assigned markets that joined through your links or are credited to you. Creators cost you nothing and earn you nothing directly; they are the bench that makes businesses stay. Paid bookings and post licenses are the creator's and the business's money, not subscription revenue, so they are not shared. Accrued amounts appear in your Wallet the month a subscription is on file.</p>
@@ -21400,7 +21434,7 @@ function renderReqMain() {
         <option value="local" ${reqState.sort === "local" ? "selected" : ""}>Local reach</option>
       </select>
     </div>
-    ${rows.length ? `<div class="req-list">${rows.map(reqRowHtml).join("")}</div>` : `<div class="empty-card"><div class="ec-t">${reqState.tab === "waiting" ? "No applicants yet" : "No requests here"}</div><div class="ec-s">${reqState.tab === "waiting" ? "Invite creators directly, or share your offer, and applications land here. Every applicant gets an answer within 2 business days." : reqState.tab === "later" ? "Applications you park for later sit here. Parking never notifies the creator." : "Decisions you make show up here, so the record is never a mystery."}</div></div>`}
+    ${rows.length ? `<div class="req-list">${uxCap203(rows.map(reqRowHtml), 8)}</div>` : `<div class="empty-card"><div class="ec-t">${reqState.tab === "waiting" ? "No applicants yet" : "No requests here"}</div><div class="ec-s">${reqState.tab === "waiting" ? "Invite creators directly, or share your offer, and applications land here. Every applicant gets an answer within 2 business days." : reqState.tab === "later" ? "Applications you park for later sit here. Parking never notifies the creator." : "Decisions you make show up here, so the record is never a mystery."}</div></div>`}
     ${selCount ? `<div class="req-bulk"><span>${selCount} selected</span><button type="button" class="btn small-btn" onclick="return reqBulk('select')">Select all</button><button type="button" class="btn small-btn ghost" style="color:#fff;border-color:#3A443C" onclick="return reqBulk('release')">Release</button><button type="button" class="linklike" style="color:#C6CFC6" onclick="return reqClearSel()">Clear</button></div>` : ""}`;
   wireReady(host);
 }
@@ -21506,7 +21540,7 @@ async function renderRegularsTab() {
       { label: "Saved", on: false, onclick: "return go('dashboard','Favorites')" },
     ])}
     ${rows.length
-      ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map(regularRowHtml).join("")}</div>
+      ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(rows.map(regularRowHtml), 8)}</div>
          <p class="small muted" style="margin-top:10px">Book again copies the last visit's deal into a new draft in Campaigns. Nothing sends until you publish the draft. Your notes are yours alone: creators never see them, and no other business can.</p>`
       : `<div class="empty-card"><div class="ec-t">No Regulars yet</div><div class="ec-s">When a creator finishes a visit with you and their post goes live, they show up here with the deal that ran, what the visit did, and a Book again button. Your first Regular is one completed visit away.</div></div>`}`;
   } catch (err) {
@@ -21596,14 +21630,14 @@ function libRowsHtml(h, mode, licMap) {
   const lib = h.contentLibrary || [];
   const rows = mode === "yours" ? lib.filter((r) => r.license && r.license.type !== "native") : lib;
   if (!rows.length) return `<div class="empty-card"><div class="ec-t">${mode === "yours" ? "Nothing licensed yet" : "No posts yet"}</div><div class="ec-s">${mode === "yours" ? "Posts you can repost or run as ads appear here: paid bookings carry one 90-day license, and comped posts can be licensed from the creator." : "When a creator posts about your business, it lands here, and you can license the ones you want to reuse."}</div></div>`;
-  return `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map((r) => {
+  return `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${uxCap203(rows.map((r) => {
     const lic = (licMap || {})[r.bookingId];
     const canLicense = mode === "creator" && r.license && r.license.type === "native" && lic && lic.fee > 0 && lic.postId;
     const canExtend = r.license && r.license.type !== "native" && lic && lic.postId && !lic.requested;
     return `
     <div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div>
     <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.kind === "coupon" ? " · Coupon post" : r.kind === "paid" ? " · Paid post" : ""}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>${licWindowLine(r.license)}</div>${licPillHtml(r.license)}${canLicense ? (lic.requested ? `<span class="lic-pill">License requested</span>` : `<button type="button" class="btn small-btn ws-primary" onclick="requestLicense('${lic.postId}', ${lic.fee})">Request license</button>`) : canExtend ? `<button type="button" class="btn small-btn ws-outline" onclick="return extendLicence('${lic.postId}', ${lic.fee || 0}, '${esc(r.license.windowEndsAt || "")}')">Extend or license separately</button>` : ""}</div>`;
-  }).join("")}</div>`;
+  }), 8)}</div>`;
 }
 async function renderContentTab() {
   const el = document.getElementById("tab-body");
@@ -23340,10 +23374,10 @@ function renderFindOffers() {
     </div>
     <p class="fo-count"><strong>${list.length}</strong> open visit${list.length === 1 ? "" : "s"} near you</p>
     ${ea && ea.opensAt ? `<p class="small" style="margin:0 0 10px">A new offer just posted in your market. Charter creators, the founding class (creators approved before their market launched), see new offers first; this one opens to everyone ${esc(fmtDay(ea.opensAt))}.</p>` : ""}
-    ${list.length ? `<div class="mirror-grid">${list.map((o, i) => mirrorOfferCardHtml(o, i === 0 ? { lead: true } : undefined)).join("")}</div>` : `<div class="empty-state"><h3>No open visits match</h3><p>${(state.user && state.user.founding && !state.user.founding.marketLive) ? "Your market has not opened yet, so no business can post here yet. Offers land here the day your market opens, and we email you the moment it does." : "Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets."}</p></div>`}
-    ${applied.length ? `<h3 style="margin:22px 0 10px">You applied</h3><div class="mirror-grid">${applied.map((o) => mirrorOfferCardHtml(o)).join("")}</div>` : ""}
+    ${list.length ? uxGrid203(list.map((o, i) => mirrorOfferCardHtml(o, i === 0 ? { lead: true } : undefined)), 9, "mirror-grid") : `<div class="empty-state"><h3>No open visits match</h3><p>${(state.user && state.user.founding && !state.user.founding.marketLive) ? "Your market has not opened yet, so no business can post here yet. Offers land here the day your market opens, and we email you the moment it does." : "Loosen the filters, or check back soon: new offers land here the moment a business posts one in your markets."}</p></div>`}
+    ${applied.length ? `<h3 style="margin:22px 0 10px">You applied</h3>${uxGrid203(applied.map((o) => mirrorOfferCardHtml(o)), 9, "mirror-grid")}` : ""}
     <div id="cr-national-lane"></div>
-    ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3><div class="mirror-grid">${q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })).join("")}</div>` : ""}
+    ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3>${uxGrid203(q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })), 9, "mirror-grid")}` : ""}
     </div>
   </div>`;
   if (foRefocus) {
@@ -25686,7 +25720,7 @@ function renderOfferList() {
     title = "Live"; emptyT = "No campaigns running yet"; emptyS = "Campaigns you send show up here while they run. Your first one takes about a minute to set up.";
   }
   list.innerHTML = `<h3 class="camp-h">${title}</h3>${rows.length
-    ? `<div class="vx-stagger">${rows.map((o) => offerCardHtml(o)).join("")}</div>`
+    ? `<div class="vx-stagger">${uxCap203(rows.map((o) => offerCardHtml(o)), 8)}</div>`
     : `<div class="empty-card"><div class="ec-t">${emptyT}</div><div class="ec-s">${emptyS}</div></div>`}`;
 }
 
@@ -25971,7 +26005,7 @@ async function viewApplicants(offerId) {
       <div class="flex-between"><h3 style="margin:0">Applicants: ${esc(o.title)}</h3><button class="btn small-btn ghost" onclick="document.getElementById('applicant-stack').innerHTML=''">Close</button></div>
       <p class="small muted">${o.filledCount || 0} of ${o.spots} spots filled &middot; selection deadline ${fmtDate(o.selectionDeadline)}. Ranked by local fit, Local Impact Score, Momentum, and reliability; founding order breaks ties. Anyone you do not pick is released with a notification when spots fill or the deadline passes.</p>
       ${o.earlyAccessUntil ? `<p class="small"><strong>In early access until ${esc(fmtDay(o.earlyAccessUntil))} at ${esc(fmtTime(o.earlyAccessUntil))}.</strong> Charter creators, the founding class (creators approved before their market launched), see new offers first, so this stack is still small on purpose. It opens to every creator at that time.</p>` : ""}
-      ${apps.length ? apps.map((a) => applicantCardHtml(o, a)).join("") : `<p class="muted">No applications yet. Offers with a value in the typical range for their tier and a window of 3+ days fill first.</p>`}
+      ${apps.length ? uxCap203(apps.map((a) => applicantCardHtml(o, a)), 8) : `<p class="muted">No applications yet. Offers with a value in the typical range for their tier and a window of 3+ days fill first.</p>`}
       ${waiting.length ? "" : apps.length ? `<p class="small muted">Nobody is waiting on this offer right now.</p>` : ""}
     </div>`;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -26867,7 +26901,7 @@ function threadItemsHtml() {
     const inFolder = msgFolder !== "all" && msgFolder !== "inbox";
     return `<div class="empty-card"><div class="ec-t">No conversations here</div><div class="ec-s">${q ? "No conversations match that search." : inFolder ? "Nothing is filed in this folder yet. Open a conversation's options (the dots on its row) and choose Move to folder to put it here." : msgFolder === "inbox" ? "Every conversation is filed in a folder. Switch to All to see everything." : msgMode === "waiting" ? "Nothing is waiting on you. When someone writes and you have not answered yet, it lands here." : "No conversations match that search."}</div></div>`;
   }
-  return `<div class="thread-list">${threads.map((t) => `
+  return `<div data-uxmore><div class="thread-list">${threads.map((t, ti203) => uxMark203(`
         <div class="thread-item${t.platform ? " thread-platform" : ""}${t.unread ? " unread" : ""}" onclick="openThread('${t.otherId}')">
           ${threadAvatarHtml(t)}
           <div class="thread-main">
@@ -26876,7 +26910,7 @@ function threadItemsHtml() {
             <div class="small ${t.unread ? "thread-prev-unread" : "muted"}">${esc((t.lastMessage.title || t.lastMessage.body || "").slice(0, 90))}</div>
           </div>
           <button type="button" class="thread-menu-btn" onclick="return msgThreadMenu(event, '${t.otherId}')" aria-label="Conversation options" title="Options">${bnIcon("more")}</button>
-        </div>`).join("")}</div>`;
+        </div>`, ti203 >= 10)).join("")}</div>${threads.length > 10 ? uxMoreBtn(threads.length) : ""}</div>`;
 }
 function renderThreadList(keepFocus) {
   const host = document.getElementById("thread-list-wrap");
@@ -27148,11 +27182,12 @@ function adminMsgMarketChanged(v) {
 }
 function adminMsgPanelHtml() {
   const roleWord = (r) => r === "business" ? "Business" : r === "partner" ? "Partner" : "Creator";
-  const threadRows = (adminMsg.threads || []).map((t) => `
+  const threadRowsArr203 = (adminMsg.threads || []).map((t) => `
     <div class="admin-msg-item" onclick="adminMsgOpenThread('${t.peerId || t.creatorId}')">
       <strong>${esc(t.peerName || t.creatorName)}</strong> ${t.peerHandle ? `<span class="muted">@${esc(t.peerHandle)}</span>` : t.peerOrg ? `<span class="muted">${esc(t.peerOrg)}</span>` : ""} <span class="muted small">${esc(roleWord(t.peerRole))}${t.peerMarket || t.creatorMarket ? ` &middot; ${esc(t.peerMarket || t.creatorMarket)}` : ""}${t.lastAt ? ` &middot; ${fmtDate(t.lastAt)}` : ""}</span>${t.needsReply ? ` <span class="badge bad">Needs reply</span>` : ""}${t.unreadReplies ? ` <span class="badge info">${t.unreadReplies} unread ${t.unreadReplies === 1 ? "reply" : "replies"}</span>` : ""}
       ${t.lastMessage ? `<div class="small muted">${t.lastMessage.fromId === SIGNL_TEAM_PEER ? "Magpie: " : `${esc(t.peerName || t.creatorName)}: `}${esc((t.lastMessage.body || "").slice(0, 90))}</div>` : ""}
-    </div>`).join("");
+    </div>`);
+  const threadRows = threadRowsArr203.length ? uxCap203(threadRowsArr203, 10) : "";
   let threadView = "";
   if (adminMsg.openCreatorId && adminMsg.threadCreator) {
     const c = adminMsg.threadCreator;
@@ -27252,9 +27287,9 @@ function adminFinishPanelHtml() {
   const tplField = (key, label, rows) => `
     <label class="small" style="display:block;margin-top:10px"><strong>${label}</strong></label>
     <textarea id="admin-finish-tpl-${key}" rows="${rows}" style="width:100%">${esc(tpl[key] || "")}</textarea>`;
-  const rosterRows = (d.roster || []).map((row) => {
+  const rosterRows = (d.roster || []).map((row, ri203) => {
     const canStart = !row.optedOut && row.concierge !== "active" && row.concierge !== "done";
-    return `<tr>
+    return `<tr${ri203 >= 12 ? ' class="ux-extra" hidden' : ""}>
       <td>${esc(row.name || "")}${row.handle ? ` <span class="muted">@${esc(row.handle)}</span>` : ""}</td>
       <td>${esc(row.market || "")}</td>
       <td>${esc(adminFinishStateText(row))}</td>
@@ -27268,7 +27303,7 @@ function adminFinishPanelHtml() {
   <p class="muted small">Unfinished creators get up to three messages (the blunt truth, the booking page, the founding first look), Maggie can finish a profile with a creator inside their message thread, and finishing fires one finish-moment message. The engine is <strong>${d.enabled ? "on" : "off"}</strong>${d.epochAt ? ` since ${String(d.epochAt).slice(0, 10)}` : ""}.
   <button type="button" class="btn small-btn ${d.enabled ? "ghost" : ""}" onclick="return adminFinishToggle(this)">${d.enabled ? "Turn engine off" : "Turn engine on"}</button></p>
   <p class="muted small">${c.audience || 0} approved and unfinished &middot; ${c.inSequence || 0} in the sequence &middot; ${c.conciergeActive || 0} finishing by message &middot; ${c.conciergePaused || 0} paused &middot; ${c.optedOut || 0} opted out &middot; ${c.finishMoments || 0} finish moments sent &middot; ${c.finished || 0} finished</p>
-  ${(d.roster || []).length ? `<div class="table-wrap panel"><table><tr><th>Creator</th><th>Market</th><th>State</th><th>Still missing</th><th></th></tr>${rosterRows}</table></div>${d.rosterTruncated ? `<p class="muted small">Roster trimmed to the first 100.</p>` : ""}` : `<p class="muted">No unfinished approved creators right now.</p>`}
+  ${(d.roster || []).length ? `<div data-uxmore><div class="table-wrap panel"><table><tr><th>Creator</th><th>Market</th><th>State</th><th>Still missing</th><th></th></tr>${rosterRows}</table></div>${(d.roster || []).length > 12 ? uxMoreBtn((d.roster || []).length) : ""}</div>${d.rosterTruncated ? `<p class="muted small">Roster trimmed to the first 100.</p>` : ""}` : `<p class="muted">No unfinished approved creators right now.</p>`}
   <details style="margin-top:12px"><summary><strong>Message copy</strong> <span class="muted small">(yours to edit; the engine never changes it)</span></summary>
     <p class="muted small">Slots filled at send: {firstName}, {market}, {city}, {handle}, {pageUrl}. The finish moment also takes {pageLine}, {turnedOnLine} and {charterLine}, which the engine composes from the creator's real state.</p>
     ${tplField("rescue1", "Rescue touch 1: the blunt truth", 6)}
@@ -27435,7 +27470,7 @@ function adminCampOpenThread163(peerId) {
   return false;
 }
 function adminCampPanelHtml163() {
-  const rows = (adminCamp163.campaigns || []).map((c) => {
+  const rowsArr203 = (adminCamp163.campaigns || []).map((c) => {
     const kindLabel = c.kind === "broadcast" ? "Broadcast" : "Market segment";
     const people = (c.recipients || []).map((p) => `<button type="button" class="btn small-btn ghost" style="margin:0 6px 6px 0" onclick="return adminCampOpenThread163('${p.id}')">${esc(p.name)}${p.handle ? ` (@${esc(p.handle)})` : ""}</button>`).join("");
     return `
@@ -27449,7 +27484,8 @@ function adminCampPanelHtml163() {
         <div>${people || '<span class="muted small">No recipients on record.</span>'}</div>
       </details>
     </div>`;
-  }).join("");
+  });
+  const rows = rowsArr203.length ? uxCap203(rowsArr203, 6) : "";
   return `
   <div class="panel">
     <h3 style="margin-top:0">Sent to many</h3>
@@ -28268,7 +28304,7 @@ function bc153DetailHtml() {
     <div>${bc153FileSelectHtml("broadcast", b.id, null, b.folderId)}</div>
     <div class="msg platform-msg"><div class="meta">Magpie team &middot; the message as sent</div><div class="msg-title">${esc(b.title)}</div><div>${esc(b.body)}</div></div>
     <h4 class="mt">Conversations <span class="muted small">(${fmtNum(d.threads.length)} of ${fmtNum(b.recipientCount)} answered or listed)</span></h4>
-    ${d.threads.length ? d.threads.map((t) => `
+    ${d.threads.length ? uxCap203(d.threads.map((t) => `
       <div class="bc152-thread" id="bc153-thread-${t.user.id}">
         <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
           <strong>${esc(t.user.label)}</strong>
@@ -28285,7 +28321,7 @@ function bc153DetailHtml() {
           <input type="text" maxlength="2000" placeholder="Reply to ${esc(t.user.label)}" style="flex:1" required>
           <button type="submit" class="btn small-btn">Reply</button>
         </form>
-      </div>`).join("") : `<p class="muted small">No replies to this broadcast yet.</p>`}
+      </div>`), 8) : `<p class="muted small">No replies to this broadcast yet.</p>`}
   </div>`;
 }
 async function bc152SendThreadReply(e, broadcastId, userId) {
@@ -30975,7 +31011,7 @@ function adminAppSearchText187(u) {
 function adminAppListHtml187(pend, dec) {
   const row = state.adminAppRow187;
   if (!row) return "";
-  const table = (list, lastTh) => `<div class="table-wrap panel"><table class="apps-table"><colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:31%"><col style="width:10%"><col style="width:20%"></colgroup><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>${lastTh}</th></tr>${list.map(row).join("")}</table></div>`;
+  const table = (list, lastTh) => `<div data-uxmore><div class="table-wrap panel"><table class="apps-table"><colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:31%"><col style="width:10%"><col style="width:20%"></colgroup><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>${lastTh}</th></tr>${list.map((u, i203) => uxMark203(row(u), i203 >= 12)).join("")}</table></div>${list.length > 12 ? uxMoreBtn(list.length) : ""}</div>`;
   return `
       <h3>Pending (${pend.length})</h3>
       ${pend.length ? table(pend, "Decision") : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}
@@ -31425,7 +31461,11 @@ function adminEventsRenderRows() {
   if (!host) return;
   const q = adminEventsQ.trim().toLowerCase();
   const shown = adminEventsCache.map((e, i) => ({ e, i })).filter(({ e }) => !q || `${e.type} ${e.actorRole || ""} ${e.market || ""} ${JSON.stringify(e.data || {})}`.toLowerCase().includes(q));
-  host.innerHTML = shown.length ? shown.map(({ e, i }) => adminEventRowHtml(e, i)).join("") : `<tr><td colspan="5" class="small muted">No events match that search in the loaded page.</td></tr>`;
+  const wrap203 = host.closest("[data-uxmore]");
+  const open203 = !!(wrap203 && wrap203.classList.contains("ux-open"));
+  host.innerHTML = shown.length ? shown.map(({ e, i }, xi203) => uxMark203(adminEventRowHtml(e, i), xi203 >= 12 && !open203)).join("") : `<tr><td colspan="5" class="small muted">No events match that search in the loaded page.</td></tr>`;
+  const mb203 = document.getElementById("ev-morebtn");
+  if (mb203) { mb203.innerHTML = shown.length > 12 ? uxMoreBtn(shown.length) : ""; const b203 = mb203.querySelector("button"); if (b203 && open203) b203.textContent = "Show less"; }
   const cnt = document.getElementById("ev-count");
   if (cnt) cnt.textContent = q ? `${shown.length} of ${adminEventsCache.length} loaded events match.` : "";
 }
@@ -31444,10 +31484,10 @@ async function loadEvents() {
       </div>
       ${data.degraded ? `<div class="error-box">The event log could not be loaded just now. Refresh in a moment; nothing here was changed.</div>` : ""}
       <p class="muted small">${data.total} events, newest first. Every state change in the product writes one of these. This is the dataset. <span id="ev-count"></span></p>
-      <div class="table-wrap panel"><table>
+      <div class="table-wrap panel" data-uxmore><table>
         <tr><th>When</th><th>Type</th><th>Actor</th><th>Market</th><th>Data</th></tr>
         <tbody id="ev-rows"></tbody>
-      </table></div>`;
+      </table><span id="ev-morebtn"></span></div>`;
     adminEventsRenderRows();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -31530,12 +31570,12 @@ function adminSignupBoardHtml(b) {
 let adminCreators130Cache = [];
 function adminCreators130RowsHtml(rows) {
   if (!rows.length) return `<p class="small muted" style="margin-top:10px">No creators match that.</p>`;
-  return `<div class="table-wrap" style="margin-top:10px"><table>
+  return `<div data-uxmore><div class="table-wrap" style="margin-top:10px"><table>
     <tr><th>Creator</th><th>Market</th><th>Status</th><th>Followers</th><th>% local</th><th>Profile</th><th></th></tr>
-    ${rows.map((u) => {
+    ${rows.map((u, ui203) => {
       const c = u.creator || {};
       const pct = typeof c.localAudiencePct === "number" ? c.localAudiencePct + "%" : "—";
-      return `<tr>
+      return `<tr${ui203 >= 12 ? ' class="ux-extra" hidden' : ""}>
         <td><strong>${esc(u.name || "")}</strong>${c.handle ? `<div class="muted small">@${esc(String(c.handle).replace(/^@/, ""))}</div>` : ""}</td>
         <td data-label="Market">${esc(adminCanonMarket(u.market || ""))}</td>
         <td data-label="Status">${u.status === "approved" ? "Approved" : u.status === "pending" ? "Waiting on review" : esc(u.status || "")}</td>
@@ -31545,7 +31585,7 @@ function adminCreators130RowsHtml(rows) {
         <td><button type="button" class="btn small-btn ghost" onclick="adminViewCreator('${u.id}')">View</button>${u.status === "approved" ? ` <button type="button" class="btn small-btn ghost" onclick="return adminMessagePerson153('${u.id}')">Message</button>` : ""}</td>
       </tr>`;
     }).join("")}
-  </table></div>`;
+  </table></div>${rows.length > 12 ? uxMoreBtn(rows.length) : ""}</div>`;
 }
 function adminCreators130Filter(q) {
   const host = document.getElementById("acr-list");
@@ -34409,7 +34449,7 @@ function recruiterQueueHtml(data) {
   ${rcCountsChips(c)}
   <p>${filters.map(([k, label]) => `<button class="btn small-btn ${rcState.filter === k ? "" : "ghost"}" style="margin:0 6px 6px 0" onclick="rcSetFilter('${k}')">${esc(label)}</button>`).join("")}</p>
   <div id="rc-queue-list">
-  ${rows.length ? rows.map(rcProspectCardHtml).join("") : `<div class="panel"><p class="muted">Nobody in this view. ${rcState.filter === "all" ? "Add creators below, or check back after the seed lists load." : "Pick another filter to see the rest of the queue."}</p></div>`}
+  ${rows.length ? uxCap203(rows.map(rcProspectCardHtml), 10) : `<div class="panel"><p class="muted">Nobody in this view. ${rcState.filter === "all" ? "Add creators below, or check back after the seed lists load." : "Pick another filter to see the rest of the queue."}</p></div>`}
   </div>
   <div class="panel">
     <h3 style="margin-top:0">Add a creator</h3>
