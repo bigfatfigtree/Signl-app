@@ -2450,3 +2450,49 @@ body.v3-slim .ham137-panel .more-row, body.v3-slim .ev125-panel .more-row, body.
 @media (min-width: 768px) {
   .tab-user .tu-ava { width: 52px; height: 52px; }
 }
+
+/* ================= Build -199 (UX compaction pass) =================
+   Jeff (2026-11-18, from his phone on Admin Stats): data given as
+   tall stacked blocks — one fact per line, label over value — is
+   "constant scrolls and not really helpful to view this way."
+   This block is the compaction kit, presentation only:
+
+   1. .table-wrap.ct199 — a DATA table (numbers in columns) stays
+      a table on phones: tight cells, header row kept, hairline
+      row dividers, and the panel scrolls sideways only if the
+      columns truly cannot fit. The 2026-10-25 stacked-card rule
+      in theme-v2 still governs record tables (applications,
+      creators, events) untouched — they simply never opt in.
+   2. .segsw.ux-seg199 — a segmented switch stretched to one
+      full-width row (the -195 pattern), so a 3-way window switch
+      is one row, never three stacked pills.
+   3. .ux-note-btn / .ux-note — a long "how this counts"
+      explanation shrinks to one visible line; the full text sits
+      behind a small text button and opens in place.
+   4. [data-uxmore] — a long list shows its first rows; the rest
+      ride .ux-extra[hidden] until "Show all" is tapped.
+   5. [data-uxfold] — a long secondary section folds shut behind
+      a Show/Hide header button. */
+.table-wrap.ct199 table { border-collapse: collapse; }
+.table-wrap.ct199 th, .table-wrap.ct199 td { padding: 6px 9px; }
+.table-wrap.ct199 td { border-bottom: 1px solid var(--hairline, #DFE7DF); }
+.table-wrap.ct199 tr:last-child td { border-bottom: 0; }
+@media (max-width: 640px) {
+  .table-wrap.ct199 { overflow-x: auto; }
+  .table-wrap.ct199 table, .table-wrap.ct199 tbody { display: table; width: 100%; box-sizing: border-box; }
+  .table-wrap.ct199 thead { display: table-header-group; }
+  .table-wrap.ct199 tr { display: table-row; width: auto; }
+  .table-wrap.ct199 th, .table-wrap.ct199 td { display: table-cell; width: auto; box-sizing: border-box; padding: 5px 6px; font-size: .82rem; }
+  .table-wrap.ct199 table tr:first-child:has(> th) { display: table-row; }
+  .table-wrap.ct199 table tr:not(:first-child) { border-top: 0; padding: 0; }
+  .table-wrap.ct199 td[data-label]::before { content: none; display: none; }
+}
+.segsw.ux-seg199 { display: flex; width: 100%; box-sizing: border-box; }
+.segsw.ux-seg199 button { flex: 1 1 0; padding: 7px 6px; white-space: nowrap; }
+.ux-note-btn { background: none; border: 0; padding: 0; margin: 0; font: inherit; font-size: .8rem; font-weight: 700; color: var(--ink2); text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+.ux-note { margin: 6px 0 0; }
+.ux-extra[hidden] { display: none !important; }
+.ux-more-btn { background: none; border: 0; padding: 8px 0 2px; margin: 0; font: inherit; font-size: .84rem; font-weight: 700; color: var(--ink); cursor: pointer; }
+[data-uxfold] .uxfold-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+[data-uxfold].ux-closed .uxfold-body { display: none; }
+.uxfold-btn { background: none; border: 1px solid var(--line2, #DFE7DF); border-radius: 999px; padding: 4px 13px; font: inherit; font-size: .78rem; font-weight: 700; color: var(--ink2); cursor: pointer; flex: none; }
