@@ -316,5 +316,15 @@
   "artist": "Alex Proimos",
   "page": null,
   "file": "Downtown Mall, Charlottesville, Virginia (5867535213).jpg"
+ },
+ "boston": {
+  "source": "existing Magpie site bundle photo (signl-site assets/photos/city-boston.jpg)",
+  "license": "Magpie bundle asset",
+  "page": null
+ },
+ "new-york-city": {
+  "source": "existing Magpie site bundle photo (signl-site assets/photos/city-new-york.jpg)",
+  "license": "Magpie bundle asset",
+  "page": null
  }
 }
