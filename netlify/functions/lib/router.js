@@ -1308,6 +1308,133 @@ async function removeFromSuggestionBoard211(id) {
   try { await store.set(SUGGESTION_BOARD_KEY, board); } catch (e) { /* the refresh reconciles */ }
 }
 
+// ---------- Admin Home summary, precomputed (Build -212) ----------
+// WHY: Admin Home waited on six aggregate endpoints at once
+// (applications, markets, partners, platform totals, approval
+// queue, Biz Dev overview). Every one computes on the request
+// path behind a 30-second IN-PROCESS memo (the approval queue
+// has no memo at all). On Netlify each request lands on its own
+// ephemeral instance and admin traffic is one person, so every
+// Home load was six cold computes on six cold instances —
+// measured at production scale with the calibrated probe
+// (~/workspace/xmedium-qa/home212/probe212.mjs, 35ms/get):
+// bdev/overview 6.1s, markets 5.1s, applications 4.8s,
+// approval-queue 2.7s, partners 2.1s, platform-totals 1.2s,
+// instance-parallel wall 6.2s at the model (live walk after
+// Build -210: ~13s to settle, real Blobs latency above model).
+// THE FIX mirrors Build -211: the compute runs ONLY off the
+// read path — the 5-minute scheduled refresh, the admin/sweep
+// refresh endpoint, and a throttled fire-and-forget nudge — in
+// the admin-home-refresh background function (15-minute
+// budget), and stores ONE summary record at
+// config:adminHomeSummary. GET /admin/home-summary serves the
+// requesting admin's slice of that record (one fetch) and
+// never computes. Home consumes a purpose-built summary, not
+// the six full payloads: it renders counts and one-line items,
+// so the summary carries exactly the fields the Home painters
+// read, each computed by the SAME helpers the full endpoints
+// use (platformTotals126, adminMarketRows, approvalQueue138,
+// publicPartner, bizdev.waitingCounts212) — one counting
+// source per number, no second math.
+// TRUTHFULNESS: the payload carries computedAt and the GET
+// returns it as `asOf`; the Home UI prints "Numbers as of …"
+// under the highlights and the totals strip, so a count is
+// never presented as live when it is a few minutes old. The
+// refresh cadence bounds staleness: the */5 schedule, the
+// stale-read nudge, and a client ping after every successful
+// admin mutation (see app.js api()). With no summary stored
+// yet the GET answers { preparing: true } and Home shows an
+// honest preparing state — never zeroed numbers dressed as
+// truth.
+const ADMIN_HOME_SUMMARY_KEY = "config:adminHomeSummary";
+const ADMIN_HOME_STALE_MS = 10 * 60 * 1000;
+
+async function loadAdminHomeSummary() {
+  try { return await store.get(ADMIN_HOME_SUMMARY_KEY); } catch (e) { return null; }
+}
+
+// The full compute. Runs only in the background refresh.
+async function refreshAdminHomeSummary212() {
+  const all = await allUsers();
+  // Shared slices (identical for every admin reader): the
+  // market rows Home's Sig items read, projected from the
+  // canonical adminMarketRows() output — the full computation,
+  // so the numbers can never drift from the Markets tab.
+  const marketRows = await adminMarketRows();
+  const markets = marketRows.map((m) => ({ name: m.name, label: m.label, businessesFounding: m.businessesFounding, combinedFollowers: m.combinedFollowers, creatorsListed: m.creatorsListed }));
+  // Partner rows: Home reads only presence, the demo flag and
+  // paused status (adminSigItems / adminSummaryCounts121).
+  const partnerRows = (await allPartners(all)).map((u) => { const pp = publicPartner(u.partner); return { demo: !!pp.demo, status: pp.status }; });
+  // Biz Dev waiting counts: the cheap exact subset of the
+  // overview build (see bizdev.waitingCounts212).
+  const bizdevWaiting = await bizdev.waitingCounts212();
+  // Per-admin slices: totals and the queue are permission- and
+  // market-scoped exactly as their endpoints scope them.
+  const byUser = {};
+  const mini = (u) => ({ role: u.role, createdAt: u.createdAt, market: u.market || null });
+  for (const admin of all.filter((u) => u.role === "admin")) {
+    const scoped = perms138.isSuper(admin) ? all : all.filter((u) => perms138.inMarketScope(admin, u.market));
+    const queueUsers = all.filter((u) => u.role !== "admin" && perms138.inMarketScope(admin, u.market));
+    byUser[admin.id] = {
+      totals: platformTotals126(scoped),
+      pending: queueUsers.filter((u) => u.status === "pending").map(mini),
+      decided: queueUsers.filter((u) => u.status !== "pending").map(mini),
+      queue: await approvalQueue138(admin),
+    };
+  }
+  const computedAt = nowIso();
+  await store.set(ADMIN_HOME_SUMMARY_KEY, { byUser, shared: { markets, partnerRows, bizdevWaiting }, computedAt });
+  return { admins: Object.keys(byUser).length, markets: markets.length, computedAt };
+}
+
+// The compute runs ONLY in the admin-home-refresh background
+// function (15-minute budget), same discipline as -211: every
+// trigger here just FIRES that function and returns.
+async function fireAdminHomeRefresh212(force) {
+  const base = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
+  const headers = { "Content-Type": "application/json" };
+  if (process.env.SIGNL_SWEEP_TOKEN) headers["x-signl-sweep-token"] = process.env.SIGNL_SWEEP_TOKEN;
+  const res = await fetch(`${base}/.netlify/functions/admin-home-refresh-background`, { method: "POST", headers, body: JSON.stringify({ force: !!force }) });
+  return res.status;
+}
+// Exported entry for the background function (and the suites).
+// Skips when the stored summary is under 4 minutes old unless
+// forced, so the 5-minute schedule, the nudges and the client
+// mutation pings cannot pile up duplicate computes.
+async function runAdminHomeRefresh212(opts) {
+  const force = !!(opts && opts.force);
+  // Stampede guard (server-side, not just the client's 15s
+  // throttle): a run stamps its start, and any trigger landing
+  // within 60s of a start is skipped — a compute is in flight
+  // or just landed, and a second one would produce the same
+  // record.
+  const stampKey = "config:adminHomeSummaryRefresh";
+  const prev = await store.get(stampKey).catch(() => null);
+  if (prev && prev.startedAt && Date.now() - Date.parse(prev.startedAt) < 60 * 1000) return { skipped: "in-flight", startedAt: prev.startedAt };
+  if (!force) {
+    const rec = await loadAdminHomeSummary();
+    if (rec && rec.computedAt && Date.now() - Date.parse(rec.computedAt) < 4 * 60 * 1000) return { skipped: "fresh", computedAt: rec.computedAt };
+  }
+  const startedAt = nowIso();
+  await store.set(stampKey, { startedAt, ok: false }).catch(() => {});
+  const out = await refreshAdminHomeSummary212();
+  await store.set(stampKey, { startedAt, lastRunAt: nowIso(), ok: true, admins: out.admins }).catch(() => {});
+  return out;
+}
+// Throttled off-path nudge: when the GET finds no summary or a
+// stale one, it fires the background refresh (the LOADER RULE:
+// never awaited on the request path). The 5-minute scheduled
+// refresh is the guarantee; this is a bonus.
+let adminHomeNudgeAt = 0;
+let adminHomeNudging = false;
+function maybeRefreshAdminHome212() {
+  if (adminHomeNudging) return;
+  if (Date.now() - adminHomeNudgeAt < 60 * 1000) return;
+  adminHomeNudgeAt = Date.now();
+  adminHomeNudging = true;
+  (async () => { try { await fireAdminHomeRefresh212(false); } catch (e) { /* the schedule is the guarantee */ } finally { adminHomeNudging = false; } })();
+}
+
 // Compatibility wrapper for the v1 readers (the dismiss flow):
 // the raw candidate list plus the watching lines, no lifecycle.
 async function suggestionsRaw() {
@@ -24347,6 +24474,7 @@ function adminGate138(user, seg, method, query) {
     case "email-health": return need("connections.view");
     case "message-templates": return need("templates.view");
     case "platform-totals": return null; // the handler scopes its own payload
+    case "home-summary": return null; // Build -212: the handler serves the requester's own pre-scoped slice; the shared slices are perm-filtered inside the handler
     case "national": return need("approvals"); // Build -178: national accounts ride the approvals permission
     default: return deny();
   }
@@ -25852,6 +25980,32 @@ async function route(event) {
     const b = parseBody(event);
     try {
       const st = await fireSuggestionBoardRefresh211(!!(b && b.force));
+      if (st === 401 || st === 403) return err(502, "Refresh trigger was refused");
+      return json(200, { ok: true, started: true });
+    } catch (e) {
+      return err(502, "Refresh trigger failed");
+    }
+  }
+
+  // Admin Home summary refresh trigger (Build -212). Same auth
+  // and placement discipline as the suggestions trigger above:
+  // the scheduled function (netlify/functions/admin-home-
+  // refresh.mjs, every 5 minutes) POSTs with no session,
+  // carrying the x-signl-sweep-token header when
+  // SIGNL_SWEEP_TOKEN is set; without a matching token, only an
+  // admin session may trigger it (the client pings it after
+  // admin mutations so Home's counts move within seconds, not
+  // at the next schedule tick). The endpoint does NOT compute:
+  // it fires the background function (15-minute budget) and
+  // answers at once. GET /admin/home-summary serves the stored
+  // summary and never builds.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "home-refresh") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    try {
+      const st = await fireAdminHomeRefresh212(!!(b && b.force));
       if (st === 401 || st === 403) return err(502, "Refresh trigger was refused");
       return json(200, { ok: true, started: true });
     } catch (e) {
@@ -29026,6 +29180,46 @@ async function route(event) {
       await logEvent({ type: "admin_viewed_business_account", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { businessName, adminEmail: user.email } });
       const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
       return json(200, { ok: true, business: { id: target.id, name: businessName } }, { "Set-Cookie": auth.sessionCookie(viewToken, secure) });
+    }
+
+    // Admin Home summary (Build -212): serves the requesting
+    // admin's slice of the PRECOMPUTED summary record (see
+    // refreshAdminHomeSummary212). One store fetch; this read
+    // never computes — the six heavy endpoint builds Home used
+    // to wait on now run only in the background refresh. With
+    // no summary stored yet (or none for this admin) it answers
+    // { preparing: true } and kicks the throttled off-path
+    // refresh; Home renders an honest preparing state, never
+    // zeroed numbers dressed as truth. `asOf` is the stored
+    // computedAt and the client prints it, so the counts are
+    // never presented as live when they are minutes old.
+    if (seg[1] === "home-summary" && seg.length === 2 && method === "GET") {
+      const rec = await loadAdminHomeSummary();
+      const entry = rec && rec.byUser ? rec.byUser[user.id] : null;
+      if (!entry) {
+        maybeRefreshAdminHome212();
+        return json(200, { preparing: true, asOf: rec ? rec.computedAt || null : null });
+      }
+      const computedMs = Date.parse(rec.computedAt || "");
+      if (!Number.isFinite(computedMs) || Date.now() - computedMs > ADMIN_HOME_STALE_MS) maybeRefreshAdminHome212();
+      const shared = rec.shared || {};
+      const payload212 = {
+        preparing: false,
+        asOf: rec.computedAt || null,
+        totals: entry.totals,
+        pending: entry.pending,
+        decided: entry.decided,
+        queue: entry.queue,
+        bizdevWaiting: shared.bizdevWaiting || { claims: 0, leads: 0, unmatched: 0, escalations: 0, total: 0 },
+      };
+      // The shared slices ride along only under the same flags
+      // their own endpoints require, so a teammate's Home shows
+      // exactly what their tabs would (markets.view / partners.
+      // view). Biz Dev's overview answers any admin, so its
+      // waiting counts ride for every admin, as before.
+      if (perms138.isSuper(user) || perms138.hasPerm(user, "markets.view")) payload212.markets = shared.markets || [];
+      if (perms138.isSuper(user) || perms138.hasPerm(user, "partners.view")) payload212.partnerRows = shared.partnerRows || [];
+      return json(200, payload212);
     }
 
     // Platform totals (Build -126, Jeff, 2026-11-04): the strip at
@@ -36805,4 +36999,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };

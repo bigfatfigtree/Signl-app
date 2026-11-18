@@ -3740,8 +3740,38 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
   return err(404, "Route not found");
 }
 
+// Build -212: the Admin Home Biz Dev waiting counts, computed
+// WITHOUT the full overview build. Home's panel consumes only
+// abdWaitingCounts(overview) — four counts over three small
+// prefixes — while the overview itself also builds per-market
+// progress/state, the liability calc, status rollups, prewarm
+// drafts and scoreboards (the ~5s cold read the -212 diagnosis
+// measured). This helper reads the same three source sets the
+// overview reads and applies the same definitions, so the
+// counts are identical to abdWaitingCounts(overview):
+//   claims      = claims stamped "waiting HQ confirm" that are
+//                 matched to a lead (abdConfirmableClaims)
+//   leads       = raw lead records flagged pendingApproval
+//   unmatched   = claims with no leadId (the overview disputes)
+//   escalations = open escalation records
+// The Admin Home summary refresh (router.js) calls this; the
+// overview endpoint itself is unchanged.
+async function waitingCounts212() {
+  const claims = await listPrefix170("bdevclaim:");
+  const rawLeads = await allLeads();
+  const escalations = (await listPrefix170("bdevesc:")).filter((v) => v && v.status === "open");
+  const c = {
+    claims: claims.filter((x) => x && x.status === "waiting HQ confirm" && x.leadId).length,
+    leads: rawLeads.filter((l) => l && l.pendingApproval).length,
+    unmatched: claims.filter((x) => x && !x.leadId).length,
+    escalations: escalations.length,
+  };
+  c.total = c.claims + c.leads + c.unmatched + c.escalations;
+  return c;
+}
+
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, maybeLoadTonyNashville20261112, maybeUnifySharedBooks20261112, runBizdevSweep, bdevHealth,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, maybeLoadTonyNashville20261112, maybeUnifySharedBooks20261112, runBizdevSweep, bdevHealth, waitingCounts212,
   claimPageHtml, seatOf, KIT,
   _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable, leadInSeatBook, workClaimOf, SHARED_MARKETS, revoicePlaybookForViewer, repLeadPayload },
 };

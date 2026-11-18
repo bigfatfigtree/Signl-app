@@ -25,8 +25,8 @@ const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 const marketsJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/markets.js"), "utf8");
 
 console.log("== stamp -207 ==");
-check("BUILD_ID is 2026.11.18-211 (shipping stamp; build -207 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-211"'));
-check("shell stamp is 2026.11.18-211 x5 (shipping stamp; build -207 content)", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-211"') && (indexHtml.match(/2026\.11\.18-211/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-212 (shipping stamp; build -207 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-212"'));
+check("shell stamp is 2026.11.18-212 x5 (shipping stamp; build -207 content)", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-212"') && (indexHtml.match(/2026\.11\.18-212/g) || []).length >= 5);
 
 console.log("== navy -206 preserved through the merge ==");
 check("MAGGIE_CHAR points at the navy tiles", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-logo-navy";'));

@@ -21,8 +21,8 @@ const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 
 console.log("== stamp ==");
-check("BUILD_ID is 2026.11.18-211 (shipping stamp; build -202 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-211"'));
-check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-211"') && (indexHtml.match(/2026\.11\.18-211/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-212 (shipping stamp; build -202 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-212"'));
+check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-212"') && (indexHtml.match(/2026\.11\.18-212/g) || []).length >= 5);
 
 console.log("== A: loading ==");
 check("api() has AbortController deadline 12s GET / 20s other", appJs.includes("deadlineMs = isGet ? 12000 : 20000") && appJs.includes("ctrl.abort()") && appJs.includes("signal: ctrl ? ctrl.signal : undefined"));
@@ -39,7 +39,7 @@ check("offerFencedForCreators accepts preloaded flags/biz", routerJs.includes("a
 check("preamble is not awaited (LOADER RULE)", routerJs.includes("const preamble202 = Promise.all([") && routerJs.includes("preamble202.catch(() => {});") && !routerJs.includes("  await Promise.all([\n    // Admin bootstrap"));
 check("Settings payload ships alertPrefs + negotiation on withFounding", routerJs.includes("pub.alertPrefs = alertPrefsOf(user); pub.negotiation = negotiationOf(user);"));
 check("Settings loaders render from state.user payload first", appJs.includes("state.user.alertPrefs") && appJs.includes("state.user.negotiation"));
-check("Admin Home highlights paint from whichever lands first", appJs.includes("paintH") && appJs.includes("pApps.then((v) => { appsH = v;"));
+check("Admin Home highlights paint from the precomputed summary (build -212 supersedes the -202 phased paint)", appJs.includes("loadAdminHomeSummary212()") && appJs.includes("adminSummaryCounts121(apps, null, null)"));
 
 console.log("== B: counts fixtures ==");
 // Fixture: 1 pending 100k/80% + 1 approved 10k/50% in one market.

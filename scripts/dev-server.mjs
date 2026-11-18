@@ -128,6 +128,31 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  // Build -212: same local serving for the Admin Home summary
+  // background function, so the trigger loop runs end to end
+  // in local suites.
+  if (url.pathname === "/.netlify/functions/admin-home-refresh-background") {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", async () => {
+      try {
+        const bg = require("../netlify/functions/admin-home-refresh-background.js");
+        const out = await bg.handler({
+          httpMethod: req.method,
+          path: url.pathname,
+          headers: req.headers,
+          body: chunks.length ? Buffer.concat(chunks).toString("utf8") : null,
+          isBase64Encoded: false,
+        });
+        res.writeHead(out.statusCode, out.headers || {});
+        res.end(out.body || "");
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: String(e) }));
+      }
+    });
+    return;
+  }
   if (url.pathname.startsWith("/api/")) {
     const chunks = [];
     req.on("data", (c) => chunks.push(c));

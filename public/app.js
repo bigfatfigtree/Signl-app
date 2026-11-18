@@ -218,6 +218,13 @@ async function api(method, path, body) {
       e.status = res.status;
       throw e;
     }
+    // Build -212: a SUCCESSFUL admin mutation moves the counts
+    // Admin Home serves from its precomputed summary. Ping the
+    // refresh trigger (fire-and-forget, throttled) so the
+    // summary recomputes within seconds instead of at the next
+    // 5-minute schedule tick. The ping never blocks or fails
+    // the caller's request, and a failed mutation never pings.
+    if (!isGet && path.startsWith("/admin/") && path !== "/admin/home-refresh") pingAdminHomeRefresh212();
     return data;
   })();
   if (!isGet) return run;
@@ -2356,16 +2363,62 @@ async function adminViewBusiness(id) {
   } catch (e) { alert(e.message); }
 }
 
+// Build -212: Admin Home's numbers are PRECOMPUTED server-side
+// (config:adminHomeSummary, refreshed off the read path every
+// few minutes) and served by GET /admin/home-summary in one
+// fetch. Home used to fire six aggregate endpoints that each
+// computed behind an in-process memo that is effectively
+// always cold on Netlify's ephemeral instances — the ~13s
+// cold Home load. The summary carries `asOf` (when the numbers
+// were computed) and Home prints it: a count is never
+// presented as live when it is minutes old.
+async function loadAdminHomeSummary212() {
+  try { return await api("GET", "/admin/home-summary"); } catch (e) { return null; }
+}
+// The summary's minimal rows feed the SAME painters the full
+// payloads fed (adminSigItems / adminSummaryCounts121 read
+// exactly these fields), so Home's sentences and counts come
+// from one definition, never a second math.
+function homeSummaryAdapters212(s) {
+  // A slice the server WITHHELD (the admin lacks that tab's
+  // permission flag) maps to null, never to an empty list: an
+  // empty list reads as a fact ("No partners yet") to the Sig
+  // painters, and a withheld slice is not a fact. Every consumer
+  // already skips null payloads.
+  return {
+    apps: { pending: (s && s.pending) || [], decided: (s && s.decided) || [] },
+    marketsData: s && s.markets ? { markets: s.markets } : null,
+    partnersData: s && s.partnerRows ? { partners: s.partnerRows } : null,
+  };
+}
+function asOfLine212(asOf) {
+  if (!asOf) return "";
+  try { return `<p class="small muted" style="margin:6px 2px 0">Numbers as of ${esc(new Date(asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }))}. They refresh every few minutes.</p>`; } catch (e) { return ""; }
+}
+// Build -212: the admin-mutation refresh ping (see api()).
+let adminHomePing212At = 0;
+function pingAdminHomeRefresh212() {
+  const now = Date.now();
+  if (now - adminHomePing212At < 15000) return;
+  adminHomePing212At = now;
+  try { fetch("/api/admin/home-refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force: true }), credentials: "same-origin" }).catch(() => {}); } catch (e) { /* best-effort */ }
+}
+
 // Admin home platform totals (Build -126): the strip reads
 // GET /admin/platform-totals — platformTotals126 on the server,
 // the same numbers Sig's admin grounding states. The strip is
 // an enhancement on top of the queue: a failed read leaves it
 // empty and never blocks the page.
+// Build -212: the strip now reads the precomputed summary's
+// totals slice (the same platformTotals126 computation,
+// refreshed off-path) and stamps its as-of time.
 async function loadAdminTotals126() {
   const host = document.getElementById("admin-totals126");
   if (!host) return;
   try {
-    const d = await api("GET", "/admin/platform-totals");
+    const s = await loadAdminHomeSummary212();
+    if (!s || s.preparing || !s.totals) return;
+    const d = s.totals;
     const el = document.getElementById("admin-totals126");
     if (!el) return;
     const followers = d.totalFollowers || 0;
@@ -2374,7 +2427,8 @@ async function loadAdminTotals126() {
       <div class="tot126"><span class="tot126-num">${fmtNum(d.creatorsSignedUp || 0)}</span><span class="tot126-lbl">Creators signed up</span><span class="tot126-sub">Across all markets. Approved + waiting. Test accounts are not counted.</span></div>
       <div class="tot126"><span class="tot126-num">${fmtNum(followers)}</span><span class="tot126-lbl">Total followers</span><span class="tot126-sub">${followers.toLocaleString("en-US")} across all markets, as reported by creators.</span></div>
       <div class="tot126"><span class="tot126-num">${fmtNum(localFollowers)}</span><span class="tot126-lbl">Local followers</span><span class="tot126-sub">${localFollowers.toLocaleString("en-US")} of those followers live in each creator's own market, worked out from the local share each creator reports.</span></div>
-      <div class="tot126"><span class="tot126-num">${d.avgLocalPct === null || d.avgLocalPct === undefined ? "—" : d.avgLocalPct + "%"}</span><span class="tot126-lbl">Avg % local</span><span class="tot126-sub">Average share of a creator's audience that lives in their market.</span></div>`;
+      <div class="tot126"><span class="tot126-num">${d.avgLocalPct === null || d.avgLocalPct === undefined ? "—" : d.avgLocalPct + "%"}</span><span class="tot126-lbl">Avg % local</span><span class="tot126-sub">Average share of a creator's audience that lives in their market.</span></div>
+      <div style="flex-basis:100%">${asOfLine212(s.asOf)}</div>`;
   } catch (e) { /* the strip never blocks the queue */ }
 }
 
@@ -28429,12 +28483,6 @@ async function loadAdminHome137() {
     </div>
     <p id="pv-note126" class="small muted" role="status" style="margin:2px 0 10px"></p>`;
   renderBottomNav();
-  const grab = async (path) => { try { return await api("GET", path); } catch (e) { return null; } };
-  const pApps = grab("/admin/applications");
-  const pMarkets = grab("/admin/markets");
-  const pPartners = grab("/admin/partners");
-  const pTotals = grab("/admin/platform-totals");
-  const pQueue = grab("/admin/approval-queue");
   const homeAlive = () => !!document.getElementById("admin-home137");
   const paintSteps = (apps, marketsData, partnersData, approvalQ) => {
     const host = document.getElementById("ah-steps");
@@ -28456,77 +28504,71 @@ async function loadAdminHome137() {
     host.innerHTML = nextSteps137Html(queue, []);
     wireSigQueue(el, queue.slice(0, 3), []);
   };
-  // Phase A — the decision content (queue + Sig brief) paints
-  // as soon as ITS endpoints land; it never waits on the
-  // heavy counts reads.
+  // Build -212: ONE precomputed summary read paints every
+  // section. This home used to fire five aggregate endpoints
+  // plus the Biz Dev overview and paint each section as its
+  // compute landed — on cold instances that was the ~13s
+  // settle. The summary is computed off the read path (see
+  // loadAdminHomeSummary212); a failed read keeps the honest
+  // per-section failure states, and a not-yet-computed summary
+  // shows the preparing state, never invented numbers.
   (async () => {
-    const [apps, partnersData, approvalQ] = await Promise.all([pApps, pPartners, pQueue]);
+    const summary = await loadAdminHomeSummary212();
     if (!homeAlive()) return;
-    if (!apps && !partnersData && !approvalQ) {
+    if (!summary) {
       const sigHost = document.getElementById("ah-sig");
       if (sigHost) sigHost.innerHTML = `<div class="panel"><strong>Your home could not load just now.</strong><p class="small muted">The platform did not answer. Nothing is lost — try again.</p><button type="button" class="btn small-btn" onclick="loadAdminHome137()">Retry</button></div>`;
       const host = document.getElementById("ah-steps");
       if (host) host.innerHTML = "";
+      const hl = document.getElementById("ah-highlights");
+      if (hl) hl.innerHTML = `<p class="small muted">Your numbers could not load just now. <button type="button" class="btn small-btn ghost" onclick="loadAdminHome137()">Retry</button></p>`;
       return;
     }
-    paintSteps(apps, null, partnersData, approvalQ);
+    if (summary.preparing) {
+      const sigHost = document.getElementById("ah-sig");
+      if (sigHost) sigHost.innerHTML = sigHero137Html("Your numbers are being prepared. This takes a moment, then your home fills in on its own.");
+      const hl = document.getElementById("ah-highlights");
+      if (hl) hl.innerHTML = `<div class="home-sec138"><div class="home-sec-t">Quick highlights</div><p class="small muted">Preparing your numbers…</p></div>`;
+      const host = document.getElementById("ah-steps");
+      if (host) host.innerHTML = "";
+      setTimeout(() => { if (homeAlive()) loadAdminHome137(); }, 20000);
+      return;
+    }
+    const { apps, marketsData, partnersData } = homeSummaryAdapters212(summary);
+    paintSteps(apps, marketsData, partnersData, summary.queue);
     loadSigTopNudges();
-    // Phase B — when the markets read lands, market-shaped
-    // steps join the queue (a re-paint with the full picture).
-    const marketsData = await pMarkets;
-    if (marketsData && homeAlive()) paintSteps(apps, marketsData, partnersData, approvalQ);
-  })();
-  // Build -161: the Biz Dev waiting entry fills independently,
-  // failure-isolated like every other section. It renders ONLY
-  // when something actually waits on Jeff (claims to confirm,
-  // rep-added leads, unmatched claims, escalations) — and it
-  // feeds the same count into the menu badges, so the mobile
-  // menu and this home never disagree about what waits.
-  (async () => {
-    const ov = await grab("/admin/bdev/overview");
-    const host = document.getElementById("ah-bizdev");
-    if (!ov || !host || !homeAlive()) return;
-    const c = abdWaitingCounts(ov);
+    // Build -161 Biz Dev waiting entry, from the summary's
+    // counts (the same shape abdWaitingCounts returns, so the
+    // menu badges and this home still never disagree). It
+    // renders ONLY when something actually waits on Jeff.
+    const bdHost = document.getElementById("ah-bizdev");
+    const c = summary.bizdevWaiting || { claims: 0, leads: 0, unmatched: 0, escalations: 0, total: 0 };
     state.waitCounts = state.waitCounts || {};
     state.waitCounts.bizdevWaiting = c.total;
-    if (!c.total) { host.innerHTML = ""; return; }
-    const bits = [];
-    if (c.claims) bits.push(`${c.claims} claim${c.claims === 1 ? "" : "s"} to confirm`);
-    if (c.leads) bits.push(`${c.leads} lead${c.leads === 1 ? "" : "s"} to approve`);
-    if (c.unmatched) bits.push(`${c.unmatched} claim${c.unmatched === 1 ? "" : "s"} to match`);
-    if (c.escalations) bits.push(`${c.escalations} escalation${c.escalations === 1 ? "" : "s"}`);
-    host.innerHTML = `<div class="panel abd-wait" style="margin-bottom:12px"><strong>Biz Dev — ${c.total} waiting on you</strong><p class="small muted" style="margin:4px 0 8px">${esc(bits.join(" · "))}</p><button type="button" class="btn small-btn" onclick="return go('dashboard','Biz Dev')">Open Biz Dev</button></div>`;
-  })();
-  // Highlights fill independently, off the totals + queue reads.
-  // Build -202: paint from whichever read lands first, then refresh when the other lands.
-  (async () => {
-    let appsH = null, totalsH = null, paintedH = false;
-    const paintH = async () => {
-      const host = document.getElementById("ah-highlights");
-      if (!host || !homeAlive()) return;
-      if (!appsH && !totalsH) return;
-      paintedH = true;
-      const counts = adminSummaryCounts121(appsH, null, null);
-      host.innerHTML = highlights137Html([
+    if (bdHost) {
+      if (!c.total) bdHost.innerHTML = "";
+      else {
+        const bits = [];
+        if (c.claims) bits.push(`${c.claims} claim${c.claims === 1 ? "" : "s"} to confirm`);
+        if (c.leads) bits.push(`${c.leads} lead${c.leads === 1 ? "" : "s"} to approve`);
+        if (c.unmatched) bits.push(`${c.unmatched} claim${c.unmatched === 1 ? "" : "s"} to match`);
+        if (c.escalations) bits.push(`${c.escalations} escalation${c.escalations === 1 ? "" : "s"}`);
+        bdHost.innerHTML = `<div class="panel abd-wait" style="margin-bottom:12px"><strong>Biz Dev — ${c.total} waiting on you</strong><p class="small muted" style="margin:4px 0 8px">${esc(bits.join(" · "))}</p><button type="button" class="btn small-btn" onclick="return go('dashboard','Biz Dev')">Open Biz Dev</button></div>`;
+      }
+    }
+    // Highlights, from the summary's totals + counts, with
+    // the as-of stamp printed under them.
+    const hl = document.getElementById("ah-highlights");
+    if (hl) {
+      const counts = adminSummaryCounts121(apps, null, null);
+      const totals = summary.totals || {};
+      hl.innerHTML = highlights137Html([
         { label: "Waiting on your review", value: fmtNum(counts.waiting), tab: "Applications" },
-        { label: "Creators signed up", sub: "across all markets", value: fmtNum((totalsH && totalsH.creatorsSignedUp) || 0) },
-        { label: "Total followers", sub: "as reported by creators", value: fmtNum((totalsH && totalsH.totalFollowers) || 0) },
+        { label: "Creators signed up", sub: "across all markets", value: fmtNum(totals.creatorsSignedUp || 0) },
+        { label: "Total followers", sub: "as reported by creators", value: fmtNum(totals.totalFollowers || 0) },
         { label: "Claims today", value: fmtNum(counts.claimsToday), tab: "Applications" },
-      ]);
-    };
-    pApps.then((v) => { appsH = v; return paintH(); });
-    pTotals.then((v) => { totalsH = v; return paintH(); });
-    const [apps, totals] = await Promise.all([pApps, pTotals]);
-    const host = document.getElementById("ah-highlights");
-    if (!host || !homeAlive()) return;
-    if (!apps && !totals) { host.innerHTML = `<p class="small muted">Your numbers could not load just now. <button type="button" class="btn small-btn ghost" onclick="loadAdminHome137()">Retry</button></p>`; return; }
-    const counts = adminSummaryCounts121(apps, null, null);
-    host.innerHTML = highlights137Html([
-      { label: "Waiting on your review", value: fmtNum(counts.waiting), tab: "Applications" },
-      { label: "Creators signed up", sub: "across all markets", value: fmtNum((totals && totals.creatorsSignedUp) || 0) },
-      { label: "Total followers", sub: "as reported by creators", value: fmtNum((totals && totals.totalFollowers) || 0) },
-      { label: "Claims today", value: fmtNum(counts.claimsToday), tab: "Applications" },
-    ]);
+      ]) + asOfLine212(summary.asOf);
+    }
   })();
 }
 
@@ -28796,9 +28838,16 @@ async function loadAdminSig(hostId) {
   const hid = hostId || "admin-sig";
   const host = document.getElementById(hid);
   if (!host) return;
-  const grab = async (path) => { try { return await api("GET", path); } catch (e) { return null; } };
-  const [apps, marketsData, partnersData] = await Promise.all([grab("/admin/applications"), grab("/admin/markets"), grab("/admin/partners")]);
+  // Build -212: the attention list reads the same precomputed
+  // summary Admin Home reads (one fetch), not three aggregate
+  // computes.
+  const summary = await loadAdminHomeSummary212();
   if (!document.getElementById(hid)) return;
+  if (summary && summary.preparing) {
+    host.innerHTML = `<div class="panel"><p class="small muted" style="margin:0">Maggie is preparing the Admin numbers. They will be ready in a moment.</p></div>`;
+    return;
+  }
+  const { apps, marketsData, partnersData } = summary ? homeSummaryAdapters212(summary) : { apps: null, marketsData: null, partnersData: null };
   const items = adminSigItems(apps, marketsData, partnersData);
   const sumEl = document.getElementById("admin-summary");
   if (sumEl) sumEl.innerHTML = adminSummaryHtml121(adminSummaryCounts121(apps, marketsData, partnersData));
