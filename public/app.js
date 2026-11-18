@@ -29434,7 +29434,7 @@ function src197Render() {
     ${rows}
     <tr><td><b>All sources</b></td><td data-label="Creators"><b>${fmtFull(w.totals.creators)}</b></td><td data-label="Businesses"><b>${fmtFull(w.totals.businesses)}</b></td><td data-label="Total"><b>${fmtFull(w.totals.total)}</b></td></tr>
   </table></div>` : `<p class="small muted">No sign-ups in this window yet.</p>`}
-  ${refRows ? `<h4 style="margin:18px 0 2px">AI assistants and referrals</h4><p class="small muted" style="margin:0 0 4px">The site that sent each new account on its first visit — this is where AI assistants like ChatGPT show up.</p>
+  ${refRows ? `<h4 style="margin:18px 0 2px">AI assistants and referrals</h4><p class="small muted" style="margin:0 0 4px">The site that sent each new account on its first visit. This is where AI assistants like ChatGPT show up.</p>
   ${uxNoteHtml("Referring sites are captured from Build -197 forward, so this list grows from here. UTM tags are captured from Build -197 forward too; earlier sign-ups carry only the link's source tag, and untagged ones stay Direct / untagged.")}
   <div data-uxmore style="margin-top:6px">${refRows}${refs.length > 6 ? uxMoreBtn(refs.length) : ""}</div>` : ""}
   `;
