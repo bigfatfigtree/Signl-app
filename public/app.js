@@ -4079,18 +4079,28 @@ function maggieMarkHtml(cls, state) {
 }
 // Character Maggie (Jeff, 2026-11-07; face replaced on his
 // order, 2026-11-17, Build -196, and again 2026-11-18,
-// Build -198): her artwork is the ONE image Jeff approved
+// Build -198; reframed wider 2026-11-18, Build -200): her
+// artwork is the ONE image Jeff approved
 // and NOTHING else — the six tiles in
-// public/assets/maggie-kaws are crops of that single
+// public/assets/maggie-kaws-wide are crops of that single
 // portrait (the matte vinyl magpie: black head, gradient
 // X eye, blue-to-green wing and tail, the real Magpie
 // logo across her black t-shirt), and they are the law
-// for her face. The earlier
-// tile sets stay on disk untouched — the 2026-11-07
+// for her face. Build -200 keeps the -198 artwork and pose
+// exactly and only widens the framing: the -198 crops in
+// public/assets/maggie-kaws were so tight that in the
+// circular avatar slots her beak clipped at the circle's
+// edge and she did not read as a bird (Jeff, from his Admin
+// Home screenshot: "Needs to be shifted right so you can
+// see she's a bird"), so the wide set shows her whole
+// profile — beak, head, wing, tail — inside the circle.
+// The earlier
+// tile sets stay on disk untouched — the -198 crops in
+// public/assets/maggie-kaws, the 2026-11-07
 // character-sheet tiles in public/assets/maggie-char and
 // the Build -196 pop art tiles in public/assets/maggie-pop
 // — so this swap reverses by pointing MAGGIE_CHAR back at
-// either of them.
+// any of them.
 // (AI-generated video loops of her were built, audited, and
 // RETIRED the same day on Jeff's verdict: every generation
 // re-drew a different bird, so no clip was ever the same
@@ -4108,21 +4118,23 @@ function maggieMarkHtml(cls, state) {
 // curious tile (bob / slow sway), talk wears chirp (she is
 // vocal — the queue is talking), greet wears the greet
 // tile (a hop on entry), celebrate wears hearts (a wiggle
-// on the win), listen wears the tight head crop (head
+// on the win), listen wears the head crop (head
 // cocked while the user composes). "cool"
 // has a still in the avatar mood map; no surface in the app
 // raises a good-numbers Maggie moment today, so it waits
 // for a real hook like every other mood got.
-const MAGGIE_CHAR = "/assets/maggie-kaws";
+const MAGGIE_CHAR = "/assets/maggie-kaws-wide";
 const MAGGIE_CHAR_STILL = { idle: "curious.jpg", think: "curious.jpg", listen: "listen.jpg", talk: "chirp.jpg", greet: "greet.jpg", celebrate: "hearts.jpg" };
 const MAGGIE_CHAR_AVA = { greet: "greet.jpg", celebrate: "hearts.jpg", think: "chirp.jpg", talk: "chirp.jpg", chirp: "chirp.jpg", cool: "cool.jpg", listen: "listen.jpg" };
 // One resolver for the small slots (tab, rail, More rows,
 // FAB): character still in character mode, the bird when
-// SIG_MARK_BIRD, the orb still otherwise. The full curious
-// tile is the tiny-slot face: at 27px her black head, X eye
-// and blue-to-green wing read as the bird; a tighter face
-// crop was tested in an earlier round and read worse (a
-// dark mass), so no crop ships.
+// SIG_MARK_BIRD, the orb still otherwise. The wide curious
+// tile is the tiny-slot face: since Build -200 the whole
+// bird is in frame — beak clear of the edge, head, X eye,
+// blue-to-green wing and tail — so she reads as a bird at
+// 27px; the tighter -198 crops clipped her beak in the
+// circular slots and read as a dark mass, so no tight crop
+// ships.
 function sigMarkHtml(cls) {
   if (SIG_MARK_CHAR) return `<img class="${cls} maggie-char-img" src="${MAGGIE_CHAR}/curious.jpg" alt="" decoding="async">`;
   if (SIG_MARK_BIRD) return maggieMarkHtml(cls, "idle");
