@@ -21,8 +21,8 @@ const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 
 console.log("== stamp ==");
-check("BUILD_ID is 2026.11.18-207", buildJs.includes('exports.BUILD_ID = "2026.11.18-207"'));
-check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-207"') && (indexHtml.match(/2026\.11.18-207/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-207 (shipping stamp; build -202 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-207"'));
+check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-207"') && (indexHtml.match(/2026\.11\.18-207/g) || []).length >= 5);
 
 console.log("== A: loading ==");
 check("api() has AbortController deadline 12s GET / 20s other", appJs.includes("deadlineMs = isGet ? 12000 : 20000") && appJs.includes("ctrl.abort()") && appJs.includes("signal: ctrl ? ctrl.signal : undefined"));
@@ -65,7 +65,7 @@ check("verify/counts has hard invariant assertions", routerJs.includes("invarian
 check("creatorsPending excludes testers in adminMarketRows and rosterCounts", routerJs.includes('u.status === "pending" && !isTester(u)).length') && routerJs.includes('u.status === "pending" && !isTester(u)).length,\n        approved:'));
 check("Stats payload ships server marketRows from adminMarketRows", routerJs.includes("const marketRows202 = await adminMarketRows();") && routerJs.includes("marketRows: marketRows202,"));
 check("Stats Markets table renders from server rows, not astCreatorListings", appJs.includes("astData.marketRows202") && !/byMarket\[l\.market\]/.test(appJs));
-check("layers fence approved+pending, complete is approved-only", routerJs.includes('if (u.status !== "approved" && u.status !== "pending") continue; // Build -202: rejected excluded') && routerJs.includes('if (u.status === "approved" && profileCompleteOf(u)) row.complete += 1;'));
+check("layers complete is approved-only (creators count stays the all-records readout per diag option 1)", routerJs.includes('if (u.status === "approved" && profileCompleteOf(u)) row.complete += 1;') && routerJs.includes("layers is a readout, not a market count"));
 check("demandKeyOf138 canonicalizes region", routerJs.includes("function canonicalRegion202") && routerJs.includes("US_STATE_NAMES_202"));
 // Charlottesville fixture: legacy stored market + unlisted signups, state vs country region => ONE unlisted row.
 {

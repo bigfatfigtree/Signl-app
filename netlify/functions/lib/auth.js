@@ -166,11 +166,22 @@ async function ensureAdmin(logEvent) {
   const email = (process.env.ADMIN_EMAIL || "jeff@magpielocal.com").toLowerCase();
   const existing = await store.get(`email:${email}`);
   if (existing) { adminIndexSeen = true; return; }
-  // Build -202: never create a new admin when any admin already exists under a different email.
+  // Build -202: never create a new admin when a login-capable primary
+  // admin already exists under a different email. Login-capable means
+  // a primary admin record (team seats carry adminPerms) that its own
+  // email index actually points at; seed/fixture admin records with
+  // no email index are not sign-in accounts and must not block the
+  // bootstrap (verify-build197 seeds one).
   try {
     const allRows = await store.list("user:");
-    const anyAdmin = allRows.some((r) => r.value && r.value.role === "admin");
-    if (anyAdmin) { console.error("Magpie ensureAdmin: an admin already exists under a different email; not creating another."); adminIndexSeen = true; return; }
+    let realAdmin = false;
+    for (const r of allRows) {
+      const u = r.value;
+      if (!u || u.role !== "admin" || u.adminPerms || !u.email) continue;
+      const idx = await store.get(`email:${String(u.email).toLowerCase()}`);
+      if (idx && idx.userId === u.id) { realAdmin = true; break; }
+    }
+    if (realAdmin) { console.error("Magpie ensureAdmin: an admin already exists under a different email; not creating another."); adminIndexSeen = true; return; }
   } catch (e) { /* if the scan fails, fall through to the original bootstrap path */ }
   const password = process.env.ADMIN_PASSWORD;
   if (!password) return; // Admin sign-in stays disabled until Jeff sets it.

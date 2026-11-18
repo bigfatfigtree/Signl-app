@@ -24564,21 +24564,19 @@ async function route(event) {
   // store round trips on every request. Each keeps its own
   // try/catch: every one of them is best-effort and must never
   // break a request (see the per-job notes below).
-  // Build -202 (LOADER RULE): preamble loaders are fire-and-forget, never awaited on the request path.
+  // Admin bootstrap is AUTH-CRITICAL (the first admin login depends
+  // on it), so it stays awaited, with its own guard: if the store
+  // itself is failing it degrades to "admin bootstrap delayed"
+  // instead of taking down every route. Unguarded, this one read
+  // caused the total /api/* outage of 2026-10-25 (expired Netlify
+  // Blobs token) — see INCIDENT-2026-10-25.md.
+  try {
+    await auth.ensureAdmin(logEvent);
+  } catch (e) {
+    console.error("Magpie ensureAdmin failed (continuing; admin bootstrap delayed):", e);
+  }
+  // Build -202 (LOADER RULE): the remaining preamble loaders are fire-and-forget, never awaited on the request path.
   const preamble202 = Promise.all([
-    // Admin bootstrap: opportunistically creates the one admin
-    // account, but if the store itself is failing it must degrade
-    // to "admin bootstrap delayed" instead of taking down every
-    // route. Unguarded, this one read caused the total /api/*
-    // outage of 2026-10-25 (expired Netlify Blobs token) — see
-    // INCIDENT-2026-10-25.md.
-    (async () => {
-      try {
-        await auth.ensureAdmin(logEvent);
-      } catch (e) {
-        console.error("Magpie ensureAdmin failed (continuing; admin bootstrap delayed):", e);
-      }
-    })(),
     // One-time recruiter kit email: fires on the first request
     // after deploy, guarded by a claimed blob flag, never repeats.
     (async () => { try { await maybeSendRecruiterKit(); } catch (e) { /* kit email is best-effort */ } })(),
@@ -31070,7 +31068,7 @@ async function route(event) {
       const listedMarketNames202 = new Set(MARKETS.map((m) => m.name));
       for (const u of users) {
         if (u.role !== "creator" || isTester(u)) continue;
-        if (u.status !== "approved" && u.status !== "pending") continue; // Build -202: rejected excluded
+        // Build -202: layers is a readout, not a market count — row.creators stays ALL non-tester creator records (incl. auto-decision records), per diag-counts canonical option 1; row.complete below is fenced to approved AND complete.
         let key; let displayKey;
         const canon202 = canonicalMarketName(u.market);
         if (u.market === UNLISTED || !canon202 || !listedMarketNames202.has(canon202)) {
