@@ -3527,6 +3527,8 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     if (qp.neighborhood) leads = leads.filter((l) => (l.neighborhood || "") === qp.neighborhood);
     if (qp.status) leads = leads.filter((l) => statusOf(l) === qp.status);
     leads.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    // Build -202: read-time dedupe by normalized name+city+market, preferring masterId-linked / most recent.
+    { const seen202 = new Map(); for (const l of leads) { const k = `${String(l.name || "").trim().toLowerCase()}|${String(l.city || "").trim().toLowerCase()}|${String(l.marketId || l.marketName || "").trim().toLowerCase()}`; const cur = seen202.get(k); if (!cur) { seen202.set(k, l); continue; } const score202 = (x) => (x.masterId ? 2 : 0) + (Date.parse(x.updatedAt || x.createdAt || "") || 0) / 1e13; if (score202(l) > score202(cur)) seen202.set(k, l); } leads = [...seen202.values()]; }
     return json(200, { leads: leads.map((l) => adminLeadPayload(l)), facets });
   }
 

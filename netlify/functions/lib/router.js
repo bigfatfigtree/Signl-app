@@ -215,11 +215,10 @@ async function buildDataAggregates() {
   const unlistedMap = {};
   for (const u of creators) {
     if (u.market === UNLISTED) {
-      const region = u.country || u.state || "";
-      const place = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
-      if (!unlistedMap[place]) unlistedMap[place] = { place, city: u.city || "Unknown", country: u.country || null, creators: 0, approved: 0 };
-      unlistedMap[place].creators += 1;
-      if (u.status === "approved") unlistedMap[place].approved += 1;
+      const { key, place } = unlistedPlace202(u);
+      if (!unlistedMap[key]) unlistedMap[key] = { place, city: u.city || "Unknown", country: u.country || null, creators: 0, approved: 0 };
+      unlistedMap[key].creators += 1;
+      if (u.status === "approved") unlistedMap[key].approved += 1;
     }
   }
   const unlistedByCity = Object.values(unlistedMap).sort((a, b) => b.creators - a.creators);
@@ -297,12 +296,18 @@ async function maybeRunSnapshotSweep() {
 async function eventsInRange(days, maxDays = 31) {
   const n = Math.max(1, Math.min(maxDays, Math.floor(Number(days) || 30)));
   const out = [];
-  for (let i = 0; i < n; i++) {
-    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    const keys = await store.listKeys(`event:${d}:`);
-    if (!keys.length) continue;
-    const rows = await store.getMany(keys);
-    for (const r of rows) if (r.value) out.push(r.value);
+  // Build -202: bounded-concurrency parallel day reads (was a serial per-day loop).
+  const dayList202 = Array.from({ length: n }, (_, i) => new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));
+  const CONC = 12;
+  for (let s = 0; s < dayList202.length; s += CONC) {
+    const chunk = dayList202.slice(s, s + CONC);
+    const perDay = await Promise.all(chunk.map(async (d) => {
+      const keys = await store.listKeys(`event:${d}:`);
+      if (!keys.length) return [];
+      const rows = await store.getMany(keys);
+      return rows.filter((r) => r.value).map((r) => r.value);
+    }));
+    for (const rows of perDay) out.push(...rows);
   }
   return out;
 }
@@ -1521,13 +1526,13 @@ function formFieldsFromNetlify(formType, data) {
   if (formType === "city-request") {
     const contact = pick("contact", "handle_or_email", "handle", "instagram", "email");
     const isEmail = /@.+\./.test(contact) && !/\s/.test(contact);
-    return { city: pick("city", "your_city", "your-city"), region: pick("state", "region", "state_province", "province"), handle: isEmail ? "" : contact.replace(/^@+/, ""), email: isEmail ? contact.toLowerCase() : pick("email").toLowerCase() };
+    return { city: pick("city", "your_city", "your-city"), region: pick("state", "region", "state_province", "province"), handle: isEmail ? "" : normalizeHandle(contact), email: isEmail ? contact.toLowerCase() : pick("email").toLowerCase() };
   }
   if (formType === "business-application") {
     return { businessName: pick("business_name", "businessName", "business-name", "name"), category: pick("business-category", "business_category", "category"), type: pick("business-type", "business_type", "type"), contactName: pick("contact_name", "contactName", "contact-name"), email: pick("email").toLowerCase(), phone: pick("phone"), city: pick("city", "business_city", "business-city"), tierInterest: pick("tier_interest", "tierInterest", "tier-interest", "tier") };
   }
   if (formType === "creator-application") {
-    return { name: pick("name", "your_name"), handle: pick("handle", "instagram", "instagram_or_tiktok_handle").replace(/^@+/, ""), email: pick("email").toLowerCase(), city: pick("city", "home_city", "home-city") };
+    return { name: pick("name", "your_name"), handle: normalizeHandle(pick("handle", "instagram", "instagram_or_tiktok_handle")), email: pick("email").toLowerCase(), city: pick("city", "home_city", "home-city") };
   }
   return { city: pick("city"), email: pick("email").toLowerCase(), businessName: pick("business_name", "name") };
 }
@@ -4215,15 +4220,21 @@ function kindOf(offer) {
 // purpose: admin Preview-as-Creator rides a tester account, and
 // the preview is only honest if it shows what a real creator
 // would see.
-async function offerFencedForCreators(o, viewer) {
+async function mapBounded202(items, conc, fn) {
+  const out = new Array(items.length); let idx = 0;
+  const workers = Array.from({ length: Math.min(conc || 12, items.length || 1) }, async () => { while (idx < items.length) { const i = idx++; out[i] = await fn(items[i], i); } });
+  await Promise.all(workers); return out;
+}
+async function offerFencedForCreators(o, viewer, pre) {
   if (!o) return true;
   if (o.testOnly) return !isTester(viewer);
   if (o.sample) return true;
   if (o.businessId) {
-    const biz = await store.get(`user:${o.businessId}`);
+    const biz = pre && pre.bizById ? pre.bizById.get(o.businessId) : await store.get(`user:${o.businessId}`);
     if (isTester(biz)) return true;
   }
-  if (!(await isMarketLive(o.market))) return true;
+  if (pre && pre.flags) { const live = TEST_MODE ? true : !!pre.flags[normalizeMarketName(o.market)]; if (!live) return true; }
+  else if (!(await isMarketLive(o.market))) return true;
   return false;
 }
 
@@ -4690,8 +4701,21 @@ function platformTotals126(users) {
 // groups sign-ups in the census AND targets them in Marketing
 // segments, so a city Jeff sees in Markets is exactly the city
 // he can message — never two spellings of one place.
+const US_STATE_NAMES_202 = new Set(["alabama","alaska","arizona","arkansas","california","colorado","connecticut","delaware","florida","georgia","hawaii","idaho","illinois","indiana","iowa","kansas","kentucky","louisiana","maine","maryland","massachusetts","michigan","minnesota","mississippi","missouri","montana","nebraska","nevada","new hampshire","new jersey","new mexico","new york","north carolina","north dakota","ohio","oklahoma","oregon","pennsylvania","rhode island","south carolina","south dakota","tennessee","texas","utah","vermont","virginia","washington","west virginia","wisconsin","wyoming","district of columbia"]);
+function canonicalRegion202(region) {
+  const r = String(region || "").trim().toLowerCase();
+  if (!r) return "";
+  if (r === "united states" || r === "usa" || r === "us" || r === "u.s." || r === "u.s.a.") return "united states";
+  if (US_STATE_NAMES_202.has(r)) return "united states";
+  return r;
+}
 function demandKeyOf138(city, region) {
-  return `${String(city || "Unknown").trim().toLowerCase()}|${String(region || "").trim().toLowerCase()}`;
+  return `${String(city || "Unknown").trim().toLowerCase()}|${canonicalRegion202(region)}`;
+}
+function unlistedPlace202(u) {
+  const region = u.country || u.state || "";
+  const dispRegion = region || "";
+  return { key: demandKeyOf138(u.city || "Unknown", region), place: `${u.city || "Unknown"}${dispRegion ? ", " + dispRegion : ""}` };
 }
 
 async function cityDemand138() {
@@ -4793,7 +4817,7 @@ async function adminMarketRows() {
       const localByMarket = {};
       for (const u of all) {
         if (u.role !== "creator" || isTester(u)) continue;
-        if (u.status !== "approved" && u.status !== "pending") continue;
+        if (u.status !== "approved") continue; // Build -202: approved-only, matching reachByMarket so local <= combined always holds
         const total = audienceTotalOf(u.creator || {});
         for (const e of listedMarketsFor(u)) {
           if (typeof e.pct !== "number" || !Number.isFinite(e.pct)) continue;
@@ -4826,7 +4850,7 @@ async function adminMarketRows() {
           benchOpen: !!flags[m.name] || !!benchFlags[m.name],
           creatorsApproved: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u)).length,
           creatorsApprovedComplete: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u)).length,
-          creatorsPending: inMarket.filter((u) => u.role === "creator" && u.status === "pending").length,
+          creatorsPending: inMarket.filter((u) => u.role === "creator" && u.status === "pending" && !isTester(u)).length,
           businessesApproved: inMarket.filter((u) => u.role === "business" && u.status === "approved").length,
           businessesFounding: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active").length,
           businessesActive: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) === "active").length,
@@ -4955,13 +4979,13 @@ function verifyCountsRecount(users) {
       if (!u || u.role !== "creator") continue;
       if (canon(u.market) === name) {
         if (u.status === "approved" && !tester(u)) approved += 1;
-        if (u.status === "pending") pending += 1;
+        if (u.status === "pending" && !tester(u)) pending += 1;
       }
       const total = stacked(u.creator);
       for (const e of listings(u)) {
         if (e.market !== name) continue;
         if (u.status === "approved" && !tester(u)) { listed += 1; combined += total; }
-        if ((u.status === "approved" || u.status === "pending") && !tester(u) && typeof e.pct === "number") {
+        if (u.status === "approved" && !tester(u) && typeof e.pct === "number") {
           pctSum += e.pct; pctCount += 1;
           localFollowers += Math.round((total * e.pct) / 100);
         }
@@ -4980,7 +5004,17 @@ async function handleVerifyCounts(event) {
   const rows = await adminMarketRows();
   const markets = rows.map((m) => { const o = {}; for (const f of VERIFY_COUNT_MARKET_FIELDS) o[f] = m[f]; return o; });
   const recount = verifyCountsRecount(users);
-  const agree = JSON.stringify(totals) === JSON.stringify(recount.totals) && JSON.stringify(markets) === JSON.stringify(recount.markets);
+  // Build -202: hard invariants, not tautology. A violation fails the verify.
+  const invariantViolations = [];
+  for (const m of markets) {
+    if (m.localFollowers > m.combinedFollowers) invariantViolations.push(`${m.name}: localFollowers ${m.localFollowers} > combinedFollowers ${m.combinedFollowers}`);
+    if (m.creatorsListed === 0 && m.localFollowers !== 0) invariantViolations.push(`${m.name}: creatorsListed 0 but localFollowers ${m.localFollowers}`);
+  }
+  for (const m of recount.markets) {
+    if (m.localFollowers > m.combinedFollowers) invariantViolations.push(`recount ${m.name}: localFollowers > combinedFollowers`);
+    if (m.creatorsListed === 0 && m.localFollowers !== 0) invariantViolations.push(`recount ${m.name}: creatorsListed 0 but localFollowers nonzero`);
+  }
+  const agree = invariantViolations.length === 0 && JSON.stringify(totals) === JSON.stringify(recount.totals) && JSON.stringify(markets) === JSON.stringify(recount.markets);
   // Build -167: Biz Dev loader health rides the checker surface —
   // seat/lead counts + each one-time loader's recorded state, so
   // the daily platform-health check can see a stalled loader
@@ -5010,7 +5044,7 @@ async function handleVerifyCounts(event) {
   // Null until the loader has run (first request after deploy).
   let marketfix173 = null;
   try { marketfix173 = await store.get(MARKET_FIX_DIAG_KEY_173); } catch (e) { marketfix173 = null; }
-  return json(200, { totals, markets, recount, agree, bdev: bdev167, staff: staff169, minfix: minfix172, marketfix: marketfix173 });
+  return json(200, { totals, markets, recount, agree, invariantViolations, bdev: bdev167, staff: staff169, minfix: minfix172, marketfix: marketfix173 });
 }
 
 // The Admin home preview tabs' targets (Build -126), resolved in
@@ -6773,8 +6807,8 @@ async function deriveCharterAt(user) {
   return new Date(Math.max(approvalMs, finishMs)).toISOString();
 }
 
-async function creatorBuzz(user) {
-  const users = await allUsers();
+async function creatorBuzz(user, preloadedUsers) {
+  const users = preloadedUsers || await allUsers();
   const inMarket = users.filter((x) => x.role === "creator" && !isTester(x) && normalizeMarketName(x.market) === normalizeMarketName(user.market));
   const approved = inMarket.filter((x) => x.status === "approved");
   const complete = approved.filter((x) => profileCompleteOf(x));
@@ -6864,6 +6898,8 @@ async function withFounding(user) {
     // Momentum rides on the creator's own profile payload in full
     // detail (total, ledger, ways-to-earn checklist) so the dashboard
     // can run the profile-completion incentive loop.
+    // Build -202: Settings panels ride the /auth/me payload and render synchronously.
+    try { pub.alertPrefs = alertPrefsOf(user); pub.negotiation = negotiationOf(user); pub.negotiationPublicView = negotiationPublicView(user); pub.listedRate = user.creator && typeof user.creator.paidRate === "number" ? user.creator.paidRate : null; } catch (e) {}
     const { momentum } = await momentumContext(users);
     pub.momentum = momentum.detailFor(user);
     pub.ladder = momentum.ladderFor(user);
@@ -9117,7 +9153,7 @@ function normalizeAssetPacketStored(raw) {
     }
   }
   if (typeof raw.talkingPoints === "string") packet.talkingPoints = raw.talkingPoints.trim().slice(0, 600);
-  if (typeof raw.handle === "string") packet.handle = raw.handle.trim().replace(/^@+/, "").slice(0, 40);
+  if (typeof raw.handle === "string") packet.handle = normalizeHandle(raw.handle); // Build -202
   packet.hashtags = normalizeHashtagTokens(raw.hashtags);
   return packet;
 }
@@ -9189,7 +9225,7 @@ function validateAssetPacket(input, current) {
     packet.talkingPoints = (typeof input.talkingPoints === "string" ? input.talkingPoints : String(input.talkingPoints == null ? "" : input.talkingPoints)).trim().slice(0, 600);
   }
   if (input.handle !== undefined) {
-    packet.handle = (typeof input.handle === "string" ? input.handle : String(input.handle == null ? "" : input.handle)).trim().replace(/^@+/, "").slice(0, 40);
+    packet.handle = normalizeHandle(typeof input.handle === "string" ? input.handle : String(input.handle == null ? "" : input.handle)); // Build -202
   }
   if (input.hashtags !== undefined) {
     packet.hashtags = normalizeHashtagTokens(input.hashtags);
@@ -9247,8 +9283,7 @@ function normalizeSocials(b) {
   }
   const x = (b.xHandle || b.xUrl || "").trim();
   if (x) {
-    const fromUrl = x.match(/(?:x\.com|twitter\.com)\/@?([A-Za-z0-9_]+)/i);
-    const handle = fromUrl ? fromUrl[1] : x.replace(/^@/, "").replace(/^https?:\/\//i, "");
+    const handle = normalizeHandle(x); // Build -202: through the hardened parser
     if (handle) {
       out.xHandle = handle;
       out.xUrl = `https://x.com/${handle}`;
@@ -10976,9 +11011,9 @@ function postWithPerformance(post) {
   return { ...post, performance: performanceSummary(post) };
 }
 
-async function withPostState(booking) {
-  const posts = await allPosts();
-  const post = posts.find((p) => p.bookingId === booking.id) || null;
+async function withPostState(booking, pre202) {
+  const posts = pre202 && pre202.posts ? pre202.posts : await allPosts();
+  const post = pre202 && pre202.postByBooking ? (pre202.postByBooking.get(booking.id) || null) : posts.find((p) => p.bookingId === booking.id) || null;
   let creatorStanding = "good";
   let creatorLicensingFee = null;
   if (booking.creatorId) {
@@ -11008,14 +11043,14 @@ async function withPostState(booking) {
     }
   }
   let businessReview = null;
-  const myBizReview = (await allBizReviews()).find((r) => r.bookingId === booking.id);
+  const myBizReview = pre202 && pre202.bizReviewByBooking ? pre202.bizReviewByBooking.get(booking.id) : (await allBizReviews()).find((r) => r.bookingId === booking.id);
   if (myBizReview) businessReview = { stars: myBizReview.stars, text: myBizReview.text || "", createdAt: myBizReview.createdAt };
   // The mirror: the business's own rating OF this creator on this
   // booking, when one exists, so the business visit card shows the
   // rating it left instead of the rating form (and the creator's
   // card shows what the business said).
   let creatorReview = null;
-  const myCreatorReview = (await allReviews()).find((r) => r.bookingId === booking.id);
+  const myCreatorReview = pre202 && pre202.reviewByBooking ? pre202.reviewByBooking.get(booking.id) : (await allReviews()).find((r) => r.bookingId === booking.id);
   if (myCreatorReview) creatorReview = { stars: myCreatorReview.stars, comment: myCreatorReview.comment || "", createdAt: myCreatorReview.createdAt };
   // Magpie ROAS (Jeff, 2026-10-19): every booking payload carries
   // its own score, computed by the one helper from the stored
@@ -11067,7 +11102,7 @@ async function withPostState(booking) {
     line: booking.creatorCode ? audienceCodeLine(booking) : null,
     state: audienceCodeState(booking),
     counted: (booking.redemptions ? Math.max(0, Math.floor(Number(booking.redemptions.count) || 0)) : 0) + (Number(booking.codeUseCount) || 0),
-    countedSpend: await countedCodeSpend(booking.id),
+    countedSpend: pre202 && pre202.redemptionByBooking ? (pre202.redemptionByBooking.get(booking.id) || 0) : await countedCodeSpend(booking.id),
   };
   const timeline = visitTimeline(booking, post);
   const postPayload = postWithPerformance(post);
@@ -11396,7 +11431,34 @@ async function runHandleRepair151({ dryRun = false } = {}) {
       await store.set(`user:${u.id}`, u);
     }
   }
-  const audit = { ranAt: nowIso(), dryRun, scanned, changed, unrecoverable };
+  // Build -202: also process prospect: records; merge collisions on handle key or email within a market.
+  let prospectScanned = 0; const prospectChanged = []; const prospectMerged = [];
+  try {
+    const prospectRows = await store.list("prospect:");
+    const prospects = prospectRows.map((r) => r.value).filter(Boolean);
+    const byKey = new Map();
+    for (const pr of prospects) {
+      prospectScanned += 1;
+      const rawH = pr.handle || pr.instagramHandle || "";
+      const nh = rawH ? normalizeHandle(rawH) : "";
+      if (rawH && nh && nh !== rawH) { prospectChanged.push({ id: pr.id, before: rawH, after: nh }); if (!dryRun) { pr.handle = nh; } }
+      const hkey = nh ? nh.toLowerCase() : "";
+      const ekey = String(pr.email || "").trim().toLowerCase();
+      const mkey = String(pr.market || "");
+      for (const k of [hkey ? `h:${mkey}:${hkey}` : null, ekey ? `e:${mkey}:${ekey}` : null].filter(Boolean)) {
+        if (byKey.has(k)) {
+          const keeper = byKey.get(k);
+          const score = (x) => ((x.sends && x.sends.length) || x.sendCount || 0) + (x.statusHistory && x.statusHistory.length || 0) + (x.status && x.status !== "new" ? 1 : 0);
+          const [keep, drop] = score(pr) > score(keeper) ? [pr, keeper] : [keeper, pr];
+          prospectMerged.push({ kept: keep.id, dropped: drop.id, key: k });
+          byKey.set(k, keep);
+          if (!dryRun && drop.id && drop.id !== keep.id) { try { if (store.del) await store.del(`prospect:${drop.id}`); } catch (e) {} }
+        } else byKey.set(k, pr);
+      }
+      if (!dryRun && nh && nh !== rawH && pr.id) { try { await store.set(`prospect:${pr.id}`, pr); } catch (e) {} }
+    }
+  } catch (e) { /* prospect sweep is best-effort */ }
+  const audit = { ranAt: nowIso(), dryRun, scanned, changed, unrecoverable, prospectScanned, prospectChanged, prospectMerged };
   if (!dryRun) {
     await store.set("config:handleRepair151", audit);
     await logEvent({ type: "handle_repair_151", actorId: null, actorRole: "system", subjectId: null, market: null, data: { changed: changed.length, unrecoverable: unrecoverable.length, scanned } });
@@ -16315,12 +16377,18 @@ async function buildSigFacts(user, full) {
     // announce a "1 offer waiting" that is a sample prop.
     let openOffers = 0;
     let directInvites = 0;
-    for (const o of offers) {
-      if (o.status !== "open") continue;
-      if (await offerFencedForCreators(o, user)) continue;
+    // Build -202: one flags read per request + bounded-concurrency fence checks.
+    const flags202 = await getMarketFlags();
+    const openList202 = offers.filter((o) => o.status === "open");
+    const bizIds202 = [...new Set(openList202.map((o) => o.businessId).filter(Boolean))];
+    const bizRows202 = await mapBounded202(bizIds202, 12, async (id) => [id, await store.get(`user:${id}`)]);
+    const pre202 = { flags: flags202, bizById: new Map(bizRows202) };
+    const fenced202 = await mapBounded202(openList202, 12, async (o) => offerFencedForCreators(o, user, pre202));
+    openList202.forEach((o, i) => {
+      if (fenced202[i]) return;
       if (laneOf(o) === "direct") { if (o.creatorId === user.id) directInvites += 1; }
       else if (isListedInMarket(user, o.market)) openOffers += 1;
-    }
+    });
     const points = full && full.momentum ? full.momentum.points || 0 : 0;
     const pc = (full && full.profileCompletion) || {};
     const itemLabels = {};
@@ -16344,10 +16412,10 @@ async function buildSigFacts(user, full) {
       }
       for (const b of mine) if (b && b.businessId) ids.add(b.businessId);
       const out = [];
-      for (const id of ids) {
-        const bu = await store.get(`user:${id}`);
+      const bizUsers202 = await mapBounded202([...ids], 12, async (id) => [id, await store.get(`user:${id}`)]);
+      for (const [id, bu] of bizUsers202) {
         if (!bu || bu.role !== "business" || !bu.business) continue;
-        if (isTester(bu)) continue; // Build -162: tester-owned businesses never surface to a real creator
+        if (isTester(bu)) continue;
         const view = standingAvailabilityView(bu.business);
         if (view) out.push({ businessId: id, businessName: bu.business.businessName || bu.name || "A business", summary: view.summary });
       }
@@ -18801,8 +18869,8 @@ function lineFor(user, users) {
   const points = counts[0] * INVITE_FINISH_POINTS[0] + counts[1] * INVITE_FINISH_POINTS[1] + counts[2] * INVITE_FINISH_POINTS[2];
   return { counts, points, gens };
 }
-async function pointsContext() {
-  const [users, bookings, posts, reviews, bizReviews] = await Promise.all([allUsers(), allBookings(), allPosts(), allReviews(), allBizReviews()]);
+async function pointsContext(preloadedUsers) {
+  const [users, bookings, posts, reviews, bizReviews] = await Promise.all([preloadedUsers || allUsers(), allBookings(), allPosts(), allReviews(), allBizReviews()]);
   return { users, momentum: createMomentum({ users, bookings, posts, reviews, bizReviews }) };
 }
 function totalPointsFor(user, ctx) {
@@ -18813,8 +18881,8 @@ function totalPointsFor(user, ctx) {
 // The level stamp rides the creator record so sync readers
 // (offer visibility) can use it; refreshed on the creator's
 // own reads (founding home, points, profile saves).
-async function refreshPointsLevel(user) {
-  const ctx = await pointsContext();
+async function refreshPointsLevel(user, preloadedUsers) {
+  const ctx = await pointsContext(preloadedUsers);
   const t = totalPointsFor(user, ctx);
   const lvl = levelForPoints(t.total);
   const rec = await store.get(`user:${user.id}`);
@@ -23252,6 +23320,8 @@ async function ensureDemoPartner(actorId) {
     offerId: offer.id,
     market,
     code: "SGNL-SAMPLE1",
+    businessName: "Sample Cafe",
+    title: "Sample visit: try the new seasonal menu",
     status: "completed",
     createdAt: visitAt,
     redeemedAt: visitAt,
@@ -24332,6 +24402,43 @@ async function learnEnsureSeeded138() {
   await store.set("config:learn-seeded", { at: nowIso(), articles: (seed.articles || []).length });
 }
 
+// Build -202: Learn sync. Fetches the site's published articles-meta.json and upserts learnarticle:{slug} records (idempotent by slug).
+async function runLearnSync202() {
+  const res = await fetch("https://magpielocal.com/learn/articles-meta.json");
+  if (!res.ok) return { ok: false, status: res.status, upserted: 0 };
+  const meta = await res.json();
+  const entries = Array.isArray(meta) ? meta.map((m) => [m.slug || m.file || "", m]) : Object.entries(meta || {});
+  let upserted = 0;
+  for (const [fileKey, m] of entries) {
+    if (!m || typeof m !== "object") continue;
+    const slug = String(m.slug || fileKey || "").replace(/\.html$/, "").trim();
+    if (!slug) continue;
+    let title = m.title || m.headline || "";
+    let date = m.date || m.publishedAt || null;
+    let dek = m.dek || "";
+    if (!title || !date) {
+      try {
+        const page = await (await fetch(`https://magpielocal.com/learn/${slug}.html`)).text();
+        if (!title) { const tm = page.match(/<title>([^<]+)<\/title>/i); if (tm) title = tm[1].replace(/\s*[|\u2013-]\s*Magpie.*$/i, "").trim(); }
+        if (!date) { const dm = page.match(/"datePublished"\s*:\s*"([^"]+)"/) || page.match(/(20\d{2}-\d{2}-\d{2})/); if (dm) date = dm[1].slice(0, 10); }
+        if (!dek) { const km = page.match(/<meta[^>]+name="description"[^>]+content="([^"]+)"/i); if (km) dek = km[1]; }
+      } catch (e) { /* meta-only record still upserts */ }
+    }
+    const existing = await store.get(`learnarticle:${slug}`);
+    await store.set(`learnarticle:${slug}`, {
+      ...(existing || {}),
+      slug, headline: title || (existing && existing.headline) || "", title: title || (existing && existing.headline) || "",
+      topic: m.topic || (existing && existing.topic) || "", audience: m.audience || (existing && existing.audience) || "",
+      dek, heroImage: m.image || m.heroImage || (existing && existing.heroImage) || "", status: "live",
+      url: `https://magpielocal.com/learn/${slug}.html`, publishedAt: date || (existing && existing.publishedAt) || null,
+      source: "sync", updatedAt: nowIso(),
+    });
+    upserted += 1;
+  }
+  await store.set("config:learnSync202", { lastRunAt: nowIso(), upserted });
+  return { ok: true, upserted };
+}
+
 function learnPhotos138() {
   try {
     const seed = require("./learn-seed.json");
@@ -24387,20 +24494,19 @@ async function route(event) {
   // store round trips on every request. Each keeps its own
   // try/catch: every one of them is best-effort and must never
   // break a request (see the per-job notes below).
-  await Promise.all([
-    // Admin bootstrap: opportunistically creates the one admin
-    // account, but if the store itself is failing it must degrade
-    // to "admin bootstrap delayed" instead of taking down every
-    // route. Unguarded, this one read caused the total /api/*
-    // outage of 2026-10-25 (expired Netlify Blobs token) — see
-    // INCIDENT-2026-10-25.md.
-    (async () => {
-      try {
-        await auth.ensureAdmin(logEvent);
-      } catch (e) {
-        console.error("Magpie ensureAdmin failed (continuing; admin bootstrap delayed):", e);
-      }
-    })(),
+  // Admin bootstrap is AUTH-CRITICAL (the first admin login depends
+  // on it), so it stays awaited, with its own guard: if the store
+  // itself is failing it degrades to "admin bootstrap delayed"
+  // instead of taking down every route. Unguarded, this one read
+  // caused the total /api/* outage of 2026-10-25 (expired Netlify
+  // Blobs token) — see INCIDENT-2026-10-25.md.
+  try {
+    await auth.ensureAdmin(logEvent);
+  } catch (e) {
+    console.error("Magpie ensureAdmin failed (continuing; admin bootstrap delayed):", e);
+  }
+  // Build -202 (LOADER RULE): the remaining preamble loaders are fire-and-forget, never awaited on the request path.
+  const preamble202 = Promise.all([
     // One-time recruiter kit email: fires on the first request
     // after deploy, guarded by a claimed blob flag, never repeats.
     (async () => { try { await maybeSendRecruiterKit(); } catch (e) { /* kit email is best-effort */ } })(),
@@ -24481,6 +24587,7 @@ async function route(event) {
     // hours by its own durable stamp.
     (async () => { try { await maybeRunSuggestionOutcomeSweep(); } catch (e) { /* outcome matching is best-effort on the request path */ } })(),
   ]);
+  preamble202.catch(() => {});
   const ctx = await getAuthUser(event);
   const user = ctx.user;
 
@@ -24609,6 +24716,14 @@ async function route(event) {
   // checker key as /api/verify/counts — the token opens nothing
   // else. The app's half of publishing ends at the queue: nothing
   // here touches the site repo.
+  if (seg[0] === "internal" && seg[1] === "learn-sync" && method === "POST") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const summary = await runLearnSync202();
+    return json(200, { ok: true, sync: summary });
+  }
+
   if (seg[0] === "internal" && seg[1] === "learn-jobs") {
     if (!verifyTokenOk(event)) return err(403, "Bad checker key");
     if (method === "GET" && seg.length === 2) {
@@ -28047,7 +28162,15 @@ async function route(event) {
             sourceNote: platform === "linkedin" ? "LinkedIn numbers are typed in by hand in this version — the page is run outside the app." : "Post history imported from the posting queue. Follower counts are typed in from the daily account check until Meta approves the app.",
           });
         }
-        const recent = posts.filter((p) => p.status !== "queued").sort((a, b) => String(b.postedAt || "") < String(a.postedAt || "") ? -1 : 1).slice(0, 30);
+        const recentRaw202 = posts.filter((p) => p.status !== "queued").sort((a, b) => String(b.postedAt || "") < String(a.postedAt || "") ? -1 : 1);
+        // Build -202: group cross-posts (same normalized text + postedAt) into one row with both platform badges.
+        const recentMap202 = new Map();
+        for (const p of recentRaw202) {
+          const gk = `${String(p.text || "").trim().toLowerCase().replace(/\s+/g, " ")}|${p.postedAt || ""}`;
+          if (recentMap202.has(gk)) { const g = recentMap202.get(gk); if (!g.platforms.includes(p.platform)) g.platforms.push(p.platform); g.groupedPosts.push(p); }
+          else recentMap202.set(gk, { ...p, platforms: [p.platform], groupedPosts: [p] });
+        }
+        const recent = [...recentMap202.values()].slice(0, 30);
         const queued = posts.filter((p) => p.status === "queued").sort((a, b) => String(a.createdAt || "") < String(b.createdAt || "") ? -1 : 1);
         const drafts = (await store.list("socialdraft:")).map((r) => r.value).filter(Boolean).filter((d) => d.status === "draft").sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
         return json(200, { channels, recent, queued, drafts, canDraft: canDraftS, canApprove: canApproveS });
@@ -28079,7 +28202,10 @@ async function route(event) {
         const b = parseBody(event);
         if (!["instagram", "facebook", "linkedin"].includes(b.platform)) return err(400, "Pick the channel first.");
         if (!b.url) return err(400, "A hand-added post needs its link.");
-        const externalId = `manual-${crypto.randomUUID().slice(0, 8)}`;
+        // Build -202: externalId from the post URL shortcode so re-adding the same URL upserts.
+        const urlStr202 = String(b.url || "");
+        const short202 = (urlStr202.match(/\/(?:p|reel|reels|posts)\/([A-Za-z0-9_-]+)/) || urlStr202.match(/\/([A-Za-z0-9_-]{6,})(?:[/?#]|$)/) || [])[1];
+        const externalId = short202 ? `manual-${short202}` : `manual-${crypto.createHash("sha256").update(urlStr202).digest("hex").slice(0, 12)}`;
         const post = { platform: b.platform, externalId, url: String(b.url), text: String(b.text || ""), status: "posted", source: "manual", postedAt: b.postedAt || nowIso(), createdAt: nowIso(), metrics: { likes: typeof b.likes === "number" ? b.likes : null, comments: typeof b.comments === "number" ? b.comments : null, shares: typeof b.shares === "number" ? b.shares : null } };
         await store.set(`socialpost:${post.platform}:${externalId}`, post);
         await logEvent({ type: "social_post_added", actorId: user.id, actorRole: "admin", subjectId: externalId, market: null, data: { platform: post.platform } });
@@ -28104,7 +28230,8 @@ async function route(event) {
         // Build -170: prefix memo (see memoAggP).
         const teamMemoHit = aggMemoPGet(`admin-team:${user.id}`, ["user", "teaminvite", "config"], 30000);
         if (teamMemoHit !== undefined) return json(200, teamMemoHit);
-        const admins = (await allUsers()).filter((u) => u.role === "admin");
+        const adminsRaw202 = (await allUsers()).filter((u) => u.role === "admin");
+        const seenTeam202 = new Set(); const admins = adminsRaw202.filter((u) => { const k = String(u.email || "").trim().toLowerCase(); if (!k) return true; if (seenTeam202.has(k)) return false; seenTeam202.add(k); return true; }); // Build -202 dedupe
         const members = admins.map((u) => {
           const p = perms138.permsOf(u);
           return {
@@ -29759,7 +29886,7 @@ async function route(event) {
         .map((name) => { const m = MARKETS.find((x) => x.name === name); return m ? [m.name, m.label] : null; })
         .filter(Boolean);
       const rosterCounts = (list) => ({
-        pending: list.filter((u) => u.status === "pending").length,
+        pending: list.filter((u) => u.status === "pending" && !isTester(u)).length,
         approved: list.filter((u) => u.status === "approved" && !isTester(u)).length,
         approvedComplete: list.filter((u) => u.status === "approved" && !isTester(u) && profileCompleteOf(u)).length,
       });
@@ -30306,7 +30433,12 @@ async function route(event) {
         // Build -138: ?actor=<userId> narrows to one person's
         // actions (the Team room's per-person activity view rides
         // the same parameter).
-        const filtered = events.filter((e) => (!query.type || e.type === query.type) && (!query.actor || e.actorId === query.actor));
+        const filtered = events.filter((e) => {
+          if (query.type) { if (e.type !== query.type) return false; }
+          else if (CAPTURE_SINCE_TYPES.includes(e.type)) return false; // Build -202: capture types only when explicitly filtered
+          if (query.actor && e.actorId !== query.actor) return false;
+          return true;
+        });
         return json(200, { events: filtered, total: filtered.length });
       } catch (e) {
         console.error("Magpie admin events read failed (rendering empty, degraded):", e);
@@ -30724,7 +30856,7 @@ async function route(event) {
       // rebuilding it on every Stats load left the panel stuck
       // on its loading line past the function budget. Same
       // pattern as /admin/applications.
-      const memoHit = aggMemoPGet("admin-suggestions", ["event", "prospect", "user", "offer", "booking", "post", "suggestion", "snapshot"], 30000);
+      const memoHit = aggMemoPGet("admin-suggestions", ["user", "offer", "booking", "post", "suggestion"], 300000);
       if (memoHit !== undefined) return json(200, memoHit);
       const candidates = await buildSuggestionCandidates();
       let visible = await syncSuggestionRecords(candidates, user.id);
@@ -30739,7 +30871,7 @@ async function route(event) {
         if (lines) { visible = visible.map((s, i) => ({ ...s, text: lines[i] })); phrased = true; }
       }
       const payload = { suggestions: visible.map((s) => ({ id: s.id, kind: s.kind, type: s.type, text: s.text, receipt: s.receipt, action: s.action || null, score: s.score, surfacedAt: s.surfacedAt || null })), watching: SUGGESTION_WATCHING, phrased, generatedAt: nowIso() };
-      aggMemoPSet("admin-suggestions", ["event", "prospect", "user", "offer", "booking", "post", "suggestion", "snapshot"], payload);
+      aggMemoPSet("admin-suggestions", ["user", "offer", "booking", "post", "suggestion"], payload);
       return json(200, payload);
     }
     if (method === "POST" && seg[1] === "suggestions" && seg[2] === "dismiss" && seg.length === 3) {
@@ -30816,8 +30948,8 @@ async function route(event) {
       const perMarket = {};
       for (const m of MARKETS) perMarket[m.name] = { creators: 0, businesses: 0, bookings: 0, posts: 0 };
       for (const u of users) {
-        const mkey = normalizeMarketName(u.market);
-        if (!perMarket[mkey]) continue;
+        const mkey = canonicalMarketName(u.market);
+        if (!mkey || !perMarket[mkey]) continue;
         if (u.role === "creator" && u.status === "approved" && !isTester(u)) perMarket[mkey].creators += 1;
         if (u.role === "business" && u.status === "approved") perMarket[mkey].businesses += 1;
       }
@@ -30828,10 +30960,9 @@ async function route(event) {
       const unlistedMap = {};
       for (const u of users) {
         if (u.role === "creator" && u.market === UNLISTED) {
-          const region = u.country || u.state || "";
-          const place = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
-          if (!unlistedMap[place]) unlistedMap[place] = { place, city: u.city || "Unknown", country: u.country || null, creators: 0 };
-          unlistedMap[place].creators += 1;
+          const { key, place } = unlistedPlace202(u);
+          if (!unlistedMap[key]) unlistedMap[key] = { place, city: u.city || "Unknown", country: u.country || null, creators: 0 };
+          unlistedMap[key].creators += 1;
         }
       }
       const unlistedByCity = Object.values(unlistedMap).sort((a, b) => b.creators - a.creators);
@@ -30858,17 +30989,19 @@ async function route(event) {
       const periodDays = Number.isFinite(daysParam) && daysParam > 0 ? Math.max(1, Math.min(365, Math.floor(daysParam))) : 30;
       const sinceMs = Date.now() - periodDays * 86400000;
       const layerRows = {};
+      const listedMarketNames202 = new Set(MARKETS.map((m) => m.name));
       for (const u of users) {
         if (u.role !== "creator" || isTester(u)) continue;
-        let key;
-        if (u.market === UNLISTED) {
-          const region = u.country || u.state || "";
-          key = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
-        } else key = normalizeMarketName(u.market);
-        const row = layerRows[key] || (layerRows[key] = { market: key, creators: 0, approved: 0, complete: 0, spanishFlagged: 0, withSpanishPct: 0, claimsInPeriod: 0, spanishClaimsInPeriod: 0 });
+        // Build -202: layers is a readout, not a market count — row.creators stays ALL non-tester creator records (incl. auto-decision records), per diag-counts canonical option 1; row.complete below is fenced to approved AND complete.
+        let key; let displayKey;
+        const canon202 = canonicalMarketName(u.market);
+        if (u.market === UNLISTED || !canon202 || !listedMarketNames202.has(canon202)) {
+          const up = unlistedPlace202(u); key = up.key; displayKey = up.place;
+        } else { key = canon202; displayKey = canon202; }
+        const row = layerRows[key] || (layerRows[key] = { market: displayKey, creators: 0, approved: 0, complete: 0, spanishFlagged: 0, withSpanishPct: 0, claimsInPeriod: 0, spanishClaimsInPeriod: 0 });
         row.creators += 1;
         if (u.status === "approved") row.approved += 1;
-        if (profileCompleteOf(u)) row.complete += 1;
+        if (u.status === "approved" && profileCompleteOf(u)) row.complete += 1;
         const spanish = !!(u.creator && u.creator.spanishContent === true);
         if (spanish) row.spanishFlagged += 1;
         if (u.creator && typeof u.creator.spanishAudiencePct === "number") row.withSpanishPct += 1;
@@ -30928,16 +31061,15 @@ async function route(event) {
         boardTotals.users += 1;
         if (u.role === "creator") { boardTotals.creators += 1; if (u.status === "pending") boardTotals.awaitingCreators += 1; }
         else { boardTotals.businesses += 1; if (u.status === "pending") boardTotals.awaitingBusinesses += 1; }
-        if (u.market === UNLISTED) {
-          const region = u.country || u.state || "";
-          const place = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
-          const row = boardUnlistedMap[place] || (boardUnlistedMap[place] = { place, city: u.city || "Unknown", country: u.country || null, state: u.state || null, creators: 0, businesses: 0, awaitingReview: 0, total: 0 });
+        if (u.market === UNLISTED || !boardByMarket.has(canonicalMarketName(u.market) || "")) {
+          const { key: bkey202, place } = unlistedPlace202(u);
+          const row = boardUnlistedMap[bkey202] || (boardUnlistedMap[bkey202] = { place, city: u.city || "Unknown", country: u.country || null, state: u.state || null, creators: 0, businesses: 0, awaitingReview: 0, total: 0 });
           if (u.role === "creator") row.creators += 1; else row.businesses += 1;
           if (u.status === "pending") row.awaitingReview += 1;
           row.total += 1;
           continue;
         }
-        const mrow = boardByMarket.get(normalizeMarketName(u.market));
+        const mrow = boardByMarket.get(canonicalMarketName(u.market));
         if (!mrow) continue;
         const counts = u.role === "creator" ? mrow.creators : mrow.businesses;
         counts.signedUp += 1;
@@ -30954,7 +31086,9 @@ async function route(event) {
         unlisted: Object.values(boardUnlistedMap).sort((a, b) => b.total - a.total || (a.place < b.place ? -1 : 1)),
         emptyMarkets: [...boardByMarket.values()].filter((r) => r.total === 0).map((r) => r.market),
       };
+      const marketRows202 = await adminMarketRows();
       return json(200, {
+        marketRows: marketRows202,
         users: {
           creators: users.filter((u) => u.role === "creator").length,
           businesses: users.filter((u) => u.role === "business").length,
@@ -31175,6 +31309,7 @@ async function route(event) {
       const posts = await allPosts();
       const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
       const userById170 = new Map((await allUsers()).map((u) => [u.id, u]));
+      const offerById202 = new Map((await allOffers()).map((o) => [o.id, o]));
       const rows = [];
       for (const b of bookings) {
         const creator = userById170.get(b.creatorId) || null;
@@ -31187,9 +31322,9 @@ async function route(event) {
           creatorHandle: b.creatorHandle || (creator && creator.creator ? creator.creator.handle : ""),
           creatorStanding: creator ? standingState(creator) : "good",
           businessId: b.businessId,
-          businessName: b.businessName || "",
+          businessName: b.businessName || (userById170.get(b.businessId) ? displayBusinessName(offerById202.get(b.offerId) || null, userById170.get(b.businessId)) : ""),
           market: b.market || "",
-          title: b.title || "",
+          title: b.title || (offerById202.get(b.offerId) ? offerById202.get(b.offerId).title || "" : ""),
           redeemedAt: b.redeemedAt,
           postDeadline: b.postDeadline,
           banAt: status.banAt,
@@ -31276,7 +31411,9 @@ async function route(event) {
     // preview offer can never reach a creator, a count, or a metric.
     if (method === "GET" && seg[1] === "preview" && seg[2] === "discover") {
       const disc = await discoverCards(query, { id: "__preview__", role: "business", market: null });
-      return json(200, { creators: disc.creators.map(decoratePreviewCard), universities: disc.universities, matchBrief: disc.matchBrief || null, preview: true });
+      let reconciliation202 = null;
+      try { const rows202 = await adminMarketRows(); const mk202 = canonicalMarketName(query.market || ""); const row202 = rows202.find((r) => r.name === mk202); if (row202) reconciliation202 = { bookable: disc.creators.length, approvedHome: row202.creatorsApproved, approvedComplete: row202.creatorsApprovedComplete, finishing: Math.max(0, row202.creatorsApproved - row202.creatorsApprovedComplete), market: row202.name }; } catch (e) {}
+      return json(200, { creators: disc.creators.map(decoratePreviewCard), universities: disc.universities, matchBrief: disc.matchBrief || null, preview: true, reconciliation: reconciliation202 });
     }
     if (method === "GET" && seg[1] === "preview" && seg[2] === "creator" && seg[3]) {
       const target = await store.get(`user:${seg[3]}`);
@@ -31781,12 +31918,13 @@ async function route(event) {
 
   if (method === "GET" && seg[0] === "me" && seg[1] === "founding") {
     if (user.role !== "creator") return err(403, "Creators only");
-    const summaryRaw = await foundingSummary(user);
+    const allUsers202 = await allUsers();
+    const summaryRaw = await foundingSummary(user, allUsers202);
     const summary = publicFounding(summaryRaw);
-    const { approvedRank } = creatorRanks(await allUsers());
+    const { approvedRank } = creatorRanks(allUsers202);
     const card = await publicCreator(user, user, approvedRank.get(user.id) || null);
-    const buzz = await creatorBuzz(user);
-    await refreshPointsLevel(user);
+    const buzz = await creatorBuzz(user, allUsers202);
+    await refreshPointsLevel(user, allUsers202);
     const today = nowIso().slice(0, 10);
     if (user.foundingViewedOn !== today) {
       user.foundingViewedOn = today;
@@ -32118,7 +32256,9 @@ async function route(event) {
       market: (disc.matchBrief && disc.matchBrief.market) || query.market || null,
       data: { filters, resultCount: disc.creators.length, zeroResults: disc.creators.length === 0, briefed: !!disc.matchBrief },
     });
-    return json(200, { creators: disc.creators, universities: disc.universities, matchBrief: disc.matchBrief || null });
+    let reconciliation202 = null;
+    try { const rows202 = await adminMarketRows(); const mk202 = canonicalMarketName(query.market || user.market || ""); const row202 = rows202.find((r) => r.name === mk202); if (row202) reconciliation202 = { bookable: disc.creators.length, approvedHome: row202.creatorsApproved, approvedComplete: row202.creatorsApprovedComplete, finishing: Math.max(0, row202.creatorsApproved - row202.creatorsApprovedComplete), market: row202.name }; } catch (e) {}
+    return json(200, { creators: disc.creators, universities: disc.universities, matchBrief: disc.matchBrief || null, reconciliation: reconciliation202 });
   }
 
   // ---------- deck state: Later piles + not-a-fit (Jeff, 2026-10-26) ----------
@@ -34130,8 +34270,14 @@ async function route(event) {
     if (user.role === "creator") bookings = bookings.filter((b) => b.creatorId === user.id);
     else if (user.role === "business") bookings = bookings.filter((b) => b.businessId === user.id);
     bookings.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-    const out = [];
-    for (const b of bookings) out.push(await withPostState(b));
+    // Build -202 (LOADER RULE): hoist full lists once per request, index by bookingId, bounded-concurrency map.
+    const [posts202, bizReviews202, reviews202, redRows202] = await Promise.all([allPosts(), allBizReviews(), allReviews(), store.list("redevent:")]);
+    const idx202 = (rows, keyFn) => { const m = new Map(); for (const r of rows) { const k = keyFn(r); if (k && !m.has(k)) m.set(k, r); } return m; };
+    const redemptionByBooking202 = new Map();
+    for (const r of redRows202) { const e = r.value; if (e && e.bookingId && !e.voided && !e.pendingConfirm) redemptionByBooking202.set(e.bookingId, (redemptionByBooking202.get(e.bookingId) || 0) + (Number(e.amount) || 0)); }
+    for (const [k, v] of redemptionByBooking202) redemptionByBooking202.set(k, Math.round(v * 100) / 100);
+    const pre202 = { posts: posts202, postByBooking: idx202(posts202, (x) => x.bookingId), bizReviewByBooking: idx202(bizReviews202, (x) => x.bookingId), reviewByBooking: idx202(reviews202, (x) => x.bookingId), redemptionByBooking: redemptionByBooking202 };
+    const out = await mapBounded202(bookings, 12, async (b) => withPostState(b, pre202));
     return json(200, { bookings: out });
   }
 
@@ -35930,6 +36076,10 @@ async function route(event) {
       // session. Newest booking wins; a direct offer is next.
       const ctxBookings = await allBookings();
       const ctxOffers = await allOffers();
+      // Build -202: index context by participant pair once, instead of scanning full lists per thread.
+      const pairKey202 = (x, y) => [x, y].sort().join("__");
+      const bookingByPair202 = new Map(); for (const b of ctxBookings) { if (!b.businessId || !b.creatorId) continue; const k = pairKey202(b.businessId, b.creatorId); const cur = bookingByPair202.get(k); if (!cur || String(b.createdAt || "") > String(cur.createdAt || "")) bookingByPair202.set(k, b); }
+      const offerByPair202 = new Map(); for (const o of ctxOffers) { if (!o.businessId || !o.creatorId) continue; const k = pairKey202(o.businessId, o.creatorId); const cur = offerByPair202.get(k); if (!cur || String(o.createdAt || "") > String(cur.createdAt || "")) offerByPair202.set(k, o); }
       const pairNewest = (rows, pred) => rows.filter(pred).sort((a, b) => (String(a.createdAt || "") < String(b.createdAt || "") ? 1 : -1))[0] || null;
       for (const t of Object.values(byThread)) {
         const st = msgStates[t.otherId] || null;
@@ -35942,8 +36092,8 @@ async function route(event) {
           continue;
         }
         const other = await store.get(`user:${t.otherId}`);
-        const pairBooking = pairNewest(ctxBookings, (b) => (b.businessId === user.id && b.creatorId === t.otherId) || (b.creatorId === user.id && b.businessId === t.otherId));
-        const pairOffer = pairBooking ? null : pairNewest(ctxOffers, (o) => (o.businessId === user.id && o.creatorId === t.otherId) || (o.businessId === t.otherId && o.creatorId === user.id));
+        const pairBooking = bookingByPair202.get(pairKey202(user.id, t.otherId)) || null;
+        const pairOffer = pairBooking ? null : (offerByPair202.get(pairKey202(user.id, t.otherId)) || null);
         // Sender photo for the conversation list + thread head
         // (Jeff, 2026-11-07): the same photo routes the cards use —
         // a business's lead photo (or packet logo), a creator's
@@ -36132,4 +36282,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, runLearnSync202, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };

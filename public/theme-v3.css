@@ -1690,7 +1690,7 @@ img.maggie-char-img { animation: charBob 4.4s ease-in-out infinite; }
 .shelf-match-why { font-size: .8rem; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .dcard-match { display: flex; align-items: baseline; gap: 7px; margin-top: 8px; min-width: 0; }
 .dcard-match-score { font-weight: 800; font-size: .85rem; color: var(--ink); white-space: nowrap; }
-.dcard-match-why { font-size: .8rem; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dcard-match-why { font-size: .8rem; color: var(--ink2); white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-width: 0; } /* Build -202: wrap to two lines, full text in title tooltip */
 .offer-matches { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
 .offer-matches-head { margin-bottom: 10px; }
 

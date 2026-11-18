@@ -350,6 +350,21 @@ function normalizePlatformLocalPct(input) {
 // a { platform: { handle, url } } map. A bare domain typed as a
 // URL earns its https://; anything that still is not an http(s)
 // URL drops out (the handle, if any, still stands).
+const HANDLE_SHAPE_LINKS = /^[A-Za-z0-9._-]{2,40}$/;
+const HANDLE_PATH_WORDS_LINKS = new Set(["in","p","reel","reels","share","video","videos","@","user","profile","channel","c"]);
+function cleanLinkHandle(raw) {
+  let h = String(raw == null ? "" : raw).trim();
+  if (!h) return "";
+  if (h.includes("/")) {
+    let parts = null;
+    try { const u = new URL(h.includes("://") ? h : `https://${h.replace(/^\/+/, "")}`); parts = u.pathname.split("/").map((x) => { try { return decodeURIComponent(x); } catch (e) { return x; } }).map((x) => x.trim()).filter(Boolean); }
+    catch (e) { parts = h.split(/[/?#]/).map((x) => x.trim()).filter(Boolean); }
+    h = "";
+    for (let i = parts.length - 1; i >= 0; i--) { const seg = parts[i].replace(/^@+/, ""); if (!seg || HANDLE_PATH_WORDS_LINKS.has(seg.toLowerCase()) || /^\d+$/.test(seg)) continue; h = seg; break; }
+  }
+  h = h.replace(/^@+/, "").trim();
+  return HANDLE_SHAPE_LINKS.test(h) ? h : "";
+}
 function normalizePlatformLinks(input) {
   const entries = Array.isArray(input)
     ? input.map((e) => [e && e.platform, e || {}])
@@ -357,7 +372,7 @@ function normalizePlatformLinks(input) {
   const out = {};
   for (const [platform, raw] of entries) {
     if (!AUDIENCE_PLATFORM_KEYS.includes(platform) || !raw || typeof raw !== "object") continue;
-    const handle = String(raw.handle || "").trim().slice(0, 90);
+    const handle = cleanLinkHandle(raw.handle || ""); // Build -202: routed through the handle shape parser; unreadable becomes ""
     let url = String(raw.url || "").trim().slice(0, 320);
     if (url && !/^https?:\/\//i.test(url) && !/\s/.test(url) && url.includes(".")) url = `https://${url}`;
     if (url && !/^https?:\/\/\S+$/i.test(url)) url = "";
@@ -466,6 +481,7 @@ module.exports = {
   stackOf,
   normalizePlatformLocalPct,
   normalizePlatformLinks,
+  cleanLinkHandle,
   localRateModel,
   geoBreakdownState,
 };
