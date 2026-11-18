@@ -4041,18 +4041,19 @@ const SIG_CLIP = "orb.mp4";
 // Maggie (Jeff, 2026-11-07): Sig is renamed Maggie, and her
 // mark has three modes behind ONE flag, SIG_MARK_MODE:
 //   "character" (current) — Jeff's character Maggie: the
-//     matte vinyl magpie Jeff picked on 2026-11-18 (Build
-//     -198: gradient X eye, blue-to-green wing, the real
-//     Magpie logo across her black t-shirt; before her,
-//     the Build -196 pop art bird, and
-//     before that, the fluffy 3D chick from his own
-//     character sheet). The traced logo bird was built
-//     first and Jeff rejected it as her face ("I don't
-//     like that", 2026-11-07 06:49) in favour of this
-//     character, then approved the direction ("Okay let's do
-//     it", 07:18). Small slots idle with her gentle bob;
-//     big slots play her state loops. See the MAGGIE_CHAR
-//     block.
+//     the real Magpie logo itself (Build -204, Jeff,
+//     2026-11-18: "Use the real logo in the app, park the
+//     bird" — the matte vinyl magpie of Builds -198/-200
+//     is retired as her face, and the character for social
+//     and merch is parked). Her tiles are the logo file's
+//     own artwork: the bird-in-g lifted from the real
+//     logo for the round slots, the full wordmark for the
+//     celebration slot. Before the logo she was the vinyl
+//     character (Builds -198/-200), the Build -196 pop art
+//     bird, and before that, the fluffy 3D chick from his
+//     own character sheet. Small slots idle with her
+//     gentle bob; big slots play her state loops. See the
+//     MAGGIE_CHAR block.
 //   "bird" — the traced logo-bird SVG: the magpie from Jeff's
 //     canonical logo master, traced into clean SVG (the
 //     gradient g, the ink bird, the wing leaf, the eye;
@@ -4078,24 +4079,27 @@ function maggieMarkHtml(cls, state) {
   return `<svg class="maggie-mark ${cls || ""}" data-maggie data-state="${state || "idle"}" viewBox="0 0 120 134" role="img" aria-label="Maggie"><defs><linearGradient id="mg${u}" gradientUnits="userSpaceOnUse" x1="8" y1="126" x2="112" y2="8"><stop offset="0" stop-color="#006AFC"/><stop offset=".38" stop-color="#019BFC"/><stop offset=".72" stop-color="#03C9AB"/><stop offset="1" stop-color="#2FE07E"/></linearGradient><clipPath id="mgh${u}"><polygon points="50,14 120,14 120,62 64,59 50,38"/></clipPath><clipPath id="mgw${u}"><polygon points="34,50 92,50 92,104 34,104"/></clipPath><clipPath id="mgt${u}"><polygon points="0,68 62,77 60,120 0,120"/></clipPath></defs><g class="mg-bob"><path fill="${G}" d="M 47.9 3.0 Q 57.2 0.0 67.7 0.0 Q 78.1 0.0 84.0 1.6 Q 89.8 3.3 94.4 5.6 Q 99.1 7.9 102.6 10.5 Q 106.0 13.0 110.0 17.7 Q 114.0 22.3 116.3 27.0 Q 118.6 31.6 119.3 35.8 Q 120.0 40.0 110.2 39.8 Q 100.5 39.5 98.4 38.6 Q 96.3 37.7 93.3 34.7 Q 90.2 31.6 86.7 30.2 Q 83.3 28.8 80.0 28.6 Q 76.7 28.4 72.3 29.5 Q 67.9 30.7 62.1 35.4 Q 56.3 40.0 47.0 53.0 Q 37.7 66.1 31.9 71.2 Q 26.0 76.3 21.2 81.9 Q 16.3 87.5 13.5 84.0 Q 10.7 80.5 7.7 72.6 Q 4.7 64.7 4.4 58.6 Q 4.2 52.6 6.3 44.9 Q 8.4 37.2 13.0 29.8 Q 17.7 22.3 22.6 17.7 Q 27.4 13.0 33.0 9.5 Q 38.6 6.0 47.9 3.0 Z"/><path fill="${G}" d="M 100.2 50.7 Q 102.8 49.8 111.4 49.8 Q 120.0 49.8 120.0 70.3 Q 120.0 90.7 116.7 99.6 Q 113.5 108.4 107.4 115.6 Q 101.4 122.8 95.1 126.6 Q 88.8 130.3 82.1 132.1 Q 75.3 134.0 66.3 134.0 Q 57.2 134.0 42.1 131.2 Q 27.0 128.4 21.4 128.4 Q 15.8 128.4 8.6 130.0 Q 1.4 131.7 6.3 124.0 Q 11.2 116.3 18.1 111.2 Q 25.1 106.1 33.5 104.2 Q 41.9 102.4 55.6 102.4 Q 69.3 102.4 75.8 99.6 Q 82.3 96.8 85.3 93.3 Q 88.4 89.8 89.8 86.3 Q 91.2 82.8 92.3 70.0 Q 93.5 57.2 95.6 54.4 Q 97.7 51.6 100.2 50.7 Z"/><g fill="#0B0D0C">${bird}</g><path fill="${G}" d="M 57.7 63.0 Q 67.0 61.0 73.0 61.2 Q 79.1 61.4 81.2 63.0 Q 83.3 64.7 82.8 69.3 Q 82.3 74.0 78.4 78.6 Q 74.4 83.3 68.4 85.8 Q 62.3 88.4 51.6 89.1 Q 40.9 89.8 34.9 91.0 Q 28.8 92.1 22.3 95.1 Q 15.8 98.2 18.4 91.9 Q 20.9 85.6 26.5 79.8 Q 32.1 74.0 40.2 69.6 Q 48.4 65.1 57.7 63.0 Z"/><g clip-path="url(#mgt${u})"><g class="mg-tail-rot"><g fill="#0B0D0C">${bird}</g></g></g><g clip-path="url(#mgw${u})"><g class="mg-wing-rot"><path fill="${G}" d="M 57.7 63.0 Q 67.0 61.0 73.0 61.2 Q 79.1 61.4 81.2 63.0 Q 83.3 64.7 82.8 69.3 Q 82.3 74.0 78.4 78.6 Q 74.4 83.3 68.4 85.8 Q 62.3 88.4 51.6 89.1 Q 40.9 89.8 34.9 91.0 Q 28.8 92.1 22.3 95.1 Q 15.8 98.2 18.4 91.9 Q 20.9 85.6 26.5 79.8 Q 32.1 74.0 40.2 69.6 Q 48.4 65.1 57.7 63.0 Z"/></g></g><g clip-path="url(#mgh${u})"><g class="mg-head-rot"><g fill="#0B0D0C">${bird}</g><path fill="${G}" d="M 79.8 38.6 Q 80.9 37.7 82.1 37.7 Q 83.3 37.7 84.4 38.9 Q 85.6 40.0 84.9 42.3 Q 84.2 44.7 82.6 44.9 Q 80.9 45.1 79.8 44.2 Q 78.6 43.3 78.6 41.4 Q 78.6 39.5 79.8 38.6 Z"/></g></g></g></svg>`;
 }
 // Character Maggie (Jeff, 2026-11-07; face replaced on his
-// order, 2026-11-17, Build -196, and again 2026-11-18,
-// Build -198; reframed wider 2026-11-18, Build -200): her
-// artwork is the ONE image Jeff approved
-// and NOTHING else — the six tiles in
-// public/assets/maggie-kaws-wide are crops of that single
-// portrait (the matte vinyl magpie: black head, gradient
-// X eye, blue-to-green wing and tail, the real Magpie
-// logo across her black t-shirt), and they are the law
-// for her face. Build -200 keeps the -198 artwork and pose
-// exactly and only widens the framing: the -198 crops in
-// public/assets/maggie-kaws were so tight that in the
-// circular avatar slots her beak clipped at the circle's
-// edge and she did not read as a bird (Jeff, from his Admin
-// Home screenshot: "Needs to be shifted right so you can
-// see she's a bird"), so the wide set shows her whole
-// profile — beak, head, wing, tail — inside the circle.
-// The earlier
-// tile sets stay on disk untouched — the -198 crops in
+// order, 2026-11-17, Build -196, again 2026-11-18, Build
+// -198, reframed wider 2026-11-18, Build -200, and
+// replaced again 2026-11-18, Build -204): her artwork is
+// now the REAL Magpie logo and nothing else — Jeff,
+// 2026-11-18: "Use the real logo in the app, park the
+// bird." The KAWS-style vinyl magpie of Builds -198/-200
+// is retired as her face (Jeff found the look creepy and
+// rejected every drawn replacement the same day), and the
+// bird character for social and merch is parked, so no
+// new character art ships. The six tiles in
+// public/assets/maggie-logo are built from the one real
+// logo file (public/assets/logo.png, the same file the
+// site ships): the tight round slots wear the bird-in-g
+// lifted straight out of that logo artwork (the g of
+// "magpie", with the bird in its bowl, extracted from the
+// logo's own pixels, never redrawn or retyped), and the
+// celebration tile wears the full wordmark as-is, both
+// set on the same clean light background the retired
+// tiles used, proportions untouched. The earlier tile
+// sets stay on disk untouched — the -200 wide crops in
+// public/assets/maggie-kaws-wide, the -198 crops in
 // public/assets/maggie-kaws, the 2026-11-07
 // character-sheet tiles in public/assets/maggie-char and
 // the Build -196 pop art tiles in public/assets/maggie-pop
@@ -4106,8 +4110,8 @@ function maggieMarkHtml(cls, state) {
 // re-drew a different bird, so no clip was ever the same
 // Maggie. None ship, any version.)
 // Her MOTION is code, not redraws: CSS transforms on the real
-// tile artwork (a gentle bob, a hop, a sway, a head-cock
-// tilt — see theme-v3.css) plus mood swaps between the tiles
+// tile artwork (a gentle bob, a hop, a sway, a tilt — see
+// theme-v3.css) plus mood swaps between the tiles
 // for states. Small slots (tab disc, rail, More rows, FAB)
 // idle with the same gentle bob since Build -198 (Jeff:
 // "animate it everywhere"), and while she is answering,
@@ -4118,23 +4122,25 @@ function maggieMarkHtml(cls, state) {
 // curious tile (bob / slow sway), talk wears chirp (she is
 // vocal — the queue is talking), greet wears the greet
 // tile (a hop on entry), celebrate wears hearts (a wiggle
-// on the win), listen wears the head crop (head
-// cocked while the user composes). "cool"
+// on the win), listen wears the listen tile (while the
+// user composes). Since Build -204 the state tiles share
+// the one logo mark (the wordmark on celebrate), so the
+// motion carries the state, not a change of face. "cool"
 // has a still in the avatar mood map; no surface in the app
 // raises a good-numbers Maggie moment today, so it waits
 // for a real hook like every other mood got.
-const MAGGIE_CHAR = "/assets/maggie-kaws-wide";
+const MAGGIE_CHAR = "/assets/maggie-logo";
 const MAGGIE_CHAR_STILL = { idle: "curious.jpg", think: "curious.jpg", listen: "listen.jpg", talk: "chirp.jpg", greet: "greet.jpg", celebrate: "hearts.jpg" };
 const MAGGIE_CHAR_AVA = { greet: "greet.jpg", celebrate: "hearts.jpg", think: "chirp.jpg", talk: "chirp.jpg", chirp: "chirp.jpg", cool: "cool.jpg", listen: "listen.jpg" };
 // One resolver for the small slots (tab, rail, More rows,
 // FAB): character still in character mode, the bird when
-// SIG_MARK_BIRD, the orb still otherwise. The wide curious
-// tile is the tiny-slot face: since Build -200 the whole
-// bird is in frame — beak clear of the edge, head, X eye,
-// blue-to-green wing and tail — so she reads as a bird at
-// 27px; the tighter -198 crops clipped her beak in the
-// circular slots and read as a dark mass, so no tight crop
-// ships.
+// SIG_MARK_BIRD, the orb still otherwise. The curious
+// tile is the tiny-slot face: since Build -204 it is the
+// bird-in-g from the real logo, sized to sit inside the
+// inscribed circle with clear margin, so the mark reads
+// at 27px; the retired vinyl tiles clipped at the
+// circular slots' edges in their first framing (Build
+// -200 widened them) and the character is now parked.
 function sigMarkHtml(cls) {
   if (SIG_MARK_CHAR) return `<img class="${cls} maggie-char-img" src="${MAGGIE_CHAR}/curious.jpg" alt="" decoding="async">`;
   if (SIG_MARK_BIRD) return maggieMarkHtml(cls, "idle");

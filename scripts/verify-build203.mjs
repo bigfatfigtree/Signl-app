@@ -79,7 +79,7 @@ check("recruiter queue capped at 10", appJs.includes("uxCap203(rows.map(rcProspe
 check("cap call sites across the app", (appJs.match(/uxCap203\(/g) || []).length >= 24, String((appJs.match(/uxCap203\(/g) || []).length));
 
 console.log("== source: protected surfaces untouched ==");
-check("Maggie artwork wiring intact", appJs.includes("MAGGIE_CHAR") && appJs.includes("maggie-kaws-wide"));
+check("Maggie artwork wiring intact", appJs.includes("MAGGIE_CHAR") && appJs.includes("maggie-logo"));
 check("no new request-path awaits in the helpers", !/async function ux(Mark203|Cap203|Grid203)/.test(appJs));
 
 console.log(`\nverify-build203: ${pass} passed, ${fail} failed`);
