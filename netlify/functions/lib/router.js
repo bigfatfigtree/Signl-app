@@ -436,13 +436,67 @@ async function snapshotTrendRows() {
   return { snapKeys, snapshots };
 }
 
+// Sign-ups by source (Build -197): one pass over allUsers(),
+// bucketed three ways (last 30 days, last 90 days, all time) so
+// the Admin Website view can switch windows without refetching.
+// A sign-up's channel is its UTM source when it carries one,
+// else its ?src= signup source, else the residual bucket
+// "Direct / untagged". Records written before the UTM capture
+// shipped carry no UTM fields and simply fall through to their
+// signup source or the residual bucket; a record whose
+// createdAt does not parse counts only in the all-time window.
+// Tester records are excluded, matching the platform counts.
+// The same pass also buckets by referrerHost (the site that
+// sent the visitor on their first touch) so AI-assistant and
+// other referring sites become visible as sign-up channels.
+// One list read, no per-key fetches: the LOADER RULE holds.
+const SIGNUP_UNTAGGED = "Direct / untagged";
+async function buildSignupSourceWindows() {
+  const users = (await allUsers()).filter((u) => u && u.role !== "admin" && !isTester(u));
+  const now = Date.now();
+  const defs = [["d30", 30], ["d90", 90], ["all", null]];
+  const windows = {};
+  for (const [key, days] of defs) {
+    const sinceMs = days ? now - days * 86400000 : 0;
+    const bySource = new Map();
+    const byReferrer = new Map();
+    let creators = 0;
+    let businesses = 0;
+    const bump = (map, k, role) => {
+      if (!map.has(k)) map.set(k, { creators: 0, businesses: 0, total: 0 });
+      const row = map.get(k);
+      if (role === "creator") row.creators += 1; else row.businesses += 1;
+      row.total += 1;
+    };
+    for (const u of users) {
+      if (u.role !== "creator" && u.role !== "business") continue;
+      const t = Date.parse(u.createdAt || "");
+      if (Number.isFinite(t) ? t < sinceMs : days !== null) continue;
+      if (u.role === "creator") creators += 1; else businesses += 1;
+      const channel = (typeof u.utmSource === "string" && u.utmSource) || (typeof u.signupSource === "string" && u.signupSource) || SIGNUP_UNTAGGED;
+      bump(bySource, channel, u.role);
+      const host = typeof u.referrerHost === "string" ? u.referrerHost : "";
+      if (host) bump(byReferrer, host, u.role);
+    }
+    const rows = [...bySource.entries()].map(([source, n]) => ({ source, ...n }))
+      .sort((a, b) => (a.source === SIGNUP_UNTAGGED) - (b.source === SIGNUP_UNTAGGED) || b.total - a.total || a.source.localeCompare(b.source));
+    const referrerRows = [...byReferrer.entries()].map(([host, n]) => ({ host, ...n }))
+      .sort((a, b) => b.total - a.total || a.host.localeCompare(b.host)).slice(0, 12);
+    windows[key] = { days, rows, referrerRows, totals: { creators, businesses, total: creators + businesses } };
+  }
+  return windows;
+}
+
 // Build -150: section-scoped Data payloads. The Data view is
 // six sub-tabs; each loads ONLY its own slice, so a slow or
 // broken corner can never take the whole view down (the -149
 // failure mode), and the daily-glance sections stay fast no
 // matter how large the log grows. Returns null for an unknown
 // section so the route answers a plain 400.
-const DATA_SECTION_NAMES = ["overview", "supply", "funnel", "outside", "snapshots", "export"];
+// Build -197 adds a seventh section, "sources", which is not a
+// Data sub-tab: the Website view reads it for its sign-ups by
+// source table (see buildSignupSourceWindows).
+const DATA_SECTION_NAMES = ["overview", "supply", "funnel", "outside", "snapshots", "export", "sources"];
 async function dataSectionPayload(section, rangeDays) {
   if (!DATA_SECTION_NAMES.includes(section)) return null;
   const base = { generatedAt: nowIso(), rangeDays, section };
@@ -482,6 +536,12 @@ async function dataSectionPayload(section, rangeDays) {
   }
   if (section === "outside") {
     return { ...base, outside: await buildOutsideAggregates() };
+  }
+  if (section === "sources") {
+    // Build -197: all three windows in one payload (see
+    // buildSignupSourceWindows); rangeDays is echoed in the
+    // base but does not shape these windows.
+    return { ...base, windows: await buildSignupSourceWindows() };
   }
   if (section === "snapshots") {
     const { snapshots } = await snapshotTrendRows();
@@ -16704,6 +16764,30 @@ async function handleRegister(event, linkCtx) {
   // unusable values store nothing.
   const signupSource = typeof b.signupSource === "string" ? b.signupSource.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) : "";
   if (signupSource) user.signupSource = signupSource;
+
+  // First-touch ad attribution (Build -197, Jeff, 2026-11-18):
+  // the client captures the UTM tags and the referring host of
+  // the first landing that carried either (localStorage, first
+  // touch only, never overwritten) and sends them at registration
+  // exactly like the signup source above. UTM values sanitize to
+  // the same slug shape (the campaign gets a longer cap: real
+  // campaign names run long); the referrer keeps only its host,
+  // and only a host-shaped value with a dot in it stores. Stored
+  // on the record as utmSource / utmMedium / utmCampaign /
+  // referrerHost so Admin Stats can count sign-ups by channel
+  // from our own records (see the "sources" data section).
+  // Absent or unusable values store nothing, and records written
+  // before this build simply carry none of these fields; the
+  // aggregation reads their absence as untagged, never an error.
+  const cleanAttrSlug = (v, max) => (typeof v === "string" ? v.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, max) : "");
+  const utmSource = cleanAttrSlug(b.utmSource, 40);
+  if (utmSource) user.utmSource = utmSource;
+  const utmMedium = cleanAttrSlug(b.utmMedium, 40);
+  if (utmMedium) user.utmMedium = utmMedium;
+  const utmCampaign = cleanAttrSlug(b.utmCampaign, 60);
+  if (utmCampaign) user.utmCampaign = utmCampaign;
+  const referrerHost = typeof b.referrerHost === "string" ? b.referrerHost.trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0].replace(/[^a-z0-9.-]/g, "").replace(/^\.+|\.+$/g, "").slice(0, 80) : "";
+  if (referrerHost && referrerHost.includes(".")) user.referrerHost = referrerHost;
 
   // Partner attribution (Command Center spec §2.2, Build -54): a
   // sign-up through a partner link also stamps the partner's user

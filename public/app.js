@@ -281,6 +281,14 @@ function storedRef() {
 function storedSrc() {
   try { return localStorage.getItem("signl_src") || ""; } catch (e) { return ""; }
 }
+// First-touch attribution (Build -197): the UTM tags and the
+// referring host of the first landing that carried either,
+// persisted at init (see signl_attr there) and read by every
+// registration payload, exactly like storedSrc above. Returns
+// an object; a missing or damaged value reads as empty.
+function storedAttribution() {
+  try { const a = JSON.parse(localStorage.getItem("signl_attr") || "{}"); return a && typeof a === "object" ? a : {}; } catch (e) { return {}; }
+}
 // Golden Ticket (Build -33): a claim link carrying ?ticket=
 // persists the ticket id like the referral and the source, so
 // registration can claim the held seat server-side.
@@ -11200,6 +11208,10 @@ async function doQuickClaim(e) {
       referredBy: storedRef() || undefined,
       goldenTicket: storedTicket() || undefined,
       signupSource: storedSrc() || undefined,
+      utmSource: storedAttribution().utmSource || undefined,
+      utmMedium: storedAttribution().utmMedium || undefined,
+      utmCampaign: storedAttribution().utmCampaign || undefined,
+      referrerHost: storedAttribution().referrerHost || undefined,
       lang: state.lang === "es" ? "es" : undefined,
       googleLinkToken: storedGoogleLink() || undefined,
     });
@@ -11780,6 +11792,10 @@ async function doRegisterCreator(e) {
       referredBy: storedRef() || undefined,
       goldenTicket: storedTicket() || undefined,
       signupSource: storedSrc() || undefined,
+      utmSource: storedAttribution().utmSource || undefined,
+      utmMedium: storedAttribution().utmMedium || undefined,
+      utmCampaign: storedAttribution().utmCampaign || undefined,
+      referrerHost: storedAttribution().referrerHost || undefined,
       lang: state.lang === "es" ? "es" : undefined,
       googleLinkToken: storedGoogleLink() || undefined,
     });
@@ -12078,6 +12094,10 @@ async function jbConvoFile() {
       applicationSource: "conversation",
       agreedTerms: true,
       signupSource: storedSrc() || undefined,
+      utmSource: storedAttribution().utmSource || undefined,
+      utmMedium: storedAttribution().utmMedium || undefined,
+      utmCampaign: storedAttribution().utmCampaign || undefined,
+      referrerHost: storedAttribution().referrerHost || undefined,
     });
     state.user = data.user;
     state.view = "dashboard";
@@ -12154,6 +12174,10 @@ async function registerBusiness(e) {
       applicationSource: window.__jbAppSource || undefined,
       agreedTerms: document.getElementById("jb-terms").checked,
       signupSource: storedSrc() || undefined,
+      utmSource: storedAttribution().utmSource || undefined,
+      utmMedium: storedAttribution().utmMedium || undefined,
+      utmCampaign: storedAttribution().utmCampaign || undefined,
+      referrerHost: storedAttribution().referrerHost || undefined,
       googleLinkToken: storedGoogleLink() || undefined,
     });
     clearStoredGoogleLink();
@@ -29284,6 +29308,55 @@ async function a138WebLoad() {
   }
 }
 
+// Sign-ups by source (Build -197): Magpie's own registration
+// records, counted by the channel that brought each account.
+// A sign-up's channel is its UTM source when it has one, else
+// the ?src= tag on the link it used, else "Direct / untagged".
+// The server sends all three windows in one payload; the
+// buttons below only switch which window is on screen. The
+// "Arrived from" rows count the site that sent each visitor on
+// their first visit, captured from this build forward, which is
+// how AI assistants and other referring sites show up here.
+let src197Data = null;
+let src197Win = "all";
+async function loadSignupSources197() {
+  const el = document.getElementById("signup-sources197");
+  if (!el) return;
+  el.innerHTML = `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Sign-ups by source</h3>
+  <p class="small muted" style="margin:0 0 10px">Real registrations from Magpie's own records, counted by the channel that brought each account. A channel is the ad or link tag (UTM source first, then the link's source tag). Sign-ups with neither read as Direct / untagged. Tester accounts are not counted.</p>
+  <div id="src197-body"><p class="muted">Loading…</p></div></div>`;
+  try {
+    src197Data = await api("GET", "/admin/stats/data?section=sources&days=30");
+    src197Render();
+  } catch (e) {
+    const box = document.getElementById("src197-body");
+    if (box) box.innerHTML = `<p class="small" style="margin-top:10px">Could not load sign-up sources just now.</p>`;
+  }
+}
+function src197SetWin(w) {
+  if (!["d30", "d90", "all"].includes(w)) return false;
+  src197Win = w;
+  src197Render();
+  return false;
+}
+function src197Render() {
+  const box = document.getElementById("src197-body");
+  if (!box || !src197Data || !src197Data.windows) return;
+  const w = src197Data.windows[src197Win] || src197Data.windows.all;
+  const winBtn = (key, label) => `<button type="button" class="btn small-btn${src197Win === key ? "" : " ghost"}" onclick="return src197SetWin('${key}')">${label}</button>`;
+  const rows = (w.rows || []).map((r) => `<tr><td>${esc(r.source)}</td><td data-label="Creators">${fmtFull(r.creators)}</td><td data-label="Businesses">${fmtFull(r.businesses)}</td><td data-label="Total"><b>${fmtFull(r.total)}</b></td></tr>`).join("");
+  const refRows = (w.referrerRows || []).map((r) => `<div class="kv"><span>${esc(r.host)}</span><b>${fmtFull(r.total)} sign-up${r.total === 1 ? "" : "s"}</b></div>`).join("");
+  box.innerHTML = `
+  <div class="a138-form" style="margin-bottom:10px">${winBtn("all", "All time")}${winBtn("d90", "Last 90 days")}${winBtn("d30", "Last 30 days")}</div>
+  ${rows ? `<div class="table-wrap"><table>
+    <tr><th>Source</th><th>Creators</th><th>Businesses</th><th>Total</th></tr>
+    ${rows}
+    <tr><td><b>All sources</b></td><td data-label="Creators"><b>${fmtFull(w.totals.creators)}</b></td><td data-label="Businesses"><b>${fmtFull(w.totals.businesses)}</b></td><td data-label="Total"><b>${fmtFull(w.totals.total)}</b></td></tr>
+  </table></div>` : `<p class="small muted">No sign-ups in this window yet.</p>`}
+  ${refRows ? `<h4 style="margin:16px 0 6px">Arrived from</h4><p class="small muted" style="margin:0 0 8px">The site that sent each new account on its first visit, counted from the same records. Referring sites are captured from Build -197 forward, so this list grows from here.</p>${refRows}` : ""}
+  <p class="small muted" style="margin-top:8px">UTM tags and referring sites are captured from Build -197 forward. Earlier sign-ups carry only the link's source tag, and untagged ones stay Direct / untagged.</p>`;
+}
+
 function renderAdminSig() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -31740,7 +31813,7 @@ async function loadStats() {
       <div id="ast-foot"><p class="muted">Loading…</p></div>
       </div>
       <div id="astview-revenue"${astView === "revenue" ? "" : ' style="display:none"'}><div id="ast-revenue"></div></div>
-      <div id="astview-website"${astView === "website" ? "" : ' style="display:none"'}><div id="website-stats138"></div></div>
+      <div id="astview-website"${astView === "website" ? "" : ' style="display:none"'}><div id="website-stats138"></div><div id="signup-sources197"></div></div>
       <div id="astview-data"${astView === "data" ? "" : ' style="display:none"'}><div id="ast-data"></div></div>
       <div id="astview-books"${["businesses", "partners", "revenue"].includes(astView) ? "" : ' style="display:none"'}>
       <h3 style="margin:22px 0 4px">The books</h3>
@@ -31849,6 +31922,10 @@ async function loadStats() {
     // host element is in the page skeleton now; this just fills
     // it, visible or not.
     try { loadWebsiteStats138(); } catch (e) { /* the Website section never breaks Stats */ }
+    // Sign-ups by source (Build -197) sits under the Website
+    // panel in the same view; it fills its own host element and
+    // never breaks Stats either.
+    try { loadSignupSources197(); } catch (e) { /* the sources table never breaks Stats */ }
     await ccShowTab();
     // Build -145: the Suggestions panel rides every Stats load
     // (it sits above the switcher, on purpose) — since Build
@@ -33909,6 +33986,28 @@ function previewDashboardHtml(d) {
     if (srcParam) {
       try { localStorage.setItem("signl_src", srcParam.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
     }
+    // First-touch attribution (Build -197): the first landing
+    // that carries UTM tags or arrives from another site is
+    // remembered (signl_attr) and never overwritten, so the
+    // channel that first brought a visitor is the one their
+    // registration reports, even if they sign up days later.
+    // A landing with neither stores nothing, so a later tagged
+    // visit can still become the first counted touch. A referrer
+    // on this same app host is the app talking to itself, not a
+    // channel, and is never stored.
+    try {
+      if (!localStorage.getItem("signl_attr")) {
+        const attr = {};
+        const attrSlug = (v, max) => (v ? v.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, max) : "");
+        const utmS = attrSlug(params.get("utm_source"), 40); if (utmS) attr.utmSource = utmS;
+        const utmM = attrSlug(params.get("utm_medium"), 40); if (utmM) attr.utmMedium = utmM;
+        const utmC = attrSlug(params.get("utm_campaign"), 60); if (utmC) attr.utmCampaign = utmC;
+        let refHost = "";
+        try { refHost = document.referrer ? new URL(document.referrer).hostname.toLowerCase() : ""; } catch (e) { refHost = ""; }
+        if (refHost && refHost !== location.hostname) attr.referrerHost = refHost.slice(0, 80);
+        if (Object.keys(attr).length) localStorage.setItem("signl_attr", JSON.stringify(attr));
+      }
+    } catch (e) { /* storage unavailable */ }
     // Spanish claim path (S1): a claim link carrying ?lang=es
     // (the Spanish site pages send it) persists the preference
     // exactly like the signup source, and the signed-in record's
