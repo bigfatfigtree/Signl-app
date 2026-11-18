@@ -34,8 +34,8 @@ const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 const seedPosts = JSON.parse(fs.readFileSync(path.join(ROOT, "netlify/functions/lib/social-seed.json"), "utf8")).posts;
 
 console.log("== stamp ==");
-check("BUILD_ID is 2026.11.18-208", buildJs.includes('exports.BUILD_ID = "2026.11.18-208"'));
-check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-208"') && (indexHtml.match(/2026\.11\.18-208/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-209 (shipping stamp; build -208 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-209"'));
+check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-209"') && (indexHtml.match(/2026\.11\.18-209/g) || []).length >= 5);
 
 console.log("== D3: stray QA artifacts removed ==");
 for (const p of [".qa136-audit", ".qa136-run", ".qa138", ".qa139", ".qa140", ".qamatch", ".vtmp", "scripts/qa-audit136.py", "scripts/qa-build136.py", "scripts/qa-build136b.py"]) {
