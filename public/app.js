@@ -4140,6 +4140,20 @@ function maggieMarkHtml(cls, state) {
 // RETIRED the same day on Jeff's verdict: every generation
 // re-drew a different bird, so no clip was ever the same
 // Maggie. None ship, any version.)
+// Build -206 (2026-11-18): same logo tiles, new
+// background. Jeff, looking at the -204 Admin Home render:
+// "Let's make the background behind her a color that
+// stands out. Maybe a navy." The six tiles were rebuilt
+// from the same logo extraction (same components, same
+// placement, ink identical) on navy #0A1F44 in
+// public/assets/maggie-logo-navy — a classic navy deep
+// enough to stand out on the app's white surfaces while
+// the full gradient, including the wordmark's deep-blue
+// start, stays legible down to the smallest slots. The
+// -204 light set stays on disk in
+// public/assets/maggie-logo, so this reverses by pointing
+// MAGGIE_CHAR back at it. Artwork only; nothing else
+// changes.
 // Her MOTION is code, not redraws: CSS transforms on the real
 // tile artwork (a gentle bob, a hop, a sway, a tilt — see
 // theme-v3.css) plus mood swaps between the tiles
@@ -4160,7 +4174,7 @@ function maggieMarkHtml(cls, state) {
 // has a still in the avatar mood map; no surface in the app
 // raises a good-numbers Maggie moment today, so it waits
 // for a real hook like every other mood got.
-const MAGGIE_CHAR = "/assets/maggie-logo";
+const MAGGIE_CHAR = "/assets/maggie-logo-navy";
 const MAGGIE_CHAR_STILL = { idle: "curious.jpg", think: "curious.jpg", listen: "listen.jpg", talk: "chirp.jpg", greet: "greet.jpg", celebrate: "hearts.jpg" };
 const MAGGIE_CHAR_AVA = { greet: "greet.jpg", celebrate: "hearts.jpg", think: "chirp.jpg", talk: "chirp.jpg", chirp: "chirp.jpg", cool: "cool.jpg", listen: "listen.jpg" };
 // One resolver for the small slots (tab, rail, More rows,
