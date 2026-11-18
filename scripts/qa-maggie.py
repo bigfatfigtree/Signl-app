@@ -146,7 +146,7 @@ try:
         page = boot_page(ctx)
         f = box_facts(page)
         check("creator home: Maggie box present at top", f["box"], f)
-        check("creator home: her head is Jeff's greet tile and it MOVES", (f.get("headSrc") or "").endswith("maggie-char/greet.jpg") and f.get("headAnim") not in (None, "none"), f)
+        check("creator home: her head is Jeff's greet tile and it MOVES", (f.get("headSrc") or "").endswith("maggie-pop/greet.jpg") and f.get("headAnim") not in (None, "none"), f)
         r = box_ask(page, "hey")
         check("creator home box: 'hey' gets a conversation", "Maggie" in r["text"] and "bag" not in r["text"], r["text"][:160])
         check("creator home box: her live avatar animates while she talks", r["avaAnim"] not in (None, "none"), r)
@@ -163,13 +163,13 @@ try:
         }""")
         page.wait_for_timeout(1000)
         hero2 = page.evaluate("""() => getComputedStyle(document.querySelector('[data-sig-hero-media].maggie-char-hero .maggie-char-poster')).transform""")
-        check("creator Maggie tab: hero is Jeff's tile artwork, animated (greet hop on entry)", hero1["src"].startswith("/assets/maggie-char/") and hero1["anim"] != "none", hero1)
+        check("creator Maggie tab: hero is Jeff's tile artwork, animated (greet hop on entry)", hero1["src"].startswith("/assets/maggie-pop/") and hero1["anim"] != "none", hero1)
         check("creator Maggie tab: hero transform actually changes over time (she is not still)", hero1["t"] != hero2, f'{hero1["t"]} vs {hero2}')
         # The greet is a one-shot: she settles back to idle on the curious tile.
         try:
             page.wait_for_function("() => document.querySelector('[data-sig-hero-media].maggie-char-hero').getAttribute('data-mode') === 'idle'", timeout=12000)
             settled = page.evaluate("() => document.querySelector('[data-sig-hero-media].maggie-char-hero .maggie-char-poster').getAttribute('src')")
-            check("creator Maggie tab: hero settles to idle on the curious tile", settled.endswith("maggie-char/curious.jpg"), settled)
+            check("creator Maggie tab: hero settles to idle on the curious tile", settled.endswith("maggie-pop/curious.jpg"), settled)
         except Exception:
             check("creator Maggie tab: hero settles to idle on the curious tile", False, "data-mode never returned to idle")
         page.fill("#sig-ask-input", "how many points do I have")

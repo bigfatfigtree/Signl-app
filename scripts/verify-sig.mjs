@@ -107,28 +107,33 @@ check("bank battery is at least 40 questions per side", CREATOR_QS.length >= 40 
 
 // ---------- 1b. The Maggie asset model (Maggie Rebuild v1) ----------
 // Jeff's identity rule is the law here: Maggie's artwork is
-// his character sheet and nothing else. The app ships six
-// crops of that sheet in /assets/maggie-char (the set the
-// Magpie flip shipped), resolved through MAGGIE_CHAR with
-// SIG_MARK_MODE "character". Her motion is CSS transforms on
-// those exact tiles (theme-v3.css), never a redraw. The orb
-// code paths remain in the bundle as the retired fallback
-// mode; no surface resolves to them while the mode stands.
-// This section replaces the Build -130 orb pins, which went
-// stale the day character Maggie shipped.
-console.log("== Maggie asset model (character tiles, Jeff's sheet) ==");
+// the one image he approved and nothing else. The app ships
+// six crops of it in /assets/maggie-pop (Build -196,
+// 2026-11-17: the pop art portrait Jeff picked, replacing
+// the 2026-11-07 character-sheet set, which stays on disk
+// in /assets/maggie-char so the swap reverses), resolved
+// through MAGGIE_CHAR with SIG_MARK_MODE "character". Her
+// motion is CSS transforms on those exact tiles
+// (theme-v3.css), never a redraw. The orb code paths remain
+// in the bundle as the retired fallback mode; no surface
+// resolves to them while the mode stands. This section
+// replaces the Build -130 orb pins, which went stale the
+// day character Maggie shipped.
+console.log("== Maggie asset model (character tiles, Jeff's approved portrait) ==");
 const themeCss = fs.readFileSync(path.join(ROOT, "public/theme-v2.css"), "utf8");
 const theme3Css = fs.readFileSync(path.join(ROOT, "public/theme-v3.css"), "utf8");
-const charAsset = (rel) => path.join(ROOT, "public/assets/maggie-char", rel);
+const charAsset = (rel) => path.join(ROOT, "public/assets/maggie-pop", rel);
 const charSize = (rel) => (fs.existsSync(charAsset(rel)) ? fs.statSync(charAsset(rel)).size : -1);
 check("character mode is the standing mode (SIG_MARK_MODE character)", appJs.includes('const SIG_MARK_MODE = "character"'));
-check("one swappable reference: MAGGIE_CHAR names the tile folder", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-char"'));
+check("one swappable reference: MAGGIE_CHAR names the tile folder", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-pop"'));
+check("the retired sheet tiles stay on disk (the swap reverses)", ["curious.jpg", "greet.jpg", "chirp.jpg", "listen.jpg", "hearts.jpg", "cool.jpg"].every((t) => fs.existsSync(path.join(ROOT, "public/assets/maggie-char", t))));
+check("her FAB face idles too, and reduced motion rests it (Build -196)", theme3Css.includes("#agent-fab img.maggie-char-img { width: 32px; height: 32px; border-radius: 50%; animation: charBob") && theme3Css.includes("#agent-fab img.maggie-char-img, .maggie-char-head img"));
 check("no reference to any retired face folder remains in app.js", !appJs.includes("/assets/sig-a") && !appJs.includes("/assets/sig-v4") && !appJs.includes("head-idle"));
 check("the SVG character is retired from every surface", !appJs.includes("sigSvgHtml") && !appJs.includes("sig-musician") && !themeCss.includes("sig-ava-svg") && !fs.existsSync(path.join(ROOT, "public/assets/sig-musician.svg")));
 for (const tile of ["curious.jpg", "greet.jpg", "chirp.jpg", "listen.jpg", "hearts.jpg", "cool.jpg"]) {
   check(`tile ships: ${tile} (sane weight)`, charSize(tile) > 5000 && charSize(tile) <= 400000, `${charSize(tile)} bytes`);
 }
-check("small Maggie is a character tile in every mood (sigAvatarHtml -> maggie-char, no video)", appJs.includes("MAGGIE_CHAR_AVA") && appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("${MAGGIE_CHAR}/") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
+check("small Maggie is a character tile in every mood (sigAvatarHtml -> maggie-pop, no video)", appJs.includes("MAGGIE_CHAR_AVA") && appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("${MAGGIE_CHAR}/") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
 check("the bottom tab icon resolves through sigMarkHtml (the character tile)", appJs.includes('sigMarkHtml("tab-sig-img")') && appJs.includes('src="${MAGGIE_CHAR}/curious.jpg"'));
 const heroSlice = appJs.slice(appJs.indexOf("function sigHeroMediaHtml"), appJs.indexOf("let sigHeroMode"));
 check("hero markup is the character hero over the curious tile", heroSlice.includes("maggie-char-hero") && heroSlice.includes('src="${MAGGIE_CHAR}/curious.jpg"'));

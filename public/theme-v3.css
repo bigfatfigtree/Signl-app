@@ -1538,8 +1538,10 @@ svg.rail-sig-img.maggie-mark { width: 24px; height: 27px; }
 .maggie-celeb .maggie-mark { width: 100%; height: 100%; }
 
 /* Character Maggie (SIG_MARK_MODE = "character", Jeff,
-   2026-11-07): her artwork is Jeff's character sheet tiles
-   and nothing else — no generated likeness ships. The tiles
+   2026-11-07; face replaced on his order 2026-11-17, Build
+   -196): her artwork is the one pop art portrait Jeff
+   approved, cropped into the maggie-pop tiles — no other
+   likeness ships. The tiles
    fill their round slots edge-to-edge (the base
    .sig-hero-media / .sig-celeb-media stacks already size and
    clip the fills), and her MOTION is these transforms on the
@@ -1547,7 +1549,11 @@ svg.rail-sig-img.maggie-mark { width: 24px; height: 27px; }
    Every keyframe carries a slight scale so a tilt or a hop
    never bares the slot's edge inside the circular clip. */
 img.maggie-char-img { object-fit: cover; }
-#agent-fab img.maggie-char-img { width: 32px; height: 32px; border-radius: 50%; }
+/* Build -196: the FAB is her front door, so she idles there
+   too — the same gentle bob as her heads and hero (transform
+   only, no layout shift; rested by the reduced-motion block
+   below). */
+#agent-fab img.maggie-char-img { width: 32px; height: 32px; border-radius: 50%; animation: charBob 4.4s ease-in-out infinite; }
 .sig-ava-char { border-radius: 50%; overflow: hidden; background: none; box-shadow: 0 0 0 2px var(--mint, #A9E8C9); }
 .sig-ava-char img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* Maggie Rebuild v1 (Jeff, 2026-11-07): she moves in the
@@ -1584,7 +1590,7 @@ img.maggie-char-img { object-fit: cover; }
 @keyframes charChirp { 0%, 100% { transform: scale(1.07) translateY(0) rotate(0deg); } 30% { transform: scale(1.07) translateY(-4.5%) rotate(-1.2deg); } 62% { transform: scale(1.07) translateY(0) rotate(0deg); } }
 @keyframes charListen { 0%, 100% { transform: scale(1.09) rotate(-3deg) translateY(0); } 50% { transform: scale(1.09) rotate(-2.2deg) translateY(-1.6%); } }
 @media (prefers-reduced-motion: reduce) {
-  .maggie-char-head img, .maggie-char-hero .maggie-char-poster, .sig-celeb-media.maggie-char-celeb img, .sig-ava-char img { animation: none !important; }
+  #agent-fab img.maggie-char-img, .maggie-char-head img, .maggie-char-hero .maggie-char-poster, .sig-celeb-media.maggie-char-celeb img, .sig-ava-char img { animation: none !important; }
 }
 
 /* --- Messages: two-pane desktop rebuild (Jeff, 2026-11-07) ---
