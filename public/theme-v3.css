@@ -1539,9 +1539,11 @@ svg.rail-sig-img.maggie-mark { width: 24px; height: 27px; }
 
 /* Character Maggie (SIG_MARK_MODE = "character", Jeff,
    2026-11-07; face replaced on his order 2026-11-17, Build
-   -196): her artwork is the one pop art portrait Jeff
-   approved, cropped into the maggie-pop tiles — no other
-   likeness ships. The tiles
+   -196, and again 2026-11-18, Build -198): her artwork is
+   the one portrait Jeff approved — the matte vinyl magpie
+   with the gradient X eye and the Magpie logo across her
+   black t-shirt — cropped into the maggie-kaws tiles; no
+   other likeness ships. The tiles
    fill their round slots edge-to-edge (the base
    .sig-hero-media / .sig-celeb-media stacks already size and
    clip the fills), and her MOTION is these transforms on the
@@ -1549,6 +1551,13 @@ svg.rail-sig-img.maggie-mark { width: 24px; height: 27px; }
    Every keyframe carries a slight scale so a tilt or a hop
    never bares the slot's edge inside the circular clip. */
 img.maggie-char-img { object-fit: cover; }
+/* Build -198 (Jeff: "animate it everywhere"): the small
+   slots — the bottom-bar Maggie tab disc, the rail face,
+   the More-row faces — idle with the same gentle bob as
+   her heads and hero. Until this build the tab disc sat
+   frozen; now every small face moves. Transform only, no
+   layout shift; rested by the reduced-motion block below. */
+img.maggie-char-img { animation: charBob 4.4s ease-in-out infinite; }
 /* Build -196: the FAB is her front door, so she idles there
    too — the same gentle bob as her heads and hero (transform
    only, no layout shift; rested by the reduced-motion block
@@ -1561,26 +1570,38 @@ img.maggie-char-img { object-fit: cover; }
    the newest Maggie turn in a thread (and the pending one
    while she thinks) — so the chat feels alive without every
    avatar on the page bobbing at once. Think sways (she is
-   working), talk chirps (she is speaking), idle bobs gently.
+   working), talk runs the quicker charTalk loop (she is
+   speaking, Build -198), idle bobs gently.
    The artwork is Jeff's tile, moved by transform only. */
 .sig-thread .sig-turn.sig:last-child .sig-ava-char img,
 .sigbox-thread .sig-turn.sig:last-child .sig-ava-char img { animation: charBob 4.4s ease-in-out infinite; }
 .sig-thread .sig-turn.sig:last-child .sig-ava-char.sig-mood-think img,
 .sigbox-thread .sig-turn.sig:last-child .sig-ava-char.sig-mood-think img { animation: charSway 3.2s ease-in-out infinite; }
 .sig-thread .sig-turn.sig:last-child .sig-ava-char.sig-mood-talk img,
-.sigbox-thread .sig-turn.sig:last-child .sig-ava-char.sig-mood-talk img { animation: charChirp 1.8s ease-in-out infinite; }
+.sigbox-thread .sig-turn.sig:last-child .sig-ava-char.sig-mood-talk img { animation: charTalk .9s ease-in-out infinite; }
 .sigbox-orb.maggie-char-head { overflow: hidden; }
 .maggie-char-head img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; animation: charBob 4.4s ease-in-out infinite; }
 .maggie-char-head.is-still img { animation: none; }
+/* Build -198: the chat box's talking state. sigBoxSend puts
+   .is-talking on the box while her answer is being composed
+   and takes it off the moment the reply lands, so the head
+   she answers from runs the talking loop for exactly the
+   length of the answer, then settles back to the idle bob.
+   The listen head-swap replaces the head's img while the
+   user composes; the loop keys off the same head either
+   way. */
+.sigbox130.is-talking .maggie-char-head img { animation: charTalk .9s ease-in-out infinite; }
 /* The hero's motion vocabulary, keyed by sigHeroSet's
    data-mode: idle bobs gently, think sways, greet hops in,
-   celebrate wiggles, talk chirps in quick little bounces,
-   listen holds a head-cock tilt while the user composes. */
+   celebrate wiggles, talk runs the charTalk loop for as
+   long as the talk state lasts (Build -198; it chirped
+   three times and settled before), listen holds a
+   head-cock tilt while the user composes. */
 .maggie-char-hero .maggie-char-poster { transform-origin: 50% 62%; animation: charBob 3.8s ease-in-out infinite; }
 .maggie-char-hero[data-mode="think"] .maggie-char-poster { animation: charSway 3.2s ease-in-out infinite; }
 .maggie-char-hero[data-mode="greet"] .maggie-char-poster { animation: charHop .95s ease-out 1, charBob 3.8s ease-in-out .95s infinite; }
 .maggie-char-hero[data-mode="celebrate"] .maggie-char-poster { animation: charWiggle .6s ease-in-out 3, charBob 3.8s ease-in-out 1.8s infinite; }
-.maggie-char-hero[data-mode="talk"] .maggie-char-poster { animation: charChirp .5s ease-in-out 3, charBob 3.8s ease-in-out 1.5s infinite; }
+.maggie-char-hero[data-mode="talk"] .maggie-char-poster { animation: charTalk .9s ease-in-out infinite; }
 .maggie-char-hero[data-mode="listen"] .maggie-char-poster { animation: charListen 4.5s ease-in-out infinite; }
 .sig-celeb-media.maggie-char-celeb.is-celebrating img { animation: charWiggle .6s ease-in-out 3; }
 @keyframes charBob { 0%, 100% { transform: scale(1.07) translateY(0) rotate(0deg); } 50% { transform: scale(1.07) translateY(-2.4%) rotate(.6deg); } }
@@ -1588,9 +1609,15 @@ img.maggie-char-img { object-fit: cover; }
 @keyframes charHop { 0% { transform: scale(1.07) translateY(0); } 35% { transform: scale(1.07) translateY(-8%); } 68% { transform: scale(1.07) translateY(0); } 84% { transform: scale(1.07) translateY(-3%); } 100% { transform: scale(1.07) translateY(0); } }
 @keyframes charWiggle { 0%, 100% { transform: scale(1.07) rotate(0deg) translateY(0); } 25% { transform: scale(1.07) rotate(-3.2deg) translateY(-3%); } 55% { transform: scale(1.07) rotate(2.6deg) translateY(0); } 78% { transform: scale(1.07) rotate(-1.8deg) translateY(-2%); } }
 @keyframes charChirp { 0%, 100% { transform: scale(1.07) translateY(0) rotate(0deg); } 30% { transform: scale(1.07) translateY(-4.5%) rotate(-1.2deg); } 62% { transform: scale(1.07) translateY(0) rotate(0deg); } }
+/* Build -198: the talking loop — quicker than the idle bob,
+   a small bounce with the tilt alternating sides, like a
+   head bobbing along as she speaks. Transform only, with
+   the same scale guard as every other loop so the round
+   clips never bare an edge. */
+@keyframes charTalk { 0%, 100% { transform: scale(1.07) translateY(0) rotate(-1.4deg); } 25% { transform: scale(1.07) translateY(-3.4%) rotate(0deg); } 50% { transform: scale(1.07) translateY(0) rotate(1.4deg); } 75% { transform: scale(1.07) translateY(-3.4%) rotate(0deg); } }
 @keyframes charListen { 0%, 100% { transform: scale(1.09) rotate(-3deg) translateY(0); } 50% { transform: scale(1.09) rotate(-2.2deg) translateY(-1.6%); } }
 @media (prefers-reduced-motion: reduce) {
-  #agent-fab img.maggie-char-img, .maggie-char-head img, .maggie-char-hero .maggie-char-poster, .sig-celeb-media.maggie-char-celeb img, .sig-ava-char img { animation: none !important; }
+  #agent-fab img.maggie-char-img, img.maggie-char-img, .maggie-char-head img, .maggie-char-hero .maggie-char-poster, .sig-celeb-media.maggie-char-celeb img, .sig-ava-char img { animation: none !important; }
 }
 
 /* --- Messages: two-pane desktop rebuild (Jeff, 2026-11-07) ---

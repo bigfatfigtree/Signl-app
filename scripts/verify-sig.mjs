@@ -108,10 +108,13 @@ check("bank battery is at least 40 questions per side", CREATOR_QS.length >= 40 
 // ---------- 1b. The Maggie asset model (Maggie Rebuild v1) ----------
 // Jeff's identity rule is the law here: Maggie's artwork is
 // the one image he approved and nothing else. The app ships
-// six crops of it in /assets/maggie-pop (Build -196,
-// 2026-11-17: the pop art portrait Jeff picked, replacing
-// the 2026-11-07 character-sheet set, which stays on disk
-// in /assets/maggie-char so the swap reverses), resolved
+// six crops of it in /assets/maggie-kaws (Build -198,
+// 2026-11-18: the matte vinyl portrait Jeff picked —
+// gradient X eye, the Magpie logo across her black
+// t-shirt — replacing the Build -196 pop art set, which
+// stays on disk in /assets/maggie-pop next to the
+// 2026-11-07 character-sheet set in /assets/maggie-char,
+// so the swap reverses), resolved
 // through MAGGIE_CHAR with SIG_MARK_MODE "character". Her
 // motion is CSS transforms on those exact tiles
 // (theme-v3.css), never a redraw. The orb code paths remain
@@ -122,18 +125,18 @@ check("bank battery is at least 40 questions per side", CREATOR_QS.length >= 40 
 console.log("== Maggie asset model (character tiles, Jeff's approved portrait) ==");
 const themeCss = fs.readFileSync(path.join(ROOT, "public/theme-v2.css"), "utf8");
 const theme3Css = fs.readFileSync(path.join(ROOT, "public/theme-v3.css"), "utf8");
-const charAsset = (rel) => path.join(ROOT, "public/assets/maggie-pop", rel);
+const charAsset = (rel) => path.join(ROOT, "public/assets/maggie-kaws", rel);
 const charSize = (rel) => (fs.existsSync(charAsset(rel)) ? fs.statSync(charAsset(rel)).size : -1);
 check("character mode is the standing mode (SIG_MARK_MODE character)", appJs.includes('const SIG_MARK_MODE = "character"'));
-check("one swappable reference: MAGGIE_CHAR names the tile folder", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-pop"'));
-check("the retired sheet tiles stay on disk (the swap reverses)", ["curious.jpg", "greet.jpg", "chirp.jpg", "listen.jpg", "hearts.jpg", "cool.jpg"].every((t) => fs.existsSync(path.join(ROOT, "public/assets/maggie-char", t))));
-check("her FAB face idles too, and reduced motion rests it (Build -196)", theme3Css.includes("#agent-fab img.maggie-char-img { width: 32px; height: 32px; border-radius: 50%; animation: charBob") && theme3Css.includes("#agent-fab img.maggie-char-img, .maggie-char-head img"));
+check("one swappable reference: MAGGIE_CHAR names the tile folder", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-kaws"'));
+check("the retired tile sets stay on disk (the swap reverses)", ["curious.jpg", "greet.jpg", "chirp.jpg", "listen.jpg", "hearts.jpg", "cool.jpg"].every((t) => fs.existsSync(path.join(ROOT, "public/assets/maggie-char", t)) && fs.existsSync(path.join(ROOT, "public/assets/maggie-pop", t))));
+check("her small faces idle everywhere, and reduced motion rests them (Builds -196, -198)", theme3Css.includes("#agent-fab img.maggie-char-img { width: 32px; height: 32px; border-radius: 50%; animation: charBob") && theme3Css.includes("img.maggie-char-img { animation: charBob 4.4s ease-in-out infinite; }") && theme3Css.includes("#agent-fab img.maggie-char-img, img.maggie-char-img, .maggie-char-head img"));
 check("no reference to any retired face folder remains in app.js", !appJs.includes("/assets/sig-a") && !appJs.includes("/assets/sig-v4") && !appJs.includes("head-idle"));
 check("the SVG character is retired from every surface", !appJs.includes("sigSvgHtml") && !appJs.includes("sig-musician") && !themeCss.includes("sig-ava-svg") && !fs.existsSync(path.join(ROOT, "public/assets/sig-musician.svg")));
 for (const tile of ["curious.jpg", "greet.jpg", "chirp.jpg", "listen.jpg", "hearts.jpg", "cool.jpg"]) {
   check(`tile ships: ${tile} (sane weight)`, charSize(tile) > 5000 && charSize(tile) <= 400000, `${charSize(tile)} bytes`);
 }
-check("small Maggie is a character tile in every mood (sigAvatarHtml -> maggie-pop, no video)", appJs.includes("MAGGIE_CHAR_AVA") && appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("${MAGGIE_CHAR}/") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
+check("small Maggie is a character tile in every mood (sigAvatarHtml -> maggie-kaws, no video)", appJs.includes("MAGGIE_CHAR_AVA") && appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("${MAGGIE_CHAR}/") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
 check("the bottom tab icon resolves through sigMarkHtml (the character tile)", appJs.includes('sigMarkHtml("tab-sig-img")') && appJs.includes('src="${MAGGIE_CHAR}/curious.jpg"'));
 const heroSlice = appJs.slice(appJs.indexOf("function sigHeroMediaHtml"), appJs.indexOf("let sigHeroMode"));
 check("hero markup is the character hero over the curious tile", heroSlice.includes("maggie-char-hero") && heroSlice.includes('src="${MAGGIE_CHAR}/curious.jpg"'));
@@ -146,7 +149,8 @@ check("the retired face folders are gone from the bundle", !fs.existsSync(path.j
 // Maggie Rebuild v1: conversation + motion in the chat itself.
 check("the canned deflection is retired everywhere in the client", !appJs.includes("not in my bag yet") && appJs.includes("I don't know that one yet."));
 check("chat-box heads move in character mode (no is-still on the char head)", !appJs.slice(appJs.indexOf("function sigOrbMedia130"), appJs.indexOf("function sigChatBoxHtml")).includes("is-still"));
-check("the live thread avatar animates by state (bob / think sway / talk chirp)", theme3Css.includes(".sig-turn.sig:last-child .sig-ava-char img") && theme3Css.includes("charSway") && theme3Css.includes("charChirp"));
+check("the live thread avatar animates by state (bob / think sway / talk loop, Build -198)", theme3Css.includes(".sig-turn.sig:last-child .sig-ava-char img") && theme3Css.includes("charSway") && theme3Css.includes("charTalk .9s ease-in-out infinite"));
+check("the chat box wears its talking state while she answers (Build -198)", appJs.includes('boxEl.classList.add("is-talking")') && appJs.includes('boxEl.classList.remove("is-talking")') && theme3Css.includes(".sigbox130.is-talking .maggie-char-head img { animation: charTalk .9s ease-in-out infinite; }") && theme3Css.includes(".maggie-char-hero[data-mode=\"talk\"] .maggie-char-poster { animation: charTalk .9s ease-in-out infinite; }"));
 check("the server carries the conversational layer and the router wires it", fs.existsSync(path.join(ROOT, "netlify/functions/lib/sigconvo.js")) && fs.readFileSync(path.join(ROOT, "netlify/functions/lib/router.js"), "utf8").includes("sigConverse"));
 
 // ---------- 2. The AI path, against a local stub provider ----------
