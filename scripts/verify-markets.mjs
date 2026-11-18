@@ -81,7 +81,7 @@ const AGREE = { agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCo
 
 // ---------- unit level: the roster and the alias ----------
 const names = MARKETS.map((m) => m.name);
-check("roster has exactly 45 markets (37 of the reset + Miami restored in Build -59 + the 3 NZ markets of Build -117 + Dublin, Amsterdam, Copenhagen and Mexico City in Build -127)", names.length === 45, String(names.length));
+check("roster has exactly 48 markets (37 of the reset + Miami restored in Build -59 + the 3 NZ markets of Build -117 + Dublin, Amsterdam, Copenhagen and Mexico City in Build -127 + New York City and Boston added since + Charlottesville restored in Build -207)", names.length === 48, String(names.length));
 check("Virginia Beach is a market; Hampton Roads is not a market name", names.includes("Virginia Beach") && !names.includes("Hampton Roads"));
 const vb = MARKETS.find((m) => m.name === "Virginia Beach");
 check("Virginia Beach keeps the stable id hampton-roads", !!vb && vb.id === "hampton-roads");
@@ -93,10 +93,14 @@ check("all 16 markets added 2026-10-23 are present", ADDED.every((n) => names.in
 // Miami was on this removed list until Build -59 (2026-10-30):
 // Jeff restored it as a full market, so it leaves the list.
 // Auckland left it the same way in Build -117 (2026-11-03),
-// restored alongside two new NZ markets; the other 16 removals
-// of the 2026-10-23 reset still stand.
-const REMOVED = ["Charlottesville", "Roanoke", "Greensboro", "Wilmington", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Sydney", "Melbourne", "Perth", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
-check("all 16 still-removed markets are gone (Miami restored in Build -59, Auckland in Build -117)", REMOVED.every((n) => !names.includes(n)));
+// restored alongside two new NZ markets. Charlottesville left
+// it in Build -207 (2026-11-18): Jeff restored it as a full
+// market after a creator signed up there and filed as not
+// listed. The other 15 removals of the 2026-10-23 reset still
+// stand.
+const REMOVED = ["Roanoke", "Greensboro", "Wilmington", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Sydney", "Melbourne", "Perth", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
+check("all 15 still-removed markets are gone (Miami restored in Build -59, Auckland in Build -117, Charlottesville in Build -207)", REMOVED.every((n) => !names.includes(n)));
+check("Charlottesville is back on the roster (restored in Build -207)", names.includes("Charlottesville"));
 check("Miami is back on the roster (restored in Build -59)", names.includes("Miami"));
 // Build -117 (Jeff, 2026-11-03): New Zealand joins the roster.
 const NZ = ["Auckland", "Wellington", "Christchurch"].map((n) => MARKETS.find((m) => m.name === n));
