@@ -110,11 +110,15 @@ check("bank battery is at least 40 questions per side", CREATOR_QS.length >= 40 
 // the real Magpie logo and nothing else (Build -204,
 // 2026-11-18: Jeff — "Use the real logo in the app, park
 // the bird"). The app ships six tiles in
-// /assets/maggie-logo, all built from the one real logo
-// file: the bird-in-g lifted from the logo's own pixels
-// for the round slots, the full wordmark for the
-// celebration tile. The retired character sets stay on
-// disk — the Build -200 wide vinyl crops in
+// /assets/maggie-logo-navy (Build -206, 2026-11-18: the
+// same logo extraction on a navy #0A1F44 background —
+// Jeff: "make the background behind her a color that
+// stands out. Maybe a navy"), all built from the one real
+// logo file: the bird-in-g lifted from the logo's own
+// pixels for the round slots, the full wordmark for the
+// celebration tile. The retired sets stay on
+// disk — the Build -204 light logo set in
+// /assets/maggie-logo, the Build -200 wide vinyl crops in
 // /assets/maggie-kaws-wide, the Build -198 crops in
 // /assets/maggie-kaws, the Build -196 pop art set in
 // /assets/maggie-pop, and the 2026-11-07 character-sheet
@@ -130,18 +134,18 @@ check("bank battery is at least 40 questions per side", CREATOR_QS.length >= 40 
 console.log("== Maggie asset model (character tiles, the real Magpie logo) ==");
 const themeCss = fs.readFileSync(path.join(ROOT, "public/theme-v2.css"), "utf8");
 const theme3Css = fs.readFileSync(path.join(ROOT, "public/theme-v3.css"), "utf8");
-const charAsset = (rel) => path.join(ROOT, "public/assets/maggie-logo", rel);
+const charAsset = (rel) => path.join(ROOT, "public/assets/maggie-logo-navy", rel);
 const charSize = (rel) => (fs.existsSync(charAsset(rel)) ? fs.statSync(charAsset(rel)).size : -1);
 check("character mode is the standing mode (SIG_MARK_MODE character)", appJs.includes('const SIG_MARK_MODE = "character"'));
-check("one swappable reference: MAGGIE_CHAR names the tile folder", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-logo"'));
-check("the retired tile sets stay on disk (the swap reverses)", ["curious.jpg", "greet.jpg", "chirp.jpg", "listen.jpg", "hearts.jpg", "cool.jpg"].every((t) => fs.existsSync(path.join(ROOT, "public/assets/maggie-char", t)) && fs.existsSync(path.join(ROOT, "public/assets/maggie-pop", t)) && fs.existsSync(path.join(ROOT, "public/assets/maggie-kaws", t)) && fs.existsSync(path.join(ROOT, "public/assets/maggie-kaws-wide", t))));
+check("one swappable reference: MAGGIE_CHAR names the tile folder", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-logo-navy"'));
+check("the retired tile sets stay on disk (the swap reverses)", ["curious.jpg", "greet.jpg", "chirp.jpg", "listen.jpg", "hearts.jpg", "cool.jpg"].every((t) => fs.existsSync(path.join(ROOT, "public/assets/maggie-char", t)) && fs.existsSync(path.join(ROOT, "public/assets/maggie-pop", t)) && fs.existsSync(path.join(ROOT, "public/assets/maggie-kaws", t)) && fs.existsSync(path.join(ROOT, "public/assets/maggie-kaws-wide", t)) && fs.existsSync(path.join(ROOT, "public/assets/maggie-logo", t))));
 check("her small faces idle everywhere, and reduced motion rests them (Builds -196, -198)", theme3Css.includes("#agent-fab img.maggie-char-img { width: 32px; height: 32px; border-radius: 50%; animation: charBob") && theme3Css.includes("img.maggie-char-img { animation: charBob 4.4s ease-in-out infinite; }") && theme3Css.includes("#agent-fab img.maggie-char-img, img.maggie-char-img, .maggie-char-head img"));
 check("no reference to any retired face folder remains in app.js", !appJs.includes("/assets/sig-a") && !appJs.includes("/assets/sig-v4") && !appJs.includes("head-idle"));
 check("the SVG character is retired from every surface", !appJs.includes("sigSvgHtml") && !appJs.includes("sig-musician") && !themeCss.includes("sig-ava-svg") && !fs.existsSync(path.join(ROOT, "public/assets/sig-musician.svg")));
 for (const tile of ["curious.jpg", "greet.jpg", "chirp.jpg", "listen.jpg", "hearts.jpg", "cool.jpg"]) {
   check(`tile ships: ${tile} (sane weight)`, charSize(tile) > 5000 && charSize(tile) <= 400000, `${charSize(tile)} bytes`);
 }
-check("small Maggie is a character tile in every mood (sigAvatarHtml -> maggie-logo, no video)", appJs.includes("MAGGIE_CHAR_AVA") && appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("${MAGGIE_CHAR}/") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
+check("small Maggie is a character tile in every mood (sigAvatarHtml -> maggie-logo-navy, no video)", appJs.includes("MAGGIE_CHAR_AVA") && appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("${MAGGIE_CHAR}/") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
 check("the bottom tab icon resolves through sigMarkHtml (the character tile)", appJs.includes('sigMarkHtml("tab-sig-img")') && appJs.includes('src="${MAGGIE_CHAR}/curious.jpg"'));
 const heroSlice = appJs.slice(appJs.indexOf("function sigHeroMediaHtml"), appJs.indexOf("let sigHeroMode"));
 check("hero markup is the character hero over the curious tile", heroSlice.includes("maggie-char-hero") && heroSlice.includes('src="${MAGGIE_CHAR}/curious.jpg"'));
