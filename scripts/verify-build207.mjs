@@ -25,8 +25,8 @@ const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 const marketsJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/markets.js"), "utf8");
 
 console.log("== stamp -207 ==");
-check("BUILD_ID is 2026.11.18-208 (shipping stamp; build -207 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-208"'));
-check("shell stamp is 2026.11.18-208 x5 (shipping stamp; build -207 content)", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-208"') && (indexHtml.match(/2026\.11\.18-208/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-210 (shipping stamp; build -207 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-210"'));
+check("shell stamp is 2026.11.18-210 x5 (shipping stamp; build -207 content)", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-210"') && (indexHtml.match(/2026\.11\.18-210/g) || []).length >= 5);
 
 console.log("== navy -206 preserved through the merge ==");
 check("MAGGIE_CHAR points at the navy tiles", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-logo-navy";'));
@@ -72,6 +72,15 @@ check("admin creator table name cell uses handleLabel", appJs.includes('${handle
 check("no raw @${esc(c.handle/p.handle)} renders remain in app.js (creator + prospect surfaces)", !/@\$\{esc\((c|p)\.handle/.test(appJs), (appJs.match(/@\$\{esc\((c|p)\.handle/g) || []).join(","));
 const profileMetaJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/profile-meta.js"), "utf8");
 check("server public pages gate the handle through metaHandle", profileMetaJs.includes("function metaHandle(h)") && profileMetaJs.includes("META_HANDLE_SHAPE") && !profileMetaJs.includes("(@${profile.handle}) on Magpie"));
+
+console.log("== item 35 generalized: signup-city (derived) market rows ==");
+check("adminMarketRows builds derived rows for non-roster signup cities", routerJs.includes("derivedGroups210") && routerJs.includes("derived: true") && routerJs.includes("rosterNames210"));
+check("derived rows are never live and never bench-open", routerJs.includes("live: false,\n          benchOpen: false,\n          derived: true,"));
+check("verifyCountsRecount mirrors the derived rows (checker agreement)", (routerJs.match(/derivedGroups210/g) || []).length >= 4 && routerJs.includes("markets.push(...derived210)"));
+check("derived membership requires the canonical market to NOT resolve (no double-count)", routerJs.includes("if (cn && rosterNames210.has(cn)) continue;"));
+check("unknown-city groups never become rows", routerJs.includes('if (!cityName || cityName === "Unknown") continue;'));
+check("client renders no activation toggles for derived rows", appJs.includes("Signup city: not a market yet, so there is nothing to activate"));
+check("market toggle endpoint still refuses unknown markets server-side", routerJs.includes('if (!market) return err(400, "Unknown market");'));
 
 console.log("== Learn sync concurrency ==");
 check("learn sync upserts run at bounded concurrency", routerJs.includes("await mapBounded202(entries, 12, async ([fileKey, m]) => {"));

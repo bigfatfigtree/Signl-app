@@ -4907,7 +4907,73 @@ async function adminMarketRows() {
           avgLocalCount: (localByMarket[m.name] || {}).pctCount || 0,
         };
       });
-  return out;
+      // Build -210 (item 35, Jeff's rule 2026-11-18): EVERY city a
+      // creator signed up from shows on the Markets page, not only
+      // roster markets. Records whose market does not canonicalize
+      // to a roster market group by the shared unlisted key
+      // (unlistedPlace202 + the -208 display rule) and each group
+      // with at least one creator gets a derived, founding-stage
+      // row with the SAME field definitions as the official rows:
+      // home counts over the group, reach over its approved
+      // creators, local from each approved creator's stated home
+      // share. A derived row is never live and carries no
+      // activation path (the client renders no toggles for it):
+      // opening the city stays Jeff's explicit promotion of it to
+      // a real market record. Because membership requires the
+      // canonical market to NOT resolve, nobody counted in an
+      // official row can appear here — no double-counting.
+      // verifyCountsRecount mirrors this block exactly so the
+      // daily checker still agrees.
+      const rosterNames210 = new Set(MARKETS.map((m) => m.name));
+      const derivedGroups210 = new Map();
+      for (const u of all) {
+        if (!u || u.role === "admin") continue;
+        const cn = canonicalMarketName(u.market);
+        if (cn && rosterNames210.has(cn)) continue;
+        const { key } = unlistedPlace202(u);
+        if (!derivedGroups210.has(key)) derivedGroups210.set(key, []);
+        derivedGroups210.get(key).push(u);
+      }
+      const derivedDisp210 = unlistedDisplayByKey208(all);
+      for (const [key, members] of derivedGroups210) {
+        const creators = members.filter((u) => u.role === "creator" && !isTester(u));
+        if (!creators.length) continue;
+        const cityName = (members.find((u) => u.city) || {}).city || "";
+        if (!cityName || cityName === "Unknown") continue;
+        const approvedCreators = creators.filter((u) => u.status === "approved");
+        let combined = 0, local = 0, pctSum = 0, pctCount = 0;
+        for (const u of approvedCreators) {
+          const total = audienceTotalOf(u.creator || {});
+          combined += total;
+          const pct = u.creator && typeof u.creator.localAudiencePct === "number" && Number.isFinite(u.creator.localAudiencePct) ? u.creator.localAudiencePct : null;
+          if (pct !== null) { pctSum += pct; pctCount += 1; local += Math.round((total * pct) / 100); }
+        }
+        const place = (derivedDisp210.get(key) || {}).place || unlistedPlace202(members[0]).place;
+        out.push({
+          id: "city-" + key.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase(),
+          name: place,
+          label: place,
+          country: (members.find((u) => u.country) || {}).country || "United States",
+          live: false,
+          benchOpen: false,
+          derived: true,
+          creatorsApproved: approvedCreators.length,
+          creatorsApprovedComplete: approvedCreators.filter((u) => profileCompleteOf(u)).length,
+          creatorsPending: creators.filter((u) => u.status === "pending").length,
+          businessesApproved: members.filter((u) => u.role === "business" && u.status === "approved").length,
+          businessesFounding: members.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active").length,
+          businessesActive: members.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) === "active").length,
+          areas: [],
+          creatorsListed: approvedCreators.length,
+          creatorsListedFromElsewhere: 0,
+          combinedFollowers: combined,
+          localFollowers: local,
+          avgLocalPct: pctCount ? Math.round(pctSum / pctCount) : null,
+          avgLocalCount: pctCount,
+        });
+      }
+      const derivedSorted = out.filter((r) => r.derived).sort((x, y) => (y.creatorsApproved - x.creatorsApproved) || x.name.localeCompare(y.name));
+      return [...out.filter((r) => !r.derived), ...derivedSorted];
 }
 
 
@@ -5029,6 +5095,41 @@ function verifyCountsRecount(users) {
     }
     return { name, creatorsApproved: approved, creatorsPending: pending, creatorsListed: listed, combinedFollowers: combined, localFollowers, avgLocalPct: pctCount ? Math.round(pctSum / pctCount) : null, avgLocalCount: pctCount };
   });
+  // Build -210 (item 35): derived signup-city rows, mirroring
+  // adminMarketRows exactly (same grouping, same definitions,
+  // same display rule, same sort) so the checker still agrees.
+  const rosterNames210 = new Set(MARKETS.map((m) => m.name));
+  const derivedGroups210 = new Map();
+  for (const u of users) {
+    if (!u || u.role === "admin") continue;
+    const cn = canon(u.market);
+    if (cn && rosterNames210.has(cn)) continue;
+    const { key } = unlistedPlace202(u);
+    if (!derivedGroups210.has(key)) derivedGroups210.set(key, []);
+    derivedGroups210.get(key).push(u);
+  }
+  const derivedDisp210 = unlistedDisplayByKey208(users);
+  const derived210 = [];
+  for (const [key, members] of derivedGroups210) {
+    const creators = members.filter((u) => u.role === "creator" && !tester(u));
+    if (!creators.length) continue;
+    const cityName = (members.find((u) => u.city) || {}).city || "";
+    if (!cityName || cityName === "Unknown") continue;
+    let approved = 0, pending = 0, combined = 0, localFollowers = 0, pctSum = 0, pctCount = 0;
+    for (const u of creators) {
+      if (u.status === "pending") pending += 1;
+      if (u.status !== "approved") continue;
+      approved += 1;
+      const total = stacked(u.creator);
+      combined += total;
+      const pct = u.creator && typeof u.creator.localAudiencePct === "number" && Number.isFinite(u.creator.localAudiencePct) ? u.creator.localAudiencePct : null;
+      if (pct !== null) { pctSum += pct; pctCount += 1; localFollowers += Math.round((total * pct) / 100); }
+    }
+    const place = (derivedDisp210.get(key) || {}).place || unlistedPlace202(members[0]).place;
+    derived210.push({ name: place, creatorsApproved: approved, creatorsPending: pending, creatorsListed: approved, combinedFollowers: combined, localFollowers, avgLocalPct: pctCount ? Math.round(pctSum / pctCount) : null, avgLocalCount: pctCount });
+  }
+  derived210.sort((x, y) => (y.creatorsApproved - x.creatorsApproved) || x.name.localeCompare(y.name));
+  markets.push(...derived210);
   return { totals, markets };
 }
 const VERIFY_COUNT_MARKET_FIELDS = ["name", "creatorsApproved", "creatorsPending", "creatorsListed", "combinedFollowers", "localFollowers", "avgLocalPct", "avgLocalCount"];
