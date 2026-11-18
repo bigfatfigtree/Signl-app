@@ -216,6 +216,28 @@ const MARKETS = [
     cities: ["Boston", "Cambridge", "Somerville", "Brookline", "Quincy", "Newton", "Medford", "Malden", "Waltham", "Arlington", "Watertown", "Belmont", "Chelsea", "Everett", "Revere", "Winthrop", "Milton", "Dedham", "Needham", "Wellesley", "Lexington", "Winchester"],
   },
   {
+    // Charlottesville (Jeff, 2026-11-18): Charlottesville rejoins
+    // the roster (it was removed in the 2026-10-23 reset) after a
+    // creator signed up there and filed as "not listed" — Jeff's
+    // standing rule: when a signup lands in "Not listed yet" and we
+    // know the city, we add that city as a market right away and
+    // file the creator under it (the Build -207 refile pass files
+    // the stranded record; see router.js maybeRefileCharlottesville207).
+    // ONE market containing Charlottesville plus its metro towns
+    // (Albemarle, Greene, Fluvanna and Nelson county places people
+    // type) — the -52 rule: a sign-up typing a place inside the
+    // area files into this market. Like every unlaunched market
+    // Charlottesville starts NOT live (the live-flag default lives
+    // in router.js): it files and counts, it does not launch
+    // itself. The roster is 48 markets; the country set is
+    // unchanged.
+    id: "charlottesville",
+    name: "Charlottesville",
+    label: "Charlottesville, Virginia",
+    country: "United States",
+    cities: ["Charlottesville", "Crozet", "Keswick", "Earlysville", "Ivy", "Free Union", "Palmyra", "Lake Monticello", "Scottsville", "Ruckersville", "Stanardsville", "Nellysford", "Afton", "Zion Crossroads", "Gordonsville", "Barboursville"],
+  },
+  {
     id: "san-diego",
     name: "San Diego",
     label: "San Diego, California",
@@ -1252,6 +1274,7 @@ const MARKET_STATES = {
   "los-angeles": ["CA"],
   "new-york-city": ["NY", "NJ"],
   boston: ["MA"],
+  charlottesville: ["VA"],
   "san-diego": ["CA"],
   seattle: ["WA"],
   tampa: ["FL"],

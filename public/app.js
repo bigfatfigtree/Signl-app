@@ -1789,7 +1789,7 @@ function walletCopy202(money) {
   const held = (money && money.held) || 0; const released = (money && money.released) || 0;
   if (held > 0) return { value: `$${fmtMoney(released)}`, sub: `$${fmtMoney(held)} held until the post is live` };
   if (released > 0) return { value: `$${fmtMoney(released)}`, sub: "Ready to pay out" };
-  return { value: "No cash yet", sub: "No cash yet" };
+  return { value: "No cash yet", sub: "Paid bookings pay out here, in cash" };
 }
 function handleLabel(h) {
   const s = String(h == null ? "" : h).trim().replace(/^@+/, "");

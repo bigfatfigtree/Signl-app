@@ -5044,7 +5044,12 @@ async function handleVerifyCounts(event) {
   // Null until the loader has run (first request after deploy).
   let marketfix173 = null;
   try { marketfix173 = await store.get(MARKET_FIX_DIAG_KEY_173); } catch (e) { marketfix173 = null; }
-  return json(200, { totals, markets, recount, agree, invariantViolations, bdev: bdev167, staff: staff169, minfix: minfix172, marketfix: marketfix173 });
+  // Build -207: the Charlottesville refile's diagnostic rides the
+  // same checker surface, so the daily health check can confirm
+  // the stranded unlisted records were filed.
+  let refile207 = null;
+  try { refile207 = await store.get(REFILE207_DIAG_KEY); } catch (e) { refile207 = null; }
+  return json(200, { totals, markets, recount, agree, invariantViolations, bdev: bdev167, staff: staff169, minfix: minfix172, marketfix: marketfix173, refile207 });
 }
 
 // The Admin home preview tabs' targets (Build -126), resolved in
@@ -7874,6 +7879,55 @@ async function maybeFixMarkets173() {
   await store.set(MARKET_FIX_DIAG_KEY_173, diag);
   await store.set(MARKET_FIX_KEY_173, { done: true, at: nowIso(), moved: diag.moved, accountsFound: diag.accountsFound, alreadyRight: diag.alreadyRight, deliberateMove: diag.deliberateMove, ambiguous: diag.ambiguous, noAccount: diag.noAccount });
   marketFixDone173 = true;
+}
+
+// ---------- Charlottesville refile (Build -207) ----------
+// Jeff's standing rule (2026-11-18): when a signup lands in "Not
+// listed yet" and we know the city, we add that city as a market
+// right away. Build -207 added Charlottesville to the roster
+// (markets.js) after a creator signed up there on 2026-11-13 and
+// was stranded unlisted. This one-time, flag-gated pass files
+// every still-unlisted record whose typed city the resolver now
+// places UNIQUELY in Charlottesville — the same filing shape and
+// invariant as the admin file-market endpoint and the Build -52
+// refile sweep (market becomes the market its own typed city
+// resolves to; the typed city stays as the home city), narrowed
+// to the one new market so no other market's records can move.
+// Records that resolve ambiguously or nowhere are counted in the
+// diagnostic and never touched. Runs fire-and-forget from the
+// router preamble (LOADER RULE: never awaited on the request
+// path); the flag makes every later call a single point read.
+const REFILE207_KEY = "config:refile207";
+const REFILE207_DIAG_KEY = "config:diag207";
+const REFILE207_MARKET = "Charlottesville";
+let refile207Done = false;
+async function maybeRefileCharlottesville207() {
+  if (refile207Done) return;
+  if (await store.get(REFILE207_KEY)) { refile207Done = true; return; }
+  const rows = await allUsers();
+  const diag = { ranAt: nowIso(), build: 207, scanned: 0, filed: 0, skippedAmbiguous: 0, skippedOtherMarket: 0, skippedNone: 0, records: [] };
+  for (const target of rows) {
+    if (!target || target.role === "admin" || target.market !== UNLISTED) continue;
+    diag.scanned += 1;
+    const res = resolveTypedCity(target.city || "", { state: target.state, country: target.country });
+    if (res.status === "ambiguous") { diag.skippedAmbiguous += 1; continue; }
+    if (res.status !== "unique") { diag.skippedNone += 1; continue; }
+    if (res.market !== REFILE207_MARKET) { diag.skippedOtherMarket += 1; continue; }
+    const fromCity = target.city || "";
+    target.market = res.market;
+    target.marketResolvedFrom = "refile_loader207";
+    target.marketResolvedCity = res.city;
+    target.marketFiledAt = nowIso();
+    delete target.marketCandidates;
+    target.updatedAt = nowIso();
+    await store.set(`user:${target.id}`, target);
+    await logEvent({ type: "market_filed", actorId: null, actorRole: "system", subjectId: target.id, market: target.market, data: { from: UNLISTED, to: target.market, typedCity: fromCity, via: "refile_loader207" } });
+    diag.filed += 1;
+    diag.records.push({ userId: target.id, role: target.role, city: fromCity, market: res.market });
+  }
+  await store.set(REFILE207_DIAG_KEY, diag);
+  await store.set(REFILE207_KEY, { done: true, at: nowIso(), filed: diag.filed, scanned: diag.scanned });
+  refile207Done = true;
 }
 
 // ---------- admin broadcasts (Build -152, reworked -153) ----------
@@ -24409,10 +24463,14 @@ async function runLearnSync202() {
   const meta = await res.json();
   const entries = Array.isArray(meta) ? meta.map((m) => [m.slug || m.file || "", m]) : Object.entries(meta || {});
   let upserted = 0;
-  for (const [fileKey, m] of entries) {
-    if (!m || typeof m !== "object") continue;
+  // Build -207: bounded-concurrency upserts (was a serial per-article
+  // loop; at 240+ articles with per-article page fetches that risks
+  // the function ceiling — same LOADER RULE shape, off the user
+  // request path but still one scheduled call).
+  await mapBounded202(entries, 12, async ([fileKey, m]) => {
+    if (!m || typeof m !== "object") return;
     const slug = String(m.slug || fileKey || "").replace(/\.html$/, "").trim();
-    if (!slug) continue;
+    if (!slug) return;
     let title = m.title || m.headline || "";
     let date = m.date || m.publishedAt || null;
     let dek = m.dek || "";
@@ -24434,7 +24492,7 @@ async function runLearnSync202() {
       source: "sync", updatedAt: nowIso(),
     });
     upserted += 1;
-  }
+  });
   await store.set("config:learnSync202", { lastRunAt: nowIso(), upserted });
   return { ok: true, upserted };
 }
@@ -24558,6 +24616,12 @@ async function route(event) {
     // uninvoked: the re-file itself is deferred to a follow-up
     // build that runs it off the request path with the
     // getMany/resumable design (see verify-build174).
+    // Build -207: one-time Charlottesville refile, flag-gated.
+    // Safe here because the -202 preamble is fire-and-forget
+    // (never awaited) and the pass itself is one batched
+    // allUsers() list plus writes for filed records only — no
+    // serial per-key scan (the -173 failure mode).
+    (async () => { try { await maybeRefileCharlottesville207(); } catch (e) { /* refile is best-effort off the request path */ } })(),
     // One-time profileComplete backfill, claimed-flag guarded.
     (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
     // One-time Build -61 public-page backfill, claimed-flag guarded.
@@ -36284,4 +36348,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runLearnSync202, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
