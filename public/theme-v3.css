@@ -1539,15 +1539,15 @@ svg.rail-sig-img.maggie-mark { width: 24px; height: 27px; }
 
 /* Character Maggie (SIG_MARK_MODE = "character", Jeff,
    2026-11-07; face replaced on his order 2026-11-17, Build
-   -196, and again 2026-11-18, Build -198): her artwork is
-   the one portrait Jeff approved — the matte vinyl magpie
-   with the gradient X eye and the Magpie logo across her
-   black t-shirt — cropped into the maggie-kaws tiles; no
-   other likeness ships. The tiles
+   -196, again 2026-11-18, Build -198, and again 2026-11-18,
+   Build -204): her artwork is the real Magpie logo — the
+   bird-in-g from the logo file for the round slots, the
+   full wordmark on the celebration tile — in the
+   maggie-logo tiles; no drawn likeness ships. The tiles
    fill their round slots edge-to-edge (the base
    .sig-hero-media / .sig-celeb-media stacks already size and
    clip the fills), and her MOTION is these transforms on the
-   real artwork: the image moves, the bird is never redrawn.
+   real artwork: the image moves, the artwork is never redrawn.
    Every keyframe carries a slight scale so a tilt or a hop
    never bares the slot's edge inside the circular clip. */
 img.maggie-char-img { object-fit: cover; }
