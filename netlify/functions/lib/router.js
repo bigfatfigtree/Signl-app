@@ -213,10 +213,11 @@ async function buildDataAggregates() {
   }
   const reliability = { byDeliveries: relBands, byOnTime: relPct, paused: approved.filter((u) => standingState(u) === "paused").length, banned: creators.filter((u) => standingState(u) === "banned").length };
   const unlistedMap = {};
+  const unlistedDisp208 = unlistedDisplayByKey208(creators);
   for (const u of creators) {
     if (u.market === UNLISTED) {
       const { key, place } = unlistedPlace202(u);
-      if (!unlistedMap[key]) unlistedMap[key] = { place, city: u.city || "Unknown", country: u.country || null, creators: 0, approved: 0 };
+      if (!unlistedMap[key]) unlistedMap[key] = { place: (unlistedDisp208.get(key) || {}).place || place, city: u.city || "Unknown", country: u.country || null, creators: 0, approved: 0 };
       unlistedMap[key].creators += 1;
       if (u.status === "approved") unlistedMap[key].approved += 1;
     }
@@ -714,9 +715,9 @@ async function buildSuggestionCandidates() {
     return { count: pending.length, oldestDays: Math.max(0, Math.floor((now - oldest) / 86400000)) };
   };
   const wc = waitOf(agg.creators);
-  if (wc) push({ id: "waiting:creators", kind: "waiting", type: "ops.waiting", family: "ops", score: 100, text: `${wc.count} creator application${wc.count === 1 ? "" : "s"} waiting on review${wc.oldestDays > 0 ? `; the oldest has waited ${wc.oldestDays} day${wc.oldestDays === 1 ? "" : "s"}` : ""}. They sit in Applications.`, receipt: wc, action: { label: "Open Applications", route: "applications", params: {} }, fingerprint: suggestionFingerprint(["waiting:creators", wc.count, wc.oldestDays]) });
+  if (wc) push({ id: "waiting:creators", kind: "waiting", type: "ops.waiting", family: "ops", score: 100, text: `${wc.count} creator application${wc.count === 1 ? "" : "s"} waiting on review${wc.oldestDays > 0 ? `; the oldest has waited ${wc.oldestDays} day${wc.oldestDays === 1 ? "" : "s"}` : ""}. They sit in Review.`, receipt: wc, action: { label: "Open Review", route: "applications", params: {} }, fingerprint: suggestionFingerprint(["waiting:creators", wc.count, wc.oldestDays]) });
   const wb = waitOf(agg.businesses);
-  if (wb) push({ id: "waiting:businesses", kind: "waiting", type: "ops.waiting", family: "ops", score: 100, text: `${wb.count} business application${wb.count === 1 ? "" : "s"} waiting on review${wb.oldestDays > 0 ? `; the oldest has waited ${wb.oldestDays} day${wb.oldestDays === 1 ? "" : "s"}` : ""}.`, receipt: wb, action: { label: "Open Applications", route: "applications", params: {} }, fingerprint: suggestionFingerprint(["waiting:businesses", wb.count, wb.oldestDays]) });
+  if (wb) push({ id: "waiting:businesses", kind: "waiting", type: "ops.waiting", family: "ops", score: 100, text: `${wb.count} business application${wb.count === 1 ? "" : "s"} waiting on review${wb.oldestDays > 0 ? `; the oldest has waited ${wb.oldestDays} day${wb.oldestDays === 1 ? "" : "s"}` : ""}. They sit in Review.`, receipt: wb, action: { label: "Open Review", route: "applications", params: {} }, fingerprint: suggestionFingerprint(["waiting:businesses", wb.count, wb.oldestDays]) });
 
   // ---- marketing.gate_watch (M3) ----
   for (const mk of Object.keys(agg.matrix)) {
@@ -4716,6 +4717,41 @@ function unlistedPlace202(u) {
   const region = u.country || u.state || "";
   const dispRegion = region || "";
   return { key: demandKeyOf138(u.city || "Unknown", region), place: `${u.city || "Unknown"}${dispRegion ? ", " + dispRegion : ""}` };
+}
+
+// Build -208: ONE display rule for unlisted places, shared by every
+// panel that names them (Stats layers, sign-ups outside the listed
+// markets, the signup board, the aggregates backlog). The grouping
+// key canonicalizes a state name and "United States" to the same
+// bucket, so sibling records for one city can carry either region —
+// and the raw per-record place made the layers row read
+// "Charlottesville, United States" while the outside panel read
+// "Charlottesville, Virginia" for the same city. The shared rule:
+// prefer the state name when any record in the group knows it;
+// fall back to the country. Rank: a US state name (2) beats a
+// country (1) beats nothing (0).
+function unlistedRegionRank208(u) {
+  const st = String((u && u.state) || "").trim();
+  if (st && US_STATE_NAMES_202.has(st.toLowerCase())) return 2;
+  if (String((u && u.country) || "").trim()) return 1;
+  if (st) return 1;
+  return 0;
+}
+function unlistedDisplayPlace208(u) {
+  const st = String((u && u.state) || "").trim();
+  const region = unlistedRegionRank208(u) === 2 ? st : (String((u && u.country) || "").trim() || st);
+  return `${(u && u.city) || "Unknown"}${region ? ", " + region : ""}`;
+}
+function unlistedDisplayByKey208(users) {
+  const byKey = new Map();
+  for (const u of users || []) {
+    if (!u) continue;
+    const { key } = unlistedPlace202(u);
+    const rank = unlistedRegionRank208(u);
+    const cur = byKey.get(key);
+    if (!cur || rank > cur.rank) byKey.set(key, { rank, place: unlistedDisplayPlace208(u) });
+  }
+  return byKey;
 }
 
 async function cityDemand138() {
@@ -28163,14 +28199,39 @@ async function route(event) {
           });
         }
         const recentRaw202 = posts.filter((p) => p.status !== "queued").sort((a, b) => String(b.postedAt || "") < String(a.postedAt || "") ? -1 : 1);
-        // Build -202: group cross-posts (same normalized text + postedAt) into one row with both platform badges.
-        const recentMap202 = new Map();
+        // Build -202: group cross-posts into one row with both platform badges.
+        // Build -208 (D1): the -202 key required identical normalized FULL text,
+        // which never fires on real cross-posts — Facebook carries the raw URL
+        // where Instagram says "Link in bio", the call-to-action is reworded
+        // around the link, and the hashtag tail differs per platform. So the
+        // comparison text is normalized by stripping URLs, the link-in-bio
+        // tail and hashtags, and posts at the same postedAt group when their
+        // normalized word sets overlap >= 90% (the real seed pairs score
+        // >= 0.96; distinct posts at one timestamp do not come close).
+        // Per-platform records and channel totals above are untouched.
+        const socialGroupWords208 = (t) => {
+          const s = String(t || "").toLowerCase()
+            .replace(/https?:\/\/\S+/g, " ")
+            .replace(/(at the |the )?link in bio/g, " ")
+            .replace(/in our bio/g, " ")
+            .replace(/#\w+/g, " ");
+          return new Set(s.match(/[a-z0-9']+/g) || []);
+        };
+        const recentMap202 = [];
         for (const p of recentRaw202) {
-          const gk = `${String(p.text || "").trim().toLowerCase().replace(/\s+/g, " ")}|${p.postedAt || ""}`;
-          if (recentMap202.has(gk)) { const g = recentMap202.get(gk); if (!g.platforms.includes(p.platform)) g.platforms.push(p.platform); g.groupedPosts.push(p); }
-          else recentMap202.set(gk, { ...p, platforms: [p.platform], groupedPosts: [p] });
+          const words208 = socialGroupWords208(p.text);
+          let g = null;
+          for (const cand of recentMap202) {
+            if ((cand.postedAt || "") !== (p.postedAt || "")) continue;
+            let inter = 0;
+            for (const w of words208) if (cand._words208.has(w)) inter += 1;
+            const union = cand._words208.size + words208.size - inter;
+            if (union === 0 || inter / union >= 0.9) { g = cand; break; }
+          }
+          if (g) { if (!g.platforms.includes(p.platform)) g.platforms.push(p.platform); g.groupedPosts.push(p); }
+          else recentMap202.push({ ...p, platforms: [p.platform], groupedPosts: [p], _words208: words208 });
         }
-        const recent = [...recentMap202.values()].slice(0, 30);
+        const recent = recentMap202.slice(0, 30).map((row) => { const { _words208, ...rest } = row; return rest; });
         const queued = posts.filter((p) => p.status === "queued").sort((a, b) => String(a.createdAt || "") < String(b.createdAt || "") ? -1 : 1);
         const drafts = (await store.list("socialdraft:")).map((r) => r.value).filter(Boolean).filter((d) => d.status === "draft").sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
         return json(200, { channels, recent, queued, drafts, canDraft: canDraftS, canApprove: canApproveS });
@@ -30958,10 +31019,11 @@ async function route(event) {
       // Places are city + country; older records without a country fall
       // back to their stored state so nothing disappears from the view.
       const unlistedMap = {};
+      const unlistedDisp208 = unlistedDisplayByKey208(users);
       for (const u of users) {
         if (u.role === "creator" && u.market === UNLISTED) {
           const { key, place } = unlistedPlace202(u);
-          if (!unlistedMap[key]) unlistedMap[key] = { place, city: u.city || "Unknown", country: u.country || null, creators: 0 };
+          if (!unlistedMap[key]) unlistedMap[key] = { place: (unlistedDisp208.get(key) || {}).place || place, city: u.city || "Unknown", country: u.country || null, creators: 0 };
           unlistedMap[key].creators += 1;
         }
       }
@@ -30996,7 +31058,7 @@ async function route(event) {
         let key; let displayKey;
         const canon202 = canonicalMarketName(u.market);
         if (u.market === UNLISTED || !canon202 || !listedMarketNames202.has(canon202)) {
-          const up = unlistedPlace202(u); key = up.key; displayKey = up.place;
+          const up = unlistedPlace202(u); key = up.key; displayKey = (unlistedDisp208.get(key) || {}).place || up.place;
         } else { key = canon202; displayKey = canon202; }
         const row = layerRows[key] || (layerRows[key] = { market: displayKey, creators: 0, approved: 0, complete: 0, spanishFlagged: 0, withSpanishPct: 0, claimsInPeriod: 0, spanishClaimsInPeriod: 0 });
         row.creators += 1;
@@ -31063,7 +31125,7 @@ async function route(event) {
         else { boardTotals.businesses += 1; if (u.status === "pending") boardTotals.awaitingBusinesses += 1; }
         if (u.market === UNLISTED || !boardByMarket.has(canonicalMarketName(u.market) || "")) {
           const { key: bkey202, place } = unlistedPlace202(u);
-          const row = boardUnlistedMap[bkey202] || (boardUnlistedMap[bkey202] = { place, city: u.city || "Unknown", country: u.country || null, state: u.state || null, creators: 0, businesses: 0, awaitingReview: 0, total: 0 });
+          const row = boardUnlistedMap[bkey202] || (boardUnlistedMap[bkey202] = { place: (unlistedDisp208.get(bkey202) || {}).place || place, city: u.city || "Unknown", country: u.country || null, state: u.state || null, creators: 0, businesses: 0, awaitingReview: 0, total: 0 });
           if (u.role === "creator") row.creators += 1; else row.businesses += 1;
           if (u.status === "pending") row.awaitingReview += 1;
           row.total += 1;

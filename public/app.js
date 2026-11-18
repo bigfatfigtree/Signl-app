@@ -32077,9 +32077,10 @@ async function loadStats() {
         html += `
       <div class="panel" style="margin-top:14px" data-uxfold><div class="uxfold-bar"><h3 style="margin:0">Spanish and campus layers</h3><button type="button" class="uxfold-btn" aria-expanded="true" onclick="return uxFold(this)"><span data-uxfold-txt>Hide</span></button></div>
       <div class="uxfold-body"><p class="muted small" style="margin:8px 0 8px">Read-only, from live records. Claims window: the last ${L.periodDays} days. Cities outside the listed markets appear as their own rows.</p>
+      ${uxNoteHtml("All sign-ups counts every creator record in the row, whatever its status (tester accounts are never counted). Approved counts approved records only, and Finished profiles counts approved creators whose profile is complete. The Markets table counts approved creators, so it matches the Approved column here, not All sign-ups.")}
       <div class="table-wrap ct199"><table>
-        <tr><th>Market</th><th>Creators</th><th>Approved</th><th>Finished profiles</th><th>Spanish content</th><th>With Spanish %</th><th>Claims in window</th><th>Spanish claims</th></tr>
-        ${(L.markets || []).map((r) => `<tr><td>${esc(r.market)}</td><td data-label="Creators">${r.creators}</td><td data-label="Approved">${r.approved}</td><td data-label="Finished profiles">${r.complete}</td><td data-label="Spanish content">${r.spanishFlagged}</td><td data-label="With Spanish %">${r.withSpanishPct}</td><td data-label="Claims in window">${r.claimsInPeriod}</td><td data-label="Spanish claims">${r.spanishClaimsInPeriod}</td></tr>`).join("")}
+        <tr><th>Market</th><th>All sign-ups</th><th>Approved</th><th>Finished profiles</th><th>Spanish content</th><th>With Spanish %</th><th>Claims in window</th><th>Spanish claims</th></tr>
+        ${(L.markets || []).map((r) => `<tr><td>${esc(r.market)}</td><td data-label="All sign-ups">${r.creators}</td><td data-label="Approved">${r.approved}</td><td data-label="Finished profiles">${r.complete}</td><td data-label="Spanish content">${r.spanishFlagged}</td><td data-label="With Spanish %">${r.withSpanishPct}</td><td data-label="Claims in window">${r.claimsInPeriod}</td><td data-label="Spanish claims">${r.spanishClaimsInPeriod}</td></tr>`).join("")}
       </table></div>
       <p class="small" style="margin-top:12px"><strong>Campus Leads:</strong> ${L.campusLeads && L.campusLeads.length ? L.campusLeads.map((e) => `${esc(e.university)}: ${e.leads} (${(e.handles || []).map((h) => "@" + esc(h)).join(", ")})`).join(" &middot; ") : "none yet. A Campus Lead is a current student with 5 approved referrals from their own school."}</p>
       <p class="small"><strong>Business language:</strong> ${L.businessLanguage.es} ${L.businessLanguage.es === 1 ? "business prefers" : "businesses prefer"} Spanish, ${L.businessLanguage.en} ${L.businessLanguage.en === 1 ? "prefers" : "prefer"} English.</p>
@@ -33270,6 +33271,7 @@ function previewDiscoverHtml() {
     <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
   </div>
   </details>
+  <p id="pv-discover-count" class="disc-count" aria-live="polite"></p>
   <div id="pv-results"><p class="muted">Loading creators...</p></div>
   ${previewSentHtml()}`;
 }
@@ -33334,6 +33336,13 @@ async function runPreviewDiscover() {
   try {
     const data = await api("GET", "/admin/preview/discover?" + params.toString());
     state.preview.creators = data.creators || [];
+    // Build -208 (D2): the reconciliation line the real business
+    // Discover renders at #discover-count rides the preview too —
+    // the server already returns data.reconciliation here; the
+    // preview used to discard it, so the bookable-vs-home counts
+    // stayed unexplained on the surface Jeff checks.
+    state.preview.reconciliation208 = data.reconciliation || null;
+    { const rc = state.preview.reconciliation208; const dc = document.getElementById("pv-discover-count"); if (dc && rc) dc.textContent = `${rc.bookable} bookable here \u00b7 ${rc.approvedHome} approved call this market home \u00b7 ${Math.max(0, rc.approvedHome - rc.approvedComplete)} still finishing profiles (${rc.approvedComplete} finished and bookable-ready at home)`; }
     // Build -175 twin: the "people here" floor, client-side over
     // the canon count exactly as the live Find applies it.
     const pvMinPeople = Number(val("pvf-minpeople")) || 0;
