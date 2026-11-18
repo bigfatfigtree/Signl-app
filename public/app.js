@@ -31975,27 +31975,27 @@ async function loadStats() {
       if (stats53 && stats53.layers) {
         const L = stats53.layers;
         html += `
-      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Spanish and campus layers</h3>
-      <p class="muted small" style="margin:0 0 8px">Read-only, from live records. Claims window: the last ${L.periodDays} days. Cities outside the listed markets appear as their own rows.</p>
+      <div class="panel" style="margin-top:14px" data-uxfold><div class="uxfold-bar"><h3 style="margin:0">Spanish and campus layers</h3><button type="button" class="uxfold-btn" aria-expanded="true" onclick="return uxFold(this)"><span data-uxfold-txt>Hide</span></button></div>
+      <div class="uxfold-body"><p class="muted small" style="margin:8px 0 8px">Read-only, from live records. Claims window: the last ${L.periodDays} days. Cities outside the listed markets appear as their own rows.</p>
       <div class="table-wrap ct199"><table>
         <tr><th>Market</th><th>Creators</th><th>Approved</th><th>Finished profiles</th><th>Spanish content</th><th>With Spanish %</th><th>Claims in window</th><th>Spanish claims</th></tr>
         ${(L.markets || []).map((r) => `<tr><td>${esc(r.market)}</td><td data-label="Creators">${r.creators}</td><td data-label="Approved">${r.approved}</td><td data-label="Finished profiles">${r.complete}</td><td data-label="Spanish content">${r.spanishFlagged}</td><td data-label="With Spanish %">${r.withSpanishPct}</td><td data-label="Claims in window">${r.claimsInPeriod}</td><td data-label="Spanish claims">${r.spanishClaimsInPeriod}</td></tr>`).join("")}
       </table></div>
       <p class="small" style="margin-top:12px"><strong>Campus Leads:</strong> ${L.campusLeads && L.campusLeads.length ? L.campusLeads.map((e) => `${esc(e.university)}: ${e.leads} (${(e.handles || []).map((h) => "@" + esc(h)).join(", ")})`).join(" &middot; ") : "none yet. A Campus Lead is a current student with 5 approved referrals from their own school."}</p>
       <p class="small"><strong>Business language:</strong> ${L.businessLanguage.es} ${L.businessLanguage.es === 1 ? "business prefers" : "businesses prefer"} Spanish, ${L.businessLanguage.en} ${L.businessLanguage.en === 1 ? "prefers" : "prefer"} English.</p>
-      </div>`;
+      </div></div>`;
       }
       html += ccLondonRaceHtml(race);
       if (sq && sq.square) {
         const s2 = sq.square;
         html += `
-      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Register connections (Square)</h3>
-      <p class="small">${s2.configured ? "Square is connected on the server, so businesses can connect their registers." : "Square is not connected on the server yet, so businesses see the concierge state instead."}${s2.env === "sandbox" ? " Sandbox: connections here are test registers, not live ones." : ""}</p>
+      <div class="panel" style="margin-top:14px" data-uxfold><div class="uxfold-bar"><h3 style="margin:0">Register connections (Square)</h3><button type="button" class="uxfold-btn" aria-expanded="true" onclick="return uxFold(this)"><span data-uxfold-txt>Hide</span></button></div>
+      <div class="uxfold-body"><p class="small" style="margin:8px 0 8px">${s2.configured ? "Square is connected on the server, so businesses can connect their registers." : "Square is not connected on the server yet, so businesses see the concierge state instead."}${s2.env === "sandbox" ? " Sandbox: connections here are test registers, not live ones." : ""}</p>
       ${s2.connections && s2.connections.length ? `<div class="table-wrap ct199"><table>
         <tr><th>Business</th><th>Environment</th><th>Status</th><th>Connected</th><th>Last read-back</th><th>Locations</th></tr>
         ${s2.connections.map((c) => `<tr><td>${esc(c.businessName || c.businessId)}</td><td data-label="Environment">${esc(c.env || "")}</td><td data-label="Status">${esc(c.status || "")}</td><td data-label="Connected">${c.connectedAt ? esc(fmtDay(c.connectedAt)) : ""}</td><td data-label="Last read-back">${c.lastSyncAt ? esc(fmtDay(c.lastSyncAt)) : "never"}</td><td data-label="Locations">${(c.locations || []).map(esc).join(", ")}</td></tr>`).join("")}
       </table></div>` : `<p class="small muted">No business has connected a register yet.</p>`}
-      </div>`;
+      </div></div>`;
       }
       foot.innerHTML = html;
     }
