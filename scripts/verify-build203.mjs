@@ -30,7 +30,7 @@ const fnSlice = (name, len = 9000) => { const i = appJs.indexOf(`function ${name
 console.log("== source: build stamp consistency ==");
 const bid = (buildJs.match(/exports\.BUILD_ID = "([^"]+)"/) || [])[1];
 check("BUILD_ID present", !!bid);
-check("BUILD_ID is the -203 stamp", bid === "2026.11.18-203", bid);
+check("BUILD_ID is the shipping stamp", bid === "2026.11.18-205", bid);
 check("shell stamp matches BUILD_ID everywhere", !!bid && indexHtml.includes(`window.__SIGNL_BUILD__ = "${bid}"`) && (indexHtml.match(new RegExp(bid.replace(/\./g, "\\."), "g")) || []).length >= 5);
 
 console.log("== source: the -203 cap helpers over the -199 kit ==");
