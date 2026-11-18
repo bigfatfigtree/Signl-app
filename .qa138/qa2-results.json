@@ -1,0 +1,197 @@
+[
+ {
+  "name": "biz home first paint (no click)",
+  "ok": true,
+  "detail": "512.6216411590576ms"
+ },
+ {
+  "name": "app background is pure white",
+  "ok": true,
+  "detail": "rgb(255, 255, 255)"
+ },
+ {
+  "name": "discover: full-screen takeover on",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "discover: Back to dashboard pinned",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "discover: dashboard rail hidden in takeover",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "discover: wishlist form OUT of browse",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "discover: rail groups labelled",
+  "ok": true,
+  "detail": "['Where & sort', 'Category', 'Must-haves', 'How you want to book', 'Their rate', 'Their audience lives here', 'Tier (their audience size)']"
+ },
+ {
+  "name": "discover: exactly one search input in the search row",
+  "ok": true,
+  "detail": "1"
+ },
+ {
+  "name": "discover: no wrapped pill wall (chips live in one scroll row)",
+  "ok": true,
+  "detail": "0"
+ },
+ {
+  "name": "discover: zero horizontal overflow",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "saved: wishlist lives under Saved",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "creator home first paint (no click)",
+  "ok": true,
+  "detail": "251.4352798461914ms"
+ },
+ {
+  "name": "find offers: 3 seeded offers render",
+  "ok": true,
+  "detail": "3"
+ },
+ {
+  "name": "find offers: lead card spans the results width",
+  "ok": true,
+  "detail": "lead 1094 grid 1094"
+ },
+ {
+  "name": "find offers: full filter groups present",
+  "ok": true,
+  "detail": "['Sort', 'The offer', 'Category', 'Distance from you', 'Good to know']"
+ },
+ {
+  "name": "find offers: no bare '?' fallback tile",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "find offers: cramped segment box is gone",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "find offers: rail counts render",
+  "ok": true,
+  "detail": "['3', '2', '1', '0', '3', '1', '2', '3', '2', '0', '0']"
+ },
+ {
+  "name": "filter narrows: category Restaurant -> 2",
+  "ok": true,
+  "detail": "2"
+ },
+ {
+  "name": "filter narrows: kind Paid post -> 1",
+  "ok": true,
+  "detail": "1"
+ },
+ {
+  "name": "filter narrows: distance Same neighborhood -> 2",
+  "ok": true,
+  "detail": "2"
+ },
+ {
+  "name": "filter narrows: search 'brunch' -> 1",
+  "ok": true,
+  "detail": "1"
+ },
+ {
+  "name": "find offers: zero horizontal overflow",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "admin home: highlights paint with no click",
+  "ok": true,
+  "detail": "347.11599349975586ms"
+ },
+ {
+  "name": "admin home: next steps paint with no click",
+  "ok": true,
+  "detail": "26.996612548828125ms"
+ },
+ {
+  "name": "admin home: greeting painted immediately",
+  "ok": true,
+  "detail": "Good evening, Jeff."
+ },
+ {
+  "name": "decided/pending table: apps-table renders",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "table fits inside its card (desktop)",
+  "ok": true,
+  "detail": "{'found': True, 'fits': True, 'clipped': 0, 'cells': 36, 'clippedInfo': [], 'detailText': 113, 'detailFull': True}"
+ },
+ {
+  "name": "no clipped table cells (desktop)",
+  "ok": true,
+  "detail": "0/36"
+ },
+ {
+  "name": "admin: zero horizontal overflow",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "mobile find: one Filters button + search + chip row",
+  "ok": true,
+  "detail": "{'filtersBtn': True, 'railOpen': False, 'chipRow': True, 'searchVisible': True}"
+ },
+ {
+  "name": "mobile find: sheet closed at rest",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "mobile find: bottom sheet opens with groups + Show N",
+  "ok": true,
+  "detail": "{'open': True, 'showBtn': 'Show 3 results', 'groups': ['Where & sort', 'Category', 'Must-haves', 'How you want to book', 'Their rate', 'Their audience lives here', 'Tier (their audience size)']}"
+ },
+ {
+  "name": "mobile compare tray: columns hold their content",
+  "ok": true,
+  "detail": "{'present': True, 'cols': 3, 'escapes': 0, 'withinPanel': True}"
+ },
+ {
+  "name": "mobile compare tray: stays on screen",
+  "ok": true,
+  "detail": "{'present': True, 'cols': 3, 'escapes': 0, 'withinPanel': True}"
+ },
+ {
+  "name": "mobile find: zero horizontal overflow",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "mobile find offers: cards + Filters button",
+  "ok": true,
+  "detail": "{'n': 3, 'filtersBtn': True}"
+ },
+ {
+  "name": "mobile find offers: sheet holds the full filter set",
+  "ok": true,
+  "detail": "['Sort', 'The offer', 'Category', 'Distance from you', 'Good to know']"
+ },
+ {
+  "name": "mobile find offers: zero horizontal overflow",
+  "ok": true,
+  "detail": ""
+ }
+]

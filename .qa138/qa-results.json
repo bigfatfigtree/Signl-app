@@ -1,0 +1,205 @@
+{
+ "checks": [
+  {
+   "name": "mobile: compare tray renders with 3 saved creators",
+   "ok": true,
+   "extra": "{\"present\": true, \"cols\": [{\"name\": \"Bravo Blair\", \"left\": 29, \"right\": 261, \"width\": 232}, {\"name\": \"Alpha Avery\", \"left\": 273, \"right\": 505, \"width\": 232}, {\"name\": \"Charlie Chase\", \"left\": 517, \"right\": 749, \"width\": 232}], \"violations\":"
+  },
+  {
+   "name": "mobile: no tray element crosses its column border",
+   "ok": true,
+   "extra": "[]"
+  },
+  {
+   "name": "mobile: Find creators page has zero horizontal overflow",
+   "ok": true,
+   "extra": "390"
+  },
+  {
+   "name": "mobile: creator tiles have no escaping text",
+   "ok": true,
+   "extra": "{\"present\": true, \"violations\": [], \"count\": 0}"
+  },
+  {
+   "name": "mobile: creator page has zero horizontal overflow",
+   "ok": true,
+   "extra": "390"
+  },
+  {
+   "name": "mobile: creator page shows the local % hero with the spelled-out count",
+   "ok": false,
+   "extra": "T\nTray Test Tacos\nFind creators\n\nShop local creators near you. Invite the ones who fit. \u00d7\n\nRanked by how local their audience is, not by follower count.\n\nFilters\nAll\nFood & Drink\nNightlife\nBeauty & Gr"
+  },
+  {
+   "name": "mobile: Favorites has zero horizontal overflow",
+   "ok": true,
+   "extra": "390"
+  },
+  {
+   "name": "mobile: business Home has zero horizontal overflow",
+   "ok": true,
+   "extra": "390"
+  },
+  {
+   "name": "mobile: business Home leads with Sig + highlights + next steps",
+   "ok": true,
+   "extra": "T\nTray Test Tacos\nHome\n\nStart here. \u00d7\n\nHi, Tray Test Tacos\nLet's get your first campaign live. Sig walks you through it, three steps.\nSig\nYour helper \u2014 she work"
+  },
+  {
+   "name": "unlisted creator home: building/early framing present",
+   "ok": false,
+   "extra": "F\nFargo Fran\n1\nHome\n\nStart here. \u00d7\n\nHi, Fargo\nGood evening.\nSig\nYour helper \u2014 she works from your real numbers, not guesses.\nSet your paid rate so businesses can book you paid.\nAsk\nSIG NOTICED\n5 Momentum points\nProfile live\nSet your rate card\nNot listed yet is live\nQUICK HIGHLIGHTS\nMomentum\nStarter "
+  },
+  {
+   "name": "mobile: unlisted creator Home has zero horizontal overflow",
+   "ok": true,
+   "extra": "390"
+  },
+  {
+   "name": "unlisted Status: 'Fargo is building \u2014 and you're early' panel",
+   "ok": false,
+   "extra": "F\nFargo Fran\n1\nHome\n\nStart here. \u00d7\n\nHi, Fargo\nGood evening.\nSig\nYour helper \u2014 she works from your real numbers, not guesses.\nSet your paid rate so businesses can book you paid.\nAsk\nSIG NOTICED\n5 Momentum points\nProfile live\nSet your rate card\nNot listed yet is live\nQUICK HIGHLIGHTS\nMomentum\nStarter "
+  },
+  {
+   "name": "mobile: admin Markets zero overflow",
+   "ok": true,
+   "extra": "390"
+  },
+  {
+   "name": "mobile: Markets demand section present with Flagtown-style rows or empty state",
+   "ok": true,
+   "extra": "l call (add it as a market, then activate it here).\n\nFargo, United States\n1 claimed creators \u00b7 1 finished profiles (100%) \u00b7 4k combined followers \u00b7 71% avg local\n0 business applications \u00b7 0 partner signals\n\u00b7 ~150 creators \u00a0 \u2713 40% finished \u00a0 \u00b7 business/partner signal\n1/3 tripwires\n\nNational platforms"
+  },
+  {
+   "name": "mobile: Automations zero overflow",
+   "ok": true,
+   "extra": "390"
+  },
+  {
+   "name": "mobile: Automations lists the catalogue with Always on critical rows",
+   "ok": true,
+   "extra": "Home\nReview\nMarkets\nStats\nSig\nJ\nJeff Rimmer\nHome\nApplications\nRequests\nMarkets\nCreators\nRecruiters\nOutreach\nPartners\nEvent Log\nCompliance\nCampaign\nMarketing\nLearn\nSocial\nAutomations\nTemplates\nStats\nTe"
+  },
+  {
+   "name": "desktop: admin Home renders Sig hero + highlights",
+   "ok": true,
+   "extra": "Home\nReview\nRequests\nMarkets\nCreators\nRecruiters\nOutreach\nPartners\nEvent Log\nCompliance\nCampaign\nMarketing\nLearn\nSocial\nAutomations\nTemplates\nStats\nTeam\nSig\nJ\nJ"
+  },
+  {
+   "name": "desktop: Markets room renders its content",
+   "ok": true,
+   "extra": "missing: []"
+  },
+  {
+   "name": "desktop: Markets zero horizontal overflow",
+   "ok": true,
+   "extra": "1440"
+  },
+  {
+   "name": "desktop: Automations room renders its content",
+   "ok": true,
+   "extra": "missing: []"
+  },
+  {
+   "name": "desktop: Automations zero horizontal overflow",
+   "ok": true,
+   "extra": "1440"
+  },
+  {
+   "name": "desktop: Templates room renders its content",
+   "ok": true,
+   "extra": "missing: []"
+  },
+  {
+   "name": "desktop: Templates zero horizontal overflow",
+   "ok": true,
+   "extra": "1440"
+  },
+  {
+   "name": "desktop: Marketing room renders its content",
+   "ok": true,
+   "extra": "missing: []"
+  },
+  {
+   "name": "desktop: Marketing zero horizontal overflow",
+   "ok": true,
+   "extra": "1440"
+  },
+  {
+   "name": "desktop: Social room renders its content",
+   "ok": true,
+   "extra": "missing: []"
+  },
+  {
+   "name": "desktop: Social zero horizontal overflow",
+   "ok": true,
+   "extra": "1440"
+  },
+  {
+   "name": "desktop: Team room renders its content",
+   "ok": true,
+   "extra": "missing: []"
+  },
+  {
+   "name": "desktop: Team zero horizontal overflow",
+   "ok": true,
+   "extra": "1440"
+  },
+  {
+   "name": "desktop: Learn room renders its content",
+   "ok": true,
+   "extra": "missing: []"
+  },
+  {
+   "name": "desktop: Learn zero horizontal overflow",
+   "ok": true,
+   "extra": "1440"
+  },
+  {
+   "name": "desktop: Stats room renders its content",
+   "ok": true,
+   "extra": "missing: []"
+  },
+  {
+   "name": "desktop: Stats zero horizontal overflow",
+   "ok": true,
+   "extra": "1440"
+  },
+  {
+   "name": "desktop: audience builder offers the unlisted demand city (Fargo) as a segment",
+   "ok": true,
+   "extra": "['All creators \u2014 4 people', 'Creators with finished profiles \u2014 4 people', \"Creators whose profiles aren't finished \u2014 0 people\", 'Creators \u2014 Neighbors tier \u2014 0 people', 'Creators \u2014 Locals tier \u2014 3 people', 'Creators \u2014 Headliners tier \u2014 1 people', 'Creators in V"
+  },
+  {
+   "name": "desktop: Fargo segment count resolves live to the approved Fargo creator",
+   "ok": true,
+   "extra": "That list is 1 people after exclusions (0 suppressed, 0 testers left out)."
+  },
+  {
+   "name": "desktop: picking Text message shows the honest Twilio state, subject hidden",
+   "ok": true,
+   "extra": "{'display': '', 'text': \"Texts switch on when Twilio finishes connecting \u2014 the carrier registration is still in review and the texting keys aren't wired into the app yet. Build the audience and draft the text now; sendin"
+  },
+  {
+   "name": "teammate: rail hides Team/Marketing/Automations (not their rooms)",
+   "ok": true,
+   "extra": "['', 'Dashboard', 'Sign out', '', 'Home', 'Review', 'Creators', 'Recruiters', 'Outreach', 'Sig', 'Sign out', 'T', 'TTess Teammate', '', '', '', 'Home', 'Applications', 'Creators', 'Recruiters', 'Outreach', 'Sig', 'Ask', 'Waiting on your review0\u203a', 'Claims today0\u203a', 'Business', 'Creator', 'Partner']"
+  },
+  {
+   "name": "teammate: no page errors in their session",
+   "ok": false,
+   "extra": "[\"mobile PAGEERROR: Unexpected token '<'\", \"mobile PAGEERROR: Unexpected token '<'\", 'HTML-AS-SCRIPT: https://www.googletagmanager.com/gtag/js?id=G-0V1YPFCTSD', \"desktop PAGEERROR: Unexpected token '<"
+  },
+  {
+   "name": "desktop: tray renders, no element crosses its column",
+   "ok": true,
+   "extra": "[]"
+  }
+ ],
+ "errors": [
+  "mobile PAGEERROR: Unexpected token '<'",
+  "mobile PAGEERROR: Unexpected token '<'",
+  "HTML-AS-SCRIPT: https://www.googletagmanager.com/gtag/js?id=G-0V1YPFCTSD",
+  "desktop PAGEERROR: Unexpected token '<'"
+ ]
+}
