@@ -29148,7 +29148,12 @@ async function loadAdminSocial138() {
       <div class="small" style="margin-top:8px">${ch.totals.posts} posts on record · ${fmtFull(ch.totals.likes)} likes · ${fmtFull(ch.totals.comments)} comments · ${fmtFull(ch.totals.shares)} shares${ch.totals.unreported ? `<br><span class="muted">${ch.totals.unreported} post${ch.totals.unreported === 1 ? "" : "s"} where the platform didn't report numbers — counted as nothing, never guessed.</span>` : ""}</div>
       <p class="small muted" style="margin-top:8px">${esc(ch.sourceNote)}</p></div>`;
     }).join("");
-    const postRow = (p) => `<div class="a138-row"><div class="a138-row-main"><strong>${label[p.platform] || p.platform}</strong><span class="small muted">${p.postedAt ? a138When(p.postedAt) : "Queued"} · ${esc((p.text || "").slice(0, 140))}</span>
+    // Build -209 (D1-R): a grouped cross-post row carries every platform it
+    // went out on in p.platforms (payload order); the heading names them
+    // all ("Instagram + Facebook"). Single-platform rows (and queued posts,
+    // which carry no platforms list) keep the single label.
+    const platLabel209 = (p) => [...new Set((p.platforms && p.platforms.length ? p.platforms : [p.platform]).filter(Boolean))].map((pl) => label[pl] || pl).join(" + ");
+    const postRow = (p) => `<div class="a138-row"><div class="a138-row-main"><strong>${platLabel209(p)}</strong><span class="small muted">${p.postedAt ? a138When(p.postedAt) : "Queued"} · ${esc((p.text || "").slice(0, 140))}</span>
       <span class="small">${p.metrics && (p.metrics.likes != null || p.metrics.comments != null) ? `${p.metrics.likes ?? "—"} likes · ${p.metrics.comments ?? "—"} comments · ${p.metrics.shares ?? "—"} shares` : "The platform didn't report this"}</span></div>
       <div class="a138-row-side">${p.url ? `<a class="btn small-btn ghost" href="${esc(p.url)}" target="_blank" rel="noopener">Open</a>` : `<span class="a138-tag">In the queue</span>`}</div></div>`;
     el.innerHTML = `<h3>Social</h3>
