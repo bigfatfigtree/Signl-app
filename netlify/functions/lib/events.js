@@ -22,7 +22,46 @@ async function logEvent({ type, actorId = null, actorRole = null, subjectId = nu
   const record = { id, ts, type, actorId, actorRole, subjectId, market, data };
   await store.set(`event:${ts.slice(0, 10)}:${id}`, record);
   noteCaptureFirstSeen(type, ts.slice(0, 10));
+  noteCreatorLastAction(record);
   return record;
+}
+
+// Creator last-action digest (Build -210): config:creatorLastAction
+// holds { map: { actorId: lastOwnActionMs }, coveredThroughDay,
+// updatedAt } — the newest timestamp of each creator's OWN actions
+// (their asks, profile work, self-driven audience updates). The
+// Admin suggestions board's cooling pass used to derive this by
+// fetching every event value of the last 62 days on a cold build;
+// on the production log that scan outran the function budget, so
+// the board's memo never warmed and every hit — first AND retry —
+// died on the client's 10s race. The digest is stamped here, at
+// write time, in the captureSince pattern: best-effort, forward-
+// only, and reconciled by the router's resumable backfill loader,
+// which also covers events logged before this build existed.
+const CREATOR_ACTION_TYPES = new Set(["sig_ask", "profile_updated", "profile_completed", "profile_photo_uploaded", "profile_photo_cover", "profile_photo_removed", "booking_code_issued"]);
+function isCreatorActionEvent(e) {
+  if (!e || !e.actorId) return false;
+  if (CREATOR_ACTION_TYPES.has(e.type)) return true;
+  return e.type === "audience_updated" && !(e.data && String(e.data.source || "").startsWith("sync"));
+}
+let claWriteChain = Promise.resolve();
+function noteCreatorLastAction(record) {
+  if (!isCreatorActionEvent(record)) return;
+  const t = Date.parse(record.ts || "");
+  if (!Number.isFinite(t)) return;
+  // Serialized through one chain so two actions landing together
+  // cannot read-modify-write the stamp away from each other.
+  claWriteChain = claWriteChain.then(async () => {
+    try {
+      const dig = (await store.get("config:creatorLastAction")) || { map: {} };
+      dig.map = dig.map || {};
+      if (!dig.map[record.actorId] || t > dig.map[record.actorId]) {
+        dig.map[record.actorId] = t;
+        dig.updatedAt = new Date().toISOString();
+        await store.set("config:creatorLastAction", dig);
+      }
+    } catch (e) { /* bookkeeping only — the backfill reconciles */ }
+  });
 }
 
 // Capture first-seen map (Build -150): config:captureSince holds
@@ -118,4 +157,4 @@ async function listEventsForSubject(subjectId, { limit = 100 } = {}) {
   return { events: matches.slice(0, want), scanned, truncated };
 }
 
-module.exports = { logEvent, listEvents, listEventsForSubject };
+module.exports = { logEvent, listEvents, listEventsForSubject, isCreatorActionEvent };

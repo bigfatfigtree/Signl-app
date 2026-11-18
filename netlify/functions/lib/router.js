@@ -4,7 +4,7 @@
 const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
-const { logEvent, listEvents, listEventsForSubject } = require("./events");
+const { logEvent, listEvents, listEventsForSubject, isCreatorActionEvent } = require("./events");
 const training = require("./training");
 
 // Data captures (Data Audit 2026-11-07, Jeff's doctrine: everything
@@ -313,6 +313,88 @@ async function eventsInRange(days, maxDays = 31) {
   return out;
 }
 
+// ---------- Creator last-action digest (Build -210) ----------
+// config:creatorLastAction = { map: { actorId: ms }, coveredThroughDay,
+// updatedAt, progressAt }. logEvent stamps it at write time (see
+// lib/events.js); this side owns the read + the backfill of the
+// pre-digest log. The suggestions cooling pass reads the digest
+// instead of fetching 62 days of raw events: on the production log
+// that scan outran the function budget, the board memo never
+// warmed, and first hits AND retries both died on the client race
+// (live-walk evidence, 2026-11-18). Coverage is resumable by day:
+// any partial progress persists, so even a build cut short leaves
+// the next read cheaper — the failure can no longer repeat itself.
+const CLA_WINDOW_DAYS = 62;
+function claDayStr(ms) { return new Date(ms).toISOString().slice(0, 10); }
+async function claScanDayInto(dayStr, map) {
+  const keys = await store.listKeys(`event:${dayStr}:`);
+  if (!keys.length) return;
+  for (let i = 0; i < keys.length; i += 400) {
+    const rows = await store.getMany(keys.slice(i, i + 400));
+    for (const r of rows) {
+      const e = r.value;
+      if (!isCreatorActionEvent(e)) continue;
+      const t = Date.parse(e.ts || "");
+      if (Number.isFinite(t) && (!map[e.actorId] || t > map[e.actorId])) map[e.actorId] = t;
+    }
+  }
+}
+// The cooling pass's input: { actorId: lastOwnActionMs }. Digest
+// entries cover [coveredThroughDay .. today]; any older window
+// days not yet backfilled are scanned here, once, and folded into
+// the digest as they complete — so this read is the legacy full
+// scan only on a store whose backfill has not run at all.
+async function lastCreatorActionByActor210() {
+  const nowMs = Date.now();
+  const windowStartDay = claDayStr(nowMs - (CLA_WINDOW_DAYS - 1) * 86400000);
+  let dig = null;
+  try { dig = await store.get("config:creatorLastAction"); } catch (e) { /* fall through to the scan */ }
+  const map = { ...((dig && dig.map) || {}) };
+  const covered = dig && dig.coveredThroughDay ? dig.coveredThroughDay : null;
+  if (!covered || covered > windowStartDay) {
+    const fromDay = covered ? claDayStr(Date.parse(covered) - 86400000) : claDayStr(nowMs);
+    const days = [];
+    for (let d = Date.parse(fromDay); d >= Date.parse(windowStartDay); d -= 86400000) days.push(claDayStr(d));
+    // Days scan in bounded parallel (each into its own map, then
+    // merged) — a serial day-by-day walk of a cold 62-day window
+    // was itself most of the old build's cost. The merged digest
+    // persists once at the end; the preamble backfill loader is
+    // the per-day-persistent convergence path behind this read.
+    const perDay = await mapBounded202(days, 12, async (dayStr) => { const m = {}; await claScanDayInto(dayStr, m); return m; });
+    for (const m of perDay) for (const [id, t] of Object.entries(m)) if (!map[id] || t > map[id]) map[id] = t;
+    try { await store.set("config:creatorLastAction", { map, coveredThroughDay: windowStartDay, updatedAt: nowIso(), progressAt: nowIso() }); } catch (e) { /* progress persistence is best-effort */ }
+  }
+  return map;
+}
+// Backfill loader (preamble, fire-and-forget, snapshot-sweep
+// discipline): advances coveredThroughDay toward the window start
+// a few days per invocation, time-boxed, resumable from the
+// persisted stamp. Once coverage is complete it costs one config
+// read per throttle window and nothing else.
+let claBackfillMemoAt = 0;
+let claBackfillRunning = false;
+async function maybeBackfillCreatorLastAction210() {
+  if (claBackfillRunning) return;
+  if (Date.now() - claBackfillMemoAt < 20 * 1000) return;
+  claBackfillMemoAt = Date.now();
+  const dig = await store.get("config:creatorLastAction");
+  const windowStartDay = claDayStr(Date.now() - (CLA_WINDOW_DAYS - 1) * 86400000);
+  if (dig && dig.coveredThroughDay && dig.coveredThroughDay <= windowStartDay) return;
+  if (dig && dig.progressAt && Date.now() - Date.parse(dig.progressAt) < 15 * 1000) return;
+  claBackfillRunning = true;
+  try {
+    const map = { ...((dig && dig.map) || {}) };
+    let cursor = dig && dig.coveredThroughDay ? Date.parse(dig.coveredThroughDay) - 86400000 : Date.parse(claDayStr(Date.now()));
+    const deadline = Date.now() + 3500;
+    while (cursor >= Date.parse(windowStartDay) && Date.now() < deadline) {
+      const dayStr = claDayStr(cursor);
+      await claScanDayInto(dayStr, map);
+      await store.set("config:creatorLastAction", { map, coveredThroughDay: dayStr, updatedAt: nowIso(), progressAt: nowIso() });
+      cursor -= 86400000;
+    }
+  } finally { claBackfillRunning = false; }
+}
+
 // The day capture of one event type began (its earliest record),
 // or null when it has never fired. Scans the log oldest-first in
 // bounded chunks; an honest null beats an invented date — the
@@ -377,6 +459,7 @@ async function buildDayRollup(day) {
   const promptByTrigger = {};
   const promptByFamily = {};
   const stepByType = {};
+  const askClusters = {};
   let promptOffersCreated = 0;
   if (keys.length) {
     const rows = await store.getMany(keys);
@@ -384,6 +467,18 @@ async function buildDayRollup(day) {
       const e = r.value;
       if (!e || !e.type) continue;
       byType[e.type] = (byType[e.type] || 0) + 1;
+      // Build -210: Maggie curriculum clusters ride the rollup —
+      // the suggestions board used to re-scan 62 days of raw
+      // events for these counts (see lastCreatorActionByActor210).
+      if (e.type === "sig_ask" && e.data && (e.data.source === "unavailable" || e.data.source === "convo")) {
+        const topic = sigAskTopic(e.data.q);
+        if (topic) {
+          const ck = `${e.actorRole || "creator"}|${topic.key}`;
+          const c = askClusters[ck] || (askClusters[ck] = { label: topic.label, count: 0, unanswered: 0, fallback: 0 });
+          c.count += 1;
+          if (e.data.source === "unavailable") c.unanswered += 1; else c.fallback += 1;
+        }
+      }
       if (e.type === "match_impression") shownTotal += (e.data && Array.isArray(e.data.shown)) ? e.data.shown.length : 0;
       if (e.type === "discover_search" && e.data && e.data.zeroResults) {
         const f = e.data.filters || {};
@@ -403,13 +498,16 @@ async function buildDayRollup(day) {
       }
     }
   }
-  return { day, byType, shownTotal, zeroGaps, promptByTrigger, promptByFamily, stepByType, promptOffersCreated, events: keys.length, computedAt: nowIso() };
+  return { day, byType, shownTotal, zeroGaps, promptByTrigger, promptByFamily, stepByType, promptOffersCreated, askClusters, events: keys.length, computedAt: nowIso() };
 }
 async function dayRollup(day) {
   const today = new Date().toISOString().slice(0, 10);
   if (day !== today) {
     const hit = await store.get(`rollup:events:${day}`);
-    if (hit) return hit;
+    // Build -210: a rollup stored before askClusters existed is
+    // rebuilt once from the log (rollups are derived data; the
+    // recompute is identical for every pre-existing field).
+    if (hit && hit.askClusters) return hit;
   }
   const rec = await buildDayRollup(day);
   await store.set(`rollup:events:${day}`, rec);
@@ -417,12 +515,11 @@ async function dayRollup(day) {
 }
 async function rollupsInRange(days) {
   const n = Math.max(1, Math.min(31, Math.floor(Number(days) || 30)));
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    out.push(await dayRollup(d));
-  }
-  return out;
+  // Build -210: bounded-concurrency day reads (was a serial
+  // per-day loop — 30 sequential Blobs round trips on every
+  // funnel/Data read at production latency).
+  const dayList210 = Array.from({ length: n }, (_, i) => new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));
+  return mapBounded202(dayList210, 12, (d) => dayRollup(d));
 }
 function rollupCount(rollups, type) {
   return rollups.reduce((s, r) => s + ((r.byType && r.byType[type]) || 0), 0);
@@ -698,8 +795,10 @@ function sigAskTopic(q) {
 // outranks an aggregate). Pure computation — persistence and
 // lifecycle live in syncSuggestionRecords below.
 async function buildSuggestionCandidates() {
-  const agg = await buildDataAggregates();
-  const funnel = await buildFunnel(30);
+  // Build -210: the aggregates and the funnel read overlapping
+  // lists but neither depends on the other's output — run them
+  // together instead of back to back on the cold path.
+  const [agg, funnel] = await Promise.all([buildDataAggregates(), buildFunnel(30)]);
   const offers = await allOffers();
   const applications = await allApplications();
   const out = [];
@@ -831,16 +930,11 @@ async function buildSuggestionCandidates() {
   // System events about a creator (our outbound mail queueing,
   // scheduled syncs) and the record's updatedAt — which system
   // sweeps stamp — never count: a stall is theirs, not ours.
-  const events60 = await eventsInRange(62, 90);
-  const CREATOR_ACTION_TYPES = new Set(["sig_ask", "profile_updated", "profile_completed", "profile_photo_uploaded", "profile_photo_cover", "profile_photo_removed", "booking_code_issued"]);
-  const lastEventByActor = {};
-  for (const e of events60) {
-    if (!e.actorId) continue;
-    const own = CREATOR_ACTION_TYPES.has(e.type) || (e.type === "audience_updated" && !(e.data && String(e.data.source || "").startsWith("sync")));
-    if (!own) continue;
-    const t = Date.parse(e.ts || "");
-    if (Number.isFinite(t) && (!lastEventByActor[e.actorId] || t > lastEventByActor[e.actorId])) lastEventByActor[e.actorId] = t;
-  }
+  // Build -210: the last-own-action map comes from the
+  // creatorLastAction digest (write-time stamps + resumable
+  // backfill), not a 62-day raw event fetch — see
+  // lastCreatorActionByActor210. Same set, same semantics.
+  const lastEventByActor = await lastCreatorActionByActor210();
   const appsByCreator = {};
   for (const a of applications) {
     if (!a.creatorId) continue;
@@ -980,18 +1074,18 @@ async function buildSuggestionCandidates() {
   for (const d of distCands.slice(0, 2)) push(d.cand);
 
   // ---- maggie.curriculum (C3): who is Maggie failing? ----
-  const asks = events60.filter((e) => e.type === "sig_ask" && Date.parse(e.ts || "") >= now - 30 * 86400000);
+  // Build -210: clusters merge from the day rollups' askClusters
+  // (30 days of stored rollup reads) instead of raw sig_ask
+  // events — same clusters, same receipts.
   const clusters = {};
-  for (const e of asks) {
-    const src = e.data && e.data.source;
-    if (src !== "unavailable" && src !== "convo") continue;
-    const topic = sigAskTopic(e.data && e.data.q);
-    if (!topic) continue;
-    const role = e.actorRole || "creator";
-    const key = `${role}|${topic.key}`;
-    if (!clusters[key]) clusters[key] = { role, topic, count: 0, unanswered: 0, fallback: 0 };
-    clusters[key].count += 1;
-    if (src === "unavailable") clusters[key].unanswered += 1; else clusters[key].fallback += 1;
+  for (const roll of await rollupsInRange(30)) {
+    for (const [key, c] of Object.entries(roll.askClusters || {})) {
+      const role = key.split("|")[0] || "creator";
+      if (!clusters[key]) clusters[key] = { role, topic: { key: key.split("|").slice(1).join("|"), label: c.label }, count: 0, unanswered: 0, fallback: 0 };
+      clusters[key].count += c.count || 0;
+      clusters[key].unanswered += c.unanswered || 0;
+      clusters[key].fallback += c.fallback || 0;
+    }
   }
   const ROLE_PLURAL = { creator: "Creators", business: "Businesses", admin: "Admin", partner: "Partners", pilot_partner: "Pilot partners" };
   const clusterList = Object.values(clusters).filter((c) => c.count >= 3).sort((a, b) => b.count - a.count);
@@ -4098,8 +4192,7 @@ const OFFER_TEMPLATES = [
 ];
 
 async function allApplications() {
-  const rows = await store.list("application:");
-  return rows.map((r) => r.value);
+  return listMemoized210("application:");
 }
 
 // In-app notification: a small record the dashboards read. This is
@@ -6140,9 +6233,30 @@ function publicUser(u) {
   return rest;
 }
 
+// Build -210: version-keyed list memos for the shared list
+// helpers (the memoAggP / bizdev bdMemo discipline). A cold
+// suggestions build walked the same user/offer/booking/post
+// lists three times through its sub-builders; at production
+// Blobs latency each walk is seconds. The memo keys on
+// store.versionFor([prefix]): any write to the prefix in this
+// process invalidates it, and the 30s TTL is the cross-container
+// backstop — the same contract the aggregate memos already run.
+const listMemo210 = new Map();
+async function listMemoized210(prefix) {
+  if (!store.versionFor) return (await store.list(prefix)).map((r) => r.value);
+  // versionFor composes from BARE segment names ("user"), not
+  // key prefixes ("user:") — passing the colon form would pin
+  // the version at 0 and freeze the memo.
+  const seg = prefix.replace(/:$/, "");
+  const hit = listMemo210.get(prefix);
+  if (hit && hit.v === store.versionFor([seg]) && Date.now() - hit.at < 30000) return hit.rows.slice();
+  const rows = (await store.list(prefix)).map((r) => r.value);
+  listMemo210.set(prefix, { v: store.versionFor([seg]), at: Date.now(), rows });
+  return rows.slice();
+}
+
 async function allUsers() {
-  const rows = await store.list("user:");
-  return rows.map((r) => r.value);
+  return listMemoized210("user:");
 }
 
 // ---------- dual-role accounts (Build -180, Jeff, 2026-11-16) ----------
@@ -9606,18 +9720,15 @@ function rateCardFor(c) {
 }
 
 async function allOffers() {
-  const rows = await store.list("offer:");
-  return rows.map((r) => r.value);
+  return listMemoized210("offer:");
 }
 
 async function allBookings() {
-  const rows = await store.list("booking:");
-  return rows.map((r) => r.value);
+  return listMemoized210("booking:");
 }
 
 async function allPosts() {
-  const rows = await store.list("post:");
-  return rows.map((r) => r.value);
+  return listMemoized210("post:");
 }
 
 // Creates the booking for an offer a creator is taking, whether
@@ -24799,6 +24910,11 @@ async function route(event) {
     // loop on acted suggestions, throttled to one pass per 6
     // hours by its own durable stamp.
     (async () => { try { await maybeRunSuggestionOutcomeSweep(); } catch (e) { /* outcome matching is best-effort on the request path */ } })(),
+    // Creator last-action digest backfill (Build -210): a few
+    // days of the pre-digest event log per invocation until the
+    // 62-day window is covered; the suggestions board reads the
+    // digest, never the raw log. Best-effort, resumable.
+    (async () => { try { await maybeBackfillCreatorLastAction210(); } catch (e) { /* digest backfill is best-effort on the request path */ } })(),
   ]);
   preamble202.catch(() => {});
   const ctx = await getAuthUser(event);

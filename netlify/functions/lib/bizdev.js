@@ -272,6 +272,30 @@ async function allLeads(opts) {
   return listPrefix170("bdevlead:", opts);
 }
 
+// Build -210 (item 41): THE lead identity dedupe — one counting
+// basis for every Biz Dev surface. The -202 pass applied this
+// read-time dedupe inside GET /admin/bdev/leads only, so the
+// rolodex (which reads raw records) showed the same business 3–5
+// times and the overview market cards counted raw records (174)
+// against the deduped All leads list (~90). Every surface now
+// runs the same helper: identity = normalized name + city +
+// market; the keeper is the masterId-linked record, else the
+// most recently updated.
+function dedupeLeads210(leads) {
+  // The -202 dedupe map (seen202), factored out of the leads
+  // handler so every Biz Dev surface shares it.
+  const seen202 = new Map();
+  for (const l of leads || []) {
+    if (!l) continue;
+    const k = `${String(l.name || "").trim().toLowerCase()}|${String(l.city || "").trim().toLowerCase()}|${String(l.marketId || l.marketName || "").trim().toLowerCase()}`;
+    const cur = seen202.get(k);
+    if (!cur) { seen202.set(k, l); continue; }
+    const score = (x) => (x.masterId ? 2 : 0) + (Date.parse(x.updatedAt || x.createdAt || "") || 0) / 1e13;
+    if (score(l) > score(cur)) seen202.set(k, l);
+  }
+  return [...seen202.values()];
+}
+
 // ---------------- Build -170: the Biz Dev CRM ----------------
 // The rolodex: every contact a seller works with, in one place.
 // Lead contacts are READ from the lead records' own contact
@@ -288,8 +312,12 @@ async function rolodexEntries170(ownerUserId, seat) {
   const users = await allUsers170();
   const nameOf = (uid) => { const u = users.find((x) => x.id === uid); return u ? (u.name || u.email || uid) : uid; };
   const out = [];
-  for (const l of await allLeads()) {
-    if (ownerUserId && (seat ? !leadInSeatBook(l, seat) : l.assignedRepId !== ownerUserId)) continue;
+  // Build -210 (item 41): the rolodex runs the same lead dedupe
+  // as every other Biz Dev surface — duplicate lead records for
+  // one business (the same shop carried in several books) used to
+  // emit one card per record, so a business showed 3–5 times.
+  const bookLeads = dedupeLeads210((await allLeads()).filter((l) => !(ownerUserId && (seat ? !leadInSeatBook(l, seat) : l.assignedRepId !== ownerUserId))));
+  for (const l of bookLeads) {
     if (!(l.dmName || l.email || l.phone1 || l.phone2)) continue;
     // Build -188 (PL-20): every entry carries its KIND so the
     // rolodex can say what it is. A lead with no named decision
@@ -319,8 +347,26 @@ async function rolodexEntries170(ownerUserId, seat) {
       });
     }
   }
+  // Build -210 (item 41): a hand-added contact that is the same
+  // person as a lead contact (same email, or same name+business
+  // when neither carries an email) shows once — the lead entry,
+  // which carries the Open-the-lead door. Hand-added duplicates
+  // of each other collapse the same way.
+  const contactKey210 = (name, business, email) => {
+    const e = String(email || "").trim().toLowerCase();
+    if (e) return "e:" + e;
+    const n = String(name || "").trim().toLowerCase();
+    const b = String(business || "").trim().toLowerCase();
+    return n || b ? `n:${n}|${b}` : null;
+  };
+  const leadKeys210 = new Set();
+  for (const e of out) { const k = contactKey210(e.name, e.business, e.email); if (k) leadKeys210.add(k); }
+  const addedSeen210 = new Set();
   for (const c of await listPrefix170("bdevcontact:")) {
     if (ownerUserId && c.ownerId !== ownerUserId) continue;
+    const k = contactKey210(c.name, c.business, c.email);
+    if (k && (leadKeys210.has(k) || addedSeen210.has(k))) continue;
+    if (k) addedSeen210.add(k);
     out.push({
       id: c.id, source: "added", leadId: null,
       name: c.name || "", business: c.business || "", role: c.role || "",
@@ -2834,6 +2880,9 @@ async function handleBizdevApi({ user, seg, method, event, query }) {
     else if (filter === "thinking") leads = leads.filter((l) => ["Talked — needs to think", "Talked — wants a follow-up", "Visited — owner not in"].includes(l.stage));
     else if (filter === "claimed") leads = leads.filter((l) => l.stage === STAGE_CLAIMED);
     else if (filter === "checked") leads = leads.filter((l) => l.hqDecision && l.hqDecision.decision === "rejected");
+    // Build -210 (item 41): one business, one row in the rep's
+    // book too — the same dedupeLeads210 basis as HQ's surfaces.
+    leads = dedupeLeads210(leads);
     leads.sort((a, b) => String((a.nextAction && a.nextAction.date) || "9999").localeCompare(String((b.nextAction && b.nextAction.date) || "9999")));
     // Viewing the list clears the "new" badge.
     for (const l of leads) if (l.isNewForRep) { l.isNewForRep = false; await saveLead(l); }
@@ -3424,7 +3473,15 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     return json(200, { orders: await ordersOf170(null) });
   }
   if (method === "GET" && sub === "overview" && seg.length === 3) {
-    const leads = await allLeads();
+    const rawLeads = await allLeads();
+    // Build -210 (item 41): market counts and the status rollup
+    // run on the SAME deduped basis as the All leads list (one
+    // business counted once) — the cards used to count raw
+    // records (Hampton Roads 98 + Nashville 76 = 174) against a
+    // ~90-row list. The pending-approval queue below stays on the
+    // raw set: it is an action queue, and an approval must never
+    // hide behind a dedupe.
+    const leads = dedupeLeads210(rawLeads);
     const seats = (await store().list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active);
     const users = await allUsers170();
     const byId = new Map(users.map((u) => [u.id, u]));
@@ -3445,7 +3502,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const escalations = (await listPrefix170("bdevesc:")).filter((v) => v && v.status === "open")
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    const pendingLeads = leads.filter((l) => l.pendingApproval);
+    const pendingLeads = rawLeads.filter((l) => l.pendingApproval);
     const pendingReferrals = (await listPrefix170("bdevpending:")).filter((v) => v && v.status === "pending");
     const acts = await allActivations();
     for (const mid of Object.keys(markets)) markets[mid].active = acts.filter((a) => a.marketId === mid).length;
@@ -3473,9 +3530,19 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       m.byNeighborhood = [...m._nb.values()].sort((a, b) => a.neighborhood.localeCompare(b.neighborhood) || a.city.localeCompare(b.city));
       delete m._city; delete m._nb;
     }
-    const prewarm = (await listPrefix170("bdevprewarm:"))
-      .map((r) => ({ leadId: r.leadId, business: r.business, toName: r.toName, draft: r.draft }))
-      .sort((a, b) => String(a.business).localeCompare(String(b.business)));
+    // Build -210 (item 41): one pre-warm draft per business +
+    // recipient — duplicate lead records each carried a draft
+    // ("Commune · for Kevin" twice). The surviving draft is the
+    // one attached to the dedupe keeper lead when there is one.
+    const keeperIds210 = new Set(leads.map((l) => l.id));
+    const pwSeen210 = new Map();
+    for (const r of await listPrefix170("bdevprewarm:")) {
+      const p = { leadId: r.leadId, business: r.business, toName: r.toName, draft: r.draft };
+      const k = `${String(p.business || "").trim().toLowerCase()}|${String(p.toName || "").trim().toLowerCase()}`;
+      const cur = pwSeen210.get(k);
+      if (!cur || (keeperIds210.has(p.leadId) && !keeperIds210.has(cur.leadId))) pwSeen210.set(k, p);
+    }
+    const prewarm = [...pwSeen210.values()].sort((a, b) => String(a.business).localeCompare(String(b.business)));
     const latestByRep = (rows) => {
       const map = new Map();
       for (const r of rows) {
@@ -3527,8 +3594,11 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     if (qp.neighborhood) leads = leads.filter((l) => (l.neighborhood || "") === qp.neighborhood);
     if (qp.status) leads = leads.filter((l) => statusOf(l) === qp.status);
     leads.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    // Build -202: read-time dedupe by normalized name+city+market, preferring masterId-linked / most recent.
-    { const seen202 = new Map(); for (const l of leads) { const k = `${String(l.name || "").trim().toLowerCase()}|${String(l.city || "").trim().toLowerCase()}|${String(l.marketId || l.marketName || "").trim().toLowerCase()}`; const cur = seen202.get(k); if (!cur) { seen202.set(k, l); continue; } const score202 = (x) => (x.masterId ? 2 : 0) + (Date.parse(x.updatedAt || x.createdAt || "") || 0) / 1e13; if (score202(l) > score202(cur)) seen202.set(k, l); } leads = [...seen202.values()]; }
+    // Build -202: read-time dedupe by normalized name+city+market,
+    // preferring masterId-linked / most recent. Build -210: the
+    // shared dedupeLeads210 helper — the same basis the rolodex
+    // and the overview counts now use (item 41).
+    leads = dedupeLeads210(leads);
     return json(200, { leads: leads.map((l) => adminLeadPayload(l)), facets });
   }
 
