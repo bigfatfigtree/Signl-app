@@ -16,6 +16,11 @@
 //        note; what is counted does not change.
 //   Charlottesville — layers and the outside-listed panel use the
 //        SAME region label (state preferred) from one helper.
+//        Fixture note (Build -207 merge): Charlottesville itself is
+//        a real market since Build -207, and its unlisted records
+//        are filed by the -207 refile pass, so the live label rule
+//        is exercised on Lynchburg (same state, not a market) while
+//        the Charlottesville rows assert the filed end state.
 //   D3 — the stray QA artifact files from merge a47ad95 are gone.
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -62,7 +67,7 @@ check("layers first column renamed to All sign-ups", appJs.includes("<th>All sig
 check("layers panel carries the basis note", appJs.includes("All sign-ups counts every creator record in the row") && appJs.includes("matches the Approved column here"));
 check("layers counting itself unchanged (creators increments for every non-tester creator record)", routerJs.includes("row.creators += 1;"));
 
-console.log("== Charlottesville (static): one shared display helper ==");
+console.log("== unlisted place labels (static): one shared display helper ==");
 check("shared helper exists and prefers the state name", routerJs.includes("function unlistedDisplayByKey208") && routerJs.includes("function unlistedDisplayPlace208") && routerJs.includes("US_STATE_NAMES_202.has(st.toLowerCase())"));
 check("stats layers + outside panel + board + aggregates all read the shared helper", (routerJs.match(/unlistedDisplayByKey208\(/g) || []).length >= 3 && (routerJs.match(/unlistedDisp208\.get\(/g) || []).length >= 4);
 
@@ -92,6 +97,12 @@ function creatorSeed(id, email, name, handle, market, opts = {}) {
   put(creatorSeed("crcvlegacy", "cvlegacy@fixtures.dev", "CV Legacy", "cvlegacy", "Charlottesville", { city: "Charlottesville", country: "United States" }));
   put(creatorSeed("crcvstate", "cvstate@fixtures.dev", "CV State", "cvstate", "Not listed yet", { city: "Charlottesville", state: "Virginia" }));
   put(creatorSeed("crcvcountry", "cvcountry@fixtures.dev", "CV Country", "cvcountry", "Not listed yet", { city: "Charlottesville", country: "United States" }));
+  // Lynchburg: 2 unlisted sign-ups (one state-only, one country-only).
+  // Not a market, so these stay unlisted and exercise the -208 label
+  // rule exactly as the Charlottesville pair did before Build -207
+  // made Charlottesville a market and filed its records.
+  put(creatorSeed("crlbstate", "lbstate@fixtures.dev", "LB State", "lbstate", "Not listed yet", { city: "Lynchburg", state: "Virginia" }));
+  put(creatorSeed("crlbcountry", "lbcountry@fixtures.dev", "LB Country", "lbcountry", "Not listed yet", { city: "Lynchburg", country: "United States" }));
   // One pending creator so the waiting suggestion fires (D5 live).
   put(creatorSeed("crpend208", "pend208@fixtures.dev", "Pending 208", "pending208", "Virginia Beach", { status: "pending" }));
   fs.writeFileSync(DB, JSON.stringify(seed));
@@ -162,17 +173,22 @@ try {
   check("waiting text says 'They sit in Review.'", !!wait && /They sit in Review\./.test(wait.text), wait && wait.text);
   check("waiting door is labelled Open Review", !!wait && !!wait.action && wait.action.label === "Open Review", JSON.stringify(wait && wait.action));
 
-  console.log("== Charlottesville + layers (live payload) ==");
+  console.log("== Charlottesville + Lynchburg + layers (live payload) ==");
   const st = await admin("GET", "/api/admin/stats", undefined, base);
   check("stats answers 200", st.status === 200, String(st.status));
   const layerRows = ((st.data && st.data.layers && st.data.layers.markets) || []);
   const cvRows = layerRows.filter((r) => /Charlottesville/.test(r.market || ""));
   check("Charlottesville appears exactly once in layers", cvRows.length === 1, JSON.stringify(layerRows.map((r) => r.market)));
-  check("layers label uses the state name", cvRows.length === 1 && cvRows[0].market === "Charlottesville, Virginia", cvRows.length && cvRows[0].market);
+  check("layers label for Charlottesville is the market name (Build -207 filed its unlisted records)", cvRows.length === 1 && cvRows[0].market === "Charlottesville", cvRows.length && cvRows[0].market);
+  const lbRows = layerRows.filter((r) => /Lynchburg/.test(r.market || ""));
+  check("Lynchburg appears exactly once in layers", lbRows.length === 1, JSON.stringify(layerRows.map((r) => r.market)));
+  check("layers label uses the state name", lbRows.length === 1 && lbRows[0].market === "Lynchburg, Virginia", lbRows.length && lbRows[0].market);
   check("layers counts all 3 records, 3 approved, 3 finished", cvRows.length === 1 && cvRows[0].creators === 3 && cvRows[0].approved === 3 && cvRows[0].complete === 3, JSON.stringify(cvRows[0] || {}));
   const outside = (st.data && st.data.unlistedByCity) || [];
   const cvOut = outside.filter((r) => /Charlottesville/.test(r.place || ""));
-  check("outside panel: one Charlottesville row with the SAME label", cvOut.length === 1 && cvOut[0].place === "Charlottesville, Virginia" && cvOut[0].creators === 2, JSON.stringify(cvOut));
+  check("outside panel: no Charlottesville row (Build -207 refile filed both unlisted records)", cvOut.length === 0, JSON.stringify(cvOut));
+  const lbOut = outside.filter((r) => /Lynchburg/.test(r.place || ""));
+  check("outside panel: one Lynchburg row with the SAME label", lbOut.length === 1 && lbOut[0].place === "Lynchburg, Virginia" && lbOut[0].creators === 2, JSON.stringify(lbOut));
 } finally {
   server.kill("SIGTERM");
 }
