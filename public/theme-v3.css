@@ -2496,3 +2496,33 @@ body.v3-slim .ham137-panel .more-row, body.v3-slim .ev125-panel .more-row, body.
 [data-uxfold] .uxfold-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 [data-uxfold].ux-closed .uxfold-body { display: none; }
 .uxfold-btn { background: none; border: 1px solid var(--line2, #DFE7DF); border-radius: 999px; padding: 4px 13px; font: inherit; font-size: .78rem; font-weight: 700; color: var(--ink2); cursor: pointer; flex: none; }
+/* Build -213: Book the Block, Maggie pitches, Money next move.
+   Gradient is the locked Magpie blue -> green; navy #0A1F44 in family. */
+.btb-hero { background: linear-gradient(120deg, #0A1F44 0%, #0d2b5c 55%, #07332e 130%); color: #fff; border-radius: 18px; padding: 20px 20px 16px; margin: 0 0 16px; }
+.btb-hero h2 { color: #fff; margin: 0 0 4px; font-size: 24px; letter-spacing: -.02em; }
+.btb-hero .btb-sub { color: rgba(255,255,255,.82); margin: 0; font-size: 14px; line-height: 1.45; }
+.btb-grad-text { background: linear-gradient(93deg, #006afc 0%, #019bfc 38%, #03c9ab 74%, #2fe07e 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.btb-proof { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 16px; }
+.btb-proof .btb-pcard { background: var(--card, #fff); border: 1px solid rgba(10,31,68,.10); border-radius: 14px; padding: 14px 12px; text-align: left; }
+.btb-proof .btb-pnum { font-size: 26px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+.btb-proof .btb-plab { font-size: 12.5px; color: #5b6b84; margin-top: 5px; line-height: 1.35; }
+.btb-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 4px; border-bottom: 1px solid rgba(10,31,68,.08); }
+.btb-row:last-child { border-bottom: none; }
+.btb-row .btb-main { flex: 1; min-width: 0; }
+.btb-row .btb-name { font-weight: 600; font-size: 15px; }
+.btb-row .btb-meta { font-size: 13px; color: #5b6b84; line-height: 1.45; margin-top: 2px; }
+.btb-band { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2.5px 8px; border-radius: 999px; background: rgba(3,201,171,.14); color: #046c5d; white-space: nowrap; }
+.btb-band.far { background: rgba(0,106,252,.10); color: #0a4fa3; }
+.btb-pick { width: 26px; height: 26px; border-radius: 8px; border: 1.5px solid rgba(10,31,68,.25); background: #fff; cursor: pointer; flex: none; margin-top: 2px; font-size: 15px; line-height: 1; color: transparent; }
+.btb-pick.on { background: linear-gradient(93deg, #006afc, #03c9ab); border-color: transparent; color: #fff; }
+.btb-bookbar { background: #0A1F44; color: #fff; border-radius: 14px; padding: 12px 14px; display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.btb-bookbar .btb-bb-t { flex: 1; font-size: 13.5px; line-height: 1.4; }
+.btb-bookbar button { flex: none; }
+.mp-card { border: 1px solid rgba(10,31,68,.10); border-left: 4px solid #03c9ab; border-radius: 14px; padding: 14px 16px; margin: 0 0 12px; background: var(--card, #fff); }
+.mp-card .mp-t { font-weight: 600; font-size: 15px; margin: 0 0 3px; }
+.mp-card .mp-s { font-size: 13.5px; color: #42536e; line-height: 1.5; margin: 0; }
+.mp-card .mp-acts { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.money-next { background: linear-gradient(120deg, #0A1F44, #0d2b5c 60%, #07332e 135%); color: #fff; border-radius: 16px; padding: 16px 18px; margin: 0 0 16px; }
+.money-next .mn-k { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #7fe3c3; margin: 0 0 5px; }
+.money-next .mn-t { font-size: 17px; font-weight: 600; margin: 0 0 4px; line-height: 1.35; }
+.money-next .mn-s { font-size: 13.5px; color: rgba(255,255,255,.85); margin: 0 0 12px; line-height: 1.5; }

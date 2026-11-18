@@ -2632,6 +2632,7 @@ RAIL_SHORT["Discover"] = "Creators";
 RAIL_SHORT["Find Offers"] = "Find";
 RAIL_SHORT["Earnings"] = "Wallet";
 RAIL_SHORT["Plan"] = "Wallet";
+RAIL_SHORT["Block"] = "Block";
 RAIL_SHORT["My Visits"] = "Visits";
 RAIL_SHORT["Visits & Posts"] = "Visits";
 function railRowItems() {
@@ -2705,7 +2706,7 @@ function tabItemsFor() {
     return [
       ...bizHead189,
       { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
-      ...extraIn137(rows, ["Campaign Setup", "My Offers", "Visits & Posts", "Profile", "Plan", "Analytics", "Regulars", "Content", "Favorites", "Messages", "Settings", "Help"], ["Home", "Sig", "Discover"]),
+      ...extraIn137(rows, ["Block", "Campaign Setup", "My Offers", "Visits & Posts", "Profile", "Plan", "Analytics", "Regulars", "Content", "Favorites", "Messages", "Settings", "Help"], ["Home", "Sig", "Discover"]),
     ];
   }
   if (u.role === "creator") {
@@ -2779,6 +2780,7 @@ function moreRowsFor() {
   }
   if (u.role === "business") {
     return [
+      { icon: "pin", label: "Book the Block", sub: "The creators closest to your door, booked together.", tab: "Block" },
       { icon: "notice", label: "Start a campaign", sub: "Build a new campaign, step by step or with Maggie.", tab: "Campaign Setup" },
       { icon: "bars", label: "Your campaigns", sub: "Current and past campaigns, who applied, and what they did.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
       { icon: "calendar", label: "Visits", sub: "Visits and posts. The counter is inside.", tab: "Visits & Posts", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
@@ -3157,6 +3159,7 @@ function hamburgerGroups137() {
       { title: "Sell", rows: [
         R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
         R("deck", "Find creators", "Shop local creators near you", "Discover"),
+        R("pin", "Book the Block", "The creators closest to your door, booked together", "Block"),
         R("notice", "Start a campaign", "Build a new campaign, step by step or with Maggie", "Campaign Setup"),
         R("bars", "Your campaigns", "Current and past campaigns, who applied, and what they did", "My Offers", { badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) }),
         R("heart", "Saved creators", "Your shortlist", "Favorites", { badge: wc.bizSaved || 0 }),
@@ -5958,15 +5961,266 @@ function renderMomentumTab() {
 // at face value — value received, never cash, never added
 // into a cash total), History (the combined dated ledger,
 // each line tagged Cash or Comp).
+// ---------- Build -213: Book the Block, Maggie pitches, Money ----------
+// Business Block tab + the home panels + the Wallet money top.
+// Every number on these surfaces comes from the -213 endpoints;
+// nothing is estimated client-side beyond adding up the roster's
+// own neighbor counts (labeled potential when extrapolated).
+state.blockPicks213 = state.blockPicks213 || new Set();
+state.blockRoster213 = state.blockRoster213 || [];
+state.blockMeta213 = state.blockMeta213 || null;
+
+function btbBandChip213(band) {
+  if (!band) return "";
+  return `<span class="btb-band${band === "Same neighborhood" ? "" : " far"}">${esc(band)}</span>`;
+}
+function btbRowHtml213(m) {
+  const on = state.blockPicks213.has(m.userId);
+  return `<div class="btb-row">
+    <button type="button" class="btb-pick${on ? " on" : ""}" data-btb-pick="${esc(m.userId)}" onclick="return blockTogglePick213('${esc(m.userId)}')" aria-label="Pick ${esc(m.handle ? "@" + m.handle : m.name)}">&#10003;</button>
+    <div class="btb-main">
+      <div class="btb-name">${m.photoUrl ? `<img src="${esc(m.photoUrl)}" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:-7px;margin-right:7px">` : ""}${esc(m.name || "")} <span class="muted" style="font-weight:400">@${esc(m.handle || "")}</span></div>
+      <div class="btb-meta"><strong>${fmtNum(m.localFollowers)} of their followers are in ${esc(state.blockMeta213 ? state.blockMeta213.market : "your market")}</strong> (${m.localPct === null ? "local share not reported" : m.localPct + "% local"}) &middot; ${fmtNum(m.totalAudience)} total audience${m.goodFit ? ` &middot; <span style="color:#046c5d;font-weight:600">Good fit for your business</span>` : ""}${m.paidRate ? ` &middot; Paid rate $${fmtPrice(m.paidRate)}` : ""}${m.compOpen ? "" : " &middot; Paid bookings only"}</div>
+    </div>
+    ${btbBandChip213(m.band)}
+  </div>`;
+}
+function blockPickedTotals213() {
+  const picked = state.blockRoster213.filter((m) => state.blockPicks213.has(m.userId));
+  return { n: picked.length, neighbors: picked.reduce((s, m) => s + (m.neighborCount || 0), 0), extrapolated: picked.some((m) => m.neighborExtrapolated) };
+}
+function blockBookBarHtml213() {
+  const t = blockPickedTotals213();
+  const meta = state.blockMeta213 || {};
+  const label = meta.founding || !meta.marketLive ? "Save for opening day" : "Book my Block";
+  return `<div class="btb-bb-t">${t.n ? `<strong>${t.n} creator${t.n === 1 ? "" : "s"} picked</strong> &middot; ${fmtNum(t.neighbors)} ${t.extrapolated ? "total potential neighbors" : "neighbors"} between them` : "Tap the check next to up to 5 creators above, then book them together here."}</div>
+  <button type="button" class="btn ws-primary" ${t.n ? "" : "disabled"} onclick="return blockBookSubmit213()">${label}</button>`;
+}
+function blockPickLineHtml213() {
+  const t = blockPickedTotals213();
+  return t.n ? `<strong>${t.n} of 5 picked</strong> &middot; ${fmtNum(t.neighbors)} ${t.extrapolated ? "total potential neighbors" : "neighbors"} between them. The booking form is right below.` : "Tap the check next to up to 5 creators to book them together.";
+}
+function blockTogglePick213(id) {
+  if (state.blockPicks213.has(id)) state.blockPicks213.delete(id);
+  else {
+    if (state.blockPicks213.size >= 5) { alert("One Block booking holds up to 5 creators. Book this group first, then start another."); return false; }
+    state.blockPicks213.add(id);
+  }
+  document.querySelectorAll(`[data-btb-pick="${CSS.escape(id)}"]`).forEach((b) => b.classList.toggle("on", state.blockPicks213.has(id)));
+  const bar = document.getElementById("btb-bookbar");
+  if (bar) bar.innerHTML = blockBookBarHtml213();
+  const line = document.getElementById("btb-pickline");
+  if (line) line.innerHTML = blockPickLineHtml213();
+  return false;
+}
+function blockKindChange213() {
+  const paid = document.querySelector("input[name='btb-kind']:checked") && document.querySelector("input[name='btb-kind']:checked").value === "paid";
+  const lab = document.getElementById("btb-cap-label");
+  if (lab) lab.textContent = paid ? "Your rate per creator (what you pay for the visit)" : "Value of the visit (what the comp is worth)";
+  return false;
+}
+async function blockBookSubmit213() {
+  const meta = state.blockMeta213 || {};
+  const kind = document.querySelector("input[name='btb-kind']:checked") ? document.querySelector("input[name='btb-kind']:checked").value : "comp";
+  const title = (document.getElementById("btb-title") || {}).value || "";
+  const whatComped = (document.getElementById("btb-what") || {}).value || "";
+  const cap = Number((document.getElementById("btb-cap") || {}).value || 0);
+  const timingWindow = (document.getElementById("btb-window") || {}).value || "week";
+  const covers = Number((document.getElementById("btb-covers") || {}).value || 1);
+  const out = document.getElementById("btb-result");
+  if (!title.trim() || !whatComped.trim()) { if (out) out.innerHTML = `<div class="error-box">Give the visit a title and say what is included, then book.</div>`; return false; }
+  if (!cap || cap <= 0) { if (out) out.innerHTML = `<div class="error-box">${kind === "paid" ? "Add your rate per creator." : "Add the value of the visit."}</div>`; return false; }
+  try {
+    const body = { creatorIds: [...state.blockPicks213], kind, title, whatComped, timingWindow, covers };
+    if (kind === "paid") body.cashRate = cap; else body.dollarCap = cap;
+    const r = await api("POST", "/block/book", body);
+    const res = r.results || [];
+    const sent = res.filter((x) => x.status === "open");
+    const drafted = res.filter((x) => x.status === "draft");
+    const other = res.filter((x) => x.status !== "open" && x.status !== "draft");
+    const lines = [];
+    if (sent.length) lines.push(`<strong>${sent.length} invite${sent.length === 1 ? "" : "s"} sent.</strong> Those creators can accept now, and every visit lands on your proof board below.`);
+    if (drafted.length) lines.push(`<strong>${drafted.length} invite${drafted.length === 1 ? "" : "s"} saved for opening day.</strong> Your business is on the founding list, so these go out the day your market opens. Nothing is charged and nothing is promised before then.`);
+    for (const x of other) lines.push(`@${esc(x.handle || "One creator")}: ${x.status === "skipped" ? "already has this invite open, so we did not send it twice." : esc(x.reason || "could not be sent.")}`);
+    if (out) out.innerHTML = `<div class="wcard" style="border-left:4px solid #03c9ab"><p style="margin:0;line-height:1.55">${lines.join("<br>")}</p></div>`;
+    state.blockPicks213.clear();
+    document.querySelectorAll("[data-btb-pick]").forEach((b) => b.classList.remove("on"));
+    const bar = document.getElementById("btb-bookbar");
+    if (bar) bar.innerHTML = blockBookBarHtml213();
+    const line = document.getElementById("btb-pickline");
+    if (line) line.innerHTML = blockPickLineHtml213();
+  } catch (e) {
+    if (out) out.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  }
+  return false;
+}
+function pitchCardHtml213(p, forRole) {
+  return `<div class="mp-card" data-pitch-card="${esc(p.id)}">
+    <div style="display:flex;gap:10px;align-items:flex-start">${sigAvatarHtml("")}<div style="flex:1;min-width:0">
+    <p class="mp-t">Maggie pitched ${forRole === "creator" ? `you to ${esc(p.otherName || "a business")}` : `${esc(p.otherName || "a creator")} to you`}</p>
+    <p class="mp-s">${esc(p.text || "")}</p>
+    <div class="mp-acts">
+      ${p.saved ? `<span class="badge ok">Saved</span>` : `<button type="button" class="btn small-btn ws-primary" onclick="return pitchAct213('${esc(p.id)}','save')">Save</button>`}
+      <button type="button" class="btn small-btn ws-outline" onclick="return pitchAct213('${esc(p.id)}','dismiss')">Not for me</button>
+      ${forRole === "business" ? `<button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Block')">Open my Block</button>` : ""}
+    </div></div></div>
+  </div>`;
+}
+async function pitchAct213(id, action) {
+  try {
+    await api("POST", `/me/pitches/${id}`, { action });
+    const card = document.querySelector(`[data-pitch-card="${CSS.escape(id)}"]`);
+    if (action === "dismiss" && card) card.remove();
+    if (action === "save" && card) { const acts = card.querySelector(".mp-acts"); if (acts) acts.innerHTML = `<span class="badge ok">Saved</span>`; }
+  } catch (e) { /* the card stays as it was; the next load tells the truth */ }
+  return false;
+}
+async function renderBlockTab213() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `${wsHead("Book the Block", { sub: "The creators whose followers live closest to your door, booked in one tap, with proof it worked.", subKey: "biz-block" })}${skelHtml("Loading your Block...", 2)}`;
+  try {
+    const [bd, pd, pr] = await Promise.all([
+      api("GET", "/block").catch(() => null),
+      api("GET", "/me/pitches").catch(() => ({ pitches: [] })),
+      api("GET", "/block/proof").catch(() => null),
+    ]);
+    if (!document.getElementById("tab-body")) return;
+    if (!bd) { el.innerHTML = `${wsHead("Book the Block")}<div class="error-box">Your Block could not load. Try again in a moment.</div>`; return; }
+    state.blockRoster213 = bd.roster || [];
+    state.blockMeta213 = { market: bd.market, marketLive: bd.marketLive, founding: bd.founding };
+    const roster = state.blockRoster213;
+    const proof = pr && pr.hasBookings ? `
+  <div class="btb-proof">
+    <div class="btb-pcard"><div class="btb-pnum">${fmtNum(pr.totals.checkedIn)}</div><div class="btb-plab">Checked in<br>creators who showed up</div></div>
+    <div class="btb-pcard"><div class="btb-pnum">${fmtNum(pr.totals.postsLive)}</div><div class="btb-plab">Posts live<br>about your business</div></div>
+    <div class="btb-pcard"><div class="btb-pnum">${fmtNum(pr.totals.redeemed)}</div><div class="btb-plab">Redeemed<br>neighbors who came in</div></div>
+  </div>
+  <p class="small muted" style="margin:0 2px 14px">Those posts reached about <strong>${fmtNum(pr.totals.neighborsReached)} neighbors</strong>, counted from each creator's own local audience. Every booking you make reports back here.</p>` : `
+  <div class="empty-card"><div class="ec-t">Your proof board is ready when you are</div><div class="ec-s">Book your first Block below. When creators check in, post, and bring neighbors in, the counts land here where you can read them at a glance.</div></div>`;
+    const picks = (pd.pitches || []).slice(0, 3);
+    const picksHtml = picks.length ? `<h3 style="margin:20px 0 8px">Maggie's picks for you</h3>${picks.map((p) => pitchCardHtml213(p, "business")).join("")}` : "";
+    const forming = roster.length < 2 ? `<div class="empty-card"><div class="ec-t">Your Block is still forming in ${esc(bd.market)}</div><div class="ec-s">${roster.length === 1 ? "One creator is listed so far, below. " : ""}Maggie adds creators the moment they finish their profiles, and your Block fills in on its own. Whoever is here is real and bookable today.</div></div>` : "";
+    const history = (bd.blocks || []).length ? `<h3 style="margin:22px 0 6px">Your Block bookings</h3><div class="wcard" style="padding-top:6px;padding-bottom:6px">${(bd.blocks || []).map((x) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(x.title)}</div><div class="lib-meta">${esc(fmtDay(x.createdAt))} &middot; ${x.memberCount} creator${x.memberCount === 1 ? "" : "s"} &middot; ${x.sent} sent &middot; ${x.drafted} saved for opening day${x.skipped ? ` &middot; ${x.skipped} skipped` : ""}</div></div><span class="badge info">${x.kind === "paid" ? "Paid" : "Comp"}</span></div>`).join("")}</div>` : "";
+    el.innerHTML = `
+  ${wsHead("Book the Block", { sub: "The creators whose followers live closest to your door, booked in one tap, with proof it worked.", subKey: "biz-block" })}
+  <div class="btb-hero">
+    <h2>Your block, <span class="btb-grad-text">booked in one tap.</span></h2>
+    <p class="btb-sub">${roster.length} creator${roster.length === 1 ? "" : "s"} listed in ${esc(bd.market)}, nearest your door first, ranked by how many of their followers actually live here.${bd.founding || !bd.marketLive ? " Your business is on the founding list, so bookings save as drafts and go out on opening day." : ""}</p>
+  </div>
+  ${proof}
+  ${picksHtml}
+  <h3 style="margin:20px 0 4px">Pick your Block</h3>
+  <p class="small muted" style="margin:0 2px 6px">Nearest first. The number that ranks them is followers in ${esc(bd.market)}, from each creator's own audience.</p>
+  ${forming}
+  ${roster.length ? `<div class="wcard" style="padding-top:4px;padding-bottom:4px">${uxCap203(roster.map(btbRowHtml213), 8)}</div>
+  <p class="small" id="btb-pickline" style="margin:10px 2px 0">${blockPickLineHtml213()}</p>` : ""}
+  ${roster.length ? `
+  <div class="wcard" style="margin-top:16px">
+    <h3 style="margin-top:0">The visit</h3>
+    <div class="field"><label>Comped or paid?</label>
+      <div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:2px">
+        <label style="font-weight:400;display:inline-flex;align-items:center;gap:7px;margin:0"><input type="radio" name="btb-kind" value="comp" checked onchange="return blockKindChange213()" style="width:auto;margin:0"> Comped visit</label>
+        <label style="font-weight:400;display:inline-flex;align-items:center;gap:7px;margin:0"><input type="radio" name="btb-kind" value="paid" onchange="return blockKindChange213()" style="width:auto;margin:0"> Paid visit</label>
+      </div>
+    </div>
+    <div class="field"><label for="btb-title">Title</label><input id="btb-title" type="text" maxlength="140" placeholder="Weekend tasting at ${esc(bd.businessName || "your business")}"></div>
+    <div class="field"><label for="btb-what">What is included</label><input id="btb-what" type="text" maxlength="600" placeholder="Dinner for two, on the house"></div>
+    <div class="field"><label id="btb-cap-label" for="btb-cap">Value of the visit (what the comp is worth)</label><input id="btb-cap" type="number" min="1" step="1" placeholder="75"></div>
+    <div class="field"><label for="btb-covers">Who is covered?</label><select id="btb-covers"><option value="1">Just the creator</option><option value="2" selected>The creator plus a guest</option></select></div>
+    <div class="field"><label for="btb-window">When</label>
+      <select id="btb-window"><option value="week">Any day in the next 7 days</option><option value="thisweek">This week</option><option value="nextweek">Next week</option><option value="twoweeks">Within two weeks</option></select>
+    </div>
+    <div id="btb-result"></div>
+    <div class="btb-bookbar" id="btb-bookbar">${blockBookBarHtml213()}</div>
+  </div>` : ""}
+  ${history}`;
+    renderBottomNav();
+  } catch (e) {
+    el.innerHTML = `${wsHead("Book the Block")}<div class="error-box">${esc(e.message)}</div>`;
+  }
+}
+// The home panels: business gets its Block teaser + Maggie's
+// picks; creators get Maggie's pitches + the businesses near
+// their followers. Inserted once the home's own content lands;
+// silent when there is nothing true to show.
+async function loadBlockHome213(role) {
+  const tabAtCall = state.tab;
+  let tries = 0;
+  const timer = setInterval(async () => {
+    tries += 1;
+    if (state.tab !== tabAtCall) { clearInterval(timer); return; }
+    if (tries > 24 || document.getElementById("block-home-213")) { clearInterval(timer); return; }
+    const hostIds = role === "business" ? ["tab-body"] : ["creator-home", "founding-dash", "tab-body"];
+    let host = null;
+    for (const id of hostIds) { const n = document.getElementById(id); if (n && !/Loading your/.test(n.textContent || "")) { host = n; break; } }
+    if (!host) return;
+    clearInterval(timer);
+    const div = document.createElement("div");
+    div.id = "block-home-213";
+    host.insertBefore(div, host.children[1] || null);
+    try {
+      if (role === "business") {
+        const [pd, bd, pr] = await Promise.all([api("GET", "/me/pitches").catch(() => null), api("GET", "/block").catch(() => null), api("GET", "/block/proof").catch(() => null)]);
+        if (!bd) { div.remove(); return; }
+        const picks = (pd && pd.pitches ? pd.pitches : []).slice(0, 2);
+        div.innerHTML = `
+  <div class="wcard" style="border-left:4px solid #006afc">
+    <h3 style="margin:0 0 4px">Book the Block</h3>
+    <p class="small" style="margin:0;line-height:1.5">${(bd.roster || []).length} creators listed in ${esc(bd.market)}, nearest your door first.${pr && pr.hasBookings ? ` So far: ${fmtNum(pr.totals.checkedIn)} checked in, ${fmtNum(pr.totals.postsLive)} posts live, ${fmtNum(pr.totals.redeemed)} redeemed.` : ""}</p>
+    <div class="mt"><button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Block')">Open my Block</button></div>
+  </div>
+  ${picks.map((p) => pitchCardHtml213(p, "business")).join("")}`;
+      } else {
+        const [pd, fd] = await Promise.all([api("GET", "/me/pitches").catch(() => null), api("GET", "/block/for-me").catch(() => null)]);
+        const pitches = pd && pd.pitches ? pd.pitches : [];
+        const biz = fd && fd.businesses ? fd.businesses : [];
+        if (!pitches.length && !biz.length) { div.remove(); return; }
+        const weekCount = pd ? pd.thisWeek || 0 : 0;
+        div.innerHTML = `
+  ${weekCount ? `<div class="mp-card"><div style="display:flex;gap:10px;align-items:flex-start">${sigAvatarHtml("")}<div style="flex:1;min-width:0"><p class="mp-t">Maggie pitched you to ${weekCount} business${weekCount === 1 ? "" : "es"} this week</p><p class="mp-s">She matches you with businesses near the followers you already have. When they book, the invite lands in your Offers like any other.</p></div></div></div>` : ""}
+  ${pitches.slice(0, 2).map((p) => pitchCardHtml213(p, "creator")).join("")}
+  ${biz.length ? `<div class="wcard"><h3 style="margin:0 0 4px">Businesses near your followers</h3><p class="small muted" style="margin:0 0 6px">On the streets where your audience lives. Maggie is pitching you in.</p>${biz.slice(0, 5).map((x) => `<div class="btb-row"><div class="btb-main"><div class="btb-name">${esc(x.businessName)}</div><div class="btb-meta">${esc(x.category || "")} &middot; ${esc(x.market)} &middot; <strong>${fmtNum(x.yourLocalFollowers)} of your followers are here</strong>${x.pitch ? " &middot; Maggie pitched you here" : ""}</div></div>${btbBandChip213(x.band)}</div>`).join("")}</div>` : ""}`;
+      }
+    } catch (e) { div.remove(); }
+  }, 300);
+}
+// The Money top of the creator Wallet (Build -213): what you
+// made, what is on its way, and the ONE next move — from
+// GET /me/money. Experiences ride their own line, never summed
+// with cash (the standing wallet rule).
+function moneyTopHtml213(m) {
+  if (!m) return "";
+  const next = m.next || {};
+  const btnLabel = next.tab === "Find Offers" ? "See offers" : next.tab === "Dashboard" ? "See Maggie's pitches" : "Open your profile";
+  return `
+  ${m.marketLive ? "" : `<div class="empty-card" style="margin-bottom:14px"><div class="ec-t">Paid bookings start when ${esc(m.market || "your market")} opens</div><div class="ec-s">Everything you set up now counts from day one. Your next move below is the fastest way to be ready.</div></div>`}
+  <div class="kpi-grid c2">
+    ${kpiCard("Made", `$${fmtMoney(m.made || 0)}`, { sub: "Paid bookings, plus what businesses paid to reuse your posts" })}
+    ${kpiCard("On its way", `$${fmtMoney(m.onItsWay || 0)}`, { sub: "Booked at your rate, paid when the post is live" })}
+  </div>
+  <div class="money-next">
+    <p class="mn-k">Your next move</p>
+    <p class="mn-t">${esc(next.title || "Maggie is pitching you")}</p>
+    <p class="mn-s">${esc(next.sub || "")}</p>
+    <button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','${esc(next.tab || "Profile")}')">${btnLabel}</button>
+  </div>
+  ${m.compValue > 0 || m.visitsCompleted > 0 ? `<p class="small muted" style="margin:0 2px 14px">Experiences you enjoyed: <strong>$${fmtMoney(m.compValue || 0)} in value</strong> across ${fmtNum(m.visitsCompleted || 0)} visits. That is value at the business, not cash, so it never mixes with the money above.</p>` : ""}`;
+}
+
 async function renderEarningsTab() {
   const el = document.getElementById("tab-body");
   if (!el) return;
   el.innerHTML = `${wsHead("Wallet", { sub: "Cash, comps and history — kept separate, the way a wallet is.", subKey: "earnings" })}${skelHtml("Loading your wallet...", 2)}`;
   try {
-    const [bkData, lrData] = await Promise.all([
+    const [bkData, lrData, moneyData] = await Promise.all([
       api("GET", "/bookings"),
       api("GET", "/license-requests").catch(() => ({ licenseRequests: [] })),
+      // Build -213: the Money top (creators only; other roles
+      // share this tab shell and simply get no money card).
+      state.user && state.user.role === "creator" ? api("GET", "/me/money").catch(() => null) : Promise.resolve(null),
     ]);
+    const moneyTop = moneyTopHtml213(moneyData);
     if (!document.getElementById("tab-body")) return;
     const bookings = bkData.bookings || [];
     const lrs = lrData.licenseRequests || [];
@@ -6065,6 +6319,7 @@ async function renderEarningsTab() {
   <div class="empty-card"><div class="ec-t">Nothing here yet</div><div class="ec-s">Every paid booking, license and comped visit lands here, dated, cash and comps side by side but never mixed.</div></div>`}`;
     el.innerHTML = `
   ${wsHead("Wallet", { sub: "Cash, comps and history — kept separate, the way a wallet is.", subKey: "earnings" })}
+  ${moneyTop}
   ${wsTabs([
     { label: "Cash", on: wseg === "cash", onclick: "return walletSetSeg125('cash')" },
     { label: "Comps", on: wseg === "comps", onclick: "return walletSetSeg125('comps')" },
@@ -13917,7 +14172,7 @@ function renderCreatorDash() {
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
-  if (tab === "Dashboard") loadCreatorHome();
+  if (tab === "Dashboard") { loadCreatorHome(); loadBlockHome213("creator"); }
   if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(loadConnectedAccounts, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); creatorPreviewRefresh(); }, 10); }
   if (tab === "Offers") loadCreatorOffers();
   if (tab === "Find Offers") loadFindOffers();
@@ -13977,7 +14232,7 @@ function renderFoundingHome() {
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
-  if (tab === "Dashboard") loadFoundingDashboard();
+  if (tab === "Dashboard") { loadFoundingDashboard(); loadBlockHome213("creator"); }
   if (tab === "Status") loadFoundingStatus();
   if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(loadConnectedAccounts, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); creatorPreviewRefresh(); }, 10); }
   if (tab === "Find Offers") loadFindOffers();
@@ -20086,7 +20341,7 @@ function renderFoundingMessagesTab() {
   </section>`;
 }
 
-const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "Campaign Setup", "My Offers", "Counter", "Visits & Posts", "Regulars", "Content", "Analytics", "Plan", "Messages", "Profile", "Settings", "Help", "Sig"];
+const BUSINESS_TABS = ["Home", "Requests", "Discover", "Block", "Favorites", "Campaign Setup", "My Offers", "Counter", "Visits & Posts", "Regulars", "Content", "Analytics", "Plan", "Messages", "Profile", "Settings", "Help", "Sig"];
 
 function renderBusinessDash() {
   const u = state.user;
@@ -20104,8 +20359,9 @@ function renderBusinessDash() {
   // other tab runs its real renderer (Discover, Campaigns,
   // Plan & billing, Your business page, Settings, Help, Sig).
   const founding = isFoundingBusiness(u);
-  if (tab === "Home") founding ? loadFoundingBusinessHome() : loadBusinessHome();
+  if (tab === "Home") { founding ? loadFoundingBusinessHome() : loadBusinessHome(); loadBlockHome213("business"); }
   if (tab === "Discover") loadDiscover();
+  if (tab === "Block") renderBlockTab213();
   if (tab === "Favorites") loadFavorites();
   if (tab === "Campaign Setup") loadCampaignSetup();
   if (tab === "My Offers") loadMyOffers();
@@ -30635,9 +30891,21 @@ function adminAppSetSection195(role) {
 }
 
 function adminKnownTotal(u) {
-  const a = u && u.creator ? u.creator.audience : null;
-  if (a && typeof a.total === "number") return a.total;
-  return (u && u.creator && typeof u.creator.followerCount === "number") ? u.creator.followerCount : 0;
+  // Build -213 (item 38, display half): a creator's audience number
+  // is ALWAYS the stacked total across channels — totalAudience,
+  // then the audience rollup, then the per-channel stack sum, and
+  // only then the primary-platform count. followerCount IS the
+  // Instagram count by definition; showing it alone understated
+  // multi-platform creators (@themamabekah read 234, her Instagram
+  // only, against a real 3.3k stacked).
+  const c = (u && u.creator) || null;
+  if (!c) return 0;
+  if (typeof c.totalAudience === "number" && c.totalAudience > 0) return c.totalAudience;
+  const a = c.audience;
+  if (a && typeof a.total === "number" && a.total > 0) return a.total;
+  const stack = c.audienceStack || null;
+  if (stack) { const s = Object.values(stack).reduce((x, v) => x + (Number(v) || 0), 0); if (s > 0) return s; }
+  return typeof c.followerCount === "number" ? c.followerCount : 0;
 }
 // The total at which the server will refuse an approval, or
 // null: a KNOWN stacked total of 1-499 on a record created
@@ -31081,7 +31349,7 @@ async function loadApplications() {
           : `@${esc(u.creator.handle)}`)
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `${handleHtml} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.profession ? ` &middot; Profession: ${esc(u.creator.profession)}` : ""}${u.creator.profession === "Real estate agent" && u.creator.farmAreas && u.creator.farmAreas.length ? ` &middot; Neighborhoods: ${u.creator.farmAreas.map(esc).join(", ")}` : ""}${u.creator.profession === "Real estate agent" && u.creator.brokerage ? ` &middot; Brokered by: ${esc(u.creator.brokerage)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}${u.rejectionReason ? ` &middot; Rejection reason: ${esc(u.rejectionReason)}` : ""}`
+        ? `${handleHtml} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(adminKnownTotal(u))} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.profession ? ` &middot; Profession: ${esc(u.creator.profession)}` : ""}${u.creator.profession === "Real estate agent" && u.creator.farmAreas && u.creator.farmAreas.length ? ` &middot; Neighborhoods: ${u.creator.farmAreas.map(esc).join(", ")}` : ""}${u.creator.profession === "Real estate agent" && u.creator.brokerage ? ` &middot; Brokered by: ${esc(u.creator.brokerage)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}${u.rejectionReason ? ` &middot; Rejection reason: ${esc(u.rejectionReason)}` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}${u.business.subscription ? ` &middot; Subscription: ${esc(u.business.subscription.status || "unknown")}${u.business.subscription.planName ? ` (${esc(u.business.subscription.planName)})` : ""}` : ""}${u.preferredLanguage === "es" ? ` &middot; Prefers Spanish` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}`
           : "";
@@ -31363,7 +31631,7 @@ async function adminViewAccount(userId) {
     if (!u) { el.innerHTML = `<div class="error-box">Account not found</div><p><button class="btn small-btn ghost" onclick="adminBackToRequests()">Back to Applications</button></p>`; return; }
     const roleLabel = { creator: "Creator", business: "Business", partner: "Partner", recruiter: "Recruiter", pilot_partner: "Pilot partner" }[u.role] || u.role;
     const detailLine = u.role === "creator" && u.creator
-      ? `<p class="small" style="margin:6px 0 0">@${esc(u.creator.handle || "")} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${(u.creator.categories || []).map(esc).join(", ")}</p>`
+      ? `<p class="small" style="margin:6px 0 0">@${esc(u.creator.handle || "")} &middot; ${fmtNum(adminKnownTotal(u))} followers &middot; ${(u.creator.categories || []).map(esc).join(", ")}</p>`
       : u.role === "business" && u.business
         ? `<p class="small" style="margin:6px 0 0">${esc(u.business.businessName || "")} &middot; ${esc(u.business.category || "")}</p>`
         : "";
