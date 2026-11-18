@@ -2412,12 +2412,18 @@ function pingAdminHomeRefresh212() {
 // Build -212: the strip now reads the precomputed summary's
 // totals slice (the same platformTotals126 computation,
 // refreshed off-path) and stamps its as-of time.
+// Build -213: while the strip is showing the summary's
+// fallback numbers it re-checks for the stored summary, so
+// the strip upgrades itself when the background compute lands.
+let adminTotalsUpgrade213 = 0;
 async function loadAdminTotals126() {
   const host = document.getElementById("admin-totals126");
   if (!host) return;
   try {
     const s = await loadAdminHomeSummary212();
-    if (!s || s.preparing || !s.totals) return;
+    if (!s || !s.totals) return;
+    if (s.preparing && !s.fallback) return;
+    if (s.preparing) pingAdminHomeRefresh212();
     const d = s.totals;
     const el = document.getElementById("admin-totals126");
     if (!el) return;
@@ -2428,7 +2434,15 @@ async function loadAdminTotals126() {
       <div class="tot126"><span class="tot126-num">${fmtNum(followers)}</span><span class="tot126-lbl">Total followers</span><span class="tot126-sub">${followers.toLocaleString("en-US")} across all markets, as reported by creators.</span></div>
       <div class="tot126"><span class="tot126-num">${fmtNum(localFollowers)}</span><span class="tot126-lbl">Local followers</span><span class="tot126-sub">${localFollowers.toLocaleString("en-US")} of those followers live in each creator's own market, worked out from the local share each creator reports.</span></div>
       <div class="tot126"><span class="tot126-num">${d.avgLocalPct === null || d.avgLocalPct === undefined ? "—" : d.avgLocalPct + "%"}</span><span class="tot126-lbl">Avg % local</span><span class="tot126-sub">Average share of a creator's audience that lives in their market.</span></div>
-      <div style="flex-basis:100%">${asOfLine212(s.asOf)}</div>`;
+      <div style="flex-basis:100%">${asOfLine212(s.asOf)}${s.fallback ? `<p class="small muted" style="margin:2px 2px 0">Latest numbers on file — the full board is still preparing and fills in on its own.</p>` : ""}</div>`;
+    if (s.fallback) {
+      if (adminTotalsUpgrade213 < 12) {
+        adminTotalsUpgrade213 += 1;
+        setTimeout(() => { loadAdminTotals126(); }, 10000);
+      }
+    } else {
+      adminTotalsUpgrade213 = 0;
+    }
   } catch (e) { /* the strip never blocks the queue */ }
 }
 
@@ -28453,6 +28467,9 @@ async function bc152SendThreadReply(e, broadcastId, userId) {
 // total followers, claims today), Next steps, stop. The
 // Preview-as tabs ride along: they are working controls,
 // and Home is where Jeff lands.
+// Build -213: generation counter for Admin Home's summary
+// poll — a fresh entry to Home supersedes any older poll loop.
+let adminHomeRun213 = 0;
 async function loadAdminHome137() {
   const el = document.getElementById("admin-home137");
   if (!el) return;
@@ -28512,31 +28529,23 @@ async function loadAdminHome137() {
   // loadAdminHomeSummary212); a failed read keeps the honest
   // per-section failure states, and a not-yet-computed summary
   // shows the preparing state, never invented numbers.
-  (async () => {
-    const summary = await loadAdminHomeSummary212();
-    if (!homeAlive()) return;
-    if (!summary) {
-      const sigHost = document.getElementById("ah-sig");
-      if (sigHost) sigHost.innerHTML = `<div class="panel"><strong>Your home could not load just now.</strong><p class="small muted">The platform did not answer. Nothing is lost — try again.</p><button type="button" class="btn small-btn" onclick="loadAdminHome137()">Retry</button></div>`;
-      const host = document.getElementById("ah-steps");
-      if (host) host.innerHTML = "";
-      const hl = document.getElementById("ah-highlights");
-      if (hl) hl.innerHTML = `<p class="small muted">Your numbers could not load just now. <button type="button" class="btn small-btn ghost" onclick="loadAdminHome137()">Retry</button></p>`;
-      return;
-    }
-    if (summary.preparing) {
-      const sigHost = document.getElementById("ah-sig");
-      if (sigHost) sigHost.innerHTML = sigHero137Html("Your numbers are being prepared. This takes a moment, then your home fills in on its own.");
-      const hl = document.getElementById("ah-highlights");
-      if (hl) hl.innerHTML = `<div class="home-sec138"><div class="home-sec-t">Quick highlights</div><p class="small muted">Preparing your numbers…</p></div>`;
-      const host = document.getElementById("ah-steps");
-      if (host) host.innerHTML = "";
-      setTimeout(() => { if (homeAlive()) loadAdminHome137(); }, 20000);
-      return;
-    }
+  // Build -213: the paint is a named step so the preparing
+  // path can repaint in place as better data lands. -212's
+  // cold path showed "Preparing your numbers…" for ~40-70s
+  // (Brenda's live walk, 2026-11-18): the summary's background
+  // compute takes about a minute at production scale, and the
+  // only retry was a 20s full reload of this loader. Now a
+  // preparing answer either carries the server's fallback
+  // numbers (painted at once, flagged as the latest on file)
+  // or the bare preparing state — and either way the client
+  // itself fires the refresh endpoint (a guaranteed trigger
+  // that depends on neither the schedule nor the read-path
+  // nudge) and re-checks every 5s until the stored summary
+  // lands, then repaints with it.
+  const paintSummary = (summary) => {
     const { apps, marketsData, partnersData } = homeSummaryAdapters212(summary);
     paintSteps(apps, marketsData, partnersData, summary.queue);
-    loadSigTopNudges();
+    if (!summary.fallback) loadSigTopNudges();
     // Build -161 Biz Dev waiting entry, from the summary's
     // counts (the same shape abdWaitingCounts returns, so the
     // menu badges and this home still never disagree). It
@@ -28567,9 +28576,45 @@ async function loadAdminHome137() {
         { label: "Creators signed up", sub: "across all markets", value: fmtNum(totals.creatorsSignedUp || 0) },
         { label: "Total followers", sub: "as reported by creators", value: fmtNum(totals.totalFollowers || 0) },
         { label: "Claims today", value: fmtNum(counts.claimsToday), tab: "Applications" },
-      ]) + asOfLine212(summary.asOf);
+      ]) + asOfLine212(summary.asOf) + (summary.fallback ? `<p class="small muted" style="margin:2px 2px 0">These are the latest numbers on file. Maggie is still preparing your full home — the market and partner rows fill in on their own in a moment.</p>` : "");
     }
-  })();
+  };
+  const run213 = ++adminHomeRun213;
+  const loadSummary = async (attempt) => {
+    const summary = await loadAdminHomeSummary212();
+    if (!homeAlive() || run213 !== adminHomeRun213) return;
+    if (!summary) {
+      const sigHost = document.getElementById("ah-sig");
+      if (sigHost) sigHost.innerHTML = `<div class="panel"><strong>Your home could not load just now.</strong><p class="small muted">The platform did not answer. Nothing is lost — try again.</p><button type="button" class="btn small-btn" onclick="loadAdminHome137()">Retry</button></div>`;
+      const host = document.getElementById("ah-steps");
+      if (host) host.innerHTML = "";
+      const hl = document.getElementById("ah-highlights");
+      if (hl) hl.innerHTML = `<p class="small muted">Your numbers could not load just now. <button type="button" class="btn small-btn ghost" onclick="loadAdminHome137()">Retry</button></p>`;
+      return;
+    }
+    if (summary.preparing) {
+      // The guaranteed trigger: this browser is looking at
+      // Home right now, so it fires the refresh itself (the
+      // endpoint fires the background function and answers at
+      // once; the ping is throttled and forced).
+      pingAdminHomeRefresh212();
+      if (summary.fallback && summary.totals) {
+        paintSummary(summary);
+      } else {
+        const sigHost = document.getElementById("ah-sig");
+        if (sigHost) sigHost.innerHTML = sigHero137Html("Your numbers are being prepared. This takes a moment, then your home fills in on its own.");
+        const hl = document.getElementById("ah-highlights");
+        if (hl) hl.innerHTML = `<div class="home-sec138"><div class="home-sec-t">Quick highlights</div><p class="small muted">Preparing your numbers…</p></div>`;
+        const host = document.getElementById("ah-steps");
+        if (host) host.innerHTML = "";
+      }
+      const delay = attempt < 12 ? 5000 : 20000;
+      setTimeout(() => { if (homeAlive() && run213 === adminHomeRun213) loadSummary(attempt + 1); }, delay);
+      return;
+    }
+    paintSummary(summary);
+  };
+  loadSummary(0);
 }
 
 function renderAdmin() {
@@ -28834,6 +28879,18 @@ function adminSummaryHtml121(c) {
   return chips.join("");
 }
 
+// Build -213: while a Sig surface is showing the summary's
+// fallback numbers (or the bare preparing panel), it re-checks
+// for the stored summary so the surface upgrades itself when
+// the background compute lands. Capped per host; a real
+// summary paint clears the counter.
+const sigUpgrade213 = {};
+function scheduleSigUpgrade213(hid) {
+  const n = (sigUpgrade213[hid] || 0) + 1;
+  if (n > 12) return;
+  sigUpgrade213[hid] = n;
+  setTimeout(() => { if (document.getElementById(hid)) loadAdminSig(hid); }, 5000);
+}
 async function loadAdminSig(hostId) {
   const hid = hostId || "admin-sig";
   const host = document.getElementById(hid);
@@ -28843,14 +28900,29 @@ async function loadAdminSig(hostId) {
   // computes.
   const summary = await loadAdminHomeSummary212();
   if (!document.getElementById(hid)) return;
-  if (summary && summary.preparing) {
+  if (summary && summary.preparing && !summary.fallback) {
     host.innerHTML = `<div class="panel"><p class="small muted" style="margin:0">Maggie is preparing the Admin numbers. They will be ready in a moment.</p></div>`;
+    pingAdminHomeRefresh212();
+    scheduleSigUpgrade213(hid);
     return;
+  }
+  // Build -213: a preparing answer WITH the fallback numbers
+  // paints the attention list from the records on file (the
+  // summary chips stay unpainted — their market/partner counts
+  // are not in the fallback, and a zero there would read as a
+  // fact), flagged as provisional, and the surface re-checks
+  // until the stored summary lands.
+  const isFallback213 = !!(summary && summary.fallback);
+  if (isFallback213) {
+    pingAdminHomeRefresh212();
+    scheduleSigUpgrade213(hid);
+  } else if (summary) {
+    delete sigUpgrade213[hid];
   }
   const { apps, marketsData, partnersData } = summary ? homeSummaryAdapters212(summary) : { apps: null, marketsData: null, partnersData: null };
   const items = adminSigItems(apps, marketsData, partnersData);
   const sumEl = document.getElementById("admin-summary");
-  if (sumEl) sumEl.innerHTML = adminSummaryHtml121(adminSummaryCounts121(apps, marketsData, partnersData));
+  if (sumEl && !isFallback213) sumEl.innerHTML = adminSummaryHtml121(adminSummaryCounts121(apps, marketsData, partnersData));
   const loaded = apps || marketsData || partnersData;
   host.innerHTML = `
   <div class="panel admin-sig-panel">
@@ -28867,7 +28939,7 @@ async function loadAdminSig(hostId) {
       <p class="small" style="margin:0;flex:1">${esc(it.text)}</p>
       <button class="btn small-btn ghost" onclick="return go('dashboard','${it.tab}')">${esc(it.btn)}</button>
     </div>`).join("") : `<p class="small" style="margin:10px 0 0">${loaded ? "Nothing needs a decision right now. Approvals, claims, activations, and partners are all caught up." : "Maggie could not load the Admin numbers just now. The tabs below carry the same records."}</p>`}
-    ${loaded && (!apps || !marketsData || !partnersData) ? `<p class="small muted" style="margin:8px 0 0">Some Admin numbers could not load; this list covers what answered.</p>` : ""}
+    ${isFallback213 ? `<p class="small muted" style="margin:8px 0 0">Maggie is still preparing the full Admin numbers — this list covers the latest records on file.</p>` : (loaded && (!apps || !marketsData || !partnersData) ? `<p class="small muted" style="margin:8px 0 0">Some Admin numbers could not load; this list covers what answered.</p>` : "")}
   </div>`;
   sigHeroSet("idle");
 }

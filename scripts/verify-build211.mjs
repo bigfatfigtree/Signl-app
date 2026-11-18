@@ -33,8 +33,8 @@ const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 
 console.log("== stamp ==");
-check("BUILD_ID is 2026.11.18-212", buildJs.includes('exports.BUILD_ID = "2026.11.18-212"'));
-check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-212"') && (indexHtml.match(/2026\.11\.18-212/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-213", buildJs.includes('exports.BUILD_ID = "2026.11.18-213"'));
+check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-213"') && (indexHtml.match(/2026\.11\.18-213/g) || []).length >= 5);
 
 console.log("== architecture (static): the build is off the request paths ==");
 const getStart = routerJs.indexOf('if (method === "GET" && seg[1] === "suggestions" && seg.length === 2)');

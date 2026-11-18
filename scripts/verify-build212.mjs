@@ -12,8 +12,11 @@
 // (5-minute schedule, trigger endpoint, throttled nudge) and
 // stores one record at config:adminHomeSummary;
 // GET /admin/home-summary serves the admin's slice of it and
-// never computes, answering { preparing: true } before the
-// first refresh lands.
+// never runs the heavy builds, answering { preparing: true }
+// before the first refresh lands. (Build -213: that answer
+// now carries the bounded on-file fallback — see
+// verify-build213.mjs; the g1 assertion below pins the new
+// contract.)
 //
 // This suite asserts the ARCHITECTURE (static: no compute on
 // the read path; the client no longer fires the six endpoints
@@ -38,8 +41,8 @@ const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 
 console.log("== stamp ==");
-check("BUILD_ID is 2026.11.18-212", buildJs.includes('exports.BUILD_ID = "2026.11.18-212"'));
-check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-212"') && (indexHtml.match(/2026\.11\.18-212/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-213", buildJs.includes('exports.BUILD_ID = "2026.11.18-213"'));
+check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-213"') && (indexHtml.match(/2026\.11\.18-213/g) || []).length >= 5);
 
 console.log("== architecture (static): the compute is off the read path ==");
 const getStart = routerJs.indexOf('seg[1] === "home-summary"');
@@ -48,7 +51,7 @@ check("GET /admin/home-summary handler found", getSlice.length > 500, `len=${get
 check("GET serves the stored summary (loadAdminHomeSummary)", getSlice.includes("loadAdminHomeSummary()") && getSlice.includes("rec.byUser"));
 check("GET answers the honest preparing state when nothing is stored", getSlice.includes("preparing: true"));
 check("GET returns the asOf stamp", getSlice.includes("asOf: rec.computedAt"));
-check("GET never computes: no endpoint builds on the read path",
+check("GET never runs the heavy builds inline (Build -213: the bounded on-file fallback is a separate function; it never touches adminMarketRows or the refresh compute)",
   !getSlice.includes("adminMarketRows(") && !getSlice.includes("platformTotals126(") && !getSlice.includes("approvalQueue138(") && !getSlice.includes("allUsers(") && !getSlice.includes("refreshAdminHomeSummary212("));
 check("refresh compute exists and stores config:adminHomeSummary",
   routerJs.includes("async function refreshAdminHomeSummary212(") && routerJs.includes('store.set(ADMIN_HOME_SUMMARY_KEY') && routerJs.includes('"config:adminHomeSummary"'));
@@ -169,7 +172,10 @@ try {
   check("admin sign-in", la.status === 200, `${la.status}`);
 
   const g1 = await api("GET", "/api/admin/home-summary");
-  check("no-summary GET answers 200 flagged preparing (never zeroed numbers)", g1.status === 200 && g1.json && g1.json.preparing === true && !("totals" in g1.json), `${g1.status} ${JSON.stringify(g1.json).slice(0, 120)}`);
+  check("no-summary GET answers 200 flagged preparing WITH the Build -213 fallback (real on-file numbers, never zeroed, never bare)",
+    g1.status === 200 && g1.json && g1.json.preparing === true && g1.json.fallback === true && g1.json.totals && g1.json.totals.creatorsSignedUp === 4 && g1.json.totals.totalFollowers === 13800, `${g1.status} ${JSON.stringify(g1.json).slice(0, 160)}`);
+  check("fallback omits the shared slices (markets/partnerRows absent, not zeroed)", g1.json && !("markets" in g1.json) && !("partnerRows" in g1.json));
+  check("fallback pending rows + queue + bizdev waiting are the real counts", g1.json && Array.isArray(g1.json.pending) && g1.json.pending.length === 3 && g1.json.queue && g1.json.queue.applications === 3 && g1.json.bizdevWaiting && g1.json.bizdevWaiting.total === 4, JSON.stringify(g1.json || {}).slice(0, 200));
 
   const noTok = await anon("POST", "/api/admin/home-refresh", {});
   check("refresh without session or token is 403", noTok.status === 403, `${noTok.status}`);

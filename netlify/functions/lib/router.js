@@ -1435,6 +1435,49 @@ function maybeRefreshAdminHome212() {
   (async () => { try { await fireAdminHomeRefresh212(false); } catch (e) { /* the schedule is the guarantee */ } finally { adminHomeNudging = false; } })();
 }
 
+// Build -213: the cold-path fallback for GET /admin/home-summary,
+// mirroring -211's suggestionBoardFallback211. -212 answered a
+// bare { preparing: true } when no summary slice was stored, and
+// Home sat on "Preparing your numbers…" until the background
+// compute landed. Brenda's signed-in acceptance walk
+// (2026-11-18) measured that wait at ~40-70s: the -212 deploy
+// published 14:22:27 ET, the walk reloaded at 14:23:01, and the
+// first summary's computedAt is 14:23 — the background compute
+// takes on the order of a minute at REAL production scale (the
+// refresh runs adminMarketRows and friends over the full store;
+// the 35ms/get harness model priced it at ~5s), so the bare
+// preparing state was the whole first impression. This fallback
+// serves the requesting admin's slice built from the records on
+// file RIGHT NOW, with the SAME helpers and the SAME scoping
+// the stored summary uses (platformTotals126, approvalQueue138,
+// bizdev.waitingCounts212, the refresh's own mini projection),
+// over ONE bounded users pass plus the queue's small prefix
+// lists — never the event-log builds (adminMarketRows) that
+// make the full compute slow. The shared slices (market rows,
+// partner rows) are simply absent, which the client already
+// reads as "not in this payload" (the withheld-permission
+// shape), never as zeroes. Flagged `preparing` + `fallback` so
+// the client presents these as the latest numbers on file while
+// the full board finishes, exactly as -211's fallback board is
+// presented on Stats. `asOf` is the moment of the read: these
+// numbers are current, not a stale copy.
+async function adminHomeFallback213(adminUser) {
+  const all = await allUsers();
+  const scoped = perms138.isSuper(adminUser) ? all : all.filter((u) => perms138.inMarketScope(adminUser, u.market));
+  const queueUsers = all.filter((u) => u.role !== "admin" && perms138.inMarketScope(adminUser, u.market));
+  const mini = (u) => ({ role: u.role, createdAt: u.createdAt, market: u.market || null });
+  return {
+    preparing: true,
+    fallback: true,
+    asOf: nowIso(),
+    totals: platformTotals126(scoped),
+    pending: queueUsers.filter((u) => u.status === "pending").map(mini),
+    decided: queueUsers.filter((u) => u.status !== "pending").map(mini),
+    queue: await approvalQueue138(adminUser),
+    bizdevWaiting: await bizdev.waitingCounts212(),
+  };
+}
+
 // Compatibility wrapper for the v1 readers (the dismiss flow):
 // the raw candidate list plus the watching lines, no lifecycle.
 async function suggestionsRaw() {
@@ -29193,12 +29236,23 @@ async function route(event) {
     // zeroed numbers dressed as truth. `asOf` is the stored
     // computedAt and the client prints it, so the counts are
     // never presented as live when they are minutes old.
+    // Build -213: with no slice stored, the GET no longer
+    // answers the bare preparing state — it serves
+    // adminHomeFallback213 (the admin's own numbers from the
+    // records on file, flagged preparing + fallback) while the
+    // refresh computes, the -211 pattern. The bare answer
+    // remains only as the fallback's own failure path.
     if (seg[1] === "home-summary" && seg.length === 2 && method === "GET") {
       const rec = await loadAdminHomeSummary();
       const entry = rec && rec.byUser ? rec.byUser[user.id] : null;
       if (!entry) {
         maybeRefreshAdminHome212();
-        return json(200, { preparing: true, asOf: rec ? rec.computedAt || null : null });
+        try {
+          return json(200, await adminHomeFallback213(user));
+        } catch (e) {
+          try { console.error("admin home fallback failed:", e && e.message); } catch (e2) {}
+          return json(200, { preparing: true, asOf: rec ? rec.computedAt || null : null });
+        }
       }
       const computedMs = Date.parse(rec.computedAt || "");
       if (!Number.isFinite(computedMs) || Date.now() - computedMs > ADMIN_HOME_STALE_MS) maybeRefreshAdminHome212();

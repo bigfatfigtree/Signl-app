@@ -21,8 +21,8 @@ const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 
 console.log("== stamp ==");
-check("BUILD_ID is 2026.11.18-212 (shipping stamp; build -202 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-212"'));
-check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-212"') && (indexHtml.match(/2026\.11\.18-212/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-213 (shipping stamp; build -202 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-213"'));
+check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-213"') && (indexHtml.match(/2026\.11\.18-213/g) || []).length >= 5);
 
 console.log("== A: loading ==");
 check("api() has AbortController deadline 12s GET / 20s other", appJs.includes("deadlineMs = isGet ? 12000 : 20000") && appJs.includes("ctrl.abort()") && appJs.includes("signal: ctrl ? ctrl.signal : undefined"));
