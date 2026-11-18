@@ -67,6 +67,12 @@ check("refile pass is invoked fire-and-forget in the preamble", routerJs.include
 check("refile diagnostic rides /api/verify/counts", routerJs.includes("refile207 = await store.get(REFILE207_DIAG_KEY)") && routerJs.includes("marketfix: marketfix173, refile207"));
 check("refile pass is exported for suites", routerJs.includes("maybeRefileCharlottesville207,"));
 
+console.log("== garbled handles: every render site gated (follow-up sweep) ==");
+check("admin creator table name cell uses handleLabel", appJs.includes('${handleLabel(c.handle) ? `<div class="muted small">${esc(handleLabel(c.handle))}</div>` : ""}'));
+check("no raw @${esc(c.handle/p.handle)} renders remain in app.js (creator + prospect surfaces)", !/@\$\{esc\((c|p)\.handle/.test(appJs), (appJs.match(/@\$\{esc\((c|p)\.handle/g) || []).join(","));
+const profileMetaJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/profile-meta.js"), "utf8");
+check("server public pages gate the handle through metaHandle", profileMetaJs.includes("function metaHandle(h)") && profileMetaJs.includes("META_HANDLE_SHAPE") && !profileMetaJs.includes("(@${profile.handle}) on Magpie"));
+
 console.log("== Learn sync concurrency ==");
 check("learn sync upserts run at bounded concurrency", routerJs.includes("await mapBounded202(entries, 12, async ([fileKey, m]) => {"));
 

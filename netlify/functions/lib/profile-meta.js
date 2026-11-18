@@ -23,9 +23,21 @@ function escHtml(s) {
 // Title and description mirror the client-side share shell
 // (applyProfileShareShell in public/app.js) so the server-rendered
 // head and the in-app head never tell two different stories.
+// Build -207: a stored handle that fails the parser's shape test
+// (legacy share-URL tails like "_r=1&_t=..." stored before Build
+// -151 hardened the parser) never renders on a public page. The
+// record's routing slug (data-profile-handle) is untouched; only
+// display strings are gated, mirroring the client's handleLabel.
+const META_HANDLE_SHAPE = /^[A-Za-z0-9._-]{2,40}$/;
+function metaHandle(h) {
+  const v = String(h == null ? "" : h).trim().replace(/^@+/, "");
+  return META_HANDLE_SHAPE.test(v) ? v : "";
+}
+
 function profilePageMeta(profile) {
   const place = profile.place || "";
-  const title = `${profile.name} (@${profile.handle}) on Magpie${place ? ` | ${place}` : ""}`;
+  const mh = metaHandle(profile.handle);
+  const title = `${profile.name}${mh ? ` (@${mh})` : ""} on Magpie${place ? ` | ${place}` : ""}`;
   const pct = typeof profile.localAudiencePct === "number" ? profile.localAudiencePct : null;
   // Multi-market (2026-11-01): the other markets the creator is
   // listed in ride the description when they are real (the
@@ -64,7 +76,7 @@ function profileJsonLd(profile, meta, canonical, image) {
   const person = {
     "@type": "Person",
     name: String(profile.name || ""),
-    alternateName: `@${profile.handle || ""}`,
+    alternateName: metaHandle(profile.handle) ? `@${metaHandle(profile.handle)}` : String(profile.name || ""),
     url: canonical,
     description: meta.description,
   };
@@ -78,7 +90,7 @@ function profileJsonLd(profile, meta, canonical, image) {
     const service = {
       "@type": "Service",
       name: "Paid creator booking: one post plus one story",
-      provider: { "@type": "Person", name: String(profile.name || ""), alternateName: `@${profile.handle || ""}` },
+      provider: { "@type": "Person", name: String(profile.name || ""), alternateName: metaHandle(profile.handle) ? `@${metaHandle(profile.handle)}` : String(profile.name || "") },
     };
     if (listed.length) service.areaServed = listed.map((e) => ({ "@type": "Place", name: String(e.market) }));
     if (categories.length) service.serviceType = categories;
@@ -164,7 +176,7 @@ function profileWorkHtml(p) {
   if (!items.length) return "";
   const cells = items.map((it) => {
     if (it.kind === "embed") {
-      return `<div class="work-cell${it.embedAspect === "wide" ? " wide" : ""}"><div class="work-ph"><span class="work-ph-mark">${escHtml(it.platform || "Video")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${escHtml(it.embedUrl || "")}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${escHtml(it.tag)} by @${escHtml(p.handle)}" onload="this.parentNode.classList.add('on')"></iframe><span class="work-tag">${escHtml(it.tag)}</span></div>`;
+      return `<div class="work-cell${it.embedAspect === "wide" ? " wide" : ""}"><div class="work-ph"><span class="work-ph-mark">${escHtml(it.platform || "Video")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${escHtml(it.embedUrl || "")}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${escHtml(it.tag)}${metaHandle(p.handle) ? ` by @${escHtml(metaHandle(p.handle))}` : ""}" onload="this.parentNode.classList.add('on')"></iframe><span class="work-tag">${escHtml(it.tag)}</span></div>`;
     }
     return `<a class="work-cell tile" href="${escHtml(it.url)}" target="_blank" rel="noopener"><span class="work-ph-mark">${escHtml(it.platform || "Post")}</span><span class="work-tile-label">${escHtml(it.label)}</span><span class="work-go">View post</span></a>`;
   }).join("");
@@ -330,7 +342,7 @@ function profileBodyHtml(p, place) {
         <div class="bookme-id-row">
           <div class="bookme-id-main">
             <div class="cc-name bookme-name">${escHtml(profileDisplayName(p))}</div>
-            <div class="bookme-handle">@${escHtml(p.handle)} &middot; ${escHtml(p.primaryPlatformLabel || "Instagram")}</div>
+            <div class="bookme-handle">${metaHandle(p.handle) ? `@${escHtml(metaHandle(p.handle))} &middot; ` : ""}${escHtml(p.primaryPlatformLabel || "Instagram")}</div>
             ${profileHeaderSocialsHtml(p)}
             ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
           </div>
@@ -432,7 +444,8 @@ function buildProfilePageHtml(shellHtml, profile) {
 // JSON-LD: the page carries no ratings, counts, or offers yet.
 function claimPageMeta(profile) {
   const place = profile.place || "";
-  const named = profile.name && profile.name !== profile.handle ? `${profile.name} (@${profile.handle})` : `@${profile.handle}`;
+  const mh = metaHandle(profile.handle);
+  const named = mh ? (profile.name && profile.name !== profile.handle ? `${profile.name} (@${mh})` : `@${mh}`) : String(profile.name || "A founding creator");
   const title = `${named} on Magpie${place ? ` | ${place}` : ""}`;
   const description = `${named} is a founding creator on Magpie in ${place || "their market"}. Their booking page is live: local businesses book local creators for honest posts, and founding creators get the first look when businesses start booking.`;
   return { title, description };

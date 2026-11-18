@@ -666,7 +666,7 @@ function workGridHtml(p) {
   const items = workItemsOf(p);
   if (!items.length) return "";
   const cells = items.map((it) => it.kind === "embed"
-    ? `<div class="work-cell${it.embedAspect === "wide" ? " wide" : ""}"><div class="work-ph"><span class="work-ph-mark">${esc(it.platform || "Video")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${esc(it.embedUrl || "")}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(it.tag)} by @${esc(p.handle)}" onload="this.parentNode.classList.add('on')"></iframe><span class="work-tag">${esc(it.tag)}</span></div>`
+    ? `<div class="work-cell${it.embedAspect === "wide" ? " wide" : ""}"><div class="work-ph"><span class="work-ph-mark">${esc(it.platform || "Video")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${esc(it.embedUrl || "")}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(it.tag)} by ${esc(handleLabel(p.handle) || "the creator")}" onload="this.parentNode.classList.add('on')"></iframe><span class="work-tag">${esc(it.tag)}</span></div>`
     : `<a class="work-cell tile" href="${esc(it.url)}" target="_blank" rel="noopener"><span class="work-ph-mark">${esc(it.platform || "Post")}</span><span class="work-tile-label">${esc(it.label)}</span><span class="work-go">View post</span></a>`).join("");
   return `
       <h3 class="bookme-h">Work</h3>
@@ -863,7 +863,7 @@ async function renderPublicProfile() {
         <div class="bookme-id-row">
           <div class="bookme-id-main">
             <div class="cc-name bookme-name">${esc(profileDisplayName(p))}</div>
-            <div class="bookme-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
+            <div class="bookme-handle">${handleLabel(p.handle) ? `${esc(handleLabel(p.handle))} &middot; ` : ""}${esc(p.primaryPlatformLabel || "Instagram")}</div>
             ${profileHeaderSocialsHtml(p)}
             ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
           </div>
@@ -934,7 +934,7 @@ function renderClaimedProfile(p) {
       <div class="cc-mono bookme-mono"><span>${initial}</span></div>
       <div class="bookme-cover-id">
         <div class="cc-name bookme-name">${esc(p.name)}</div>
-        <div class="bookme-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
+        <div class="bookme-handle">${handleLabel(p.handle) ? `${esc(handleLabel(p.handle))} &middot; ` : ""}${esc(p.primaryPlatformLabel || "Instagram")}</div>
       </div>
     </div>
     <section class="panel bookme-body">
@@ -943,7 +943,7 @@ function renderClaimedProfile(p) {
         <span class="cc-chip">Founding Creator</span>
         ${(p.categories || []).map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}
       </div>
-      <p style="margin:12px 0 0"><strong>This booking page is live.</strong> It went live the moment @${esc(p.handle)} claimed their founding spot. Their full profile lands here once it is finished and approved.</p>
+      <p style="margin:12px 0 0"><strong>This booking page is live.</strong> It went live the moment ${esc(handleLabel(p.handle) || "they")} claimed their founding spot. Their full profile lands here once it is finished and approved.</p>
       <div class="tint-block" style="margin-top:14px">
         <p class="small" style="margin-top:0">${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}${p.paidRate ? ` <span class="badge tier">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}</span>` : ""}</p>
         <p class="small muted" style="margin:6px 0 0">${p.compOpen === false ? "Paid bookings only." : "Comped visits: a meal, a service, or an experience, for an honest post."}</p>
@@ -1022,7 +1022,7 @@ async function renderPublicProof() {
       ${p.photoUrl ? `<img class="proof-photo" src="${esc(p.photoUrl)}" alt="">` : `<div class="proof-mono"><span>${initial}</span></div>`}
       <div class="proof-id">
         <div class="proof-name">${esc(p.name)}</div>
-        <div class="proof-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
+        <div class="proof-handle">${handleLabel(p.handle) ? `${esc(handleLabel(p.handle))} &middot; ` : ""}${esc(p.primaryPlatformLabel || "Instagram")}</div>
         <div class="proof-place">${esc(place)}${p.city && !p.unlisted ? ` &middot; ${esc(p.city)}` : ""}${p.neighborhood ? ` &middot; ${esc(p.neighborhood)}` : ""}</div>
         <div class="cc-chips" style="margin-top:8px">
           ${p.tierBand ? `<span class="cc-chip">${esc(p.tierBand)}</span>` : ""}
@@ -5388,7 +5388,7 @@ async function loadPromptSlot() {
 function promptCreatorRowHtml(c) {
   const initial = esc(String(c.name || "?").trim().charAt(0).toUpperCase() || "?");
   const pic = c.photoUrl ? `<img class="prompt-pic" src="${esc(c.photoUrl)}" alt="">` : `<span class="prompt-pic prompt-mono" aria-hidden="true">${initial}</span>`;
-  return `<div class="prompt-crow">${pic}<div class="prompt-cmain"><div class="prompt-cname">${esc(c.name || "")}${c.handle ? ` <span class="muted">@${esc(c.handle)}</span>` : ""} <span class="badge info">${c.score} match</span></div><div class="prompt-cwhy">${esc(c.why || "")}</div></div></div>`;
+  return `<div class="prompt-crow">${pic}<div class="prompt-cmain"><div class="prompt-cname">${esc(c.name || "")}${handleLabel(c.handle) ? ` <span class="muted">${esc(handleLabel(c.handle))}</span>` : ""} <span class="badge info">${c.score} match</span></div><div class="prompt-cwhy">${esc(c.why || "")}</div></div></div>`;
 }
 function campaignPromptHtml(p) {
   return `<section class="wcard prompt-card" aria-label="Maggie's campaign idea">
@@ -14882,7 +14882,7 @@ async function swapLoad(bookingId) {
     if (!document.getElementById("swap-list-" + bookingId)) return;
     const list = data.suggestions || [];
     host.innerHTML = list.length
-      ? list.map((sg) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">@${esc(sg.handle)}</span><div class="small muted">${typeof sg.localAudiencePct === "number" ? `${sg.localAudiencePct}% local audience` : "Local audience not reported"} · ${(sg.categories || []).slice(0, 2).join(", ")}</div></div><button class="btn small-btn" type="button" onclick="swapSend('${bookingId}', '${sg.creatorId}', this)">Send the swap</button></div>`).join("")
+      ? list.map((sg) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(handleLabel(sg.handle) || "A creator")}</span><div class="small muted">${typeof sg.localAudiencePct === "number" ? `${sg.localAudiencePct}% local audience` : "Local audience not reported"} · ${(sg.categories || []).slice(0, 2).join(", ")}</div></div><button class="btn small-btn" type="button" onclick="swapSend('${bookingId}', '${sg.creatorId}', this)">Send the swap</button></div>`).join("")
       : `<p class="small muted">No matching creator is available this week. The roster keeps growing; your founding team can also rebook from Discover.</p>`;
   } catch (err) { host.innerHTML = `<p class="small">${esc(err.message)}</p>`; }
 }
@@ -15255,8 +15255,8 @@ function poRenderPicker(ctx) {
   const sel = plusOneSel[ctx];
   host.innerHTML = `<div class="plusone-box">
     <p class="small" style="margin-top:0"><strong>Bring a +1.</strong> Another finished creator from your market joins the visit. You each post your own post and story, and the business approves you as a pair.${plusOneKind[ctx] === "paid" ? " On a paid visit your +1 is a guest (comped presence) unless the business books them at their own rate too." : ""}</p>
-    ${sel ? `<div class="lrow"><div style="flex:1"><span class="lname">${esc(sel.name)}</span>${sel.handle ? ` <span class="muted">@${esc(sel.handle)}</span>` : ""}<div class="small muted">Your +1 on this one.</div></div><button type="button" class="btn small-btn ghost" onclick="poClear('${ctx}')">Change</button></div>`
-    : `${intro && intro.creator ? `<div class="lrow"><div style="flex:1"><span class="lname">Maggie suggests ${esc(intro.creator.name)}</span> <span class="muted">@${esc(intro.creator.handle)}</span><div class="small muted">${esc(benchMeetLine(intro))}</div></div><button type="button" class="btn small-btn" onclick="poPick('${ctx}','${intro.creator.userId}')">Bring them</button></div>` : ""}
+    ${sel ? `<div class="lrow"><div style="flex:1"><span class="lname">${esc(sel.name)}</span>${handleLabel(sel.handle) ? ` <span class="muted">${esc(handleLabel(sel.handle))}</span>` : ""}<div class="small muted">Your +1 on this one.</div></div><button type="button" class="btn small-btn ghost" onclick="poClear('${ctx}')">Change</button></div>`
+    : `${intro && intro.creator ? `<div class="lrow"><div style="flex:1"><span class="lname">Maggie suggests ${esc(intro.creator.name)}</span> ${handleLabel(intro.creator.handle) ? `<span class="muted">${esc(handleLabel(intro.creator.handle))}</span>` : ""}<div class="small muted">${esc(benchMeetLine(intro))}</div></div><button type="button" class="btn small-btn" onclick="poPick('${ctx}','${intro.creator.userId}')">Bring them</button></div>` : ""}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><input id="po-q-${ctx}" placeholder="Exact name or @handle" maxlength="80" style="flex:1;min-width:180px"><button type="button" class="btn small-btn ghost" onclick="poSearch('${ctx}')">Find</button></div>
     <div id="po-res-${ctx}"></div>`}
   </div>`;
@@ -15272,7 +15272,7 @@ async function poSearch(ctx) {
     if (!data.creator) { plusOneFound[ctx] = null; res.innerHTML = `<p class="small muted">No creator matched that name or handle. A +1 is a finished creator in your market who has not hidden from other creators.</p>`; return; }
     plusOneFound[ctx] = data.creator;
     const c = data.creator;
-    res.innerHTML = `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(c.name)}</span> <span class="muted">@${esc(c.handle)}</span><div class="small muted">${c.localAudiencePct}% local${c.categories && c.categories.length ? ` &middot; ${esc(c.categories.slice(0, 2).join(", "))}` : ""}</div></div><button type="button" class="btn small-btn" onclick="poPick('${ctx}','${c.userId}')">Bring them</button></div>`;
+    res.innerHTML = `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(c.name)}</span>${handleLabel(c.handle) ? ` <span class="muted">${esc(handleLabel(c.handle))}</span>` : ""}<div class="small muted">${c.localAudiencePct}% local${c.categories && c.categories.length ? ` &middot; ${esc(c.categories.slice(0, 2).join(", "))}` : ""}</div></div><button type="button" class="btn small-btn" onclick="poPick('${ctx}','${c.userId}')">Bring them</button></div>`;
   } catch (e) { res.innerHTML = `<p class="small muted">${esc(e.message)}</p>`; }
 }
 async function poPick(ctx, creatorId) {
@@ -15488,7 +15488,7 @@ function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
   if (link) bits.push(`Creators: join through my link: ${link}`);
   return `<section class="stat-card">
     <div class="stat-top"><span class="stat-brand">Magpie</span><span class="badge ok">${buzz.charter ? "Charter Creator" : "Founding Creator"}</span></div>
-    <div class="stat-name">${esc(u.name)} <span class="stat-handle">@${esc(p.handle || "")}</span></div>
+    <div class="stat-name">${esc(u.name)}${handleLabel(p.handle) ? ` <span class="stat-handle">${esc(handleLabel(p.handle))}</span>` : ""}</div>
     <div class="stat-place">${esc(placeRaw)}${p.tierBand ? ` &middot; ${esc(p.tierBand)} tier` : ""} &middot; ${fmtNum(totalAudienceOf(card))} total audience</div>
     <div class="stat-big">${pct === null ? "Local % not set" : `${pct}%`}</div>
     <div class="stat-lbl">${pct === null ? "Add your local audience % in your profile and this card fills in." : "of my audience is local"}</div>
@@ -15578,7 +15578,7 @@ async function loadFoundingStatus() {
     <div class="panel">
       <div class="flex-between">
         <div>
-          <h3 style="margin:0">${esc(state.user.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
+          <h3 style="margin:0">${esc(state.user.name)}${handleLabel(p.handle) ? ` <span class="muted">${esc(handleLabel(p.handle))}</span>` : ""}</h3>
           <p class="muted small">${isUnl ? place : esc(marketPlaceLine(f.market, f.city))}</p>
         </div>
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">${p.charter ? "Charter Creator" : "Founding Creator"}</span>
@@ -19764,7 +19764,7 @@ function sampleStoryHtml(s) {
       ${barsChartSvg(s.series || [], "customers", "#03C9AB")}
     </div>
     <div style="margin-top:12px">
-      ${(s.creators || []).map((c) => `<div class="lb-row"><img src="${esc(c.avatarUrl)}" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex:none"><div class="lb-main"><div class="lb-name">${esc(c.name)} <span class="muted" style="font-weight:600">@${esc(c.handle)}</span></div><div class="lb-meta">${c.posted ? "Visited and posted" : "Visited · post still coming"} · ${c.localAudiencePct}% of their audience is local</div></div><span class="lb-num">${fmtNum(c.localReach)}<span class="u">local reach</span></span></div>`).join("")}
+      ${(s.creators || []).map((c) => `<div class="lb-row"><img src="${esc(c.avatarUrl)}" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex:none"><div class="lb-main"><div class="lb-name">${esc(c.name)}${handleLabel(c.handle) ? ` <span class="muted" style="font-weight:600">${esc(handleLabel(c.handle))}</span>` : ""}</div><div class="lb-meta">${c.posted ? "Visited and posted" : "Visited · post still coming"} · ${c.localAudiencePct}% of their audience is local</div></div><span class="lb-num">${fmtNum(c.localReach)}<span class="u">local reach</span></span></div>`).join("")}
     </div>
   </section>`;
 }
@@ -20405,7 +20405,7 @@ function partnerCreatorsHtml(d) {
   ${wsHead("Your creators", { sub: "The bench your links brought in. Contact details stay private, always.", subKey: "pt-creators" })}
   ${rows.length ? uxCap203(rows.map((c) => `
   <div class="card mb">
-    <div class="flex-between"><strong>@${esc(c.handle)}</strong><span class="badge ${c.status === "approved" ? "ok" : "info"}">${c.status === "approved" ? (c.complete ? "Complete" : "Approved") : "Claimed"}</span></div>
+    <div class="flex-between"><strong>${esc(handleLabel(c.handle))}</strong><span class="badge ${c.status === "approved" ? "ok" : "info"}">${c.status === "approved" ? (c.complete ? "Complete" : "Approved") : "Claimed"}</span></div>
     <p class="small muted" style="margin:6px 0 0">${esc(c.tier || "")}${c.localAudiencePct !== null ? ` · Local ${c.localAudiencePct}%` : ""}${c.spanishAudiencePct !== null && c.spanishAudiencePct !== undefined ? ` · Spanish ${c.spanishAudiencePct}%` : ""} · ${esc(c.market)}${c.sample ? ` · <span class="badge warn">Sample</span>` : ""}</p>
   </div>`), 8) : partnerFillsIn("Share your creator link and your bench starts here.")}`;
 }
@@ -21444,7 +21444,7 @@ function reqRowHtml(r) {
       <span class="req-ava">${esc((c.name || "").trim().charAt(0).toUpperCase() || "S")}</span>
       <div class="req-main" onclick="return reqToggleOpen('${a.id}')" style="cursor:pointer">
         <div class="req-name">${esc(c.name || "")} ${statusBadge}</div>
-        <div class="req-meta">@${esc(c.handle || "")} · for <strong>${esc(r.offer.title)}</strong></div>
+        <div class="req-meta">${handleLabel(c.handle) ? `${esc(handleLabel(c.handle))} · ` : ""}for <strong>${esc(r.offer.title)}</strong></div>
       </div>
       <span class="kebab-wrap"><button type="button" class="kebab-btn" aria-label="More actions" onclick="return reqKebab(event,'${a.id}')">&#8943;</button>${reqState.kebab === a.id ? menu : ""}</span>
     </div>
@@ -23781,7 +23781,7 @@ function lineupCardHtml(lu) {
     <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--hairline,#DFE7DF)">
       <span style="flex:none;width:44px;height:44px;border-radius:50%;overflow:hidden;background:#E3F5EA;display:flex;align-items:center;justify-content:center">${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="" style="width:44px;height:44px;object-fit:cover;display:block">` : `<span style="font-weight:800;font-size:1.1rem">${esc((c.name || "").trim().charAt(0).toUpperCase() || "M")}</span>`}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700">${esc(c.name)} <span class="muted" style="font-weight:600">@${esc(c.handle || "")}</span></div>
+        <div style="font-weight:700">${esc(c.name)}${handleLabel(c.handle) ? ` <span class="muted" style="font-weight:600">${esc(handleLabel(c.handle))}</span>` : ""}</div>
         <div class="small muted">${esc(c.why || "")}</div>
       </div>
       <span style="flex:none;text-align:right"><strong>${fmtNum(c.neighborCount)}</strong><br><span class="small muted">${c.neighborExtrapolated ? "potential neighbors" : "neighbors"}</span></span>
@@ -24385,7 +24385,7 @@ function openBookingFlow(creatorId) {
     ${wsHead(`Book ${esc(first)}`, { sub: "Just this creator — not a campaign. Three short steps and the offer is on its way." })}
     ${sigChatBoxHtml("book")}
     <div class="panel" style="margin-top:14px">
-      <div class="shelf-tray-name" style="font-size:1.05rem">${esc(c.name || "")}${p.handle ? ` <span class="muted">@${esc(p.handle)}</span>` : ""}</div>
+      <div class="shelf-tray-name" style="font-size:1.05rem">${esc(c.name || "")}${handleLabel(p.handle) ? ` <span class="muted">${esc(handleLabel(p.handle))}</span>` : ""}</div>
       ${pct !== null ? `<div class="small" style="margin-top:2px"><strong>${pct}% local</strong>${count !== null ? ` · about ${fmtFull(count)} local followers` : ""}</div>` : ""}
       <div style="margin-top:8px">${acceptanceHtml(c)}</div>
       <div class="shelf-price" style="margin-top:6px">${esc(shelfPriceLine(c).main)}</div>
@@ -26083,7 +26083,7 @@ function applicantCardHtml(offer, a) {
   }[a.status] || esc(a.status);
   return `
   <div class="card mb">
-    <div class="flex-between"><strong>${esc(c.name || a.snapshot.name)} <span class="muted">@${esc(c.handle || a.snapshot.handle)}</span></strong>${stateLine}</div>
+    <div class="flex-between"><strong>${esc(c.name || a.snapshot.name)}${handleLabel(c.handle || a.snapshot.handle) ? ` <span class="muted">${esc(handleLabel(c.handle || a.snapshot.handle))}</span>` : ""}</strong>${stateLine}</div>
     ${campusBadgeHtml(c) ? `<p class="small" style="margin-top:6px">${campusBadgeHtml(c)}</p>` : ""}
     <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts${ratingBit}${badgesHtml(c.badges)} &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
     <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to Magpie: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate ${currencySymbolForMarket(c.market)}${fmtPrice(c.paidRate)}` : ""}</p>
@@ -27246,7 +27246,7 @@ function adminMsgPanelHtml() {
     const c = adminMsg.threadCreator;
     threadView = `
     <div class="mt">
-      <h4 style="margin:0 0 6px">Thread with ${esc(c.name)} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}${c.org ? ` <span class="muted">${esc(c.org)}</span>` : ""} <span class="muted small">${esc(roleWord(c.role))}</span></h4>
+      <h4 style="margin:0 0 6px">Thread with ${esc(c.name)} ${handleLabel(c.handle) ? `<span class="muted">${esc(handleLabel(c.handle))}</span>` : ""}${c.org ? ` <span class="muted">${esc(c.org)}</span>` : ""} <span class="muted small">${esc(roleWord(c.role))}</span></h4>
       <div id="admin-msg-list">${(adminMsg.threadMessages || []).map((m) => `
         <div class="msg ${m.fromId === SIGNL_TEAM_PEER ? "platform-msg" : ""}">
           <div class="meta">${m.fromId === SIGNL_TEAM_PEER ? "Magpie" : esc(c.name)} &middot; ${fmtDate(m.createdAt)}</div>
@@ -27525,7 +27525,7 @@ function adminCampOpenThread163(peerId) {
 function adminCampPanelHtml163() {
   const rowsArr203 = (adminCamp163.campaigns || []).map((c) => {
     const kindLabel = c.kind === "broadcast" ? "Broadcast" : "Market segment";
-    const people = (c.recipients || []).map((p) => `<button type="button" class="btn small-btn ghost" style="margin:0 6px 6px 0" onclick="return adminCampOpenThread163('${p.id}')">${esc(p.name)}${p.handle ? ` (@${esc(p.handle)})` : ""}</button>`).join("");
+    const people = (c.recipients || []).map((p) => `<button type="button" class="btn small-btn ghost" style="margin:0 6px 6px 0" onclick="return adminCampOpenThread163('${p.id}')">${esc(p.name)}${handleLabel(p.handle) ? ` (${esc(handleLabel(p.handle))})` : ""}</button>`).join("");
     return `
     <div class="admin-msg-item">
       <strong>${esc(c.title || (c.kind === "broadcast" ? "Broadcast message" : "Segment message"))}</strong> <span class="badge info">${kindLabel}</span> <span class="muted small">${fmtDate(c.createdAt)} &middot; sent by ${esc(c.sentByName || "Magpie admin")}</span>
@@ -28632,7 +28632,7 @@ function renderAdminAccount126() {
 function demoShowcasePanelHtml(s) {
   const loaded = s && s.loaded ? s.loaded : 0;
   const roster = loaded
-    ? `<p class="small muted" style="margin:8px 0 0">Loaded: ${(s.creators || []).map((c) => `${esc(c.name)} (@${esc(c.handle)})`).join(", ")}</p>`
+    ? `<p class="small muted" style="margin:8px 0 0">Loaded: ${(s.creators || []).map((c) => `${esc(c.name)}${handleLabel(c.handle) ? ` (${esc(handleLabel(c.handle))})` : ""}`).join(", ")}</p>`
     : "";
   const allow = (s && s.allowlisted && s.allowlisted.length)
     ? `<p class="small" style="margin:8px 0 0">Can see them in discovery: ${s.allowlisted.map(esc).join(", ")} (their business accounts only), plus any tester-flagged business. Nobody else can: not other businesses, not creators, not the public pages.</p>`
@@ -30592,8 +30592,8 @@ function adminUserCardFactsHtml(u) {
       : `<span class="muted small">Platform split not stated</span>`;
     const handleHtml = c.handle
       ? (c.primaryProfileUrl
-        ? `<a href="${esc(c.primaryProfileUrl)}" target="_blank" rel="noopener">@${esc(c.handle)}</a>`
-        : `@${esc(c.handle)}`)
+        ? handleLabel(c.handle) ? `<a href="${esc(c.primaryProfileUrl)}" target="_blank" rel="noopener">${esc(handleLabel(c.handle))}</a>` : ""
+        : esc(handleLabel(c.handle)))
       : "";
     const photo = c.hasPhoto
       ? `<img class="admin-card-photo" src="/api/users/${u.id}/photo" alt="" loading="lazy">`
@@ -31687,7 +31687,7 @@ function adminCreators130RowsHtml(rows) {
       const c = u.creator || {};
       const pct = typeof c.localAudiencePct === "number" ? c.localAudiencePct + "%" : "—";
       return `<tr${ui203 >= 12 ? ' class="ux-extra" hidden' : ""}>
-        <td><strong>${esc(u.name || "")}</strong>${c.handle ? `<div class="muted small">@${esc(String(c.handle).replace(/^@/, ""))}</div>` : ""}</td>
+        <td><strong>${esc(u.name || "")}</strong>${handleLabel(c.handle) ? `<div class="muted small">${esc(handleLabel(c.handle))}</div>` : ""}</td>
         <td data-label="Market">${esc(adminCanonMarket(u.market || ""))}</td>
         <td data-label="Status">${u.status === "approved" ? "Approved" : u.status === "pending" ? "Waiting on review" : esc(u.status || "")}</td>
         <td data-label="Followers">${astFull(astCreatorTotal(u))}</td>
@@ -34579,7 +34579,7 @@ function rcProspectCardHtml(p) {
     p.email ? `<a href="mailto:${esc(p.email)}">Email</a>` : "",
   ].filter(Boolean).join(" &middot; ");
   return `<div class="panel" id="rc-card-${p.id}">
-    <p style="margin:0 0 4px"><strong>${esc(p.name || p.handle || "Creator")}</strong> ${p.handle ? `<span class="muted">@${esc(p.handle)}</span>` : ""}
+    <p style="margin:0 0 4px"><strong>${esc(p.name || p.handle || "Creator")}</strong> ${handleLabel(p.handle) ? `<span class="muted">${esc(handleLabel(p.handle))}</span>` : ""}
     <span class="badge ${RC_STATUS_BADGE[st] || "info"}">${esc(RC_STATUS_LABEL[st] || st)}</span>
     ${p.alreadyOnSignl ? `<span class="badge ok">On Magpie</span>` : ""}
     ${p.belowMinimum ? `<span class="badge warn">Under 500: check before outreach</span>` : ""}
@@ -34681,7 +34681,7 @@ function rcOutreachHtml(p, list) {
   <p class="muted small">${idx + 1} of ${list.length} waiting. Pick the next one any time:</p>
   <p><select id="rc-focus-sel" onchange="rcFocusChange(this.value)" style="max-width:420px">${list.map((x) => `<option value="${x.id}" ${x.id === p.id ? "selected" : ""}>${esc(x.name || x.handle || "Creator")} (@${esc(x.handle || "")}) - ${esc(RC_STATUS_LABEL[x.effectiveStatus || x.status] || "")}</option>`).join("")}</select></p>
   <div class="panel">
-    <p style="margin:0 0 4px"><strong>${esc(p.name || p.handle || "Creator")}</strong> <span class="muted">@${esc(p.handle || "")}</span> <span class="badge ${RC_STATUS_BADGE[st] || "info"}">${esc(RC_STATUS_LABEL[st] || st)}</span></p>
+    <p style="margin:0 0 4px"><strong>${esc(p.name || p.handle || "Creator")}</strong> ${handleLabel(p.handle) ? `<span class="muted">${esc(handleLabel(p.handle))}</span> ` : ""}<span class="badge ${RC_STATUS_BADGE[st] || "info"}">${esc(RC_STATUS_LABEL[st] || st)}</span></p>
     <p class="small muted" style="margin:0 0 10px">${[p.category, p.city, p.followers ? `${Number(p.followers).toLocaleString("en-US")} followers` : ""].filter(Boolean).map(esc).join(" &middot; ")}</p>
     <div class="tabs">${["instagram", "tiktok", "email"].map((c) => `<button class="${ch === c ? "active" : ""}" onclick="rcSetChannel('${c}')">${c === "email" ? "Email" : c === "tiktok" ? "TikTok" : "Instagram"}</button>`).join("")}</div>
     ${ch === "email" ? `<div class="field"><label>Subject</label><input id="rc-draft-subject" value="${esc(d.emailSubject || "")}"></div>` : ""}
@@ -34762,7 +34762,7 @@ async function loadRecruiterResults(el) {
     </div>
     ${data.credited && data.credited.length ? `<div class="table-wrap ct199 panel"><table>
       <tr><th>Creator</th><th>Handle</th><th>How</th><th>Status</th><th>When</th></tr>
-      ${data.credited.map((c) => `<tr><td>${esc(c.name || "")}</td><td>@${esc(c.handle || "")}</td><td>${c.via === "link" ? "Your link" : "Your list"}</td><td>${esc(c.status || "")}</td><td>${c.at ? new Date(c.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""}</td></tr>`).join("")}
+      ${data.credited.map((c) => `<tr><td>${esc(c.name || "")}</td><td>${esc(handleLabel(c.handle))}</td><td>${c.via === "link" ? "Your link" : "Your list"}</td><td>${esc(c.status || "")}</td><td>${c.at ? new Date(c.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""}</td></tr>`).join("")}
     </table></div>` : `<div class="panel"><p class="muted">No sign-ups yet. They appear here the day a creator claims through your message.</p></div>`}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -35295,7 +35295,7 @@ async function loadStaffRecruiters() {
       <tr><th>Recruiter</th><th>Market</th><th>Queued</th><th>Sent (IG/TT/Email)</th><th>Replies+</th><th>Sign-ups</th><th>Approved</th><th>Via link / list</th><th></th></tr>
       ${rows.map((r) => { const e = r.recruiter; return `<tr><td><strong>${esc(e.name)}</strong><br><span class="muted small">${esc(e.kind)} &middot; src=${esc(e.claimSrc)}</span></td><td>${esc(e.marketName)}</td><td>${r.assigned}</td><td>${r.sends} (${r.sentByChannel.instagram}/${r.sentByChannel.tiktok}/${r.sentByChannel.email})</td><td>${r.replies}</td><td>${r.claimsStarted}</td><td>${r.signupsApproved}</td><td>${r.creditsViaLink} / ${r.creditsViaListMatch}</td><td>${e.kind === "staff" ? `<button class="btn small-btn ghost" onclick="srResend('${e.id}')">Resend invite</button>` : ""}</td></tr>`; }).join("")}
     </table></div>` : `<p class="muted">No recruiter seats yet.</p>`}
-    ${conflicts.length ? `<div class="panel"><h4 style="margin-top:0">Flagged list matches</h4><p class="small muted">These sign-ups matched a prospect on one recruiter's list but arrived through another recruiter's link, so the link took the credit. Nothing is double-counted; the flag is here so a human can see it.</p>${conflicts.map((c) => `<p class="small">${esc(c.who)} (${esc(c.market)}): @${esc(c.handle || "")} - ${esc(c.name || "")}</p>`).join("")}</div>` : ""}`;
+    ${conflicts.length ? `<div class="panel"><h4 style="margin-top:0">Flagged list matches</h4><p class="small muted">These sign-ups matched a prospect on one recruiter's list but arrived through another recruiter's link, so the link took the credit. Nothing is double-counted; the flag is here so a human can see it.</p>${conflicts.map((c) => `<p class="small">${esc(c.who)} (${esc(c.market)})${handleLabel(c.handle) ? `: ${esc(handleLabel(c.handle))} - ` : ": "}${esc(c.name || "")}</p>`).join("")}</div>` : ""}`;
     const nameEl = document.getElementById("sr-name");
     if (nameEl && typedName) nameEl.value = typedName;
     const emailEl = document.getElementById("sr-email");
@@ -36330,7 +36330,7 @@ function bdShowScreens() {
     <div class="bd-show-card">
       ${c.photoUrl ? `<img class="bd-show-photo" src="${esc(c.photoUrl)}" alt="" onerror="this.remove()">` : `<div class="bd-show-photo bd-show-mono">${esc(String(c.firstName || "?").charAt(0).toUpperCase())}</div>`}
       <div class="bd-show-cmain">
-        <div class="bd-show-cname">${esc(c.firstName || c.name)} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}</div>
+        <div class="bd-show-cname">${esc(c.firstName || c.name)} ${handleLabel(c.handle) ? `<span class="muted">${esc(handleLabel(c.handle))}</span>` : ""}</div>
         <div class="muted small">${esc(c.categoryLine)}${c.alsoLine ? ` · Also in ${esc(mktName)}` : ""}</div>
         ${c.reachLine ? `<div class="bd-show-reach">${esc(c.reachLine)}</div>` : ""}
         ${c.areaLine ? `<div class="bd-show-reach">${esc(c.areaLine)}</div>` : ""}
@@ -37697,7 +37697,7 @@ function natRaiserRowHtml(campaignId, r) {
   const markets = (c.markets || []).map((m) => `${esc(m.market)}: ${m.localCount != null ? Number(m.localCount).toLocaleString("en-US") : "—"} local followers${m.localPct != null ? ` (${m.localPct}%)` : ""}`).join(" · ");
   const f = r.fulfillment;
   return `<div class="panel" style="margin-top:8px">
-    <div class="flex-between"><strong>${esc(c.name || "")} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}</strong><span class="badge ${r.status === "picked" ? "ok" : "info"}">${esc({ raised: "Hand raised", picked: "Picked", not_picked: "Not picked", withdrawn: "Withdrew" }[r.status] || r.status)}</span></div>
+    <div class="flex-between"><strong>${esc(c.name || "")} ${handleLabel(c.handle) ? `<span class="muted">${esc(handleLabel(c.handle))}</span>` : ""}</strong><span class="badge ${r.status === "picked" ? "ok" : "info"}">${esc({ raised: "Hand raised", picked: "Picked", not_picked: "Not picked", withdrawn: "Withdrew" }[r.status] || r.status)}</span></div>
     <p class="small" style="margin:6px 0">${esc((c.categories || []).join(", "))} · ${Number(c.totalAudience || 0).toLocaleString("en-US")} total followers · home market: ${esc(c.homeMarket || "Not listed yet")}</p>
     ${markets ? `<p class="small muted" style="margin:0 0 6px">Listed in — ${markets} <span>(counts are the creator's own reported numbers)</span></p>` : ""}
     ${!r.eligible ? `<p class="small" style="margin:0 0 6px">Cannot be picked right now: ${esc(r.ineligibleReason)}</p>` : ""}
@@ -37761,7 +37761,7 @@ async function loadNatDiscover() {
 function natDiscoverCardHtml(c) {
   const markets = (c.markets || []).map((m) => `${esc(m.market)}: ${m.localCount != null ? Number(m.localCount).toLocaleString("en-US") : "—"}${m.localPct != null ? ` (${m.localPct}%)` : ""}`).join(" · ");
   return `<article class="mirror-card" style="text-align:left">
-    <strong>${esc(c.name || "")}</strong> ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}
+    <strong>${esc(c.name || "")}</strong> ${handleLabel(c.handle) ? `<span class="muted">${esc(handleLabel(c.handle))}</span>` : ""}
     <p class="small" style="margin:6px 0">${esc((c.categories || []).join(", "))}</p>
     <p class="small" style="margin:0 0 4px">${Number(c.totalAudience || 0).toLocaleString("en-US")} total followers · home market: ${esc(c.homeMarket || "Not listed yet")}</p>
     ${markets ? `<p class="small muted" style="margin:0 0 8px">Local followers by market — ${markets}</p>` : ""}
