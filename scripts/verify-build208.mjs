@@ -39,8 +39,8 @@ const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 const seedPosts = JSON.parse(fs.readFileSync(path.join(ROOT, "netlify/functions/lib/social-seed.json"), "utf8")).posts;
 
 console.log("== stamp ==");
-check("BUILD_ID is 2026.11.18-210 (shipping stamp; build -208 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-210"'));
-check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-210"') && (indexHtml.match(/2026\.11\.18-210/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-211 (shipping stamp; build -208 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-211"'));
+check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-211"') && (indexHtml.match(/2026\.11\.18-211/g) || []).length >= 5);
 
 console.log("== D3: stray QA artifacts removed ==");
 for (const p of [".qa136-audit", ".qa136-run", ".qa138", ".qa139", ".qa140", ".qamatch", ".vtmp", "scripts/qa-audit136.py", "scripts/qa-build136.py", "scripts/qa-build136b.py"]) {
@@ -127,7 +127,7 @@ const base = `http://127.0.0.1:${PORT}`;
 const server = spawn("node", ["scripts/dev-server.mjs", String(PORT)], {
   cwd: ROOT,
   env: {
-    ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: DB, ADMIN_EMAIL: "jeff@joinsignl.com", ADMIN_PASSWORD: "verify-admin-pass-123", APP_URL: base, SIGNL_TEST_ALLOW_BUSINESS: "1",
+    ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: DB, ADMIN_EMAIL: "jeff@joinsignl.com", ADMIN_PASSWORD: "verify-admin-pass-123", APP_URL: base, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_SWEEP_TOKEN: "suite-sweep-token-208",
     SIG_AI_BASE_URL: "", SIG_AI_API_KEY: "", OPENAI_API_KEY: "", OPENAI_BASE_URL: "", OPENROUTER_API_KEY: "", GEMINI_API_KEY: "", GOOGLE_API_KEY: "",
     MAGGIE_AI_ENABLED: "", MAGGIE_AI_MODEL: "",
   },
@@ -167,6 +167,10 @@ try {
   check("preview cards = bookable count", !!pv.data && (pv.data.creators || []).length === 3, `cards=${pv.data && (pv.data.creators || []).length}`);
 
   console.log("== D5 (live): the waiting suggestion says Review ==");
+  // Build -211: the GET serves the precomputed board; compute it
+  // through the refresh endpoint first (the old cold-build GET is gone).
+  const sref = await admin("POST", "/api/admin/suggestions/refresh", {}, base);
+  check("suggestions refresh computes the board", sref.status === 200 && !!sref.data && sref.data.ok === true, `${sref.status}`);
   const sug = await admin("GET", "/api/admin/suggestions", undefined, base);
   const wait = ((sug.data && sug.data.suggestions) || []).find((s) => s.id === "waiting:creators");
   check("waiting suggestion present", !!wait, JSON.stringify(((sug.data || {}).suggestions || []).map((s) => s.id)));

@@ -28,8 +28,8 @@ const LABEL = { instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedI
 const headingOf = (p) => [...new Set((p.platforms && p.platforms.length ? p.platforms : [p.platform]).filter(Boolean))].map((pl) => LABEL[pl] || pl).join(" + ");
 
 console.log("== stamp ==");
-check("BUILD_ID is 2026.11.18-210", buildJs.includes('exports.BUILD_ID = "2026.11.18-210"'));
-check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-210"') && (indexHtml.match(/2026\.11\.18-210/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-211", buildJs.includes('exports.BUILD_ID = "2026.11.18-211"'));
+check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-211"') && (indexHtml.match(/2026\.11\.18-211/g) || []).length >= 5);
 
 console.log("== D1-R (static): the renderer reads p.platforms ==");
 const socStart = appJs.indexOf("async function loadAdminSocial138()");

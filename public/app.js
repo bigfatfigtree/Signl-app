@@ -32186,12 +32186,19 @@ async function astLoadSuggestions() {
       new Promise((_, reject) => setTimeout(() => reject(new Error("Suggestions took too long to load.")), 10000)),
     ]);
     astSuggestList = d.suggestions || [];
+    if (!astSuggestList.length && d.preparing) {
+      // Build -211: no computed board has been stored yet (the
+      // board is precomputed off the read path now). Say that
+      // plainly instead of claiming nothing needs a decision.
+      host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 4px">Suggestions</h3><p class="small muted" style="margin:0 0 8px">Maggie is preparing your board. It refreshes itself every few minutes, so the first one lands shortly.</p><button type="button" class="btn small" onclick="astLoadSuggestions(); return false">Try again</button></div>`;
+      return;
+    }
     if (!astSuggestList.length) {
       host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 4px">Suggestions</h3><p class="small muted" style="margin:0">Nothing needs a decision right now. Maggie is watching: ${(d.watching || []).map((w) => esc(w)).join(" · ")}.</p></div>`;
       return;
     }
     const asOf = d.generatedAt ? new Date(d.generatedAt) : null;
-    host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 8px">Suggestions <span class="muted" style="font-weight:400">(${astSuggestList.length})</span></h3>${astSuggestList.map((s, i) => `
+    host.innerHTML = `<div class="panel" style="margin:0 0 14px"><h3 style="margin:0 0 8px">Suggestions <span class="muted" style="font-weight:400">(${astSuggestList.length})</span></h3>${d.preparing ? `<p class="small muted" style="margin:0 0 8px">Maggie is still preparing your full board. These are the latest actions on file.</p>` : ""}${astSuggestList.map((s, i) => `
       <div class="kv sug-row" style="align-items:flex-start;gap:10px"><span>${esc(s.text)}<br><span class="small muted">${esc(astReceiptLine(s.receipt))}</span></span><span class="sug-acts">${s.action ? `<button type="button" class="btn small" onclick="return astOpenSuggestionIdx(${i})">${esc(s.action.label)}</button>` : ""}<button type="button" class="btn small ghost" onclick="return astDismissSuggestionIdx(${i})">Dismiss</button></span></div>`).join("")}
       <p class="small muted" style="margin:8px 0 0">Open one to act on it; nothing happens from this card alone. A dismissed suggestion stays away until its numbers change or two weeks pass.${asOf ? ` As of ${esc(asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }))}.` : ""}</p></div>`;
   } catch (e) {

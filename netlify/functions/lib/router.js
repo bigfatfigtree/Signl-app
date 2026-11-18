@@ -357,12 +357,24 @@ async function lastCreatorActionByActor210() {
     for (let d = Date.parse(fromDay); d >= Date.parse(windowStartDay); d -= 86400000) days.push(claDayStr(d));
     // Days scan in bounded parallel (each into its own map, then
     // merged) — a serial day-by-day walk of a cold 62-day window
-    // was itself most of the old build's cost. The merged digest
-    // persists once at the end; the preamble backfill loader is
-    // the per-day-persistent convergence path behind this read.
-    const perDay = await mapBounded202(days, 12, async (dayStr) => { const m = {}; await claScanDayInto(dayStr, m); return m; });
-    for (const m of perDay) for (const [id, t] of Object.entries(m)) if (!map[id] || t > map[id]) map[id] = t;
-    try { await store.set("config:creatorLastAction", { map, coveredThroughDay: windowStartDay, updatedAt: nowIso(), progressAt: nowIso() }); } catch (e) { /* progress persistence is best-effort */ }
+    // was itself most of the old build's cost. Build -211: the
+    // merged digest now persists after EVERY batch of days, not
+    // once at the end. The -210 version persisted only at the
+    // end, so a build killed mid-scan (the production function
+    // budget) left zero progress and the next hit re-paid the
+    // whole scan — the exact loop the live walk caught. Batch
+    // order is newest to oldest and pre-existing coverage runs
+    // to today, so after each batch the coverage claim (the
+    // batch's oldest day) is truthful, and any later pass —
+    // this read, the preamble backfill, the board refresh —
+    // resumes where the last one stopped.
+    const CLA_BATCH = 6;
+    for (let s = 0; s < days.length; s += CLA_BATCH) {
+      const chunk = days.slice(s, s + CLA_BATCH);
+      const perDay = await mapBounded202(chunk, 12, async (dayStr) => { const m = {}; await claScanDayInto(dayStr, m); return m; });
+      for (const m of perDay) for (const [id, t] of Object.entries(m)) if (!map[id] || t > map[id]) map[id] = t;
+      try { await store.set("config:creatorLastAction", { map, coveredThroughDay: chunk[chunk.length - 1], updatedAt: nowIso(), progressAt: nowIso() }); } catch (e) { /* progress persistence is best-effort */ }
+    }
   }
   return map;
 }
@@ -1174,6 +1186,126 @@ async function syncSuggestionRecords(candidates, actorId) {
   }
   visible.sort((a, b) => b.score - a.score);
   return visible.slice(0, SUGGESTION_OPEN_CAP);
+}
+
+// ---------- Suggestion board, precomputed (Build -211) ----------
+// WHY: the board used to be built inside GET /admin/suggestions
+// whenever the in-process aggregate memo missed. On Netlify the
+// memo is per-instance memory and admin traffic is one person,
+// so production hits were effectively always cold — and the cold
+// build is ~61k store fetches at production scale (measured:
+// 77s at the -210 harness's own 35ms/get model over a 45k-key
+// seed). The function died mid-build, the -210 digest scan —
+// which persisted only at the very end — never landed, and
+// first hit, retry, and every later visit died identically on
+// the client's 10s race (live-walk evidence, 2026-11-18, after
+// Builds -202 and -210 both "proved" the fix on small seeds).
+// THE FIX IS ARCHITECTURAL: the compute lives here and runs
+// only off the read path — the 5-minute scheduled refresh, the
+// admin/sweep refresh endpoint, and a throttled fire-and-forget
+// nudge — and stores its payload at config:suggestionBoard. The
+// GET serves that record (one fetch). With no board stored yet
+// it serves the persisted suggestion records (the last synced
+// board state) flagged `preparing`, and never builds.
+const SUGGESTION_BOARD_KEY = "config:suggestionBoard";
+const SUGGESTION_BOARD_STALE_MS = 10 * 60 * 1000;
+
+async function loadSuggestionBoard() {
+  try { return await store.get(SUGGESTION_BOARD_KEY); } catch (e) { return null; }
+}
+
+// The full compute, unchanged in substance from the old GET:
+// candidates -> lifecycle sync -> Maggie phrasing -> store the
+// payload (and the candidate list, so dismiss/act can bind to
+// the exact fingerprints Jeff was shown without rebuilding).
+async function refreshSuggestionBoard211(actorId) {
+  const candidates = await buildSuggestionCandidates();
+  let visible = await syncSuggestionRecords(candidates, actorId || null);
+  let phrased = false;
+  // Maggie may phrase the lines when her AI is on; the numbers
+  // are validated token-by-token inside maggiePhrase, and any
+  // doubt keeps the template text. This external call is one of
+  // the costs that made the old read path unshippable — it is
+  // welcome here, off the path.
+  const cfg = maggieAi.maggieAiConfig();
+  if (cfg && visible.length) {
+    const lines = await maggieAi.maggiePhrase(cfg, visible.map((s) => s.text));
+    if (lines) { visible = visible.map((s, i) => ({ ...s, text: lines[i] })); phrased = true; }
+  }
+  const payload = { suggestions: visible.map((s) => ({ id: s.id, kind: s.kind, type: s.type, text: s.text, receipt: s.receipt, action: s.action || null, score: s.score, surfacedAt: s.surfacedAt || null })), watching: SUGGESTION_WATCHING, phrased, generatedAt: nowIso() };
+  await store.set(SUGGESTION_BOARD_KEY, { payload, candidates, computedAt: payload.generatedAt });
+  return { suggestions: payload.suggestions.length, candidates: candidates.length, phrased, computedAt: payload.generatedAt };
+}
+
+// The fallback board when no computed board is stored yet: the
+// persisted suggestion records ARE the last board the lifecycle
+// sync produced, so open + unexpired records, ranked and capped
+// exactly like the real board, are an honest serve — flagged
+// `preparing` so the client never presents them (or an empty
+// list) as a fresh "nothing needs a decision" truth.
+async function suggestionBoardFallback211() {
+  const rows = await store.list("suggestion:");
+  const nowMs = Date.now();
+  const open = rows.map((r) => r.value).filter((s) => s && s.status === "open" && (!s.expiresAt || Date.parse(s.expiresAt) > nowMs));
+  open.sort((a, b) => (b.score || 0) - (a.score || 0));
+  const suggestions = open.slice(0, SUGGESTION_OPEN_CAP).map((s) => ({ id: s.id, kind: s.kind, type: s.type, text: s.headline, receipt: s.receipt, action: s.action || null, score: s.score, surfacedAt: s.shownAt || s.createdAt || null }));
+  return { suggestions, watching: SUGGESTION_WATCHING, phrased: false, generatedAt: null, preparing: true };
+}
+
+// The compute runs ONLY in the suggestions-refresh background
+// function (15-minute budget). The first -211 cut ran it behind
+// this synchronous function (the refresh endpoint, the nudge);
+// the independent reviewer proved from the calibrated probe
+// (98s first convergence, 32s steady at 35ms/get) that it can
+// exceed the sync budget, and a board persisted only at the end
+// of a killed invocation never lands — the -210 disease one
+// level up. So every trigger here just FIRES the background
+// function and returns; no request path computes the board.
+async function fireSuggestionBoardRefresh211(force) {
+  const base = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
+  const headers = { "Content-Type": "application/json" };
+  if (process.env.SIGNL_SWEEP_TOKEN) headers["x-signl-sweep-token"] = process.env.SIGNL_SWEEP_TOKEN;
+  const res = await fetch(`${base}/.netlify/functions/suggestions-refresh-background`, { method: "POST", headers, body: JSON.stringify({ force: !!force }) });
+  return res.status;
+}
+// Exported entry for the background function (and the suites).
+// Skips when the stored board is under 4 minutes old unless
+// forced, so the 5-minute schedule and the nudges cannot pile
+// up duplicate computes.
+async function runSuggestionBoardRefresh211(opts) {
+  const force = !!(opts && opts.force);
+  if (!force) {
+    const board = await store.get(SUGGESTION_BOARD_KEY).catch(() => null);
+    if (board && board.computedAt && Date.now() - Date.parse(board.computedAt) < 4 * 60 * 1000) return { skipped: "fresh", computedAt: board.computedAt };
+  }
+  const out = await refreshSuggestionBoard211("system:suggestions-refresh");
+  await store.set("config:suggestionBoardRefresh", { lastRunAt: nowIso(), ok: true, suggestions: out.suggestions, candidates: out.candidates }).catch(() => {});
+  return out;
+}
+// Throttled off-path nudge: when the GET finds no board or a
+// stale one, it fires the background refresh (the LOADER RULE:
+// never awaited on the request path). A bonus path only — the
+// 5-minute scheduled background refresh is the guarantee.
+let suggestionBoardNudgeAt = 0;
+let suggestionBoardNudging = false;
+function maybeRefreshSuggestionBoard211(actorId) {
+  if (suggestionBoardNudging) return;
+  if (Date.now() - suggestionBoardNudgeAt < 60 * 1000) return;
+  suggestionBoardNudgeAt = Date.now();
+  suggestionBoardNudging = true;
+  (async () => { try { await fireSuggestionBoardRefresh211(false); } catch (e) { /* the schedule is the guarantee */ } finally { suggestionBoardNudging = false; } })();
+}
+
+// Dismiss / act update the stored board in place so Jeff's very
+// next read reflects the tap, without waiting for the refresh:
+// the card leaves the payload (and the candidate list, so a
+// second lookup cannot resurrect its fingerprint).
+async function removeFromSuggestionBoard211(id) {
+  const board = await loadSuggestionBoard();
+  if (!board || !board.payload) return;
+  board.payload.suggestions = (board.payload.suggestions || []).filter((s) => s.id !== id);
+  if (Array.isArray(board.candidates)) board.candidates = board.candidates.filter((c) => c.id !== id);
+  try { await store.set(SUGGESTION_BOARD_KEY, board); } catch (e) { /* the refresh reconciles */ }
 }
 
 // Compatibility wrapper for the v1 readers (the dismiss flow):
@@ -25701,6 +25833,32 @@ async function route(event) {
     return json(200, { ok: true, sweep: summary });
   }
 
+  // Suggestion board refresh trigger (Build -211). Same auth
+  // and placement discipline as the sweeps above: the Netlify
+  // scheduled function (netlify/functions/suggestions-refresh.mjs,
+  // every 5 minutes) POSTs with no session, carrying the
+  // x-signl-sweep-token header when SIGNL_SWEEP_TOKEN is set;
+  // without a matching token, only an admin session may trigger
+  // it. The endpoint does NOT compute: it fires the background
+  // function (15-minute budget) and answers at once — the
+  // compute at production scale can exceed this synchronous
+  // function's budget, which is exactly what the reviewer of
+  // the first -211 cut flagged. GET /admin/suggestions serves
+  // the stored board and never builds.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "suggestions" && seg[2] === "refresh") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    try {
+      const st = await fireSuggestionBoardRefresh211(!!(b && b.force));
+      if (st === 401 || st === 403) return err(502, "Refresh trigger was refused");
+      return json(200, { ok: true, started: true });
+    } catch (e) {
+      return err(502, "Refresh trigger failed");
+    }
+  }
+
   // Handle repair (Build -151): one-off sweep-context repair of
   // creator handles stored as URL fragments/share junk. Same
   // auth and placement discipline as the sweeps above: the
@@ -31198,41 +31356,36 @@ async function route(event) {
       });
     }
     if (method === "GET" && seg[1] === "suggestions" && seg.length === 2) {
-      // Build -146: candidates sync into persisted suggestion
-      // records (lifecycle + shown events) and the board is the
-      // top ~10 open, ranked. The response keeps the v1 shape
-      // and adds the door (action) and the as-of stamp.
-      // Build -151: the built payload is aggregate-memoized
-      // (30s, invalidated by any store write — a dismiss or act
-      // writes, so post-action reads are fresh). The candidate
-      // build re-scans events, prospects and the funnel; on the
-      // production store that scan is thousands of fetches, and
-      // rebuilding it on every Stats load left the panel stuck
-      // on its loading line past the function budget. Same
-      // pattern as /admin/applications.
-      const memoHit = aggMemoPGet("admin-suggestions", ["user", "offer", "booking", "post", "suggestion"], 300000);
-      if (memoHit !== undefined) return json(200, memoHit);
-      const candidates = await buildSuggestionCandidates();
-      let visible = await syncSuggestionRecords(candidates, user.id);
-      let phrased = false;
-      // Maggie may phrase the lines when her AI is on; the
-      // numbers are validated token-by-token inside
-      // maggiePhrase, and any doubt keeps the template text —
-      // the content is identical either way.
-      const cfg = maggieAi.maggieAiConfig();
-      if (cfg && visible.length) {
-        const lines = await maggieAi.maggiePhrase(cfg, visible.map((s) => s.text));
-        if (lines) { visible = visible.map((s, i) => ({ ...s, text: lines[i] })); phrased = true; }
+      // Build -211: the board is PRECOMPUTED and stored (see
+      // refreshSuggestionBoard211). This read is one fetch for
+      // the stored payload — the heavy build never runs here,
+      // so a cold instance, a huge event log, or a slow Maggie
+      // phrasing call can no longer kill the Stats card. With
+      // no board stored yet, the persisted suggestion records
+      // are served as the fallback board, flagged `preparing`;
+      // a stale or missing board also kicks the throttled
+      // off-path refresh (the 5-minute schedule is the
+      // guarantee; the nudge is a bonus).
+      const board = await loadSuggestionBoard();
+      if (board && board.payload && Array.isArray(board.payload.suggestions)) {
+        const computedMs = Date.parse(board.computedAt || board.payload.generatedAt || "");
+        if (!Number.isFinite(computedMs) || Date.now() - computedMs > SUGGESTION_BOARD_STALE_MS) maybeRefreshSuggestionBoard211(user.id);
+        return json(200, board.payload);
       }
-      const payload = { suggestions: visible.map((s) => ({ id: s.id, kind: s.kind, type: s.type, text: s.text, receipt: s.receipt, action: s.action || null, score: s.score, surfacedAt: s.surfacedAt || null })), watching: SUGGESTION_WATCHING, phrased, generatedAt: nowIso() };
-      aggMemoPSet("admin-suggestions", ["user", "offer", "booking", "post", "suggestion"], payload);
-      return json(200, payload);
+      const fallback = await suggestionBoardFallback211();
+      maybeRefreshSuggestionBoard211(user.id);
+      return json(200, fallback);
     }
     if (method === "POST" && seg[1] === "suggestions" && seg[2] === "dismiss" && seg.length === 3) {
       const b = parseBody(event);
       const id = String((b && b.id) || "");
-      const candidates = await buildSuggestionCandidates();
-      await syncSuggestionRecords(candidates, user.id);
+      // Build -211: the dismissal binds to the fingerprint of
+      // the numbers Jeff was shown — which is the stored board's
+      // candidate, not a fresh rebuild on this write path. The
+      // lifecycle sync that expires/resurfaces records now runs
+      // inside the board refresh, off every request path.
+      const board211 = await loadSuggestionBoard();
+      const candidates = board211 && Array.isArray(board211.candidates) ? board211.candidates : [];
       const target = candidates.find((s) => s.id === id);
       let rec = await store.get(`suggestion:${id}`);
       if (!target && !rec) return err(404, "That suggestion is not live anymore.");
@@ -31254,6 +31407,10 @@ async function route(event) {
       legacyCfg.updatedAt = now;
       await store.set("config:suggestionDismissals", legacyCfg);
       await logEvent({ type: "suggestion_dismissed", actorId: user.id, actorRole: "admin", subjectId: null, data: { id } });
+      // Build -211: the card leaves the stored board now, so
+      // the reload the client fires shows the truth immediately.
+      await removeFromSuggestionBoard211(id);
+      maybeRefreshSuggestionBoard211(user.id);
       return json(200, { ok: true });
     }
     if (method === "POST" && seg[1] === "suggestions" && seg[2] === "act" && seg.length === 3) {
@@ -31266,9 +31423,17 @@ async function route(event) {
       const id = String((b && b.id) || "");
       let rec = await store.get(`suggestion:${id}`);
       if (!rec) {
-        const candidates = await buildSuggestionCandidates();
-        await syncSuggestionRecords(candidates, user.id);
-        rec = await store.get(`suggestion:${id}`);
+        // Build -211: a missing record is rebuilt from the
+        // stored board's candidate (the refresh keeps records
+        // and board in sync, so this is a narrow gap), never
+        // from a full candidate rebuild on this write path.
+        const board211 = await loadSuggestionBoard();
+        const cand211 = board211 && Array.isArray(board211.candidates) ? board211.candidates.find((s) => s.id === id) : null;
+        if (cand211) {
+          const nowA = nowIso();
+          rec = { id, key: id, type: cand211.type, family: cand211.family, kind: cand211.kind, headline: cand211.text, receipts: suggestionReceiptsOf(cand211.receipt), receipt: cand211.receipt, action: cand211.action, market: cand211.market || null, category: cand211.category || null, subjectId: cand211.subjectId || null, score: cand211.score, fingerprint: cand211.fingerprint, status: "open", createdAt: nowA, updatedAt: nowA, expiresAt: new Date(Date.now() + SUGGESTION_TTL_MS).toISOString(), shownAt: nowA, actedAt: null, dismissedAt: null, dismissedFingerprint: null, outcome: null, timesSurfaced: 1 };
+          await store.set(`suggestion:${id}`, rec);
+        }
       }
       if (!rec) return err(404, "That suggestion is not live anymore.");
       const now = nowIso();
@@ -31278,6 +31443,9 @@ async function route(event) {
       rec.outcome = { actedAt: now, via: "door", route: (rec.action && rec.action.route) || null };
       await store.set(`suggestion:${id}`, rec);
       await logEvent({ type: "suggestion_acted", actorId: user.id, actorRole: "admin", subjectId: rec.subjectId || null, market: rec.market || null, data: { id, kind: rec.kind, route: rec.outcome.route } });
+      // Build -211: the acted card leaves the stored board now.
+      await removeFromSuggestionBoard211(id);
+      maybeRefreshSuggestionBoard211(user.id);
       return json(200, { ok: true });
     }
     if (method === "POST" && seg[1] === "suggestions" && seg[2] === "outcomes" && seg[3] === "sweep" && seg.length === 4) {
@@ -36637,4 +36805,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, runSuggestionBoardRefresh211, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };

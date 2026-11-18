@@ -101,6 +101,33 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+  // Build -211: the suggestion board background function is a
+  // separate Netlify function in production (15-minute budget,
+  // invoked over HTTP at its /.netlify/functions/ path). Serve
+  // it here too so local suites exercise the real trigger loop;
+  // locally it simply runs to completion inline.
+  if (url.pathname === "/.netlify/functions/suggestions-refresh-background") {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", async () => {
+      try {
+        const bg = require("../netlify/functions/suggestions-refresh-background.js");
+        const out = await bg.handler({
+          httpMethod: req.method,
+          path: url.pathname,
+          headers: req.headers,
+          body: chunks.length ? Buffer.concat(chunks).toString("utf8") : null,
+          isBase64Encoded: false,
+        });
+        res.writeHead(out.statusCode, out.headers || {});
+        res.end(out.body || "");
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: String(e) }));
+      }
+    });
+    return;
+  }
   if (url.pathname.startsWith("/api/")) {
     const chunks = [];
     req.on("data", (c) => chunks.push(c));

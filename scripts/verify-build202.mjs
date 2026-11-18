@@ -21,15 +21,15 @@ const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 
 console.log("== stamp ==");
-check("BUILD_ID is 2026.11.18-210 (shipping stamp; build -202 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-210"'));
-check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-210"') && (indexHtml.match(/2026\.11\.18-210/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-211 (shipping stamp; build -202 content)", buildJs.includes('exports.BUILD_ID = "2026.11.18-211"'));
+check("shell stamp matches", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-211"') && (indexHtml.match(/2026\.11\.18-211/g) || []).length >= 5);
 
 console.log("== A: loading ==");
 check("api() has AbortController deadline 12s GET / 20s other", appJs.includes("deadlineMs = isGet ? 12000 : 20000") && appJs.includes("ctrl.abort()") && appJs.includes("signal: ctrl ? ctrl.signal : undefined"));
 check("astLoadSuggestions race is 10000", appJs.includes('Suggestions took too long to load.")), 10000'));
 check("no Promise.race timeout above 10s in app.js", ![...appJs.matchAll(/Promise\.race\([\s\S]{0,300}?setTimeout\([^,]+,\s*(\d+)\)/g)].some((m) => Number(m[1]) > 10000));
 check("loadMyScore paints fallback with retry on catch and on missing card", appJs.includes("Score unavailable right now") && (appJs.match(/onclick="loadMyScore\(\)"/g) || []).length >= 2);
-check("suggestions memo key drops event/prospect/snapshot and TTL is 300000", routerJs.includes('aggMemoPGet("admin-suggestions", ["user", "offer", "booking", "post", "suggestion"], 300000)') && !routerJs.includes('aggMemoPGet("admin-suggestions", ["event"'));
+check("suggestions GET no longer builds behind a memo (build -211: stored board; the -202 memo check is superseded)", !routerJs.includes('aggMemoPGet("admin-suggestions"') && routerJs.includes("loadSuggestionBoard"));
 check("eventsInRange parallelized with bounded chunks", routerJs.includes("dayList202") && routerJs.includes("Promise.all(chunk.map"));
 check("/me/founding threads one allUsers list", routerJs.includes("const allUsers202 = await allUsers();") && routerJs.includes("creatorBuzz(user, allUsers202)") && routerJs.includes("foundingSummary(user, allUsers202)"));
 check("creatorBuzz accepts preloadedUsers", routerJs.includes("async function creatorBuzz(user, preloadedUsers)"));
