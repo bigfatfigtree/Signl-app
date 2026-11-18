@@ -31,6 +31,7 @@
 // figure is always labeled an estimate when Sig uses it.
 
 const { currencyForMarket } = require("./markets");
+const { canonicalMarketName } = require("./audience-markets");
 function n0(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 // Build -89: creator money renders in the creator's home-market
 // currency (London: £). Business and admin facts keep $ — GBP
@@ -87,7 +88,7 @@ function buildAdminFacts(d) {
 
   const marketMap = new Map();
   const mRow = (m) => {
-    const key = m || "Not filed under a market";
+    const key = canonicalMarketName(m) || m || "Not filed under a market"; // Build -202: canonical keys so Maggie quotes one count per market
     if (!marketMap.has(key)) marketMap.set(key, { market: key, creators: 0, approved: 0, pending: 0, complete: 0, businesses: 0, bizApproved: 0, bizActive: 0 });
     return marketMap.get(key);
   };
@@ -834,7 +835,7 @@ function answerAdmin(f, q, t) {
     if (f.visits.overduePosts) bits.push(`${fmt(f.visits.overduePosts)} ${plural(f.visits.overduePosts, "post")} overdue in the compliance queue`);
     if (f.partners.paused) bits.push(`${fmt(f.partners.paused)} ${plural(f.partners.paused, "partner")} paused`);
     if (!bits.length) return linked("Nothing is waiting on you right now. Applications are decided, no posts are overdue, no businesses are held at activation, and partners are in order.", "Open the Review queue", "admin-applications");
-    return linked(`Here is what needs you: ${bits.join("; ")}. The Review queue under Applications holds the decisions; this chat stays read-only.`, "Open the Review queue", "admin-applications");
+    return linked(`Here is what needs you: ${bits.join("; ")}. The Review tab holds the decisions; this chat stays read-only.`, "Open the Review queue", "admin-applications");
   }
 
   // Waiting list, with names
@@ -843,7 +844,7 @@ function answerAdmin(f, q, t) {
     if (!f.waiting.total) return "Nobody is waiting. Every application on file has a decision.";
     const names = f.waiting.list.map((w) => `${w.label} (${w.waited})`).join("; ");
     const more = f.waiting.total > f.waiting.list.length ? `, and ${fmt(f.waiting.total - f.waiting.list.length)} more` : "";
-    return linked(`${fmt(f.waiting.total)} ${plural(f.waiting.total, "application")} waiting on a decision (${fmt(f.waiting.creators)} ${plural(f.waiting.creators, "creator")}, ${fmt(f.waiting.businesses)} ${plural(f.waiting.businesses, "business", "businesses")}). Oldest first: ${names}${more}. They are decided in the Review queue under Applications.`, "Open the Review queue", "admin-applications");
+    return linked(`${fmt(f.waiting.total)} ${plural(f.waiting.total, "application")} waiting on a decision (${fmt(f.waiting.creators)} ${plural(f.waiting.creators, "creator")}, ${fmt(f.waiting.businesses)} ${plural(f.waiting.businesses, "business", "businesses")}). Oldest first: ${names}${more}. They are decided in the Review tab.`, "Open the Review queue", "admin-applications");
   }
 
   // Recent sign-ups
@@ -851,10 +852,10 @@ function answerAdmin(f, q, t) {
       (hasWord(t, "who") && hasPhrase(t, "signed up", "sign up", "joined"))) {
     if (hasWord(t, "business", "businesses")) {
       if (!b.recent.length) return "No business sign-ups on file yet.";
-      return linked(`${fmt(b.signupsToday)} business ${plural(b.signupsToday, "sign-up")} today. The newest: ${b.recent.map((r) => `${r.label} (${r.when})`).join("; ")}.`, "Open Applications", "admin-applications");
+      return linked(`${fmt(b.signupsToday)} business ${plural(b.signupsToday, "sign-up")} today. The newest: ${b.recent.map((r) => `${r.label} (${r.when})`).join("; ")}.`, "Open the Review tab", "admin-applications");
     }
     if (!c.recent.length) return "No creator sign-ups on file yet.";
-    return linked(`${fmt(c.claimsToday)} creator ${plural(c.claimsToday, "sign-up")} today, ${fmt(c.signups7d)} in the last 7 days. The newest: ${c.recent.map((r) => `${r.label} (${r.when})`).join("; ")}.`, "Open Applications", "admin-applications");
+    return linked(`${fmt(c.claimsToday)} creator ${plural(c.claimsToday, "sign-up")} today, ${fmt(c.signups7d)} in the last 7 days. The newest: ${c.recent.map((r) => `${r.label} (${r.when})`).join("; ")}.`, "Open the Review tab", "admin-applications");
   }
   if ((hasWord(t, "signups", "sign-ups", "claims", "joined") || hasPhrase(t, "signed up")) && (hasWord(t, "today") || hasPhrase(t, "this week", "last 7 days", "past week"))) {
     if (hasWord(t, "today")) return `${fmt(c.claimsToday)} creator ${plural(c.claimsToday, "sign-up")} today (${fmt(b.signupsToday)} ${plural(b.signupsToday, "business", "businesses")}).`;

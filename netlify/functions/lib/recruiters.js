@@ -892,8 +892,11 @@ async function handleRecruiterApi({ method, seg, query, event, user }) {
     const users = deps.allUsers ? await deps.allUsers() : [];
     const nowMs = Date.now();
     const mine = (await allProspects()).filter((p) => p.marketName === marketName && prospectInScope(entity, p));
+    // Build -202: read-time dedupe by (handleKey, email), keeping the first (oldest) record.
+    const seenQ202 = new Set(); const mineDedup202 = [];
+    for (const p of mine) { const hk = handleKey(p.handle || p.instagramHandle || p.tiktokHandle || ""); const ek = String(p.email || "").trim().toLowerCase(); const key = `${hk}|${ek}`; if ((hk || ek) && seenQ202.has(key)) continue; if (hk || ek) seenQ202.add(key); mineDedup202.push(p); }
     const views = [];
-    for (const p of mine) {
+    for (const p of mineDedup202) {
       const v = prospectView(p, users, nowMs);
       v.effectiveStatus = await effectiveStatus(p, users);
       views.push(v);

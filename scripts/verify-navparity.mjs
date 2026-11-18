@@ -188,5 +188,16 @@ check("admin hamburger carries the full rail set (+ Account)",
   railLabels.every((l) => hamAdmin.has(l)) && [...hamAdmin].every((t) => railLabels.includes(t) || t === "Account"),
   [...hamAdmin].join(","));
 
+// Build -202: no duplicate Find offers destination. The creator rail's
+// primary pill (railPrimary187 / plus187) and the menu pill
+// (menuPrimary193) carry Find Offers; neither the tabItemsFor creator
+// lead nor the hamburger creator groups may ALSO carry it as a row.
+const tabBarSrc202 = fnWindow("tabBarHtml");
+check("Build -202: creator primary pill exists (rail + menu)", tabBarSrc202.includes("railPrimary187") && app.includes("menuPrimary193"), "");
+const creatorTabBlock202 = roleBlock(tabItems, "creator", ["business", "creator", "partner", "recruiter", "pilot_partner"]);
+check("Build -202: tabItemsFor creator lead has no duplicate Find Offers row", !creatorTabBlock202.includes('tab: "Find Offers"'), creatorTabBlock202.slice(0, 200));
+const creatorHamBlock202 = roleBlock(hamSrc, "creator", ["admin", "creator", "business", "partner", "recruiter", "pilot_partner"]);
+check("Build -202: hamburger creator groups have no duplicate Find Offers row under the pill", !creatorHamBlock202.includes('"Find Offers"'), "");
+
 console.log(`\nverify-navparity: ${passed} passed, ${failed} failed`);
 if (failed) { console.log("failures:", failures.join(" | ")); process.exit(1); }

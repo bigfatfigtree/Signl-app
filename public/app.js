@@ -182,17 +182,27 @@ async function api(method, path, body) {
   }
   const run = (async () => {
     let res;
+    // Build -202: real request deadline. 12s for GET, 20s for other
+    // methods; an abort rejects so existing catches fire instead of
+    // a placeholder hanging forever.
+    const deadlineMs = isGet ? 12000 : 20000;
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, deadlineMs) : null;
     try {
       res = await fetch("/api" + path, {
         method,
         headers: body ? { "Content-Type": "application/json" } : {},
         body: body ? JSON.stringify(body) : undefined,
         credentials: "same-origin",
+        signal: ctrl ? ctrl.signal : undefined,
       });
     } catch (e) {
+      if (timer) clearTimeout(timer);
       // A network failure says so in plain words, never as a raw
       // status or a browser exception string.
       throw new Error("We could not reach Magpie. Check your connection and try again.");
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     noteServerBuild(res.headers && res.headers.get ? res.headers.get("x-signl-build") : null);
     const data = await res.json().catch(() => ({}));
@@ -1773,11 +1783,34 @@ function primaryUrlOf(p) {
 // The cc-handle line: for an Instagram-primary creator the markup
 // is byte-identical to what it has always been; any other primary
 // platform links its own URL and names itself beside the handle.
+// Build -202: one shared handle label. Returns "@handle" only when the value passes the server parser's shape test, else "" (callers omit the handle line).
+// Build -202: one shared wallet state to copy mapping for Home (both blocks) and Wallet.
+function walletCopy202(money) {
+  const held = (money && money.held) || 0; const released = (money && money.released) || 0;
+  if (held > 0) return { value: `$${fmtMoney(released)}`, sub: `$${fmtMoney(held)} held until the post is live` };
+  if (released > 0) return { value: `$${fmtMoney(released)}`, sub: "Ready to pay out" };
+  return { value: "No cash yet", sub: "No cash yet" };
+}
+function handleLabel(h) {
+  const s = String(h == null ? "" : h).trim().replace(/^@+/, "");
+  return /^[A-Za-z0-9._-]{2,40}$/.test(s) ? "@" + s : "";
+}
+function audienceLabel202(c) {
+  const prof = (c && c.profile) || c || {};
+  const total = typeof prof.totalAudience === "number" ? prof.totalAudience : (typeof (c && c.totalAudience) === "number" ? c.totalAudience : null);
+  const stack = prof.audienceStack || (c && c.audienceStack) || {};
+  const hasStack = stack && typeof stack === "object" && Object.values(stack).some((v) => Number(v) > 0);
+  const tot = total !== null ? total : totalAudienceOf(c);
+  if (tot === 0 && !hasStack) return "Audience not reported yet";
+  return null;
+}
 function ccHandleHtml(p) {
   const url = primaryUrlOf(p);
   const plat = (p && p.primaryPlatform) || "instagram";
   const label = plat !== "instagram" ? ` <span class="small muted">on ${esc(primaryLabelClient(plat))}</span>` : "";
-  return `<div class="cc-handle">@<a href="${esc(url)}" target="_blank" rel="noopener">${esc((p && p.handle) || "")}</a>${label}</div>`;
+  const hl = handleLabel(p && p.handle);
+  if (!hl) return "";
+  return `<div class="cc-handle"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(hl)}</a>${label}</div>`;
 }
 
 function totalAudienceOf(source) {
@@ -2614,9 +2647,8 @@ function tabItemsFor() {
     return [
       { icon: "home", label: "Home", tab: "Dashboard", on: t === "Dashboard" || !t },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
-      { icon: "search", label: "Find offers", tab: "Find Offers", on: t === "Find Offers" },
       { icon: "deck", label: "My offers", tab: "Offers", on: t === "Offers", badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) },
-      ...extraIn137(rows, ["Earnings", "My Visits", "Profile", "Numbers", "Momentum", "Bench", "Messages", "Settings", "Help"], ["Dashboard", "Sig", "Find Offers", "Offers"]),
+      ...extraIn137(rows, ["Earnings", "My Visits", "Profile", "Numbers", "Momentum", "Bench", "Messages", "Settings", "Help"], ["Dashboard", "Sig", "Offers"]),
     ];
   }
   if (u.role === "partner" && !state.pilotScopeId) {
@@ -3008,7 +3040,6 @@ function hamburgerGroups137() {
     return [
       { title: "Your work", rows: [
         R("home", "Home", "Maggie, your highlights, your next steps", "Dashboard"),
-        R("search", "Find offers", "Open visits near you", "Find Offers"),
         R("deck", "My offers", "Invites and deals you are working on", "Offers", { badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) }),
         R("calendar", "Visits", "Your visits and post deadlines", "My Visits", { badge: wc.crVisits || 0 }),
       ] },
@@ -5672,7 +5703,7 @@ async function loadAlertPrefs() {
   const box = document.getElementById("alert-prefs-box");
   if (!box) return;
   try {
-    const d = await api("GET", "/me/alert-prefs");
+    const d = (state.user && state.user.alertPrefs) ? { alertPrefs: state.user.alertPrefs } : await api("GET", "/me/alert-prefs");
     const p = d.alertPrefs || {};
     const cats = (state.boot && state.boot.creatorCategories) || [];
     box.innerHTML = `
@@ -5705,7 +5736,7 @@ async function loadStandingTerms() {
   const box = document.getElementById("standing-terms-box");
   if (!box) return;
   try {
-    const d = await api("GET", "/me/negotiation");
+    const d = (state.user && state.user.negotiation) ? { negotiation: state.user.negotiation, publicView: state.user.negotiationPublicView || null, listedRate: state.user.listedRate != null ? state.user.listedRate : null } : await api("GET", "/me/negotiation");
     const n = d.negotiation || {};
     const sw = (state.boot && state.boot.creatorCategories) || [];
     box.innerHTML = `
@@ -8721,7 +8752,7 @@ function sigCreatorCardHtml(c, ti, ci) {
       ${photos[0] ? `<img class="sig-ccard-photo" src="${esc(photos[0])}" alt="">` : `<span class="sig-ccard-photo sig-ccard-nophoto">${esc(String(c.name || "S").slice(0, 1))}</span>`}
       <div class="sig-ccard-id">
         <div class="sig-ccard-name">${esc(c.name || "")}${p.tierBand ? ` <span class="sig-ccard-tier">${esc(p.tierBand)}</span>` : ""}${match && c.__topMatch ? ` <span class="sig-ccard-topmatch">${ST("Top match", "Mejor coincidencia")}</span>` : ""}</div>
-        <div class="sig-ccard-handle">@${esc(p.handle || "")}${c.neighborhood ? ` · ${esc(c.neighborhood)}` : ""}</div>
+        ${handleLabel(p.handle) || c.neighborhood ? `<div class="sig-ccard-handle">${esc(handleLabel(p.handle))}${c.neighborhood ? ` · ${esc(c.neighborhood)}` : ""}</div>` : ""}
       </div>
       ${c.userId ? `<span class="sig-ccard-view">${ST("View profile", "Ver perfil")}</span>` : ""}
     </div>
@@ -13728,7 +13759,7 @@ function creatorCard(c, viewer, opts) {
     </div>
     <div class="cc-id">
       <div class="cc-name">${esc(c.name)}</div>
-      ${p.primaryPlatform && p.primaryPlatform !== "instagram" ? ccHandleHtml(p) : `<div class="cc-handle">@${esc(p.handle || "")}</div>`}
+      ${p.primaryPlatform && p.primaryPlatform !== "instagram" ? ccHandleHtml(p) : (handleLabel(p.handle) ? `<div class="cc-handle">${esc(handleLabel(p.handle))}</div>` : "")}
       <div class="cc-chips">
         <span class="cc-chip market">${esc(marketDisplayName(c.market))}</span>
         ${c.marketContext ? `<span class="cc-chip">Listed in ${esc(c.marketContext.market)}</span>` : ""}
@@ -13747,7 +13778,7 @@ function creatorCard(c, viewer, opts) {
     ${p.paidRate ? `<p class="small muted" style="margin-top:6px">Paid bookings from ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}${p.licensingFee ? ` · licenses posts at ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}` : ""}</p>` : ""}
     ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<p class="small muted" style="margin-top:6px">${p.spanishAudiencePct}% Spanish-speaking audience</p>` : ""}
     <div class="cc-meta">
-      <div><div class="k">Stacked audience</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
+      <div><div class="k">Stacked audience</div><div class="v">${audienceLabel202(c) || fmtNum(totalAudienceOf(c))}</div></div>
       <div><div class="k">Typical views</div><div class="v">${fmtNum(p.avgViews)}</div></div>
     </div>
     ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
@@ -13970,7 +14001,7 @@ async function loadFoundingDashboard() {
       { label: "Momentum", sub: standingLevelName(momPts), value: `${fmtNum(momPts)} pts` },
       { label: "Your local reach", sub: pctSet ? `${p.localAudiencePct}% of your audience is local` : "Add your local % on your profile", value: localReach === null ? "Not set" : fmtNum(localReach) },
       { label: "Visits completed", sub: "Visits you showed up for", value: String(fVisitsDone) },
-      { label: "Wallet", sub: fMoney.held > 0 ? `$${fmtMoney(fMoney.held)} held until the post is live` : "Ready to pay out", value: `$${fmtMoney(fMoney.released || 0)}`, tab: "Earnings" },
+      { label: "Wallet", sub: walletCopy202(fMoney).sub, value: walletCopy202(fMoney).value, tab: "Earnings" },
     ])}
     ${nextSteps137Html(queueItems.slice(0, 3), [])}
     <p class="small" style="margin:10px 2px 0">${listedMarketsLineHtml(card)}</p>`;
@@ -15113,7 +15144,7 @@ function benchCardHtml(c) {
     <div style="display:flex;gap:12px;align-items:flex-start">
       ${c.photoUrl ? `<img class="avatar" style="width:56px;height:56px" src="${esc(c.photoUrl)}" alt="">` : `<span class="avatar avatar-initial" style="width:56px;height:56px;font-size:1.4rem">${initial}</span>`}
       <div style="flex:1;min-width:0">
-        <div class="flex-between"><strong>${esc(c.name)} <span class="muted">@${esc(c.handle)}</span></strong><span class="badge tier">${esc(c.tier || "")}</span></div>
+        <div class="flex-between"><strong>${esc(c.name)}${handleLabel(c.handle) ? ` <span class="muted">${esc(handleLabel(c.handle))}</span>` : ""}</strong><span class="badge tier">${esc(c.tier || "")}</span></div>
         <p class="small" style="margin:4px 0 0">${c.localAudiencePct}% local &middot; ${esc(c.primaryPlatformLabel || "Instagram")}${c.charter ? ` &middot; <span class="badge ok">Charter Creator</span>` : ""}${c.levelName ? ` &middot; <span class="badge info">${esc(c.levelName)}</span>` : ""}</p>
         ${c.categories && c.categories.length ? `<p class="small muted" style="margin:2px 0 0">${c.categories.map((x) => esc(x)).join(" &middot; ")}</p>` : ""}
         ${c.streets && c.streets.length ? `<p class="small muted" style="margin:2px 0 0">${c.streets.map((x) => esc(x)).join(" &middot; ")}</p>` : ""}
@@ -15411,7 +15442,7 @@ function creatorCharterCardHtml(u, card, f, buzz, placeRaw) {
   if (link) bits.push(`Creators: join through my link: ${link}`);
   return `<section class="stat-card charter-card">
     <div class="stat-top"><span class="stat-brand">Magpie</span><span class="charter-seal">CHARTER<br>CREATOR</span></div>
-    <div class="charter-handle">@${esc(p.handle || "")}</div>
+    ${handleLabel(p.handle) ? `<div class="charter-handle">${esc(handleLabel(p.handle))}</div>` : ""}
     <div class="charter-class">Charter Creator &middot; ${esc(placeRaw)}</div>
     <div class="charter-class-sub">Founding Class of 2026</div>
     <div class="stat-big">${pct === null ? "Local % not set" : `${pct}%`}</div>
@@ -17118,7 +17149,7 @@ async function loadCreatorHome() {
       { label: "Momentum", sub: momNext ? `${standingLevelName(momPts)} \u00b7 ${fmtNum(momNext - momPts)} pts to ${standingLevelName(momNext)}` : `${standingLevelName(momPts)} \u00b7 top level`, value: `${fmtNum(momPts)} pts` },
       { label: "Visits completed", sub: "Visits you showed up for", value: String(crVisitsDone) },
       { label: "Posts on time", sub: "Posts live inside the goal window", value: crPosts.length ? `${crOnTime} of ${crPosts.length}` : "0" },
-      { label: "Wallet", sub: money.held > 0 ? `$${fmtMoney(money.held)} held until the post is live` : "Ready to pay out", value: `$${fmtMoney(money.released || 0)}`, tab: "Earnings" },
+      { label: "Wallet", sub: walletCopy202(money).sub, value: walletCopy202(money).value, tab: "Earnings" },
     ])}
     ${nextSteps137Html(q3, caughtLinks)}`;
     wireSigQueue(el, q3, caughtLinks);
@@ -17284,7 +17315,7 @@ function creatorProfileHtml(u) {
   <div class="panel" oninput="creatorPreviewRefresh()" onchange="creatorPreviewRefresh()">
     <div class="flex-between">
       <div>
-        <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(c.handle || "")}</span></h3>
+        <h3 style="margin:0">${esc(u.name)}${handleLabel(c.handle) ? ` <span class="muted">${esc(handleLabel(c.handle))}</span>` : ""}</h3>
         <p class="muted small">${esc(marketPlaceLine(u.market, u.city || ""))}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""}</p>
       </div>
       <div id="my-score"><span class="badge info">Loading score...</span></div>
@@ -17463,9 +17494,9 @@ async function loadMyScore() {
     const data = await api("GET", "/me/founding");
     const mine = data.card;
     const el = document.getElementById("my-score");
-    if (el && mine) el.innerHTML = scoreBadge(mine.localImpactScore) + (mine.scoreComponents ? `<div class="small muted mt">Local ${mine.scoreComponents.localAudiencePct}% (${esc(mine.scoreComponents.localAudienceSource)}) &middot; Reliability ${mine.scoreComponents.reliability} &middot; ${esc(mine.scoreComponents.reliabilityBasis)}</div>` : "");
-    fillMyShowcase(mine);
-  } catch (e) { /* non-fatal */ }
+    if (el && mine) { el.innerHTML = scoreBadge(mine.localImpactScore) + (mine.scoreComponents ? `<div class="small muted mt">Local ${mine.scoreComponents.localAudiencePct}% (${esc(mine.scoreComponents.localAudienceSource)}) &middot; Reliability ${mine.scoreComponents.reliability} &middot; ${esc(mine.scoreComponents.reliabilityBasis)}</div>` : ""); fillMyShowcase(mine); }
+    else if (el) { el.innerHTML = `<p class="small muted">Score unavailable right now. <button type="button" class="btn small-btn ghost" onclick="loadMyScore()">Retry</button></p>`; }
+  } catch (e) { const el = document.getElementById("my-score"); if (el) el.innerHTML = `<p class="small muted">Score unavailable right now. <button type="button" class="btn small-btn ghost" onclick="loadMyScore()">Retry</button></p>`; }
 }
 
 function syncStackTotal() {
@@ -22870,7 +22901,7 @@ function shelfTileHtml(c, opts) {
       <div class="shelf-price-row"><div class="shelf-price">${esc(price.main)}${price.sub ? ` <span>${esc(price.sub)}</span>` : ""}</div>${acceptanceHtml(c)}</div>
       ${preview && !c.trackRecord ? "" : `<div class="shelf-proof">${esc(shelfProofLine(c))}</div>`}
       ${c.match ? `<div class="shelf-match"><span class="shelf-match-score">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? `<span class="shelf-match-why" title="${esc(c.match.reasons.join(" · "))}">${esc(c.match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
-      <div class="shelf-quiet">${fmtNum(totalAudienceOf(c))} followers total${p.avgViews ? ` · about ${fmtNum(p.avgViews)} views a post` : ""}</div>
+      <div class="shelf-quiet">${audienceLabel202(c) || `${fmtNum(totalAudienceOf(c))} followers total`}${p.avgViews ? ` · about ${fmtNum(p.avgViews)} views a post` : ""}</div>
       ${preview ? "" : `<div class="shelf-acts">
         <button type="button" class="btn small-btn" onclick="startOffer('${c.userId}')">Book</button>
         <button type="button" class="btn small-btn ghost" onclick="openCreatorProfile('${c.userId}')">View</button>
@@ -22970,7 +23001,7 @@ function pdpLocalHeroHtml(c) {
   return `<div class="pdp-hero">
     <div class="pdp-hero-pct">${pct}%</div>
     <div class="pdp-hero-tx">of ${esc(first)}&rsquo;s followers live in ${esc(marketDisplayName(market))}.${count !== null ? `<br><strong>That&rsquo;s about <span class="pdp-hero-countnum">${fmtFull(count)}</span> ${model.extrapolated ? "potential neighbors" : "neighbors"}</strong> who could actually walk through your door, not strangers three states away.` : ""}</div>
-    <div><div class="pdp-hero-src">${esc(p.localAudienceSource || "Self-reported")} · ${fmtNum(totalAudienceOf(c))} followers in total</div>
+    <div><div class="pdp-hero-src">${esc(p.localAudienceSource || "Self-reported")} · ${audienceLabel202(c) || `${fmtNum(totalAudienceOf(c))} followers in total`}</div>
     <p class="pdp-smallprint" style="margin-top:2px">${LOCAL_BASIS_LINE}</p></div>
   </div>`;
 }
@@ -23865,6 +23896,8 @@ async function runDiscover() {
       });
     }
     state.discover = data.creators;
+    state.discoverReconciliation202 = data.reconciliation || null;
+    { const rc = state.discoverReconciliation202; const dc = document.getElementById("discover-count"); if (dc && rc) dc.textContent = `${rc.bookable} bookable here \u00b7 ${rc.approvedHome} approved call this market home \u00b7 ${Math.max(0, rc.approvedHome - rc.approvedComplete)} still finishing profiles (${rc.approvedComplete} finished and bookable-ready at home)`; }
     // Build -146 (the -145 remainder): the brief this list was
     // scored against rides a grid Book into the deal (and the
     // offer it becomes) as sourceBrief, the same normalization
@@ -24084,7 +24117,7 @@ function discoverStackCard(c) {
       ${c.previewPhoto ? `<span class="dcard-sample">Sample photo · preview</span>` : ""}
       <div class="dcard-scrim">
         <div class="dcard-name">${esc(c.name)}</div>
-        <div class="dcard-handle">@${esc(p.handle || "")}</div>
+        ${handleLabel(p.handle) ? `<div class="dcard-handle">${esc(handleLabel(p.handle))}</div>` : ""}
         <div class="dcard-local">${p.localAudiencePct === null || p.localAudiencePct === undefined
           ? `<span class="dcard-local-na">Local reach not reported yet</span>`
           : bits
@@ -24095,10 +24128,10 @@ function discoverStackCard(c) {
     </div>
     <div class="dcard-body">
       ${cats.length || p.spanishContent || p.musician ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}${p.musician ? `<span class="cc-chip">Musician</span>` : ""}</div>` : ""}
-      <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} followers</span>${c.distanceBand ? `<span class="dcard-band">${esc(c.distanceBand)}</span>` : ""}</div>
+      <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${audienceLabel202(c) || `${fmtNum(totalAudienceOf(c))} followers`}</span>${c.distanceBand ? `<span class="dcard-band">${esc(c.distanceBand)}</span>` : ""}</div>
       ${thumbs.length ? `<div class="deck2-thumbs">${thumbs.map((t) => `<img src="${esc(t)}" alt="" loading="lazy">`).join("")}</div>` : ""}
       ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<div class="dcard-meta"><span>${p.spanishAudiencePct}% Spanish-speaking audience</span></div>` : ""}
-      ${c.match ? `<div class="dcard-match"><span class="dcard-match-score">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? `<span class="dcard-match-why">${esc(c.match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
+      ${c.match ? `<div class="dcard-match"><span class="dcard-match-score">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? `<span class="dcard-match-why" title="${esc(c.match.reasons.join(" · "))}">${esc(c.match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
       ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
       ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
     </div>
@@ -28451,7 +28484,24 @@ async function loadAdminHome137() {
     host.innerHTML = `<div class="panel abd-wait" style="margin-bottom:12px"><strong>Biz Dev — ${c.total} waiting on you</strong><p class="small muted" style="margin:4px 0 8px">${esc(bits.join(" · "))}</p><button type="button" class="btn small-btn" onclick="return go('dashboard','Biz Dev')">Open Biz Dev</button></div>`;
   })();
   // Highlights fill independently, off the totals + queue reads.
+  // Build -202: paint from whichever read lands first, then refresh when the other lands.
   (async () => {
+    let appsH = null, totalsH = null, paintedH = false;
+    const paintH = async () => {
+      const host = document.getElementById("ah-highlights");
+      if (!host || !homeAlive()) return;
+      if (!appsH && !totalsH) return;
+      paintedH = true;
+      const counts = adminSummaryCounts121(appsH, null, null);
+      host.innerHTML = highlights137Html([
+        { label: "Waiting on your review", value: fmtNum(counts.waiting), tab: "Applications" },
+        { label: "Creators signed up", sub: "across all markets", value: fmtNum((totalsH && totalsH.creatorsSignedUp) || 0) },
+        { label: "Total followers", sub: "as reported by creators", value: fmtNum((totalsH && totalsH.totalFollowers) || 0) },
+        { label: "Claims today", value: fmtNum(counts.claimsToday), tab: "Applications" },
+      ]);
+    };
+    pApps.then((v) => { appsH = v; return paintH(); });
+    pTotals.then((v) => { totalsH = v; return paintH(); });
     const [apps, totals] = await Promise.all([pApps, pTotals]);
     const host = document.getElementById("ah-highlights");
     if (!host || !homeAlive()) return;
@@ -31841,19 +31891,8 @@ function astRender() {
     const idx = Math.floor((t - (now - spanDays * 864e5)) / bucketMs);
     if (idx >= 0 && idx < buckets.length) buckets[idx] += 1;
   }
-  // Per-market table (listed basis: a creator counts in every
-  // market they are listed in, at that market's %).
-  const byMarket = {};
-  for (const u of creators) {
-    const total = astCreatorTotal(u);
-    for (const l of astCreatorListings(u)) {
-      const m = byMarket[l.market] || (byMarket[l.market] = { creators: 0, followers: 0, localFollowers: 0, pctSum: 0, pctN: 0 });
-      m.creators += 1;
-      m.followers += total;
-      if (l.pct !== null) { m.pctSum += l.pct; m.pctN += 1; m.localFollowers += Math.round(total * l.pct / 100); }
-    }
-  }
-  const marketRows = Object.entries(byMarket).sort((a, b) => b[1].creators - a[1].creators);
+  // Build -202: Markets table renders from server rows built on adminMarketRows (no client reimplementation).
+  const marketRows = ((astData && astData.marketRows202) || []).map((m) => [m.name, { creators: m.creatorsListed || 0, followers: m.combinedFollowers || 0, localFollowers: m.localFollowers || 0, pctSum: m.avgLocalPct != null && m.avgLocalCount ? m.avgLocalPct * m.avgLocalCount : 0, pctN: m.avgLocalCount || 0 }]).sort((a, b) => b[1].creators - a[1].creators);
   const funnel = funnel2Html([
     { label: "Signed up", n: creators.length, cap: "every creator in this view" },
     { label: "Approved", n: creators.filter((u) => u.status === "approved").length, cap: "through review" },
@@ -31999,6 +32038,7 @@ async function loadStats() {
     ]);
     const rows = [...(apps.pending || []), ...(apps.decided || [])];
     astData = {
+      marketRows202: (stats53 && stats53.marketRows) || [],
       creators: rows.filter((u) => u.role === "creator" && u.status !== "rejected" && !u.tester),
       // Build -151: businesses carry the same tester fence as
       // creators — the Command Center's Businesses list already
@@ -32082,7 +32122,7 @@ async function astLoadSuggestions() {
     // a silently cleared strip.
     const d = await Promise.race([
       api("GET", "/admin/suggestions"),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Suggestions took too long to load.")), 25000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Suggestions took too long to load.")), 10000)),
     ]);
     astSuggestList = d.suggestions || [];
     if (!astSuggestList.length) {
