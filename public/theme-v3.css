@@ -2482,7 +2482,7 @@ body.v3-slim .ham137-panel .more-row, body.v3-slim .ev125-panel .more-row, body.
   .table-wrap.ct199 table, .table-wrap.ct199 tbody { display: table; width: 100%; box-sizing: border-box; }
   .table-wrap.ct199 thead { display: table-header-group; }
   .table-wrap.ct199 tr { display: table-row; width: auto; }
-  .table-wrap.ct199 th, .table-wrap.ct199 td { display: table-cell; width: auto; box-sizing: border-box; padding: 5px 7px; font-size: .84rem; }
+  .table-wrap.ct199 th, .table-wrap.ct199 td { display: table-cell; width: auto; box-sizing: border-box; padding: 5px 6px; font-size: .82rem; }
   .table-wrap.ct199 table tr:first-child:has(> th) { display: table-row; }
   .table-wrap.ct199 table tr:not(:first-child) { border-top: 0; padding: 0; }
   .table-wrap.ct199 td[data-label]::before { content: none; display: none; }
