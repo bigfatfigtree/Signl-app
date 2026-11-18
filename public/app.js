@@ -6139,9 +6139,54 @@ function kpiCard(label, numHtml, opts) {
 }
 
 // iOS-style segmented switch. options: {v, label}; current value;
-// fn is a global function name called with the value.
-function segSw(options, current, fn) {
-  return `<span class="segsw">${options.map((o) => `<button type="button" class="${o.v === current ? "on" : ""}" onclick="${fn}('${o.v}')">${esc(o.label)}</button>`).join("")}</span>`;
+// fn is a global function name called with the value. cls adds a
+// class to the switch (Build -199: "ux-seg199" stretches it to
+// one full-width row).
+function segSw(options, current, fn, cls) {
+  return `<span class="segsw${cls ? " " + cls : ""}">${options.map((o) => `<button type="button" class="${o.v === current ? "on" : ""}" onclick="${fn}('${o.v}')">${esc(o.label)}</button>`).join("")}</span>`;
+}
+
+// ---------- Build -199: the compaction kit's moving parts ----------
+// Presentation only: these three toggles show and hide markup
+// that is already rendered. They fetch nothing and count
+// nothing, so a number on screen can never change by opening
+// or closing one.
+// uxNote: the button's next sibling (.ux-note) starts hidden;
+// the tap opens the full "how this counts" text in place.
+function uxNote(btn) {
+  const n = btn && btn.nextElementSibling;
+  if (n && n.classList.contains("ux-note")) {
+    n.hidden = !n.hidden;
+    btn.setAttribute("aria-expanded", String(!n.hidden));
+  }
+  return false;
+}
+function uxNoteHtml(text) {
+  return `<button type="button" class="ux-note-btn" aria-expanded="false" onclick="return uxNote(this)">How this counts</button><p class="ux-note small muted" hidden>${text}</p>`;
+}
+// uxMore: rows past the cap carry .ux-extra + hidden inside a
+// [data-uxmore] wrapper; the tap shows or hides them all.
+function uxMore(btn) {
+  const w = btn && btn.closest("[data-uxmore]");
+  if (!w) return false;
+  const open = w.classList.toggle("ux-open");
+  w.querySelectorAll(".ux-extra").forEach((r) => { r.hidden = !open; });
+  btn.textContent = open ? "Show less" : (btn.getAttribute("data-label") || "Show all");
+  return false;
+}
+function uxMoreBtn(total) {
+  return `<button type="button" class="ux-more-btn" data-label="Show all ${total}" onclick="return uxMore(this)">Show all ${total}</button>`;
+}
+// uxFold: a [data-uxfold] section's body folds shut; the header
+// button flips between Show and Hide.
+function uxFold(btn) {
+  const w = btn && btn.closest("[data-uxfold]");
+  if (!w) return false;
+  const closed = w.classList.toggle("ux-closed");
+  btn.setAttribute("aria-expanded", String(!closed));
+  const t = btn.querySelector("[data-uxfold-txt]");
+  if (t) t.textContent = closed ? "Show" : "Hide";
+  return false;
 }
 
 function fmtDayFull(iso) {
@@ -21660,7 +21705,7 @@ function bizStatsHtml(d) {
   const recordedPanel = `<div class="panel">
     <h3 style="margin:0 0 2px">Money out — on the books <span class="cc-chip recorded">Recorded</span></h3>
     <p class="muted small" style="margin:0 0 8px">What your records say moved this period, whether or not a card was charged.</p>
-    <div class="table-wrap"><table>
+    <div class="table-wrap ct199"><table>
       <tr><th>What</th><th>Amount</th><th>Notes</th></tr>
       ${typeof sub.monthlyRate === "number" ? `<tr><td>Your plan${sub.planName ? ` — ${esc(sub.planName)}` : ""} <span class="cc-chip recorded">Recorded</span></td><td data-label="Amount">${ccMoneyFmt(sub.monthlyRate)}/mo</td><td data-label="Notes">On record; the Charged panel below shows what a card actually paid</td></tr>` : ""}
       <tr><td>Paid bookings <span class="cc-chip recorded">Recorded</span></td><td data-label="Amount">${ccMoneyFmt((rr.paidBookings || {}).flowed || 0)}</td><td data-label="Notes">${(rr.paidBookings || {}).count || 0} released &middot; creators kept ${ccMoneyFmt((rr.paidBookings || {}).creatorsEarned || 0)}</td></tr>
@@ -21672,7 +21717,7 @@ function bizStatsHtml(d) {
   const chargedPanel = `<div class="panel">
     <h3 style="margin:0 0 2px">Money out — on cards <span class="cc-chip charged">Charged</span></h3>
     <p class="muted small" style="margin:0 0 8px">Real card charges this period. A plan with no charge yet lives in Recorded above, never here.</p>
-    <div class="table-wrap"><table>
+    <div class="table-wrap ct199"><table>
       <tr><th>Source</th><th>Gross</th><th>Founding credit</th><th>Net charged</th></tr>
       <tr><td>Plan charges (${(cr.subscriptions || {}).count || 0})</td><td data-label="Gross">${ccMoneyFmt((cr.subscriptions || {}).gross || 0)}</td><td data-label="Founding credit">&minus;${ccMoneyFmt((cr.subscriptions || {}).creditApplied || 0)}</td><td data-label="Net charged">${ccMoneyFmt((cr.subscriptions || {}).net || 0)}</td></tr>
       <tr><td>Paid bookings (${(cr.paidBookings || {}).count || 0})</td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged">${ccMoneyFmt((cr.paidBookings || {}).net || 0)}</td></tr>
@@ -21730,7 +21775,7 @@ function ptStatsHtml(d) {
     ${(s.dealCards || []).map((dc) => `<div class="cc-att-row"><span><strong>${esc(dc.label || "Deal")}</strong> &middot; ${dc.termsState === "entered" ? `terms entered${typeof dc.partnerPct === "number" ? ` &middot; your share ${dc.partnerPct}%` : ""}` : "terms not entered yet — nothing accrues until they are"}${dc.guaranteeState ? ` &middot; ${esc(dc.guaranteeState)}` : ""}<br><span class="small muted">${(dc.markets || []).map((m) => `${esc(m.market)}: ${esc(m.status)}${m.liveAt ? `, live ${esc(fmtDay(m.liveAt))}` : ""}${typeof m.activationFee === "number" ? ` &middot; activation ${ccMoneyFmt(m.activationFee)} (${esc(m.activationStatus)})` : ", activation fee to be set"}`).join(" &middot; ")}</span></span></div>`).join("")}
   </div>` : (s.basis === "no_deal" ? `<div class="panel"><h3 style="margin:0 0 4px">No deal on file yet</h3><p class="small muted" style="margin:0">Your share starts accruing the moment your deal terms are entered — until then this page tracks your sign-ups and their activity only, and shows no share figures it cannot back.</p></div>` : "");
   const marketRows = (s.markets || []).filter((m) => m.businesses || m.creators || m.gross);
-  const marketPanel = marketRows.length ? `<div class="panel"><h3 style="margin:0 0 8px">By market</h3><div class="table-wrap"><table>
+  const marketPanel = marketRows.length ? `<div class="panel"><h3 style="margin:0 0 8px">By market</h3><div class="table-wrap ct199"><table>
     <tr><th>Market</th><th>Businesses</th><th>Signed this period</th><th>Gross</th><th>Your share</th></tr>
     ${marketRows.map((m) => `<tr><td>${esc(m.market)}</td><td data-label="Businesses">${m.businesses}</td><td data-label="Signed this period">${m.businessesSignedInPeriod}</td><td data-label="Gross">${ccMoneyFmt(m.gross || 0)}</td><td data-label="Your share">${ccMoneyFmt(m.partnerShare || 0)}</td></tr>`).join("")}
   </table></div><p class="small muted" style="margin:6px 0 0">${esc(s.shareNote || "")}${per.key === "week" ? " This week's money rows are the current month's — share math settles monthly." : ""}</p></div>` : "";
@@ -29289,9 +29334,10 @@ async function loadWebsiteStats138() {
   if (!el) return;
   if (!a138.web) { const now = new Date(); a138.web = { from: a138IsoDay(new Date(now.getTime() - 27 * 864e5)), to: a138IsoDay(now), group: "all", compare: false }; }
   const w = a138.web;
-  el.innerHTML = `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Website</h3>
-  <p class="small muted" style="margin:0 0 10px">Traffic on magpielocal.com itself — the pages businesses and creators read before they sign up. Its own dates: the platform filters above don't move these numbers.</p>
-  <div class="a138-form">
+  el.innerHTML = `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 4px">Website</h3>
+  <p class="small muted" style="margin:0 0 6px">Traffic on magpielocal.com itself, on its own dates.</p>
+  ${uxNoteHtml("These are the pages businesses and creators read before they sign up. The platform filters above don't move these numbers; the dates and page group here are this panel's own.")}
+  <div class="a138-form" style="margin-top:8px">
     <label class="small muted">From <input type="date" id="a138-web-from" value="${w.from}"></label>
     <label class="small muted">To <input type="date" id="a138-web-to" value="${w.to}"></label>
     <label class="small muted">Pages <select id="a138-web-group"><option value="all" ${w.group === "all" ? "selected" : ""}>Whole site</option><option value="marketing" ${w.group === "marketing" ? "selected" : ""}>Marketing pages</option><option value="learn" ${w.group === "learn" ? "selected" : ""}>Learn magazine</option><option value="app" ${w.group === "app" ? "selected" : ""}>The app</option></select></label>
@@ -29331,8 +29377,8 @@ async function a138WebLoad() {
     box.innerHTML = `<div class="stat-band" style="margin-top:10px">${cell("Sessions", d.totals.sessions, "sessions")}${cell("People", d.totals.users, "users")}${cell("New people", d.totals.newUsers, "newUsers")}${cell("Page views", d.totals.pageViews, "pageViews")}${cell("Sign-ups", d.totals.conversions, "conversions")}</div>
     ${d.totals.conversions === 0 ? `<p class="small muted">No sign-ups recorded in this window yet.</p>` : ""}
     <div class="a138-2col">
-    <div><h4>Top pages</h4>${(d.topPages || []).length ? d.topPages.map((p) => `<div class="kv"><span>${esc(p.path)}</span><b>${fmtFull(p.views)} views</b></div>`).join("") : `<p class="small muted">No page views recorded in this window yet.</p>`}</div>
-    <div><h4>Where they came from</h4>${(d.topSources || []).length ? d.topSources.map((s) => `<div class="kv"><span>${esc(s.source)}</span><b>${fmtFull(s.sessions)} sessions</b></div>`).join("") : `<p class="small muted">No visits recorded in this window yet.</p>`}</div>
+    <div><h4>Top pages</h4>${(d.topPages || []).length ? `<div data-uxmore>${d.topPages.map((p, i) => `<div class="kv${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>${esc(p.path)}</span><b>${fmtFull(p.views)} views</b></div>`).join("")}${d.topPages.length > 8 ? uxMoreBtn(d.topPages.length) : ""}</div>` : `<p class="small muted">No page views recorded in this window yet.</p>`}</div>
+    <div><h4>Where they came from</h4>${(d.topSources || []).length ? `<div data-uxmore>${d.topSources.map((s, i) => `<div class="kv${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>${esc(s.source)}</span><b>${fmtFull(s.sessions)} sessions</b></div>`).join("")}${d.topSources.length > 8 ? uxMoreBtn(d.topSources.length) : ""}</div>` : `<p class="small muted">No visits recorded in this window yet.</p>`}</div>
     </div>
     <p class="small muted" style="margin-top:8px">From Google Analytics · ${esc(d.from)} to ${esc(d.to)}${d.cached ? " · cached copy" : ""}.</p>`;
   } catch (e) {
@@ -29346,18 +29392,20 @@ async function a138WebLoad() {
 // A sign-up's channel is its UTM source when it has one, else
 // the ?src= tag on the link it used, else "Direct / untagged".
 // The server sends all three windows in one payload; the
-// buttons below only switch which window is on screen. The
-// "Arrived from" rows count the site that sent each visitor on
-// their first visit, captured from this build forward, which is
-// how AI assistants and other referring sites show up here.
+// segmented switch below only changes which window is on
+// screen. The "AI assistants and referrals" rows count the
+// site that sent each visitor on their first visit, captured
+// from this build forward, which is how AI assistants and
+// other referring sites show up here.
 let src197Data = null;
 let src197Win = "all";
 async function loadSignupSources197() {
   const el = document.getElementById("signup-sources197");
   if (!el) return;
-  el.innerHTML = `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Sign-ups by source</h3>
-  <p class="small muted" style="margin:0 0 10px">Real registrations from Magpie's own records, counted by the channel that brought each account. A channel is the ad or link tag (UTM source first, then the link's source tag). Sign-ups with neither read as Direct / untagged. Tester accounts are not counted.</p>
-  <div id="src197-body"><p class="muted">Loading…</p></div></div>`;
+  el.innerHTML = `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 4px">Sign-ups by source</h3>
+  <p class="small muted" style="margin:0 0 6px">Real sign-ups from Magpie's own records, counted by the channel that brought each account.</p>
+  ${uxNoteHtml("A channel is the ad or link tag (UTM source first, then the link's source tag). Sign-ups with neither read as Direct / untagged. Tester accounts are not counted.")}
+  <div id="src197-body" style="margin-top:10px"><p class="muted">Loading…</p></div></div>`;
   try {
     src197Data = await api("GET", "/admin/stats/data?section=sources&days=30");
     src197Render();
@@ -29376,18 +29424,20 @@ function src197Render() {
   const box = document.getElementById("src197-body");
   if (!box || !src197Data || !src197Data.windows) return;
   const w = src197Data.windows[src197Win] || src197Data.windows.all;
-  const winBtn = (key, label) => `<button type="button" class="btn small-btn${src197Win === key ? "" : " ghost"}" onclick="return src197SetWin('${key}')">${label}</button>`;
   const rows = (w.rows || []).map((r) => `<tr><td>${esc(r.source)}</td><td data-label="Creators">${fmtFull(r.creators)}</td><td data-label="Businesses">${fmtFull(r.businesses)}</td><td data-label="Total"><b>${fmtFull(r.total)}</b></td></tr>`).join("");
-  const refRows = (w.referrerRows || []).map((r) => `<div class="kv"><span>${esc(r.host)}</span><b>${fmtFull(r.total)} sign-up${r.total === 1 ? "" : "s"}</b></div>`).join("");
+  const refs = w.referrerRows || [];
+  const refRows = refs.map((r, i) => `<div class="kv${i >= 6 ? " ux-extra" : ""}"${i >= 6 ? " hidden" : ""}><span>${esc(r.host)}</span><b>${fmtFull(r.total)} sign-up${r.total === 1 ? "" : "s"}</b></div>`).join("");
   box.innerHTML = `
-  <div class="a138-form" style="margin-bottom:10px">${winBtn("all", "All time")}${winBtn("d90", "Last 90 days")}${winBtn("d30", "Last 30 days")}</div>
-  ${rows ? `<div class="table-wrap"><table>
+  <div style="margin-bottom:10px">${segSw([{ v: "all", label: "All time" }, { v: "d90", label: "Last 90 days" }, { v: "d30", label: "Last 30 days" }], src197Win, "src197SetWin", "ux-seg199")}</div>
+  ${rows ? `<div class="table-wrap ct199"><table>
     <tr><th>Source</th><th>Creators</th><th>Businesses</th><th>Total</th></tr>
     ${rows}
     <tr><td><b>All sources</b></td><td data-label="Creators"><b>${fmtFull(w.totals.creators)}</b></td><td data-label="Businesses"><b>${fmtFull(w.totals.businesses)}</b></td><td data-label="Total"><b>${fmtFull(w.totals.total)}</b></td></tr>
   </table></div>` : `<p class="small muted">No sign-ups in this window yet.</p>`}
-  ${refRows ? `<h4 style="margin:16px 0 6px">Arrived from</h4><p class="small muted" style="margin:0 0 8px">The site that sent each new account on its first visit, counted from the same records. Referring sites are captured from Build -197 forward, so this list grows from here.</p>${refRows}` : ""}
-  <p class="small muted" style="margin-top:8px">UTM tags and referring sites are captured from Build -197 forward. Earlier sign-ups carry only the link's source tag, and untagged ones stay Direct / untagged.</p>`;
+  ${refRows ? `<h4 style="margin:18px 0 2px">AI assistants and referrals</h4><p class="small muted" style="margin:0 0 4px">The site that sent each new account on its first visit — this is where AI assistants like ChatGPT show up.</p>
+  ${uxNoteHtml("Referring sites are captured from Build -197 forward, so this list grows from here. UTM tags are captured from Build -197 forward too; earlier sign-ups carry only the link's source tag, and untagged ones stay Direct / untagged.")}
+  <div data-uxmore style="margin-top:6px">${refRows}${refs.length > 6 ? uxMoreBtn(refs.length) : ""}</div>` : ""}
+  `;
 }
 
 function renderAdminSig() {
@@ -30232,8 +30282,8 @@ function renderAdminMarkets() {
     sections = [{ title: "", rs: rows }];
   }
   el.innerHTML = `
-      <p class="muted small">A market that is not live shows creators their founding status page only: no offers, no discovery. Activating a market opens publishing and bookings there, but it does NOT activate founding businesses: business activation is a separate admin action, per business or for every founding business in a market. Founding creators keep sign-up-order priority in discovery.</p>
-      <p class="muted small">Combined followers: each approved creator's own reported total across all their platforms, counted in every market they are listed in, so a creator listed in two markets counts toward both.</p>
+      <p class="muted small" style="margin:0 0 4px">Every market, its creators and its live state.</p>
+      ${uxNoteHtml("A market that is not live shows creators their founding status page only: no offers, no discovery. Activating a market opens publishing and bookings there, but it does NOT activate founding businesses: business activation is a separate admin action, per business or for every founding business in a market. Founding creators keep sign-up-order priority in discovery. Combined followers: each approved creator's own reported total across all their platforms, counted in every market they are listed in, so a creator listed in two markets counts toward both.")}
       ${data.testMode ? `<div class="error-box">TEST MODE is on (SIGNL_TEST_ALLOW_BUSINESS): every market reads live. Never run production this way.</div>` : ""}
       <div class="flex-between" style="margin:10px 0">
         <span class="muted small">${sortNote}</span>
@@ -30245,7 +30295,8 @@ function renderAdminMarkets() {
       ${sections.map((s) => `${s.title ? `<h3 style="margin:18px 0 10px">${esc(s.title)}</h3>` : ""}<div class="mkt-grid">${s.rs.map((r) => adminMarketCardHtml(r.m)).join("")}</div>`).join("")}
       ${(data.demand && data.demand.length) ? `
       <h3 style="margin:26px 0 6px">Demand in cities we haven't listed</h3>
-      <p class="muted small" style="max-width:720px">Signup is open everywhere: people in unlisted cities complete a full sign-up and count exactly like listed-city claims. A city is flagged when two of three tripwires hit — about 150 claimed creators, 40% finished profiles, or any business or partner signal from that city. The flag is a prompt, not a switch: graduating a city stays a manual call (add it as a market, then activate it here).</p>
+      <p class="muted small" style="max-width:720px;margin:0 0 4px">Sign-up is open everywhere; a city is flagged when two of three tripwires hit.</p>
+      ${uxNoteHtml("People in unlisted cities complete a full sign-up and count exactly like listed-city claims. The tripwires are about 150 claimed creators, 40% finished profiles, or any business or partner signal from that city. The flag is a prompt, not a switch: graduating a city stays a manual call (add it as a market, then activate it here).")}
       ${data.demand.map((d) => `
       <div class="a138-row">
         <div class="a138-row-main">
@@ -30971,7 +31022,7 @@ async function loadAdminRequests() {
     const summaryStrip = s ? `
       <h3>Founding roster counts</h3>
       <p class="muted small">Creators only, counted from the records. Approved is the launch number: a market opens at 50 approved. Approved + complete shows how many of them businesses can book today.</p>
-      <div class="table-wrap panel"><table><tr><th>Market</th><th>Counts</th></tr>
+      <div class="table-wrap ct199 panel"><table><tr><th>Market</th><th>Counts</th></tr>
       ${s.markets.map((m) => `<tr><td>${esc(m.label)}</td><td><strong>${m.pending}</strong> pending &middot; <strong>${m.approved}</strong> approved &middot; <strong>${m.approvedComplete}</strong> approved + complete</td></tr>`).join("")}
       <tr><td><strong>All markets</strong></td><td><strong>${s.all.pending}</strong> pending &middot; <strong>${s.all.approved}</strong> approved &middot; <strong>${s.all.approvedComplete}</strong> approved + complete</td></tr>
       </table></div>
@@ -31113,7 +31164,7 @@ async function loadLeaderboard() {
     const rows = data.leaderboard || [];
     el.innerHTML = `
       <p class="muted small">Recruiters ranked by Momentum points: +3 for every creator who signs up through their invite link, +10 more when that creator is approved. Points come only from stored sign-up records.</p>
-      ${rows.length ? `<div class="table-wrap panel"><table>
+      ${rows.length ? `<div class="table-wrap ct199 panel"><table>
         <tr><th>#</th><th>Creator</th><th>Handle</th><th>Market</th><th>Sign-ups via link</th><th>Approved</th><th>Momentum points</th></tr>
         ${rows.map((r, i) => `<tr><td data-label="Rank">${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>${r.primaryProfileUrl ? `<a href="${esc(r.primaryProfileUrl)}" target="_blank" rel="noopener">@${esc(r.handle)}</a>` : `@${esc(r.handle)}`}</td><td>${esc(r.market)}</td><td data-label="Sign-ups via link">${r.signups}</td><td data-label="Approved">${r.approved}</td><td data-label="Momentum points"><strong>${r.points}</strong></td></tr>`).join("")}
       </table></div>` : `<p class="muted">No creator has a credited sign-up yet. Leaderboard rows appear as soon as someone joins through an invite link.</p>`}`;
@@ -31712,7 +31763,7 @@ function astRevenueHtml() {
         <div class="stat-cell"><div class="stat-num">${ccMoneyFmt(pipeTotal)}/mo</div><div class="stat-lbl">Founding pipeline</div></div>
       </div>
       ${collected === 0 ? `<p class="small" style="margin:8px 0 0">Payments are turned off right now, so nothing has been charged or collected yet.</p>` : ""}
-      ${pipeRows.length ? `<div class="table-wrap" style="margin-top:10px"><table>
+      ${pipeRows.length ? `<div class="table-wrap ct199" style="margin-top:10px"><table>
         <tr><th>Plan</th><th>Businesses</th><th>Rate</th><th>Recorded monthly</th></tr>
         ${pipeRows.map((r) => `<tr><td>${esc(planName(r.id))}</td><td data-label="Businesses">${r.n}</td><td data-label="Rate">${ccMoneyFmt(r.rate)}/mo</td><td data-label="Recorded monthly">${ccMoneyFmt(r.total)}/mo</td></tr>`).join("")}
       </table></div>
@@ -31783,7 +31834,7 @@ function astRender() {
     <div class="panel">
       <h3 style="margin:0 0 2px">Markets</h3>
       <p class="muted small" style="margin:0 0 8px">Creators listed in each market, with the share of their audience that lives there.</p>
-      ${marketRows.length ? `<div class="table-wrap"><table>
+      ${marketRows.length ? `<div class="table-wrap ct199"><table>
         <tr><th>Market</th><th>Creators</th><th>Followers</th><th>Local followers</th><th>Avg % local</th></tr>
         ${marketRows.map(([name, m]) => `<tr><td>${esc(name)}</td><td data-label="Creators">${astFull(m.creators)}</td><td data-label="Followers">${astFull(m.followers)}</td><td data-label="Local followers">${astFull(m.localFollowers)}</td><td data-label="Avg % local">${m.pctN ? Math.round(m.pctSum / m.pctN) + "%" : "—"}</td></tr>`).join("")}
       </table></div>` : `<p class="small muted">No creators match these filters yet.</p>`}
@@ -31918,7 +31969,7 @@ async function loadStats() {
         html += `
       <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Sign-ups outside the listed markets</h3>
       <p class="small muted" style="margin:0 0 8px">Creators who signed up from cities Magpie has not listed yet — demand showing up on its own.</p>
-      ${stats53.unlistedByCity.map((r) => `<div class="kv"><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"}</b></div>`).join("")}
+      <div data-uxmore>${stats53.unlistedByCity.map((r, i) => `<div class="kv${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"}</b></div>`).join("")}${stats53.unlistedByCity.length > 8 ? uxMoreBtn(stats53.unlistedByCity.length) : ""}</div>
       </div>`;
       }
       if (stats53 && stats53.layers) {
@@ -31926,7 +31977,7 @@ async function loadStats() {
         html += `
       <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Spanish and campus layers</h3>
       <p class="muted small" style="margin:0 0 8px">Read-only, from live records. Claims window: the last ${L.periodDays} days. Cities outside the listed markets appear as their own rows.</p>
-      <div class="table-wrap"><table>
+      <div class="table-wrap ct199"><table>
         <tr><th>Market</th><th>Creators</th><th>Approved</th><th>Finished profiles</th><th>Spanish content</th><th>With Spanish %</th><th>Claims in window</th><th>Spanish claims</th></tr>
         ${(L.markets || []).map((r) => `<tr><td>${esc(r.market)}</td><td data-label="Creators">${r.creators}</td><td data-label="Approved">${r.approved}</td><td data-label="Finished profiles">${r.complete}</td><td data-label="Spanish content">${r.spanishFlagged}</td><td data-label="With Spanish %">${r.withSpanishPct}</td><td data-label="Claims in window">${r.claimsInPeriod}</td><td data-label="Spanish claims">${r.spanishClaimsInPeriod}</td></tr>`).join("")}
       </table></div>
@@ -31940,7 +31991,7 @@ async function loadStats() {
         html += `
       <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Register connections (Square)</h3>
       <p class="small">${s2.configured ? "Square is connected on the server, so businesses can connect their registers." : "Square is not connected on the server yet, so businesses see the concierge state instead."}${s2.env === "sandbox" ? " Sandbox: connections here are test registers, not live ones." : ""}</p>
-      ${s2.connections && s2.connections.length ? `<div class="table-wrap"><table>
+      ${s2.connections && s2.connections.length ? `<div class="table-wrap ct199"><table>
         <tr><th>Business</th><th>Environment</th><th>Status</th><th>Connected</th><th>Last read-back</th><th>Locations</th></tr>
         ${s2.connections.map((c) => `<tr><td>${esc(c.businessName || c.businessId)}</td><td data-label="Environment">${esc(c.env || "")}</td><td data-label="Status">${esc(c.status || "")}</td><td data-label="Connected">${c.connectedAt ? esc(fmtDay(c.connectedAt)) : ""}</td><td data-label="Last read-back">${c.lastSyncAt ? esc(fmtDay(c.lastSyncAt)) : "never"}</td><td data-label="Locations">${(c.locations || []).map(esc).join(", ")}</td></tr>`).join("")}
       </table></div>` : `<p class="small muted">No business has connected a register yet.</p>`}
@@ -32102,7 +32153,7 @@ const AST_DATA_RENDER = {
   // Capture health: what is being recorded, since when.
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Capture health</h3>
   <p class="small muted" style="margin:0 0 8px">What the platform is recording, and the day each capture began. Counts are the last ${d.rangeDays} days.</p>
-  ${(h.captures || []).map((c) => `<div class="kv"><span>${esc(c.label)}</span><b>${astFull(c.inRange || 0)}${c.since ? ` <span class="muted" style="font-weight:400">since ${esc(c.since)}</span>` : ` <span class="muted" style="font-weight:400">not started yet</span>`}</b></div>`).join("")}
+  <div data-uxmore>${(h.captures || []).map((c, i) => `<div class="kv${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>${esc(c.label)}</span><b>${astFull(c.inRange || 0)}${c.since ? ` <span class="muted" style="font-weight:400">since ${esc(c.since)}</span>` : ` <span class="muted" style="font-weight:400">not started yet</span>`}</b></div>`).join("")}${(h.captures || []).length > 8 ? uxMoreBtn(h.captures.length) : ""}</div>
   ${(h.topTypesToday || []).length ? `<p class="small muted" style="margin:8px 0 0">Most logged today: ${h.topTypesToday.map((x) => `${esc(x.type)} (${x.count})`).join(" · ")}</p>` : ""}
   </div>`;
     return html;
@@ -32117,7 +32168,7 @@ const AST_DATA_RENDER = {
   const marketRows = Object.entries(matrix).filter(([, cats]) => catsUsed.some((cat) => (cats[cat] || {}).supply || (cats[cat] || {}).demand));
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Supply and demand, by market and category</h3>
   <p class="small muted" style="margin:0 0 8px">Each cell: approved, profile-complete creators / open offers that want that kind of creator (an offer's business category maps to creator categories the same way the match engine maps it). A red cell is demand with nobody to fill it.</p>
-  ${marketRows.length ? `<div class="table-wrap"><table><tr><th>Market</th>${catsUsed.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>
+  ${marketRows.length ? `<div class="table-wrap ct199"><table><tr><th>Market</th>${catsUsed.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>
   ${marketRows.map(([mk, cats]) => `<tr><td>${esc(mk)}</td>${catsUsed.map((cat) => { const cl = cats[cat] || { supply: 0, demand: 0 }; const gap = cl.demand > 0 && cl.supply === 0; return `<td data-label="${esc(cat)}"${gap ? ' style="background:rgba(214,48,49,.10)"' : ""}>${cl.supply} / <b>${cl.demand}</b></td>`; }).join("")}</tr>`).join("")}
   </table></div>` : `<p class="small muted">No supply or open-offer demand in any cell yet.</p>`}
   ${d.demandUnmapped ? `<p class="small muted" style="margin:8px 0 0">${d.demandUnmapped} open offer${d.demandUnmapped === 1 ? "" : "s"} carry a business category with no creator-category mapping, so they are not in the grid.</p>` : ""}
@@ -32126,15 +32177,15 @@ const AST_DATA_RENDER = {
   const bench = Object.entries(d.benchmarks || {}).map(([key, b]) => { const parts = key.split("|"); return { market: parts[0], category: parts[1], ...b }; }).sort((a, b) => b.creators - a.creators).slice(0, 25);
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Cell benchmarks</h3>
   <p class="small muted" style="margin:0 0 8px">Medians inside each market and category cell — the numbers an acquirer trends, frozen daily in the Snapshots tab.</p>
-  ${bench.length ? `<div class="table-wrap"><table><tr><th>Market</th><th>Category</th><th>Creators</th><th>Median local %</th><th>Median audience</th><th>Median paid rate</th><th>Median on-time %</th></tr>
+  ${bench.length ? `<div class="table-wrap ct199"><table><tr><th>Market</th><th>Category</th><th>Creators</th><th>Median local %</th><th>Median audience</th><th>Median paid rate</th><th>Median on-time %</th></tr>
   ${bench.map((b) => `<tr><td>${esc(b.market)}</td><td data-label="Category">${esc(b.category)}</td><td data-label="Creators">${b.creators}</td><td data-label="Median local %">${b.medianLocalPct == null ? "—" : b.medianLocalPct + "%"}</td><td data-label="Median audience">${b.medianAudience == null ? "—" : astFull(b.medianAudience)}</td><td data-label="Median paid rate">${b.medianPaidRate == null ? "—" : "$" + astFull(b.medianPaidRate)}</td><td data-label="Median on-time %">${b.medianOnTimePct == null ? "—" : b.medianOnTimePct + "%"}</td></tr>`).join("")}
   </table></div>` : `<p class="small muted">No bookable creators in any cell yet.</p>`}
   </div>`;
   // Typed-city backlog.
   const bl = d.backlog || { unlistedByCity: [], cityRequests: [] };
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Demand from unlisted cities</h3>
-  ${(bl.unlistedByCity || []).length ? bl.unlistedByCity.map((r) => `<div class="kv kv-wrap"><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"} (${r.approved} approved)</b></div>`).join("") : `<p class="small muted">No sign-ups from unlisted cities yet.</p>`}
-  ${(bl.cityRequests || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>City requests on file:</strong></p>${bl.cityRequests.map((r) => `<div class="kv"><span>${esc(r.city)}${r.region ? ", " + esc(r.region) : ""}${r.handle ? " · @" + esc(r.handle) : ""}</span><b>${r.createdAt ? esc(fmtDay(r.createdAt)) : ""}</b></div>`).join("")}` : ""}
+  ${(bl.unlistedByCity || []).length ? `<div data-uxmore>${bl.unlistedByCity.map((r, i) => `<div class="kv kv-wrap${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>${esc(r.place)}</span><b>${r.creators} creator${r.creators === 1 ? "" : "s"} (${r.approved} approved)</b></div>`).join("")}${bl.unlistedByCity.length > 8 ? uxMoreBtn(bl.unlistedByCity.length) : ""}</div>` : `<p class="small muted">No sign-ups from unlisted cities yet.</p>`}
+  ${(bl.cityRequests || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>City requests on file:</strong></p><div data-uxmore>${bl.cityRequests.map((r, i) => `<div class="kv${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>${esc(r.city)}${r.region ? ", " + esc(r.region) : ""}${r.handle ? " · @" + esc(r.handle) : ""}</span><b>${r.createdAt ? esc(fmtDay(r.createdAt)) : ""}</b></div>`).join("")}${bl.cityRequests.length > 8 ? uxMoreBtn(bl.cityRequests.length) : ""}</div>` : ""}
   </div>`;
     return html;
   },
@@ -32153,9 +32204,9 @@ const AST_DATA_RENDER = {
   const rel = d.reliability || { byDeliveries: {}, byOnTime: {} };
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Creator reliability</h3>
   <p class="small muted" style="margin:0 0 8px">Approved creators, by delivered posts and on-time share.</p>
-  <div class="table-wrap"><table><tr><th>Delivered posts</th>${Object.keys(rel.byDeliveries).map((k) => `<th>${esc(k)}</th>`).join("")}</tr>
+  <div class="table-wrap ct199"><table><tr><th>Delivered posts</th>${Object.keys(rel.byDeliveries).map((k) => `<th>${esc(k)}</th>`).join("")}</tr>
   <tr><td>Creators</td>${Object.entries(rel.byDeliveries).map(([k, v]) => `<td data-label="${esc(k)} delivered">${v}</td>`).join("")}</tr></table></div>
-  <div class="table-wrap" style="margin-top:8px"><table><tr><th>On-time share</th>${Object.keys(rel.byOnTime).map((k) => `<th>${esc(k)}</th>`).join("")}</tr>
+  <div class="table-wrap ct199" style="margin-top:8px"><table><tr><th>On-time share</th>${Object.keys(rel.byOnTime).map((k) => `<th>${esc(k)}</th>`).join("")}</tr>
   <tr><td>Creators</td>${Object.entries(rel.byOnTime).map(([k, v]) => `<td data-label="${esc(k)} on-time">${v}</td>`).join("")}</tr></table></div>
   <p class="small muted" style="margin:8px 0 0">${rel.paused || 0} paused by the standards ladder · ${rel.banned || 0} removed.</p>
   </div>`;
@@ -32169,14 +32220,15 @@ const AST_DATA_RENDER = {
     const pco = pr.coaching || {};
     const trigLine = Object.entries(pc.byTrigger || {}).map(([k, v]) => `${esc(k.replace(/_/g, " "))} ${astFull(v)}`).join(" · ");
     const famLine = Object.entries(pc.byFamily || {}).map(([k, v]) => `${esc(k)} ${astFull(v)}`).join(" · ");
-    const distRows = Object.entries(pco.distribution || {}).map(([k, v]) => `<div class="kv"><span>Stuck at: ${esc(k)}</span><b>${astFull(v)} creator${v === 1 ? "" : "s"}</b></div>`).join("");
+    const distEntries = Object.entries(pco.distribution || {});
+    const distRows = distEntries.map(([k, v], i) => `<div class="kv${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>Stuck at: ${esc(k)}</span><b>${astFull(v)} creator${v === 1 ? "" : "s"}</b></div>`).join("");
     html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Maggie's prompts — campaigns &amp; coaching</h3>
   <p class="small muted" style="margin:0 0 8px">Proactive prompts from the last ${d.rangeDays} days. Campaign prompts go to active businesses only (one active card, at most two a week, family snoozed 30 days on a dismissal). Coaching walks each creator one step at a time; the distribution below is computed live.</p>
   <div class="stat-band" style="margin:0 0 6px">${astDataCell(astFull(pc.shown || 0), "Campaign prompts shown")}${astDataCell(astFull(pc.used || 0), "Prompt actions: used")}${astDataCell(astFull(pc.offersCreated || 0), "Offers created from prompts")}${astDataCell(astFull(pc.dismissed || 0), "Dismissed")}${astDataCell(astFull(pc.snoozed || 0), "Snoozed (later)")}${astDataCell(astFull(pc.expired || 0), "Expired unanswered")}</div>
   ${trigLine ? `<p class="small" style="margin:8px 0 0"><strong>By trigger:</strong> ${trigLine}</p>` : ""}
   ${famLine ? `<p class="small" style="margin:4px 0 0"><strong>By family:</strong> ${famLine}</p>` : ""}
   <div class="stat-band" style="margin:12px 0 6px">${astDataCell(astFull(pco.offered || 0), "Coaching steps offered")}${astDataCell(astFull(pco.done || 0), "Steps completed")}${astDataCell(astFull(pco.snoozed || 0), "Steps snoozed")}${astDataCell(pco.completionRate == null ? "—" : pco.completionRate + "%", "Step completion rate")}${astDataCell(astFull(pco.ladderComplete || 0), "Creators ladder-complete")}${astDataCell(astFull(pco.creatorsTracked || 0), "Approved creators tracked")}</div>
-  ${distRows ? `<p class="small" style="margin:8px 0 4px"><strong>Where creators are stuck right now:</strong></p>${distRows}` : `<p class="small muted" style="margin:8px 0 0">No creator is mid-ladder right now.</p>`}
+  ${distRows ? `<p class="small" style="margin:8px 0 4px"><strong>Where creators are stuck right now:</strong></p><div data-uxmore>${distRows}${distEntries.length > 8 ? uxMoreBtn(distEntries.length) : ""}</div>` : `<p class="small muted" style="margin:8px 0 0">No creator is mid-ladder right now.</p>`}
   </div>`;
   }
     return html;
@@ -32207,7 +32259,7 @@ const AST_DATA_RENDER = {
   ${orp.total ? `<p class="small" style="margin:8px 0 0"><strong>Reply outcomes:</strong> ${outcomeLine}</p>` : ""}
   ${ob.total ? `<p class="small" style="margin:4px 0 0"><strong>Bounces:</strong> ${bounceLine} (from delivery notices — the authoritative source, not Sent copies).</p>` : ""}
   ${ofm.imported ? `<p class="small" style="margin:4px 0 0"><strong>Site forms:</strong> ${astFull(ofm.cityRequests || 0)} city request${ofm.cityRequests === 1 ? "" : "s"} and ${astFull(ofm.businessApplications || 0)} business application${ofm.businessApplications === 1 ? "" : "s"} now land in the backlog (the Supply &amp; demand tab) and the application records${ofm.since ? `, captured from ${esc(ofm.since)}` : ""}.</p>` : ""}
-  ${(op.byMarket || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>Prospect universe by market</strong> (verified from rosters · contacted by outreach · signed up):</p>${op.byMarket.map((r) => `<div class="kv kv-wrap"><span>${esc(r.market)}</span><b>${astFull(r.verified || 0)} verified · ${astFull(r.contacted || 0)} contacted · ${astFull(r.joined || 0)} signed up</b></div>`).join("")}` : `<p class="small muted" style="margin:8px 0 0">No prospects imported yet.</p>`}
+  ${(op.byMarket || []).length ? `<p class="small" style="margin:10px 0 4px"><strong>Prospect universe by market</strong> (verified from rosters · contacted by outreach · signed up):</p><div data-uxmore>${op.byMarket.map((r, i) => `<div class="kv kv-wrap${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>${esc(r.market)}</span><b>${astFull(r.verified || 0)} verified · ${astFull(r.contacted || 0)} contacted · ${astFull(r.joined || 0)} signed up</b></div>`).join("")}${op.byMarket.length > 8 ? uxMoreBtn(op.byMarket.length) : ""}</div>` : `<p class="small muted" style="margin:8px 0 0">No prospects imported yet.</p>`}
   </div>`;
   }
     return html || `<div class="panel" style="margin-top:14px"><p class="small muted" style="margin:0">Nothing from outside the app has been imported yet.</p></div>`;
@@ -32217,9 +32269,9 @@ const AST_DATA_RENDER = {
   // Snapshot trend.
   const snaps = d.snapshots || [];
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Daily snapshots</h3>
-  ${snaps.length ? `${sparkSvg119(snaps.map((s) => s.creatorsApproved))}<div class="table-wrap"><table><tr><th>Date</th><th>Approved creators</th><th>Followers</th><th>Open offers</th><th>Bookings</th><th>Page views</th></tr>
-  ${snaps.slice().reverse().map((s) => `<tr><td>${esc(s.date)}</td><td data-label="Approved creators">${s.creatorsApproved}</td><td data-label="Followers">${astFull(s.followers)}</td><td data-label="Open offers">${s.offersOpen}</td><td data-label="Bookings">${s.bookings}</td><td data-label="Page views">${s.pageviews}</td></tr>`).join("")}
-  </table></div>` : `<p class="small muted">No daily snapshot yet. The first one freezes tonight; trends exist from the day capture starts, never before.</p>`}
+  ${snaps.length ? `${sparkSvg119(snaps.map((s) => s.creatorsApproved))}<div data-uxmore><div class="table-wrap ct199"><table><tr><th>Date</th><th>Approved creators</th><th>Followers</th><th>Open offers</th><th>Bookings</th><th>Page views</th></tr>
+  ${snaps.slice().reverse().map((s, i) => `<tr${i >= 14 ? ` class="ux-extra" hidden` : ""}><td>${esc(s.date)}</td><td data-label="Approved creators">${s.creatorsApproved}</td><td data-label="Followers">${astFull(s.followers)}</td><td data-label="Open offers">${s.offersOpen}</td><td data-label="Bookings">${s.bookings}</td><td data-label="Page views">${s.pageviews}</td></tr>`).join("")}
+  </table></div>${snaps.length > 14 ? uxMoreBtn(snaps.length) : ""}</div>` : `<p class="small muted">No daily snapshot yet. The first one freezes tonight; trends exist from the day capture starts, never before.</p>`}
   </div>`;
     return html;
   },
@@ -32229,10 +32281,12 @@ const AST_DATA_RENDER = {
   const tr = d.training || null;
   html += `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Export the raw data</h3>
   <p class="small muted" style="margin:0 0 8px">The core datasets, straight from the records. Event datasets cover the last 30 days (add &amp;days= up to 90 in the link for more); record datasets are whole. Event export is scoped to the capture types and the full log because those are the datasets the ML training set joins on.</p>
-  ${tr ? `<p class="small" style="margin:0 0 8px"><strong>Match training pairs</strong> (the training_pairs dataset below): one row for every creator shown in a match list, with the score's ingredients and whether that creator was picked — and, where the visit settled, whether they delivered on time, late, or not at all. Right now the set holds <strong>${astFull(tr.rows || 0)} rows</strong> from <strong>${astFull(tr.impressions || 0)} match lists</strong>, <strong>${astFull(tr.pickedRows || 0)} of them picks</strong> across <strong>${astFull(tr.labeledBriefs || 0)} briefs</strong>. That is the learned ranker's food: it trains only when the offline evaluation harness (scripts/eval-ranker.mjs) says the volume is real, and its weights ship only if it beats the hand-set formula on held-out picks and Jeff approves. The JSONL format is the one the harness reads.</p>` : `<p class="small muted" style="margin:0 0 8px">Training-pair counts are frozen into each night's snapshot — the first count lands with tonight's snapshot.</p>`}
-  ${AST_EXPORT_DATASETS.map((ds) => ds === "training_pairs"
-    ? `<div class="kv"><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=training_pairs&format=jsonl">JSONL</a> · <a href="/api/admin/stats/data/export?dataset=training_pairs&format=json">JSON</a> · <a href="/api/admin/stats/data/export?dataset=training_pairs&format=csv">CSV</a></span></div>`
-    : `<div class="kv"><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=${ds}&format=csv">CSV</a> · <a href="/api/admin/stats/data/export?dataset=${ds}&format=json">JSON</a></span></div>`).join("")}
+  ${tr ? `<p class="small" style="margin:0 0 4px\"><strong>Match training pairs</strong> (the training_pairs dataset below) holds <strong>${astFull(tr.rows || 0)} rows</strong> from <strong>${astFull(tr.impressions || 0)} match lists</strong>, <strong>${astFull(tr.pickedRows || 0)} of them picks</strong> across <strong>${astFull(tr.labeledBriefs || 0)} briefs</strong>.</p>
+  ${uxNoteHtml("One row for every creator shown in a match list, with the score's ingredients and whether that creator was picked, and, where the visit settled, whether they delivered on time, late, or not at all. That is the learned ranker's food: it trains only when the offline evaluation harness (scripts/eval-ranker.mjs) says the volume is real, and its weights ship only if it beats the hand-set formula on held-out picks and Jeff approves. The JSONL format is the one the harness reads.")}
+  <div style="margin-bottom:8px"></div>` : `<p class="small muted" style="margin:0 0 8px">Training-pair counts are frozen into each night's snapshot — the first count lands with tonight's snapshot.</p>`}
+  <div data-uxmore>${AST_EXPORT_DATASETS.map((ds, i) => ds === "training_pairs"
+    ? `<div class="kv${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=training_pairs&format=jsonl">JSONL</a> · <a href="/api/admin/stats/data/export?dataset=training_pairs&format=json">JSON</a> · <a href="/api/admin/stats/data/export?dataset=training_pairs&format=csv">CSV</a></span></div>`
+    : `<div class="kv${i >= 8 ? " ux-extra" : ""}"${i >= 8 ? " hidden" : ""}><span>${esc(ds)}</span><span><a href="/api/admin/stats/data/export?dataset=${ds}&format=csv">CSV</a> · <a href="/api/admin/stats/data/export?dataset=${ds}&format=json">JSON</a></span></div>`).join("")}${AST_EXPORT_DATASETS.length > 8 ? uxMoreBtn(AST_EXPORT_DATASETS.length) : ""}</div>
   </div>`;
     return html;
   },
@@ -32344,7 +32398,7 @@ function ccMoneyHtml(d) {
     <div class="panel">
       <h3 style="margin:0 0 2px">Recorded <span class="cc-chip recorded">Recorded</span></h3>
       <p class="muted small" style="margin:0 0 8px">On Magpie's books: what the records say moved, whether or not a card was charged.</p>
-      <div class="table-wrap"><table>
+      <div class="table-wrap ct199"><table>
         <tr><th>Source</th><th>Flowed</th><th>Magpie kept</th><th>Creators earned</th><th>Partners earned</th></tr>
         <tr><td>Subscriptions <span class="muted small">(${plural((rr.subscriptions || {}).count || 0, "plan", "plans")} selected)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.subscriptions || {}).flowed || 0)}</td><td data-label="Magpie kept">${ccMoneyFmt((rr.subscriptions || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.subscriptions || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${partnerCell((rr.subscriptions || {}).partnersEarned)}</td></tr>
         <tr><td>Paid bookings <span class="muted small">(${plural((rr.paidBookings || {}).count || 0, "booking", "bookings")} released)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.paidBookings || {}).flowed || 0)}</td><td data-label="Magpie kept">${ccMoneyFmt((rr.paidBookings || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.paidBookings || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${ccMoneyFmt((rr.paidBookings || {}).partnersEarned || 0)}</td></tr>
@@ -32358,7 +32412,7 @@ function ccMoneyHtml(d) {
     <div class="panel">
       <h3 style="margin:0 0 2px">Charged <span class="cc-chip charged">Charged</span></h3>
       <p class="muted small" style="margin:0 0 8px">Real card charges, from the Stripe charge ledger. A plan with no charge is Recorded, above, and never appears here.</p>
-      <div class="table-wrap"><table>
+      <div class="table-wrap ct199"><table>
         <tr><th>Source</th><th>Gross</th><th>Founding credit</th><th>Net charged</th></tr>
         <tr><td>Subscriptions <span class="muted small">(${plural((cr.subscriptions || {}).count || 0, "charge", "charges")})</span></td><td data-label="Gross">${ccMoneyFmt((cr.subscriptions || {}).gross || 0)}</td><td data-label="Founding credit">&minus;${ccMoneyFmt((cr.subscriptions || {}).creditApplied || 0)}</td><td data-label="Net charged">${ccMoneyFmt((cr.subscriptions || {}).net || 0)}</td></tr>
         <tr><td>Paid bookings <span class="muted small">(${plural((cr.paidBookings || {}).count || 0, "charge", "charges")})</span></td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged">${ccMoneyFmt((cr.paidBookings || {}).net || 0)}</td></tr>
@@ -32461,7 +32515,7 @@ function ccBusinessesHtml(d) {
   const posStrip = pm ? `<div class="panel" style="margin-bottom:12px"><h3 style="margin:0 0 6px">Which till they run</h3><p class="small" style="margin:0">Square ${pm.square || 0} &middot; Clover ${pm.clover || 0} &middot; Toast ${pm.toast || 0} &middot; Lightspeed ${pm.lightspeed || 0} &middot; Another system ${pm.other || 0} &middot; No register system ${pm.none || 0} &middot; Not declared yet ${pm.undeclared || 0}. Declared tills are the Clover trigger's evidence: the build starts at 10 to 20 real declarations.</p></div>` : "";
   return `
     ${posStrip}<p class="muted small" style="margin:2px 0 10px">${plural(tt.count || 0, "business", "businesses")} &middot; ${plural(tt.withPlan || 0, "agreement", "agreements")} on record &middot; ${tt.charged || 0} charged &middot; ${tt.recordedOnly || 0} recorded only &middot; ${tt.pastDue || 0} past due. Rows that need a look (past due, then recorded-not-charged) sort first.</p>
-    <div class="panel"><div class="table-wrap"><table>
+    <div class="panel"><div class="table-wrap ct199"><table>
       <tr><th>Business</th><th>Plan</th><th>Founding credit</th><th>Minimum</th><th>Billing</th><th>Rollover</th><th>Lifetime</th></tr>
       ${rows.map(rowHtml).join("")}
     </table></div></div>`;
@@ -32486,7 +32540,7 @@ function ccPartnersHtml(d) {
     </div>
     <p class="muted small" style="margin:2px 0 10px">Every figure is computed from the deal records — the same math each partner sees on their own Wallet page. Period figures follow the filter: ${esc(periodName)}.
       <button type="button" class="btn small-btn ghost" onclick="return ccAccrueSnapshot()">Snapshot accruals</button></p>
-    <div class="panel"><div class="table-wrap"><table>
+    <div class="panel"><div class="table-wrap ct199"><table>
       <tr><th>Partner</th><th>The deal</th><th>Markets</th><th>Status</th><th>Period split</th><th>Earned to date</th><th></th></tr>
       ${rows.map((r) => {
         const deal0 = (r.deals || [])[0];
@@ -32556,7 +32610,7 @@ function ccDealMonthsTable(deal, partnerName) {
   const sections = (deal.markets || []).map((mr) => {
     if (!mr.months.length) return `<h4 style="margin:14px 0 4px">${esc(mr.market)}</h4><p class="small muted">No months yet${mr.liveAt ? "" : " — the market has no live date on the deal, so guarantee months cannot be counted"}.</p>`;
     return `<h4 style="margin:14px 0 4px">${esc(mr.market)}</h4>
-    <div class="table-wrap"><table>
+    <div class="table-wrap ct199"><table>
       <tr><th>Month</th><th>Businesses</th><th>Money in</th><th>% amount${benName ? ` (to ${esc(benName)})` : ""}</th><th>Guarantee</th><th>${esc(partnerName)} receives</th><th>Magpie keeps</th><th>Governs</th></tr>
       ${mr.months.map((row) => `<tr>
         <td><strong>${esc(row.label)}</strong>${row.monthIndex ? `<br><span class="small muted">Month ${row.monthIndex} of the deal</span>` : ""}</td>
@@ -32609,7 +32663,7 @@ function ccPartnerDealHtml(d, deal) {
     <p class="small" style="margin:0">The deal promises ${deal.pilotFloor.beneficiary === "partner" ? esc(p.name) : "Magpie"} at least ${ccMoneyFmtC_CUR(deal.pilotFloor.floor)} across the pilot. Counted so far: <strong>${ccMoneyFmtC_CUR(deal.pilotFloor.counted)}</strong> (${ccMoneyFmtC_CUR(deal.pilotFloor.activationCounted)} activation + ${ccMoneyFmtC_CUR(deal.pilotFloor.receiptsCounted)} of monthly takes). ${deal.pilotFloor.met ? `<strong>The floor is met.</strong>` : `${ccMoneyFmtC_CUR(deal.pilotFloor.shortfall)} to go.`}</p></div>` : "";
   const runRate = deal.runRate ? `<div class="panel" style="margin-top:14px"><div class="flex-between"><h3 style="margin:0">Run-rate at fill</h3><span class="cc-chip modeled">Modeled</span></div>
     <p class="small muted" style="margin:4px 0 8px">The standard model at this deal's split: about ${deal.runRate.businessesPerMarket} businesses a market at $${Number(deal.runRate.arpuYearly).toLocaleString()} a year, ramped 40% / 75% / 100% across the first three years. An estimate for planning, never an accrual.</p>
-    <div class="table-wrap"><table><tr><th>Year</th><th>Gross</th><th>${esc(p.name)} at ${typeof t.partnerPct === "number" ? t.partnerPct : 0}%</th></tr>
+    <div class="table-wrap ct199"><table><tr><th>Year</th><th>Gross</th><th>${esc(p.name)} at ${typeof t.partnerPct === "number" ? t.partnerPct : 0}%</th></tr>
     <tr><td>Year 1 · 40%</td><td data-label="Gross">${ccMoneyFmt(deal.runRate.ramp.fill40.gross)}</td><td data-label="Partner">${ccMoneyFmt(deal.runRate.ramp.fill40.partner)}</td></tr>
     <tr><td>Year 2 · 75%</td><td data-label="Gross">${ccMoneyFmt(deal.runRate.ramp.fill75.gross)}</td><td data-label="Partner">${ccMoneyFmt(deal.runRate.ramp.fill75.partner)}</td></tr>
     <tr><td>Year 3 · 100%</td><td data-label="Gross">${ccMoneyFmt(deal.runRate.ramp.fill100.gross)}</td><td data-label="Partner">${ccMoneyFmt(deal.runRate.ramp.fill100.partner)}</td></tr></table></div></div>` : "";
@@ -32631,7 +32685,7 @@ function ccPartnerDealHtml(d, deal) {
     ${pilot}
     ${ccDealMonthsTable(deal, p.name)}
     <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">The deal, in plain terms</h3>
-      <div class="table-wrap"><table>${termsRows.map(([k, v]) => `<tr><td style="width:170px"><strong>${k}</strong></td><td>${v}</td></tr>`).join("")}</table></div>
+      <div class="table-wrap ct199"><table>${termsRows.map(([k, v]) => `<tr><td style="width:170px"><strong>${k}</strong></td><td>${v}</td></tr>`).join("")}</table></div>
       ${(deal.versions || []).length ? `<p class="small muted" style="margin:8px 0 0">${[...deal.versions].reverse().map((v) => `v${v.n} · ${esc(fmtDay(v.at))}${(v.changedFields || []).length ? ` · changed: ${esc(v.changedFields.join(", "))}` : ""}`).join("<br>")}</p>` : ""}
       <p style="margin:10px 0 0"><button type="button" class="btn small-btn" onclick="return go('dashboard','Partners')">Edit terms on the Partners tab</button></p>
     </div>
@@ -32649,7 +32703,7 @@ function ccPartnerDetailHtml(d) {
     <p class="small">No deal record carries terms for ${esc(p.name)}, so nothing here is estimated and no schedule is assumed. Their earnings run on the standing share (${p.sharePct == null ? "—" : p.sharePct + "%"}) in the meantime. Enter the terms in the Deal editor and this page becomes the full breakdown: the split, the guarantee math, and what has accrued.</p>
     <p style="margin:8px 0 0"><button type="button" class="btn small-btn" onclick="return go('dashboard','Partners')">Open the Deal editor</button></p></div>`;
   }
-  const payouts = (d.payouts || []).length ? `<div class="table-wrap"><table>
+  const payouts = (d.payouts || []).length ? `<div class="table-wrap ct199"><table>
       <tr><th>Paid</th><th>Amount</th><th>For</th><th>How</th></tr>
       ${d.payouts.map((po) => `<tr><td>${po.markedPaidAt ? esc(fmtDay(po.markedPaidAt)) : ""}</td><td data-label="Amount"><strong>${ccMoneyFmtC(po.amount, po.currency)}</strong></td><td data-label="For">${po.period ? esc(po.period) : "—"}${po.note ? `<br><span class="small muted">${esc(po.note)}</span>` : ""}</td><td data-label="How">${esc(po.method || "")}${po.reference ? ` · ${esc(po.reference)}` : ""}</td></tr>`).join("")}
     </table></div>` : `<p class="small muted">No payout has been recorded yet. Accrued is not paid until a real payment is recorded here.</p>`;
@@ -32730,7 +32784,7 @@ function ccOwedHtml(d) {
     <div class="panel">
       <h3 style="margin:0 0 2px">Money waiting for creators</h3>
       <p class="muted small" style="margin:0 0 8px">Every held dollar with the reason it is held, oldest first. A hold with no named reason would be a surprise; there are none here.</p>
-      ${(cr.held || []).length ? `<div class="table-wrap"><table>
+      ${(cr.held || []).length ? `<div class="table-wrap ct199"><table>
         <tr><th>Creator</th><th>Business</th><th>Market</th><th>Creator gets</th><th>Why it is waiting</th><th>Age</th></tr>
         ${(cr.held || []).map((r) => `<tr>
           <td><strong>${esc(r.creatorName || "Creator")}</strong><br><span class="small muted">${r.kind === "license" ? "License" : "Paid booking"}</span></td>
@@ -32746,7 +32800,7 @@ function ccOwedHtml(d) {
     <div class="panel">
       <h3 style="margin:0 0 2px">Released in ${esc(periodName.toLowerCase())}</h3>
       <p class="muted small" style="margin:0 0 8px">${ccMoneyFmt(cr.releasedTotal || 0)} reached creators across ${plural(cr.releasedCount || 0, "release", "releases")}.</p>
-      <div class="table-wrap"><table>
+      <div class="table-wrap ct199"><table>
         <tr><th>Creator</th><th>Business</th><th>Amount</th><th>When</th></tr>
         ${(cr.released || []).map((r) => `<tr><td><strong>${esc(r.creatorName || "Creator")}</strong> <span class="small muted">${r.kind === "license" ? "license" : "paid booking"}</span></td><td data-label="Business">${esc(r.businessName || "")}</td><td data-label="Amount">${ccMoneyFmt(r.amount || 0)}</td><td data-label="When">${r.at ? esc(fmtDay(r.at)) : ""}</td></tr>`).join("")}
       </table></div>
@@ -32755,7 +32809,7 @@ function ccOwedHtml(d) {
     <div class="panel">
       <h3 style="margin:0 0 2px">Owed to partners</h3>
       <p class="muted small" style="margin:0 0 8px">Accrued under each partner's deal terms, less the payouts recorded on the Partners view. The same figures the partner sees on their own Wallet page.</p>
-      ${(pa.rows || []).length ? `<div class="table-wrap"><table>
+      ${(pa.rows || []).length ? `<div class="table-wrap ct199"><table>
         <tr><th>Partner</th><th>Deal</th><th>Accrued</th><th>Paid</th><th>Still owed</th></tr>
         ${(pa.rows || []).map((r) => `<tr>
           <td><strong>${esc(r.name || "Partner")}</strong></td>
@@ -32774,7 +32828,7 @@ function ccOwedHtml(d) {
     <div class="panel">
       <h3 style="margin:0 0 2px">Owed by businesses</h3>
       <p class="muted small" style="margin:0 0 8px">Money on paper: plans whose charges failed, and plans recorded before billing ever charged them. Listed until each one is charged or closed out.</p>
-      ${bizRows.length ? `<div class="table-wrap"><table>
+      ${bizRows.length ? `<div class="table-wrap ct199"><table>
         <tr><th>Business</th><th>Market</th><th>Per month</th><th>State</th></tr>
         ${bizRows.map((r) => `<tr><td><strong>${esc(r.name || "Business")}</strong>${r.since ? `<br><span class="small muted">${r.since}</span>` : ""}</td><td data-label="Market">${esc(r.market || "")}</td><td data-label="Per month">${r.monthly === null || r.monthly === undefined ? "—" : ccMoneyFmt(r.monthly)}</td><td data-label="State">${r.stateWords}</td></tr>`).join("")}
       </table></div>` : `<p class="small">No business owes anything on paper right now.</p>`}
@@ -32887,7 +32941,7 @@ function ccCloseHtml(recon, d) {
     <div class="panel">
       <h3 style="margin:0 0 2px">Close the books</h3>
       <p class="muted small" style="margin:0 0 8px">Soft close freezes a preliminary snapshot. Hard close freezes it for good — after that, a correction lands as an adjustment in the month it happens, and the closed month never changes.</p>
-      <div class="table-wrap"><table>
+      <div class="table-wrap ct199"><table>
         <tr><th>Month</th><th>State</th><th>Frozen headline</th><th></th></tr>
         ${(d.months || []).map((m) => `<tr${m.period === sel.period ? ` class="cc-sel-row"` : ""}>
           <td><strong>${esc(m.label || m.period)}</strong></td>
@@ -34565,7 +34619,7 @@ async function loadRecruiterResults(el) {
       <p style="margin:0 0 6px"><strong>${r.replies}</strong> replied or beyond &middot; <strong>${r.claimsStarted}</strong> signed up through you (${r.creditsViaLink} by your link, ${r.creditsViaListMatch} matched from your list) &middot; <strong>${r.signupsApproved}</strong> approved</p>
       <p class="muted small" style="margin:0">Every sign-up counts once. Your link is the primary credit; a sign-up that matches your list counts for you too, and if the two ever disagree the link wins and the match is flagged for Jeff.</p>
     </div>
-    ${data.credited && data.credited.length ? `<div class="table-wrap panel"><table>
+    ${data.credited && data.credited.length ? `<div class="table-wrap ct199 panel"><table>
       <tr><th>Creator</th><th>Handle</th><th>How</th><th>Status</th><th>When</th></tr>
       ${data.credited.map((c) => `<tr><td>${esc(c.name || "")}</td><td>@${esc(c.handle || "")}</td><td>${c.via === "link" ? "Your link" : "Your list"}</td><td>${esc(c.status || "")}</td><td>${c.at ? new Date(c.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""}</td></tr>`).join("")}
     </table></div>` : `<div class="panel"><p class="muted">No sign-ups yet. They appear here the day a creator claims through your message.</p></div>`}`;
@@ -35096,7 +35150,7 @@ async function loadStaffRecruiters() {
     <h3 style="margin:18px 0 6px">Staff recruiters</h3>
     <p class="muted small">A staff recruiter gets a login scoped to one market, a queue, and ready-to-send drafts. They send from their own accounts and mark each send; these numbers are that log, plus the sign-ups credited to them. A sign-up counts once: their link wins, a list match is flagged, never double-counted.</p>
     ${srInvitePanelHtml(srMarketOptionsHtml((data.markets || []).map((m) => m.name), typedMarket))}
-    ${rows.length ? `<div class="table-wrap panel"><table>
+    ${rows.length ? `<div class="table-wrap ct199 panel"><table>
       <tr><th>Recruiter</th><th>Market</th><th>Queued</th><th>Sent (IG/TT/Email)</th><th>Replies+</th><th>Sign-ups</th><th>Approved</th><th>Via link / list</th><th></th></tr>
       ${rows.map((r) => { const e = r.recruiter; return `<tr><td><strong>${esc(e.name)}</strong><br><span class="muted small">${esc(e.kind)} &middot; src=${esc(e.claimSrc)}</span></td><td>${esc(e.marketName)}</td><td>${r.assigned}</td><td>${r.sends} (${r.sentByChannel.instagram}/${r.sentByChannel.tiktok}/${r.sentByChannel.email})</td><td>${r.replies}</td><td>${r.claimsStarted}</td><td>${r.signupsApproved}</td><td>${r.creditsViaLink} / ${r.creditsViaListMatch}</td><td>${e.kind === "staff" ? `<button class="btn small-btn ghost" onclick="srResend('${e.id}')">Resend invite</button>` : ""}</td></tr>`; }).join("")}
     </table></div>` : `<p class="muted">No recruiter seats yet.</p>`}
