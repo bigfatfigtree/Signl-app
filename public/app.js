@@ -29639,7 +29639,7 @@ async function loadAdminPartners() {
     const pilotsData = await api("GET", "/admin/pilots").catch(() => ({ pilots: [] }));
     const allPilots = pilotsData.pilots || [];
     const markets = (state.boot && state.boot.markets) || [];
-    const cards = (data.partners || []).map((p) => `
+    const cardsArr206 = (data.partners || []).map((p) => `
     <div class="card mb">
       <div class="flex-between"><strong>${esc(p.name)}</strong><span class="badge ${p.status === "active" ? "ok" : "warn"}">${p.status === "active" ? "Active" : "Paused"}</span></div>
       <p class="small muted" style="margin:6px 0">${p.type === "profile" ? "Local profile" : "Media group"} · ${esc(p.contactName || "")} · ${esc(p.email)} · Code: <span class="code">${esc(p.code)}</span>${p.demo ? ` · <span class="badge warn">Demo</span>` : ""}</p>
@@ -29668,7 +29668,8 @@ async function loadAdminPartners() {
       <div id="pt-team-${p.id}"><p class="small muted">Loading seats…</p></div>
       <button class="btn small-btn" onclick="saveAdminPartner('${p.id}')">Save partner</button> <button type="button" class="btn small-btn ghost" onclick="return adminMessagePerson153('${p.id}')">Message</button> <span id="pt-ok-${p.id}" class="saved"></span>
       <div id="pt-deals-${p.id}" style="margin-top:12px"><p class="small muted">Loading deals…</p></div>
-    </div>`).join("");
+    </div>`);
+    const cards = uxCap203(cardsArr206, 2);
     el.innerHTML = `
       <h3 style="margin:0 0 8px">Partners</h3>
       <p class="small muted">Partners recruit through tracked links and keep their share of subscription revenue in their markets. Creating one makes their login; they set their own password from the sign-in page with Forgot password.</p>
@@ -31501,10 +31502,50 @@ async function setTester(userId, tester, role) {
 // away on the row's toggle.
 let adminEventsCache = [];
 let adminEventsQ = "";
+// Build -206: Event Log human-readable labels. Curated labels for the
+// common event codes; every other code falls back to a prettified form
+// (snake_case words, first letter capped) so no raw code or raw type
+// string is ever the only thing an admin sees. The raw code stays in
+// the badge title for support lookups.
+const EVENT_LABELS_206 = {
+  user_signed_in: "Signed in", user_signed_up: "Signed up", signup_completed: "Signup completed",
+  application_submitted: "Application submitted", application_approved: "Application approved",
+  application_rejected: "Application rejected", application_held_under_minimum: "Application held (under minimum)",
+  application_released: "Application released", application_selected: "Application selected",
+  application_withdrawn: "Application withdrawn", account_banned: "Account banned",
+  account_paused: "Account paused", account_paused_strikes: "Account paused (strikes)",
+  account_unpaused: "Account unpaused", account_reinstated: "Account reinstated",
+  account_removed: "Account removed", account_deleted: "Account deleted",
+  account_side_added: "Account side added", account_side_switched: "Account side switched",
+  admin_corrected_account_email: "Admin corrected account email",
+  admin_sent_signin_link: "Admin sent sign-in link",
+  admin_viewed_business_account: "Admin viewed a business account",
+  admin_viewed_creator_account: "Admin viewed a creator account",
+  admin_viewed_partner_account: "Admin viewed a partner account",
+  audience_markets_updated: "Audience markets updated", audience_count_corrected: "Audience count corrected",
+  audience_redemption: "Audience code redeemed", audience_code_taken: "Audience code taken",
+  booking_created: "Booking created", booking_confirmed: "Booking confirmed",
+  booking_completed: "Booking completed", booking_cancelled: "Booking cancelled",
+  claim_hook_view: "Claim link viewed", claim_started: "Claim started", claim_completed: "Claim completed",
+  offer_created: "Offer created", offer_updated: "Offer updated",
+  post_submitted: "Post submitted", post_verified: "Post verified",
+  message_sent: "Message sent", automation_toggled: "Automation toggled",
+  automation_test_sent: "Automation test sent", suggestion_shown: "Suggestion shown",
+  bdev_lead_added: "Biz Dev lead added", bdev_claim: "Biz Dev claim filed",
+  bdev_claim_confirmed: "Biz Dev claim confirmed", bdev_seat_assigned: "Biz Dev seat assigned",
+  bdev_escalation: "Biz Dev escalation", bdev_visit: "Biz Dev visit logged",
+  bdev_market_state: "Biz Dev market state changed", bdev_activation_confirmed: "Biz Dev activation confirmed",
+};
+function eventTypeLabel206(t) {
+  const raw = String(t || "");
+  if (EVENT_LABELS_206[raw]) return EVENT_LABELS_206[raw];
+  const pretty = raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return pretty || "Event";
+}
 function adminEventRowHtml(e, i) {
   const raw = JSON.stringify(e.data || {});
   const long = raw.length > 240;
-  return `<tr><td class="small" data-label="When">${fmtDate(e.ts)}</td><td><span class="badge info">${esc(e.type)}</span></td><td class="small">${esc(e.actorRole || "")}</td><td class="small">${esc(e.market || "")}</td><td class="small"><span id="ev-data-${i}">${esc(long ? raw.slice(0, 240) + "…" : raw)}</span>${long ? ` <button type="button" class="linklike" onclick="return adminEventToggleData(${i})">Show all</button>` : ""}</td></tr>`;
+  return `<tr><td class="small" data-label="When">${fmtDate(e.ts)}</td><td><span class="badge info" title="${esc(e.type)}">${esc(eventTypeLabel206(e.type))}</span></td><td class="small">${esc(e.actorRole || "")}</td><td class="small">${esc(e.market || "")}</td><td class="small"><span id="ev-data-${i}">${esc(long ? raw.slice(0, 240) + "…" : raw)}</span>${long ? ` <button type="button" class="linklike" onclick="return adminEventToggleData(${i})">Show all</button>` : ""}</td></tr>`;
 }
 function adminEventToggleData(i) {
   const e = adminEventsCache[i];
@@ -36998,7 +37039,7 @@ function abdRender(el) {
     ${canSell ? `<div class="abd-mode" role="group" aria-label="Biz Dev mode"><button type="button" class="chip on">Manage</button><button type="button" class="chip" onclick="return bdGoSell161()">Sell</button></div>` : ""}
   </div>
   ${abdWaitingStripHtml(d)}
-  ${(d.markets || []).map((m) => `
+  ${uxCap203((d.markets || []).map((m) => `
   <div class="panel">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <strong>${esc(m.marketName || m.marketId)}</strong>
@@ -37008,7 +37049,7 @@ function abdRender(el) {
     <p class="muted small" style="margin:6px 0 0">Open a market when its founding creator roster is full. Flipping to Open asks you to confirm first.</p>
     <p class="small" style="margin:8px 0">Gate: <strong>${m.progress.creators} approved creators</strong> of ${m.progress.gateLow} approved${m.progress.creators < m.progress.gateLow ? ` (${m.progress.gateLow - m.progress.creators} to go)` : ""} · weakest: ${Object.entries(m.progress.byBucket).sort((a, b) => a[1].count - b[1].count).map(([k, v]) => `${esc(k)} ${v.count}`).join(" · ")}</p>
     <p class="small muted" style="margin:0">Leads ${m.loaded} · touched ${m.touched} · visited ${m.visited} · interested ${m.interested} · claimed ${m.claimed} (confirmed ${m.confirmed}) · active ${m.active}</p>
-  </div>`).join("")}
+  </div>`), 3)}
   ${abdRollupHtml(d)}
   ${(d.prewarm && d.prewarm.length) ? `<div class="panel"><strong>Your pre-warm drafts — yours to send</strong><p class="muted small" style="margin:6px 0 10px">Drafts only. Tony never sees these and nothing sends from here — copy one into your own email when you're ready.</p>${d.prewarm.map((item, i) => { const dr = item.draft; const subj = dr && typeof dr === "object" ? (dr.subject || "") : ""; const body = dr && typeof dr === "object" ? (dr.body || dr.text || "") : (dr || ""); const open = !!abd.prewarmOpen[i]; return `<div class="bd-logrow"><strong>${esc(item.business || "")}</strong>${item.toName ? ` · for ${esc(item.toName)}` : ""}${subj ? `<div style="margin:4px 0">${esc(subj)}</div>` : ""}<span style="display:block;margin-top:4px"><button type="button" class="btn ghost small-btn" id="abd-prewarm-btn-${i}" onclick="return abdTogglePrewarm(${i})">${open ? "Hide" : "Read"}</button> <button type="button" class="btn ghost small-btn" onclick="return abdCopyPrewarm(${i})">Copy</button></span><pre class="abd-prewarm-body" id="abd-prewarm-body-${i}" style="display:${open ? "" : "none"}">${esc(body)}</pre></div>`; }).join("")}</div>` : ""}
   <div class="panel">
@@ -37017,12 +37058,12 @@ function abdRender(el) {
     <p class="bd-money-big" style="margin:8px 0 4px">$${Number(d.liability.totalAccrued || 0).toLocaleString()}</p>
     <p class="small muted" style="margin:0">accrued, unpaid · across ${d.liability.activations} activations</p>
     <details style="margin-top:8px"><summary class="small" style="cursor:pointer">How the commission math works</summary><p class="small" style="margin:8px 0">Locked math: 25% direct (30% at 25+ kept no-shrink, 35% at 75+), +3 kicker in 5+-activation months, 38% cap, 5% same-market residual post-vesting only, months 1–12 per business, clawback only on refunds inside the 3-month minimum. Blended planning value $326.50/business/mo.</p></details>
-    ${(d.liability.perRep || []).map((r) => `<div class="bd-logrow">${esc(repName(r.repId))} · ${esc(r.marketId)} · accrued $${Number(r.accrued).toLocaleString()} · ${r.activations} activations · ${r.vested ? "vested" : "not vested"}</div>`).join("") || `<p class="muted small" style="margin:8px 0 0">No activations yet — pre-launch, liability is $0 by design.</p>`}
+    ${uxCap203((d.liability.perRep || []).map((r) => `<div class="bd-logrow">${esc(repName(r.repId))} · ${esc(r.marketId)} · accrued $${Number(r.accrued).toLocaleString()} · ${r.activations} activations · ${r.vested ? "vested" : "not vested"}</div>`), 6) || `<p class="muted small" style="margin:8px 0 0">No activations yet — pre-launch, liability is $0 by design.</p>`}
   </div>
   <div class="panel">
     <strong>Reps</strong>
     <p class="muted small" style="margin:4px 0 8px">Your sellers. Open any seat to see exactly what that rep sees.</p>
-    ${(d.reps || []).map((r) => { const first = String(r.name || "").trim().split(/\s+/)[0] || "rep"; const sb = (d.scoreboards || []).find((x) => x.repId === r.userId); const al = (d.alarmSummary || []).find((x) => x.repId === r.userId); const isMe = state.user && r.userId === state.user.id; const marketsLine = r.hqSeat && (r.markets || []).length > 1 ? ` · sells in ${(r.markets || []).map((m) => esc(m.marketName)).join(" + ")}` : ` · ${esc(r.marketName)}`; return `<div class="bd-logrow"><strong>${esc(r.name)}</strong>${isMe ? ` <span class="badge info">That's you — HQ seat</span>` : ""} · ${esc(r.email)}${marketsLine} · code ${esc(r.repCode)} · ${esc(r.seatState)}${r.hqSeat ? ` · no commission accrues on this seat` : ""}${r.warningMonth ? ` · ⚠ warning month ${esc(r.warningMonth)}` : ""}${r.atRisk ? ` · ⚠ ${esc(r.atRisk)}` : ""} ${isMe ? `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return bdGoSell161()">Open Sell mode</button>` : `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return abdPreviewOpen('${r.userId}')">See ${esc(first)}'s view</button>`}${sb ? `<div class="muted small" style="margin-top:4px">Last week: ${(sb.lines || []).map((line) => esc(line)).join(" ")}</div>` : ""}${al ? `<div class="muted small" style="margin-top:2px">Follow-up pings: ${Number(al.count || 0)} waiting (${esc(al.date || "")})</div>` : ""}</div>`; }).join("") || abdEmpty189("users", "No seats yet", "Assign the first seat with the form just below: an account email and a rep code.", "")}
+    ${uxCap203((d.reps || []).map((r) => { const first = String(r.name || "").trim().split(/\s+/)[0] || "rep"; const sb = (d.scoreboards || []).find((x) => x.repId === r.userId); const al = (d.alarmSummary || []).find((x) => x.repId === r.userId); const isMe = state.user && r.userId === state.user.id; const marketsLine = r.hqSeat && (r.markets || []).length > 1 ? ` · sells in ${(r.markets || []).map((m) => esc(m.marketName)).join(" + ")}` : ` · ${esc(r.marketName)}`; return `<div class="bd-logrow"><strong>${esc(r.name)}</strong>${isMe ? ` <span class="badge info">That's you — HQ seat</span>` : ""} · ${esc(r.email)}${marketsLine} · code ${esc(r.repCode)} · ${esc(r.seatState)}${r.hqSeat ? ` · no commission accrues on this seat` : ""}${r.warningMonth ? ` · ⚠ warning month ${esc(r.warningMonth)}` : ""}${r.atRisk ? ` · ⚠ ${esc(r.atRisk)}` : ""} ${isMe ? `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return bdGoSell161()">Open Sell mode</button>` : `<button type="button" class="btn ghost small-btn" style="margin-left:6px" onclick="return abdPreviewOpen('${r.userId}')">See ${esc(first)}'s view</button>`}${sb ? `<div class="muted small" style="margin-top:4px">Last week: ${(sb.lines || []).map((line) => esc(line)).join(" ")}</div>` : ""}${al ? `<div class="muted small" style="margin-top:2px">Follow-up pings: ${Number(al.count || 0)} waiting (${esc(al.date || "")})</div>` : ""}</div>`; }), 6) || abdEmpty189("users", "No seats yet", "Assign the first seat with the form just below: an account email and a rep code.", "")}
     <div class="form-2col" style="margin-top:10px">
       <div class="field"><label>Account email</label><input id="abd-seat-email" placeholder="rep@example.com"></div>
       <div class="field"><label>Rep code</label><input id="abd-seat-code" placeholder="HR-TONY"></div>
@@ -37032,10 +37073,10 @@ function abdRender(el) {
   </div>
   ${(d.pendingLeads || []).length ? `<div class="panel" id="abd-panel-leads"><strong>Rep-added leads waiting for your check (${d.pendingLeads.length})</strong>
     <p class="muted small" style="margin:4px 0 8px">Leads your reps added in the field. Approve one and it counts; send it back with one line and they'll see why.</p>
-    ${d.pendingLeads.map((l) => `<div class="bd-logrow"><strong>${esc(l.name)}</strong> · ${esc(l.category)} · ${esc(l.neighborhood || "")} · from ${esc(repName(l.assignedRepId))}
+    ${uxCap203(d.pendingLeads.map((l) => `<div class="bd-logrow"><strong>${esc(l.name)}</strong> · ${esc(l.category)} · ${esc(l.neighborhood || "")} · from ${esc(repName(l.assignedRepId))}
       <span style="display:block;margin-top:6px"><button type="button" class="btn small-btn" onclick="return abdLeadAction('${l.id}','approve')">Approve — it counts</button>
       <input id="abd-rej-${l.id}" placeholder="If not: one line back to the rep" style="width:260px">
-      <button type="button" class="btn ghost small-btn" onclick="return abdLeadAction('${l.id}','reject')">Send back</button></span></div>`).join("")}
+      <button type="button" class="btn ghost small-btn" onclick="return abdLeadAction('${l.id}','reject')">Send back</button></span></div>`), 6)}
   </div>` : ""}
   ${abdConfirmableClaims(d).length ? `<div class="panel" id="abd-panel-claims"><strong>Founding claims waiting for HQ confirmation (${abdConfirmableClaims(d).length})</strong>
     <p class="muted small" style="margin:4px 0 8px">A business said yes. Confirm it here and it counts — then HQ emails them.</p>
@@ -37057,7 +37098,7 @@ function abdRender(el) {
   <div class="panel">
     <strong>Do not contact (two-way with outreach)</strong>
     <p class="muted small">A name closed on either side is closed on both. Dashboard-originated entries are exported here for the outreach state merge.</p>
-    ${(d.dnc || []).map((r) => `<div class="bd-logrow">${esc(r.label || r.key)} <span class="muted small">· ${esc(r.source || "")} · ${esc(String(r.createdAt).slice(0, 10))}</span> <button type="button" class="linklike" onclick="return abdDncRemove('${esc(r.key)}')">remove</button></div>`).join("") || abdEmpty189("shield", "No one is closed", "Names closed on either side land here. Add the first with the field below.", "")}
+    ${uxCap203((d.dnc || []).map((r) => `<div class="bd-logrow">${esc(r.label || r.key)} <span class="muted small">· ${esc(r.source || "")} · ${esc(String(r.createdAt).slice(0, 10))}</span> <button type="button" class="linklike" onclick="return abdDncRemove('${esc(r.key)}')">remove</button></div>`), 8) || abdEmpty189("shield", "No one is closed", "Names closed on either side land here. Add the first with the field below.", "")}
     <div style="margin-top:8px"><input id="abd-dnc-label" placeholder="Business name to close" style="width:260px"> <button type="button" class="btn small-btn" onclick="return abdDncAdd()">Add + lock matching leads</button></div>
   </div>
   <div class="panel">

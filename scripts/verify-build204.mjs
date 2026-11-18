@@ -37,8 +37,8 @@ const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 
 console.log("== source: build stamp ==");
-check("BUILD_ID is 2026.11.18-204", buildJs.includes('exports.BUILD_ID = "2026.11.18-204"'));
-check("shell stamp is 2026.11.18-204", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-204"') && (indexHtml.match(/2026\.11\.18-204/g) || []).length >= 5);
+check("BUILD_ID is 2026.11.18-206", buildJs.includes('exports.BUILD_ID = "2026.11.18-206"'));
+check("shell stamp is 2026.11.18-206", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.18-206"') && (indexHtml.match(/2026\.11.18-206/g) || []).length >= 5);
 
 console.log("== source: the logo swap ==");
 check("MAGGIE_CHAR names the logo tile folder", appJs.includes('const MAGGIE_CHAR = "/assets/maggie-logo"'));
