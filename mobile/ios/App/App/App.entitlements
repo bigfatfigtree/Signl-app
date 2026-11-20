@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Universal links for app.magpielocal.com.
+	     Requires the apple-app-site-association file prepared in
+	     mobile/deep-links/ to be served at
+	     https://app.magpielocal.com/.well-known/apple-app-site-association
+	     with Jeff's real Team ID before links will open the app. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:app.magpielocal.com</string>
+		<string>webcredentials:app.magpielocal.com</string>
+	</array>
+	<!-- Push notifications. Xcode / App Store Connect set the production
+	     value at archive time under Jeff's team. -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
