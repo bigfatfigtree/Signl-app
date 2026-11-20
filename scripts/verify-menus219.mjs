@@ -91,8 +91,8 @@ const SPEC = {
   },
   admin: {
     groups: ["Start", "Review & people", "Partners & programs", "Watch", "Run the platform", "System"],
-    tabs: ["Home", "Sig", "Applications", "Requests", "Messages", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "National", "Biz Dev", "Campaign", "Stats", "Compliance", "Event Log", "Marketing", "Learn", "SEO / AI search", "Social", "Automations", "Templates", "Team", "Account"],
-    labels: ["Home", "Maggie", "Review", "Requests", "Messages", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "National", "Biz Dev", "Campaign", "Stats", "Compliance", "Event Log", "Marketing", "Learn", "SEO / AI search", "Social", "Automations", "Templates", "Team", "Preview as business", "Business dashboard", "Preview as creator", "Preview as partner", "Your account", "Sign out"],
+    tabs: ["Home", "Sig", "Applications", "Requests", "Messages", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "National", "Biz Dev", "Campaign", "Stats", "Compliance", "Event Log", "Marketing", "Learn", "SEO / AI search", "Social", "Automations", "Templates", "Team", "Deleted", "Account"],
+    labels: ["Home", "Maggie", "Review", "Requests", "Messages", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "National", "Biz Dev", "Campaign", "Stats", "Compliance", "Event Log", "Marketing", "Learn", "SEO / AI search", "Social", "Automations", "Templates", "Team", "Deleted accounts", "Preview as business", "Business dashboard", "Preview as creator", "Preview as partner", "Your account", "Sign out"],
     words: ["Walk the app", "Founding view", "Read only", "enterPreview()", "enterPreviewDashboard()", "adminPreviewAs126('creator')", "adminPreviewAs126('partner')", "adminTabsAllowed138()", "signOut()"],
   },
 };

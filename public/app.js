@@ -3319,6 +3319,7 @@ function hamburgerGroups137() {
       ] },
       { title: "System", rows: [
         R("users", "Team", "Who can do what in Admin", "Team"),
+        R("users", "Deleted accounts", "Deleted accounts an admin can restore", "Deleted"),
         { icon: "building", label: "Preview as business", sub: "Walk the app as a business", act: "return enterPreview()", status: "Walk the app" },
         { icon: "building", label: "Business dashboard", sub: "The founding business view", act: "return enterPreviewDashboard()", status: "Founding view" },
         { icon: "person", label: "Preview as creator", sub: "The read-only creator preview", act: "return adminPreviewAs126('creator')", status: "Read only" },
@@ -4592,6 +4593,7 @@ function adminTabsAllowed138() {
     "Automations": ["connections.view", "automations.manage"],
     "Templates": ["templates.view", "templates.edit"], "Team": ["team.manage"],
     "Messages": ["messages.send"], "Biz Dev": ["bizdev.view"], "National": ["approvals"],
+    "Deleted": ["creators.view", "approvals"],
   };
   return (label) => { const need = ROOMS[label]; if (!need) return true; return need.some(has); };
 }
@@ -8676,13 +8678,14 @@ function accountHtml(u) {
   </div>`;
 }
 
-// Delete my account (Build -132): nested at the bottom of
-// Settings → Account, behind its own reveal — never a top-level
-// button. The confirm panel says, in plain words, what is
-// deleted and what happens to anything in flight BEFORE the
-// type-DELETE confirmation can be sent; the server runs the
-// one erasure routine (eraseAccount) and emails one
-// confirmation to the address on file.
+// Delete my account (Build -132; soft delete, Build -219c):
+// nested at the bottom of Settings → Account, behind its own
+// reveal — never a top-level button. The confirm panel says,
+// in plain words, what is deleted and what happens to anything
+// in flight BEFORE the type-DELETE confirmation can be sent;
+// the server runs the one soft-delete routine
+// (softDeleteAccount), emails one confirmation to the address
+// on file, and an admin can restore the account afterwards.
 function deleteAccountHtml(u) {
   const creator = u.role === "creator";
   return `
@@ -8690,7 +8693,7 @@ function deleteAccountHtml(u) {
     <button class="btn small-btn ghost" type="button" onclick="document.getElementById('delacct-panel').style.display=''; this.style.display='none'">Delete my account</button>
     <div id="delacct-panel" style="display:none">
       <h4 style="margin:4px 0 6px">Delete your Magpie account</h4>
-      <p class="small" style="margin:0 0 8px">This deletes, for good:</p>
+      <p class="small" style="margin:0 0 8px">This takes off Magpie:</p>
       <ul class="small" style="margin:0 0 8px;padding-left:18px">
         <li>Your profile${creator ? " and your public page" : ""}, your name, photos and handle</li>
         <li>Your sign-in: email, password and every signed-in device</li>
@@ -8702,20 +8705,22 @@ function deleteAccountHtml(u) {
         ${creator ? "<li>Applications you have not heard back on are withdrawn.</li>" : "<li>Offers you have posted are closed.</li>"}
         <li>Open offers and deals are closed, with nobody the winner.</li>
         <li>A booking that has not happened yet is cancelled, and the other side is told the account was deleted. Money held for a paid booking goes back to the business.</li>
-        <li>A visit that already happened stays in the other side's history, because it is their record of a real visit, with your name${creator ? ", handle and audience code" : ""} taken off it.</li>
+        <li>A visit that already happened stays in the other side's history, because it is their record of a real visit.</li>
       </ul>
-      <p class="small" style="margin:0 0 10px"><strong>This cannot be undone.</strong> There is no recovery and no copy kept. If you ever come back, you sign up fresh. We email one confirmation to ${esc(u.email)} when it is done.</p>
+      <p class="small" style="margin:0 0 10px"><strong>An admin can restore your account if this was a mistake.</strong> Your record is kept, flagged as deleted, and an admin can bring it back with everything as it was. We email one confirmation to ${esc(u.email)} when it is done.</p>
       <div class="field"><label>Type DELETE to confirm</label><input id="delacct-confirm" autocomplete="off" placeholder="DELETE" oninput="document.getElementById('delacct-go').disabled = this.value.trim() !== 'DELETE'"></div>
-      <p style="margin:0"><button class="btn danger" type="button" id="delacct-go" disabled onclick="return doDeleteAccount()">Delete my account for good</button> <span class="small" id="delacct-note"></span></p>
+      <p style="margin:0"><button class="btn danger" type="button" id="delacct-go" disabled onclick="return doDeleteAccount()">Delete my account</button> <span class="small" id="delacct-note"></span></p>
     </div>
   </div>`;
 }
 
-// Admin delete (Build -132): the same erasure from the Admin
-// user card, for a deletion request that arrives by email. Its
-// own deliberate confirm — type DELETE in the row — then the
-// server runs eraseAccount and the holder gets the one
-// confirmation email. Build -133: the card servicing row
+// Admin delete (Build -132; soft delete, Build -219c): the
+// same soft deletion from the Admin user card, for a deletion
+// request that arrives by email. Its own deliberate confirm —
+// type DELETE in the row — then the server runs
+// softDeleteAccount and the holder gets the one confirmation
+// email. An admin restores the account from Deleted accounts.
+// Build -133: the card servicing row
 // (deck + Find-a-user) carries the same action; it passes a
 // prefixed host key because the same person can be on screen
 // in a card and in the list at once, and the prompt's element
@@ -8725,7 +8730,7 @@ function adminDeleteAccountPrompt(userId, key) {
   const k = key || userId;
   const host = document.getElementById("admin-delacct-" + k);
   if (!host) return;
-  host.innerHTML = `<span style="display:block;margin-top:8px;min-width:260px"><span class="small">Deletes the account and its data for good. It is the same erasure as the self-serve screen, with in-flight items settled the same way. Type DELETE:</span><br><input id="admin-delacct-word-${k}" placeholder="DELETE" style="margin-top:4px"> <button class="btn small-btn danger" type="button" onclick="adminDeleteAccountGo('${userId}', '${k}')">Delete for good</button> <span class="small" id="admin-delacct-note-${k}"></span></span>`;
+  host.innerHTML = `<span style="display:block;margin-top:8px;min-width:260px"><span class="small">Deletes the account. An admin can restore it later from Deleted accounts. It is the same deletion as the self-serve screen, with in-flight items settled the same way. Type DELETE:</span><br><input id="admin-delacct-word-${k}" placeholder="DELETE" style="margin-top:4px"> <button class="btn small-btn danger" type="button" onclick="adminDeleteAccountGo('${userId}', '${k}')">Delete account</button> <span class="small" id="admin-delacct-note-${k}"></span></span>`;
 }
 async function adminDeleteAccountGo(userId, key) {
   const k = key || userId;
@@ -8745,7 +8750,7 @@ async function doDeleteAccount() {
   try {
     await api("DELETE", "/me/account", { confirmText: word });
     state.user = null;
-    document.body.innerHTML = `<div style="max-width:520px;margin:12vh auto;padding:24px;text-align:center"><h2>Your account is deleted</h2><p>Your Magpie account and its data are gone, and every device is signed out. A confirmation email is on its way to the address that was on file. If you ever want to come back, you are welcome to sign up fresh.</p></div>`;
+    document.body.innerHTML = `<div style="max-width:520px;margin:12vh auto;padding:24px;text-align:center"><h2>Your account is deleted</h2><p>Your Magpie account is off the platform, and every device is signed out. A confirmation email is on its way to the address that was on file. If this was a mistake, contact Magpie and an admin can restore your account.</p></div>`;
     return false;
   } catch (e) { if (note) note.textContent = e.message; return false; }
 }
@@ -29322,6 +29327,7 @@ function renderAdmin() {
   if (tab === "Automations") loadAdminAutomations138();
   if (tab === "Templates") loadAdminTemplates138();
   if (tab === "Team") loadAdminTeam138();
+  if (tab === "Deleted") loadAdminDeleted219c();
   // Build -152 room.
   if (tab === "Messages") loadAdminMessages152();
   // Build -155 room.
@@ -32562,6 +32568,46 @@ async function loadAdminCreators130() {
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+// ---------- Admin: Deleted accounts (Build -219c) ----------
+// The restore surface for soft-deleted accounts (Jeff's order,
+// 2026-11-20: deletion is never a one-way door). Data is
+// GET /admin/deleted-accounts — the one list where flagged
+// records are supposed to show. Restore is one tap, no confirm
+// word: restoring is the safe direction, and the server logs
+// an account_restored event for every restore.
+async function loadAdminDeleted219c() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = skelHtml("Loading deleted accounts...", 2);
+  try {
+    const data = await api("GET", "/admin/deleted-accounts");
+    const rows = data.accounts || [];
+    el.innerHTML = `
+      ${wsHead("Deleted accounts", { sub: "Accounts that were deleted, kept so an admin can bring one back." })}
+      ${rows.length ? `<div class="table-wrap" style="margin-top:10px"><table>
+        <tr><th>Account</th><th>Email</th><th>Role</th><th>Market</th><th>Deleted</th><th></th></tr>
+        ${rows.map((a) => `<tr>
+          <td><strong>${esc(a.role === "business" && a.businessName ? a.businessName : a.name || "")}</strong>${a.handle ? `<div class="muted small">@${esc(a.handle)}</div>` : ""}</td>
+          <td data-label="Email">${esc(a.email || "")}</td>
+          <td data-label="Role">${esc(a.role || "")}</td>
+          <td data-label="Market">${esc(a.market || "")}</td>
+          <td data-label="Deleted">${a.deletedAt ? esc(String(a.deletedAt).slice(0, 10)) : ""}${a.deletedVia ? `<div class="muted small">via ${esc(a.deletedVia)}</div>` : ""}</td>
+          <td><button type="button" class="btn small-btn" onclick="return adminRestoreAccount219c('${a.id}')">Restore</button> <span class="small" id="admin-restore-note-${a.id}"></span></td>
+        </tr>`).join("")}
+      </table></div>` : `<p class="small muted" style="margin-top:10px">No deleted accounts. When an account is deleted, it waits here until an admin restores it.</p>`}`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+async function adminRestoreAccount219c(id) {
+  const note = document.getElementById("admin-restore-note-" + id);
+  try {
+    await api("POST", `/admin/users/${id}/restore-account`, {});
+    loadAdminDeleted219c();
+  } catch (e) { if (note) note.textContent = e.message; }
+  return false;
 }
 
 // ---------- Admin Stats + the books (Builds -54..-57, -130) ----------

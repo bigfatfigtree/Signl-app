@@ -42,7 +42,12 @@ async function getSessionUser(token) {
     return null;
   }
   const user = await store.get(`user:${session.userId}`);
-  return user || null;
+  // Soft delete (Build -219c): a deleted account's sessions are
+  // revoked at deletion; this is the defense in depth — a
+  // flagged record never authenticates, whatever token is
+  // presented.
+  if (!user || user.accountDeleted) return null;
+  return user;
 }
 
 async function destroySession(token) {

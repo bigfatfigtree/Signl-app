@@ -4081,37 +4081,65 @@ async function fanoutOpenOffer(offer) {
   return sent;
 }
 
-// ---------- account deletion (Build -132) ----------
-// ONE erasure routine behind both doors: the self-serve
-// Settings → Account screen and the Admin user card. The rules
-// are the ones stated in plain words on the confirm screen:
-//   - pending applications are withdrawn (their records go);
-//   - open offers, open invitations and open deals are closed;
-//   - a booking that has not happened yet is cancelled and the
-//     other side is told the account was deleted; a paid amount
-//     held for it goes back to the business (escrow refunded);
-//   - a visit that already happened stays in the OTHER side's
-//     history — it is their record of a real visit — with the
-//     deleted side's name, handle and audience code removed;
-//   - the identity itself goes completely: user record, email
-//     index, every session, sign-in/reset tokens, in-app
-//     notifications, audience offers, and the business's staff
-//     PIN / proof-kit records.
-// The deletion event is anonymised: role and route only, no
+// ---------- account deletion (Build -132; soft delete, Build -219c) ----------
+// ONE deletion routine behind both doors: the self-serve
+// Settings → Account screen and the Admin user card.
+// Build -219c (Jeff's order, 2026-11-20): deletion is no longer
+// a one-way door. The old routine HARD-erased the identity;
+// this one SOFT-deletes it, so an accidental delete by anyone
+// (the person, an admin, anyone) can be undone from Admin →
+// Deleted accounts (restoreAccount219c below). The rules:
+//   - the full user record and its related data are PRESERVED
+//     (profile, applications, offers, bookings history,
+//     messages, notifications, staff PIN / proof-kit records);
+//     the record carries an `accountDeleted` flag capturing
+//     when, via which door, and the status/stage the account
+//     held, so restore returns it to exactly its prior standing;
+//   - access dies: every session is revoked, sign-in/reset
+//     tokens are deleted, the Google sign-in index is removed,
+//     and the email login index is removed (or repointed to a
+//     live dual-role sibling, which keeps its own sign-in);
+//     the auth/session layer also refuses a flagged record even
+//     if a credential is presented (defense in depth);
+//   - the account disappears from every surface: allUsers()
+//     filters flagged records, and the direct-read surfaces
+//     (photo, platform totals, message lists) check the flag;
+//   - trading settles exactly as the hard erase did, but the
+//     records are KEPT, marked: pending applications are
+//     withdrawn, open offers and open deals are closed, a
+//     booking that has not happened yet is cancelled and the
+//     other side is told the account was deleted, with a paid
+//     amount held for it going back to the business (escrow
+//     refunded). A visit that already happened stays in the
+//     OTHER side's history WITH the deleted side's identity
+//     intact: the account may come back, so nothing is
+//     anonymised away.
+// The deletion event stays anonymised: role and route only, no
 // id, no email, no name — nothing that can point back.
-async function eraseAccount(target, via) {
+function isAccountDeleted(u) {
+  return !!(u && u.accountDeleted);
+}
+
+async function softDeleteAccount(target, via) {
   const id = target.id;
   const role = target.role;
+  if (isAccountDeleted(target)) return { deleted: true, role, alreadyDeleted: true };
   const counterpartNote = role === "creator"
     ? "A creator deleted their Magpie account, so this is cancelled. Nothing is owed on it."
     : "A business deleted its Magpie account, so this is cancelled. Nothing is owed on it.";
   // Applications in flight: a creator's pending applications
-  // are withdrawn; a business's received applications go with
-  // its offers below.
+  // are withdrawn (the row is KEPT, marked — restore shows the
+  // history); a business's received applications go with its
+  // offers below.
   for (const row of await store.list("application:")) {
     const a = row.value;
     if (!a) continue;
-    if (role === "creator" && a.creatorId === id && ["applied", "pending"].includes(a.status)) await store.del(row.key);
+    if (role === "creator" && a.creatorId === id && ["applied", "pending"].includes(a.status)) {
+      a.status = "withdrawn";
+      a.withdrawReason = "account_deleted";
+      a.updatedAt = nowIso();
+      await store.set(row.key, a);
+    }
   }
   // Open offers close: the business's own postings, and any
   // direct invitation still waiting on this creator.
@@ -4137,8 +4165,9 @@ async function eraseAccount(target, via) {
     await notifyUser(otherId, "deal_withdrawn", "A deal was closed because the other side deleted their Magpie account.", { dealId: d.id }).catch(() => {});
   }
   // Bookings: future ones cancel (counterparty told, held
-  // money back); past ones stay, anonymised, in the other
-  // side's history.
+  // money back); past ones stay in the other side's history
+  // exactly as they were, identity intact (Build -219c: no
+  // anonymisation — the account may come back).
   for (const b of await allBookings()) {
     if (!b || (b.creatorId !== id && b.businessId !== id)) continue;
     const isCreatorSide = b.creatorId === id;
@@ -4152,73 +4181,160 @@ async function eraseAccount(target, via) {
       await store.set(`booking:${b.id}`, b);
       const otherId = isCreatorSide ? b.businessId : b.creatorId;
       await notifyUser(otherId, "booking_cancelled", counterpartNote, { bookingId: b.id }).catch(() => {});
-      continue;
     }
-    if (isCreatorSide) {
-      if (b.creatorCode) await store.del(`ccode:${String(b.creatorCode).toLowerCase()}`);
-      b.creatorId = "deleted";
-      b.creatorName = "A deleted creator";
-      b.creatorHandle = "";
-      b.creatorCode = null;
-      b.audienceOffer = null;
-    } else {
-      b.businessId = "deleted";
-      b.businessName = "A deleted business";
-    }
-    b.updatedAt = nowIso();
-    await store.set(`booking:${b.id}`, b);
   }
-  // Audience offers owned by this account go entirely.
+  // Audience offers and codes owned by this account close
+  // (kept, marked — a deleted account cannot trade, and the
+  // records stay for the history a restore shows).
+  for (const row of await store.list("aoffer:")) {
+    const a = row.value;
+    if (a && (a.creatorId === id || a.businessId === id) && a.status === "open") {
+      a.status = "closed";
+      a.closedReason = "account_deleted";
+      a.updatedAt = nowIso();
+      await store.set(row.key, a);
+    }
+  }
   for (const row of await store.list("acode:")) {
     const a = row.value;
-    if (a && (a.creatorId === id || a.businessId === id)) await store.del(row.key);
+    if (a && (a.creatorId === id || a.businessId === id) && a.status === "active") {
+      a.status = "closed";
+      a.closedReason = "account_deleted";
+      a.updatedAt = nowIso();
+      await store.set(row.key, a);
+    }
   }
-  // In-app notifications addressed to the account.
-  for (const row of await store.list(`note:${id}:`)) await store.del(row.key);
-  // Sign-in and reset tokens minted for the account.
+  // In-app notifications addressed to the account are KEPT
+  // (Build -219c): they are part of the record a restore brings
+  // back, and the account cannot sign in to see them meanwhile.
+  // Sign-in and reset tokens minted for the account die, with
+  // their per-user index rows.
   for (const prefix of ["signinlink:", "pwreset:"]) {
     for (const row of await store.list(prefix)) {
       if (row.value && row.value.userId === id) await store.del(row.key);
     }
   }
+  await store.del(`signinlink-user:${id}`);
+  await store.del(`pwreset-user:${id}`);
+  // The Google sign-in index goes too (recreated from the
+  // preserved record on restore).
+  if (target.google && target.google.sub) {
+    const gIdx = await store.get(`google:${target.google.sub}`);
+    if (gIdx && gIdx.userId === id) await store.del(`google:${target.google.sub}`);
+  }
   if (role === "business") {
+    // Staff devices sign out; the staff PIN and proof-kit
+    // records are KEPT for a restore, and Square stays
+    // connected (Build -219c: disconnecting was part of the
+    // hard erase, not of a recoverable delete).
     for (const row of await store.list("staffsession:")) {
       if (row.value && row.value.businessId === id) await store.del(row.key);
     }
-    await store.del(`staffpin:${id}`);
-    await store.del(`proofkit:${id}`);
-    try { await square.disconnectSquare(id); } catch (e) { /* no connection to forget */ }
   }
-  // Every session signs out, then the identity itself.
+  // Every session signs out.
   await auth.revokeSessionsForUser(id);
-  // Dual-role (Build -180): erasing one side must not strand the
-  // other. The sibling keeps the email (the sign-in index repoints
-  // to it) and loses its link; a single-role account erases
-  // exactly as before.
-  const sibAfterErase = await linkedSiblingOf(target);
+  // Dual-role (Build -180): deleting one side must not strand
+  // the other. The sibling keeps the email (the sign-in index
+  // repoints to it) and the link stays on both records, so a
+  // restore rejoins the pair exactly as it was; the sibling id
+  // is captured in the flag. A single-role account loses the
+  // email index, so neither password nor link sign-in can
+  // authenticate it while it is deleted.
+  const sibAfterDelete = await linkedSiblingOf(target);
+  let emailIndexHeld = false;
   if (target.email) {
     const emailKey = `email:${String(target.email).toLowerCase()}`;
-    if (sibAfterErase) {
-      delete sibAfterErase.linkedAccountId;
-      delete sibAfterErase.linkedAt;
-      sibAfterErase.updatedAt = nowIso();
-      await store.set(`user:${sibAfterErase.id}`, sibAfterErase);
-      await store.set(emailKey, { userId: sibAfterErase.id });
-    } else {
+    const idxBefore = await store.get(emailKey);
+    emailIndexHeld = !!(idxBefore && idxBefore.userId === id);
+    if (sibAfterDelete && !isAccountDeleted(sibAfterDelete)) {
+      await store.set(emailKey, { userId: sibAfterDelete.id });
+    } else if (emailIndexHeld) {
       await store.del(emailKey);
     }
   }
-  await store.del(`user:${id}`);
+  // The flag itself: everything restore needs to return the
+  // account to exactly its prior standing. priorStage is the
+  // business access stage (founding/active); creators and
+  // other roles carry no separate stage, so it stays null and
+  // their stage is their status.
+  target.accountDeleted = {
+    at: nowIso(),
+    via,
+    priorStatus: target.status || null,
+    priorStage: role === "business" && target.business ? (target.business.accessState || null) : null,
+    siblingId: sibAfterDelete ? sibAfterDelete.id : null,
+    emailIndexHeld,
+  };
+  target.updatedAt = nowIso();
+  await store.set(`user:${id}`, target);
   await logEvent({ type: "account_deleted", actorId: null, actorRole: null, subjectId: null, market: null, data: { role, via } });
   return { deleted: true, role };
 }
 
+// Back-compat alias: the routine's old name, kept for the
+// exported surface the suites and any other caller already
+// hold. It is the SOFT delete now — there is no hard erase.
+const eraseAccount = softDeleteAccount;
+
+// Admin restore (Build -219c): the other half of Jeff's
+// 2026-11-20 order. Clears the flag, returns the account to
+// its captured prior status/stage, restores the email login
+// index (and the Google index) and logs an account_restored
+// event carrying the restoring admin as actor, like every
+// admin event. Trading records settled at deletion (closed
+// offers, withdrawn deals and applications, cancelled future
+// bookings) stay settled: restore brings the ACCOUNT back,
+// it does not rewrite that history. No email goes to the
+// user. Restoring an account that is not deleted is a plain
+// error result, never a crash, so a double tap is safe.
+async function restoreAccount219c(target, actor) {
+  if (!target) return { error: "Account not found", status: 404 };
+  if (!isAccountDeleted(target)) return { error: "That account is not deleted, so there is nothing to restore.", status: 409 };
+  const flag = target.accountDeleted;
+  const id = target.id;
+  if (target.email) {
+    const emailKey = `email:${String(target.email).toLowerCase()}`;
+    const idx = await store.get(emailKey);
+    if (idx && idx.userId !== id) {
+      // The index may legitimately point at the live dual-role
+      // sibling (sign-in lands there and the side switch reaches
+      // this account). A holder that is itself deleted (both
+      // sides went down) hands the sign-in to the side being
+      // restored. Any OTHER live holder means the address was
+      // re-registered while this account was deleted: refuse
+      // rather than steal the sign-in back.
+      const sib = flag.siblingId ? await store.get(`user:${flag.siblingId}`) : null;
+      const holder = await store.get(`user:${idx.userId}`);
+      if (holder && isAccountDeleted(holder)) {
+        await store.set(emailKey, { userId: id });
+      } else if (!sib || idx.userId !== sib.id || isAccountDeleted(sib)) {
+        return { error: "That email now belongs to another account, so this one cannot be restored until an admin sorts the email out.", status: 409 };
+      }
+    } else if (!idx) {
+      await store.set(emailKey, { userId: id });
+    }
+  }
+  if (flag.priorStatus) target.status = flag.priorStatus;
+  if (target.role === "business" && target.business && flag.priorStage) target.business.accessState = flag.priorStage;
+  delete target.accountDeleted;
+  target.updatedAt = nowIso();
+  await store.set(`user:${id}`, target);
+  if (target.google && target.google.sub) {
+    const gIdx = await store.get(`google:${target.google.sub}`);
+    if (!gIdx) await store.set(`google:${target.google.sub}`, { userId: id });
+  }
+  await logEvent({ type: "account_restored", actorId: actor ? actor.id : null, actorRole: "admin", subjectId: id, market: target.market || null, data: { role: target.role, deletedVia: flag.via || null, deletedAt: flag.at || null } });
+  return { restored: true, role: target.role };
+}
+
 // The ONE confirmation email every deletion sends (self-serve
 // and admin alike), written to the outbound canon: it confirms
-// the erasure, thanks the person for being part of the
+// the deletion, thanks the person for being part of the
 // community, and carries the normal sign-in link so they can
 // come back fresh if it was a mistake or they change their
-// mind. It never promises the old data survives. It does not.
+// mind. Build -219c kept this copy exactly as it was (Jeff's
+// order scoped the change to the deletion mechanics, the
+// confirm screens and the new restore surface).
 function accountDeletionEmail() {
   const base = process.env.APP_URL || "https://app.magpielocal.com";
   return {
@@ -6578,7 +6694,20 @@ async function listMemoized210(prefix) {
   return rows.slice();
 }
 
+// Build -219c: allUsers is the central enumeration helper the
+// surfaces share (Discover, Local List, public pages, roster
+// and market counts, verify/counts, Admin Creators/Review,
+// campaign and message recipient builds), so the soft-delete
+// filter lives HERE: a flagged (deleted) account is invisible
+// to every one of them at once. Code that legitimately needs
+// the flagged records (the Admin Deleted view, restore) reads
+// allUsersIncludingDeleted219c or the store directly, and
+// direct point reads check isAccountDeleted themselves.
 async function allUsers() {
+  return (await listMemoized210("user:")).filter((u) => !isAccountDeleted(u));
+}
+
+async function allUsersIncludingDeleted219c() {
   return listMemoized210("user:");
 }
 
@@ -6611,7 +6740,7 @@ async function linkedSiblingOf(user) {
 async function withLinkedSide(payload, rawUser) {
   if (!payload || !rawUser) return payload;
   const sib = await linkedSiblingOf(rawUser);
-  if (sib) payload.linkedSide = { role: sib.role, status: sib.status };
+  if (sib && !isAccountDeleted(sib)) payload.linkedSide = { role: sib.role, status: sib.status };
   return payload;
 }
 
@@ -17313,6 +17442,9 @@ async function getAuthUser(event) {
     // also deletes the seat's sessions; this guard is the
     // belt-and-braces for any token minted in between.
     if (user && user.status === "revoked") user = null;
+    // Soft delete (Build -219c): belt-and-braces with the same
+    // refusal inside auth.getSessionUser.
+    if (user && isAccountDeleted(user)) user = null;
     // The raw session record rides along (Build -67): a view-as
     // session's viewAs marker is how the router enforces read-only
     // and how /auth/me tells the client to show the banner.
@@ -18224,7 +18356,10 @@ async function handleSwitchSide(event, ctx) {
   if (!ctx.user) return err(401, "Not signed in");
   if (ctx.session && ctx.session.viewAs) return err(403, "You are viewing another account. Exit the view before switching sides.");
   const sib = await linkedSiblingOf(ctx.user);
-  if (!sib) return err(409, "This account has only one side. Add the other side from your account menu first.");
+  // Soft delete (Build -219c): a deleted side is not a side you
+  // can switch into, even though the link itself is preserved
+  // for a restore.
+  if (!sib || isAccountDeleted(sib)) return err(409, "This account has only one side. Add the other side from your account menu first.");
   // Build -186: defense in depth — a switch only ever moves
   // between a creator side and a business side, whatever the
   // link records say.
@@ -18291,7 +18426,10 @@ async function handleLogin(event) {
   const idx = await store.get(`email:${email}`);
   if (!idx) return err(401, "Email or password did not match");
   const user = await store.get(`user:${idx.userId}`);
-  if (!user || !auth.verifyPassword(b.password || "", user.passwordSalt, user.passwordHash)) {
+  // Soft delete (Build -219c): the email index is removed at
+  // deletion, and a flagged record refuses here even if an
+  // index somehow still points at it.
+  if (!user || isAccountDeleted(user) || !auth.verifyPassword(b.password || "", user.passwordSalt, user.passwordHash)) {
     return err(401, "Email or password did not match");
   }
   await stampLastSignIn(user);
@@ -18490,7 +18628,7 @@ async function handleForgot(event) {
   try {
     const idx = email ? await store.get(`email:${email}`) : null;
     const user = idx ? await store.get(`user:${idx.userId}`) : null;
-    if (user && attempts.length <= 5) {
+    if (user && !isAccountDeleted(user) && attempts.length <= 5) {
       const token = await issuePasswordResetToken(user);
       const base = process.env.APP_URL || "https://app.magpielocal.com";
       const mail = passwordResetEmail(user, `${base}/?reset=${token}`);
@@ -18531,7 +18669,7 @@ async function handleReset(event) {
     return err(400, "That reset link has expired. Request a new one from the sign-in page.");
   }
   const user = await store.get(`user:${rec.userId}`);
-  if (!user) {
+  if (!user || isAccountDeleted(user)) {
     await store.del(`pwreset:${hash}`);
     return err(400, "That reset link is not valid. Request a new one from the sign-in page.");
   }
@@ -18670,11 +18808,17 @@ async function handleGoogleCallback(event, ctx) {
   let user = null;
   const bySub = await store.get(`google:${identity.sub}`);
   if (bySub) user = await store.get(`user:${bySub.userId}`);
+  // Soft delete (Build -219c): a flagged record never signs in
+  // through Google either. Nulling it lets the email match
+  // below still find a live dual-role sibling on the shared
+  // address, exactly as the password path does.
+  if (user && isAccountDeleted(user)) user = null;
   if (!user && identity.emailVerified) {
     // Email matching is a sign-in convenience, so it only ever
     // runs on an address Google itself verified.
     const byEmail = await store.get(`email:${identity.email}`);
     if (byEmail) user = await store.get(`user:${byEmail.userId}`);
+    if (user && isAccountDeleted(user)) user = null;
     if (user && !user.google) await linkGoogleIdentity(user, identity, "signin_email_match");
   }
   if (user) {
@@ -18775,7 +18919,7 @@ async function handleSigninLinkRequest(event) {
   try {
     const idx = email ? await store.get(`email:${email}`) : null;
     const user = idx ? await store.get(`user:${idx.userId}`) : null;
-    if (user && attempts.length <= 5) {
+    if (user && !isAccountDeleted(user) && attempts.length <= 5) {
       const token = await issueSigninLinkToken(user);
       const base = process.env.APP_URL || "https://app.magpielocal.com";
       const mail = signinLinkEmail(user, `${base}/?signinlink=${token}`);
@@ -18807,7 +18951,7 @@ async function handleSigninLinkConsume(event) {
     return err(400, "That sign-in link has expired. Request a new one from the sign-in page.");
   }
   const user = await store.get(`user:${rec.userId}`);
-  if (!user) {
+  if (!user || isAccountDeleted(user)) {
     await store.del(`signinlink:${hash}`);
     return err(400, "That sign-in link is not valid. Request a new one from the sign-in page.");
   }
@@ -24909,8 +25053,13 @@ function adminGate138(user, seg, method, query) {
     case "applications": case "review": return need("approvals");
     case "users": {
       if (seg[3] === "delete-account") return deny("Deleting an account is Jeff's call.");
+      // Build -219c: restoring a soft-deleted account rides the
+      // same servicing permissions as the other user actions
+      // (deletion itself stays Jeff's call above).
       return (perms138.hasPerm(user, "approvals") || perms138.hasPerm(user, "creators.view")) ? null : deny();
     }
+    case "deleted-accounts": // Build -219c: the restore list, same servicing permissions as "users"
+      return (perms138.hasPerm(user, "approvals") || perms138.hasPerm(user, "creators.view")) ? null : deny();
     case "creators":
       if (seg[3] === "view") return deny("Previewing accounts is Jeff's tool in this version.");
       return need("creators.view");
@@ -26320,7 +26469,9 @@ async function route(event) {
   // working); /photo/<n> serves gallery slot n under the same gate.
   if (method === "GET" && seg[0] === "users" && (seg.length === 3 || seg.length === 4) && seg[2] === "photo") {
     const target = await store.get(`user:${seg[1]}`);
-    if (!target) return err(404, "Photo not found");
+    // Soft delete (Build -219c): a deleted account's photo is
+    // not served to anyone, owner included (they are signed out).
+    if (!target || isAccountDeleted(target)) return err(404, "Photo not found");
     // Build -136: a business's offer photo (slot 0 only) serves
     // to any signed-in user — it is marketing imagery the
     // business chose to lead its offers with, shown on offer
@@ -28637,25 +28788,27 @@ async function route(event) {
     return json(200, { ok: true, notifyPrefs: user.notifyPrefs, phone: user.phone || "", notifyProviders: notifyLib.providerStatus() });
   }
 
-  // Delete my account (Build -132): the self-serve erasure,
-  // reached only from Settings → Account → "Delete my account".
-  // The confirmation is deliberate — the caller must send the
-  // word DELETE — and the erasure itself is eraseAccount, the
-  // same routine the Admin card runs. One confirmation email
-  // goes to the address on file BEFORE the identity is erased
-  // (afterwards there is nothing left to send it from). The
-  // response clears the session cookie; every other session
-  // was revoked inside the routine.
+  // Delete my account (Build -132; soft delete, Build -219c):
+  // the self-serve deletion, reached only from Settings →
+  // Account → "Delete my account". The confirmation is
+  // deliberate — the caller must send the word DELETE — and the
+  // deletion itself is softDeleteAccount, the same routine the
+  // Admin card runs: the record is preserved and flagged, an
+  // admin can restore it, and access dies immediately. One
+  // confirmation email goes to the address on file BEFORE the
+  // account is flagged (the send is addressed from the live
+  // record, as before). The response clears the session cookie;
+  // every other session was revoked inside the routine.
   if (method === "DELETE" && seg[0] === "me" && seg[1] === "account") {
     if (user.role !== "creator" && user.role !== "business") return err(403, "Self-serve deletion covers creator and business accounts. Partner and admin accounts are handled by Magpie directly.");
     const b = parseBody(event);
-    if (String(b.confirmText || "").trim() !== "DELETE") return err(400, "Type DELETE to confirm. Deleting your account cannot be undone.");
+    if (String(b.confirmText || "").trim() !== "DELETE") return err(400, "Type DELETE to confirm. An admin can restore your account if this was a mistake.");
     const who = { id: user.id, role: user.role, email: user.email, name: user.name, market: user.market };
     try {
       const mail = accountDeletionEmail();
       await deliverEmail("account_deletion", who, mail.subject, mail.text, null);
-    } catch (e) { /* the erasure proceeds even if the mail rail is down */ }
-    await eraseAccount(user, "self");
+    } catch (e) { /* the deletion proceeds even if the mail rail is down */ }
+    await softDeleteAccount(user, "self");
     const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
     return json(200, { deleted: true }, { "Set-Cookie": auth.clearCookie(secure) });
   }
@@ -29805,7 +29958,9 @@ async function route(event) {
       // user record per load; the memo serves the computed
       // payload until any store write lands (see memoAgg).
       const payload = await memoAggP(`platform-totals:${user.id}`, ["user"], 30000, async () => {
-        const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
+        // Build -219c: this read bypasses allUsers, so the
+        // soft-delete filter is applied here explicitly.
+        const users = (await store.list("user:")).map((r) => r.value).filter((u) => u && !isAccountDeleted(u));
         // Build -138: a market-scoped teammate's totals are computed
         // from their markets' records only — the platform-wide
         // numbers never enter their payload.
@@ -29828,7 +29983,10 @@ async function route(event) {
       // memo now also keys on the config and seat prefixes,
       // because the designated target and seat records decide it.
       const ptPayload = await memoAggP("admin-preview-targets", ["user", "config", "bdevrep"], 30000, async () => {
-        const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
+        // Build -219c: same direct-read soft-delete filter as
+        // platform-totals above — a deleted account is never a
+        // preview target.
+        const users = (await store.list("user:")).map((r) => r.value).filter((u) => u && !isAccountDeleted(u));
         const cfg = (await store.get(PREVIEW_TARGETS_KEY_192)) || {};
         const t = previewTargets126(users, { seatedIds: await previewSeatedIds192(), designatedId: cfg.creatorId || null });
         return {
@@ -30030,24 +30188,63 @@ async function route(event) {
       return json(200, { ok: true, override: setting, minimumOverride: target.minimumOverride || null, totalAudience: total });
     }
 
-    // Delete account (Build -132): the SAME erasure the
-    // self-serve screen runs (eraseAccount), for the deletion
-    // request that arrives by email. Deliberate confirm (the
-    // word DELETE in the body), never for an admin account, and
-    // the account holder gets the same one confirmation email.
+    // Delete account (Build -132; soft delete, Build -219c):
+    // the SAME soft deletion the self-serve screen runs
+    // (softDeleteAccount), for the deletion request that arrives
+    // by email. Deliberate confirm (the word DELETE in the
+    // body), never for an admin account, never twice for the
+    // same account, and the account holder gets the same one
+    // confirmation email. The record is preserved and flagged;
+    // an admin restores it from the Deleted view.
     if (seg[1] === "users" && seg.length === 4 && seg[3] === "delete-account" && method === "POST") {
       const target = await store.get(`user:${seg[2]}`);
       if (!target) return err(404, "Account not found");
       if (target.role === "admin") return err(400, "Admin accounts are never deleted from here.");
+      if (isAccountDeleted(target)) return err(400, "That account is already deleted. Restore it from Deleted accounts if it should come back.");
       const bd = parseBody(event);
-      if (String(bd.confirmText || "").trim() !== "DELETE") return err(400, "Type DELETE to confirm. Deleting an account cannot be undone.");
+      if (String(bd.confirmText || "").trim() !== "DELETE") return err(400, "Type DELETE to confirm. An admin can restore the account if this was a mistake.");
       const who = { id: target.id, role: target.role, email: target.email, name: target.name, market: target.market };
       try {
         const mail = accountDeletionEmail();
         await deliverEmail("account_deletion", who, mail.subject, mail.text, null);
-      } catch (e) { /* the erasure proceeds even if the mail rail is down */ }
-      await eraseAccount(target, "admin");
+      } catch (e) { /* the deletion proceeds even if the mail rail is down */ }
+      await softDeleteAccount(target, "admin");
       return json(200, { deleted: true, role: target.role });
+    }
+
+    // Deleted accounts (Build -219c): the Admin restore surface.
+    // The list reads the raw store on purpose — allUsers() hides
+    // flagged records everywhere else, and this view is the one
+    // place they are supposed to show. Fields are the servicing
+    // set an admin needs to recognise the account: name/handle,
+    // email, role, market, when it was deleted and by which door.
+    if (seg[1] === "deleted-accounts" && seg.length === 2 && method === "GET") {
+      const rows = (await store.list("user:")).map((r) => r.value).filter((u) => u && isAccountDeleted(u));
+      const accounts = rows.map((u) => ({
+        id: u.id,
+        name: u.name || "",
+        handle: u.creator && u.creator.handle ? u.creator.handle : null,
+        businessName: u.business && u.business.businessName ? u.business.businessName : null,
+        email: u.email || "",
+        role: u.role,
+        market: u.market || null,
+        status: u.accountDeleted.priorStatus || u.status || null,
+        deletedAt: u.accountDeleted.at || null,
+        deletedVia: u.accountDeleted.via || null,
+      })).sort((a, b) => (String(b.deletedAt || "") < String(a.deletedAt || "") ? -1 : 1));
+      return json(200, { accounts });
+    }
+
+    // Restore account (Build -219c): undoes a soft delete. No
+    // confirm word (restoring is the safe direction), no email
+    // to the user, and restoring an account that is not deleted
+    // is a plain 409, never a crash, so a double tap is safe.
+    if (seg[1] === "users" && seg.length === 4 && seg[3] === "restore-account" && method === "POST") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target) return err(404, "Account not found");
+      const out = await restoreAccount219c(target, user);
+      if (out.error) return err(out.status || 400, out.error);
+      return json(200, { restored: true, role: target.role });
     }
 
     // Dubai Advertiser Permit (Build -70): an admin sets a Dubai
@@ -34840,7 +35037,7 @@ async function route(event) {
       // was picked under, normalized exactly like POST /offers —
       // absent or empty stores nothing, never inferred.
       const sourceBrief = normalizeSourceBrief(b.sourceBrief);
-      if (!creator || creator.role !== "creator" || creator.status !== "approved") return err(400, "That creator is not an approved creator");
+      if (!creator || creator.role !== "creator" || creator.status !== "approved" || isAccountDeleted(creator)) return err(400, "That creator is not an approved creator");
       if (isTester(creator)) return err(400, "That creator is not an approved creator");
       if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take deals.");
       if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
@@ -37571,6 +37768,10 @@ async function route(event) {
           continue;
         }
         const other = await store.get(`user:${t.otherId}`);
+        // Soft delete (Build -219c): a deleted account leaves
+        // the counterpart list entirely. The messages themselves
+        // are kept, so a restore brings the thread back as it was.
+        if (other && isAccountDeleted(other)) continue;
         const pairBooking = bookingByPair202.get(pairKey202(user.id, t.otherId)) || null;
         const pairOffer = pairBooking ? null : (offerByPair202.get(pairKey202(user.id, t.otherId)) || null);
         // Sender photo for the conversation list + thread head
@@ -37639,7 +37840,7 @@ async function route(event) {
         return json(201, { message: msg });
       }
       const other = await store.get(`user:${b.toUserId}`);
-      if (!other || other.role === "admin") return err(404, "Recipient not found");
+      if (!other || other.role === "admin" || isAccountDeleted(other)) return err(404, "Recipient not found");
       // Demo showcase fence (Build -67): demo creators are
       // browse-only; a message to one can never be answered, so
       // the thread can never start.
@@ -37761,4 +37962,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail };
