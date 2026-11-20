@@ -8402,8 +8402,12 @@ function clearStoredGoogleLink() {
 function renderSignin() {
   // Build -219a (F2 entry, locked by Jeff 2026-11-20): the sign-in
   // view IS the F2 surface — the real logo over the settled film
-  // frame (the v5 poster under a pale wash, footage faintly
-  // visible), borderless EMAIL / PASSWORD fields, the gradient
+  // frame under a pale wash, footage faintly visible. The frame is
+  // intro-signin-bg.jpg (the film at 8.5s), NOT the film's final
+  // frame: the final frame carries the film's own mock sign-in UI,
+  // which ghosted through the wash behind the real controls
+  // (rendered-walk catch, 2026-11-20). Borderless EMAIL / PASSWORD
+  // fields, the gradient
   // Sign in pill, Forgot password?, and the join lines at the
   // bottom. No boxes, cards or panels. Every existing auth route
   // stays on this surface: password (doSignin), Google and the
@@ -8415,7 +8419,7 @@ function renderSignin() {
   state.googleNotice = "";
   app.innerHTML = `
   <section class="entry-stage entry-signin" aria-label="Sign in to Magpie">
-    <img class="entry-bg" src="${INTRO_POSTER}" alt="" onerror="this.style.display='none'">
+    <img class="entry-bg" src="/assets/intro/intro-signin-bg.jpg" alt="" onerror="this.style.display='none'">
     <div class="entry-wash"></div>
     <div class="entry-ui">
       <img class="entry-logo" src="/assets/logo.png" alt="Magpie">

@@ -138,7 +138,11 @@
   text-underline-offset: 5px;
 }
 
-.entry-signin-btn {
+/* Specificity note (rendered-walk catch, 2026-11-20): intro.css loads
+   before theme-v2/theme-v3, whose plain .btn rules (black pill) were
+   overriding this gradient at equal specificity. The .entry-ui prefix
+   keeps the locked F2 gradient pill. */
+.entry-ui .entry-signin-btn {
   width: 100%;
   padding: 16px 20px;
   margin-top: 2px;
@@ -146,6 +150,8 @@
   border-radius: 999px;
   background: linear-gradient(93deg, #006afc 0%, #019bfc 38%, #03c9ab 74%, #2fe07e 100%);
   color: #ffffff;
+  border: 0;
+  box-shadow: none;
 }
 
 .entry-forgot {
