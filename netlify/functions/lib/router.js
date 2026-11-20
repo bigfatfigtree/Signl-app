@@ -7597,6 +7597,10 @@ async function withFounding(user) {
     // profile loop, and the stored flag on the payload is the
     // COMPUTED value, never a stale stored one.
     pub.profileCompletion = profileCompletionFor(user);
+    // Build -221: the creator's own payload carries the same gaps
+    // the admin flag and the launch nudge read, so the home prompt
+    // renders from the payload and clears itself when complete.
+    pub.completionGaps = completionGaps221(user);
     // Build -102: the public roster pages this creator appears
     // on (only markets that have crossed the threshold), so the
     // dashboard and Sig can say "you are on the public roster"
@@ -7966,22 +7970,39 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   // the message standing: the ping is a knock, not the delivery.
   let emailResult;
   try {
-    const recent = await recentLifecycleEmail(creator.id, PLATFORM_PING_SUPPRESS_WINDOW_MS);
-    if (recent) {
+    // Build -221: in-app only sends (meta.inAppOnly) never fire the
+    // email ping at all. Email is paused by Jeff's standing order
+    // for the launch nudge, so the ping is suppressed on the record
+    // with reason "in_app_only" and deliverEmail is never called.
+    // Default behavior for all existing callers is unchanged.
+    if (meta && meta.inAppOnly) {
       await logEvent({
         type: "platform_message_email_suppressed",
         actorId: adminUser ? adminUser.id : null,
         actorRole: adminUser ? "admin" : "system",
         subjectId: creator.id,
         market: creator.market || null,
-        data: { reason: "recent_lifecycle_email", lifecycleKind: recent.kind, lifecycleAt: recent.at, windowHours: PLATFORM_PING_SUPPRESS_WINDOW_MS / 3600000, messageId: msg.id, engine: meta.engine || null, scope: meta.scope || "single" },
+        data: { reason: "in_app_only", messageId: msg.id, engine: meta.engine || null, scope: meta.scope || "single" },
       });
-      emailResult = { sent: false, suppressed: true, reason: "recent_lifecycle_email" };
+      emailResult = { sent: false, suppressed: true, reason: "in_app_only" };
     } else {
-      const mail = platformMessageEmail(creator, body);
-      emailResult = await deliverEmail("platform_message", creator, mail.subject, mail.text, null);
-      if (!emailResult.sent) {
-        console.error(`Magpie platform message email not sent: to=${creator.email} reason=${emailResult.reason || "unknown"}`);
+      const recent = await recentLifecycleEmail(creator.id, PLATFORM_PING_SUPPRESS_WINDOW_MS);
+      if (recent) {
+        await logEvent({
+          type: "platform_message_email_suppressed",
+          actorId: adminUser ? adminUser.id : null,
+          actorRole: adminUser ? "admin" : "system",
+          subjectId: creator.id,
+          market: creator.market || null,
+          data: { reason: "recent_lifecycle_email", lifecycleKind: recent.kind, lifecycleAt: recent.at, windowHours: PLATFORM_PING_SUPPRESS_WINDOW_MS / 3600000, messageId: msg.id, engine: meta.engine || null, scope: meta.scope || "single" },
+        });
+        emailResult = { sent: false, suppressed: true, reason: "recent_lifecycle_email" };
+      } else {
+        const mail = platformMessageEmail(creator, body);
+        emailResult = await deliverEmail("platform_message", creator, mail.subject, mail.text, null);
+        if (!emailResult.sent) {
+          console.error(`Magpie platform message email not sent: to=${creator.email} reason=${emailResult.reason || "unknown"}`);
+        }
       }
     }
   } catch (e) {
@@ -12127,6 +12148,104 @@ function profileCompleteOf(user) {
   if (!user || user.role !== "creator" || !user.creator) return false;
   if (!String(user.creator.handle || "").trim()) return false;
   return profileCompletionFor(user).complete;
+}
+
+// Build -221: profile-completion gaps, mapping Jeff's four fields
+// to the platform's own completion items so the flag, the prompt,
+// and the roster gate can never disagree. The required items of
+// profileCompletionItems are the single source: "audience" is the
+// follower count, "local" is the local audience %, plus
+// "categories" and "city". Non-creators have no gaps here.
+function completionGaps221(user) {
+  if (!user || user.role !== "creator" || !user.creator) return [];
+  const items = profileCompletionItems(user);
+  const byId = {};
+  for (const it of items) byId[it.id] = it;
+  const gaps = [];
+  if (byId.audience && !byId.audience.done) gaps.push("followers");
+  if (byId.local && !byId.local.done) gaps.push("localPct");
+  if (byId.categories && !byId.categories.done) gaps.push("categories");
+  if (byId.city && !byId.city.done) gaps.push("city");
+  return gaps;
+}
+
+// Build -221: the plain-English names for the gaps, shared by the
+// creator prompt copy (client mirrors this wording) and Maggie's
+// launch nudge, so every surface names a missing field the same way.
+const GAP_LABELS_221 = {
+  followers: "your follower count",
+  localPct: "your local audience percentage, the share of your followers who live in your city",
+  categories: "your content categories",
+  city: "your home city",
+};
+function gapLabel221(gap) {
+  return GAP_LABELS_221[gap] || gap;
+}
+function gapListText221(gaps) {
+  const labels = (gaps || []).map(gapLabel221).filter(Boolean);
+  if (!labels.length) return "";
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return labels.join(" and ");
+  return labels.slice(0, -1).join(", ") + ", and " + labels[labels.length - 1];
+}
+
+// Build -221: Maggie's launch nudge. When a market goes live, an
+// approved creator in that market whose profile is not finished
+// gets one in-app message naming exactly what is missing. Plain
+// words, no em dashes, about four sentences.
+function launchNudgeBody221(user, marketName, gaps) {
+  const first = greetingName(user);
+  const place = marketTalkName(marketName);
+  const list = gapListText221(gaps);
+  return `Hi ${first}, Maggie here from the Magpie team. ${place} is launching, and once your profile is finished, businesses there will be able to comp you an experience or pay you at your own rate. Right now businesses cannot find or book you because your profile is missing ${list}. Open the Profile tab and finish the basics at the top, and you will be ready.`;
+}
+
+// Build -221: the launch-nudge fanout. Eligible creators are
+// approved, non-tester, non-deleted, non-banned creators in the
+// launching market with at least one completion gap. The claim
+// record is stamped BEFORE the send (the Build -185 win-back
+// pattern) so a crashed run can never double-send: never twice
+// beats never missed. The message is in-app only (email is paused
+// by Jeff's standing order; sendPlatformMessage suppresses the
+// ping when meta.inAppOnly is set).
+async function runLaunchNudges221(adminUser, marketName) {
+  const users = await allUsers();
+  const norm = normalizeMarketName(marketName);
+  const eligibleUsers = [];
+  for (const u of users) {
+    if (!u || u.role !== "creator") continue;
+    if (u.status !== "approved") continue;
+    if (!u.creator) continue;
+    if (isTester(u)) continue;
+    if (isAccountDeleted(u)) continue;
+    if (standingState(u) === "banned") continue;
+    if (normalizeMarketName(u.market) !== norm) continue;
+    const gaps = completionGaps221(u);
+    if (!gaps.length) continue;
+    eligibleUsers.push({ u, gaps });
+  }
+  const summary = { market: marketName, eligible: eligibleUsers.length, sent: 0, alreadySent: 0, skipped: 0 };
+  for (const { u, gaps } of eligibleUsers) {
+    const claimKey = `launchnudge:${normalizeMarketName(marketName)}:${u.id}`;
+    const existing = await store.get(claimKey);
+    if (existing) { summary.alreadySent += 1; continue; }
+    await store.set(claimKey, { userId: u.id, market: marketName, gaps, status: "claimed", claimedAt: nowIso() });
+    try {
+      const res = await sendPlatformMessage(adminUser, u, launchNudgeBody221(u, marketName, gaps), { scope: "launch_nudge", engine: "launch-nudge-221", inAppOnly: true });
+      const messageId = res && res.message ? res.message.id : null;
+      const cur = (await store.get(claimKey)) || { userId: u.id, market: marketName, gaps, status: "claimed", claimedAt: nowIso() };
+      await store.set(claimKey, { ...cur, status: "sent", messageId, sentAt: nowIso() });
+      summary.sent += 1;
+    } catch (e) {
+      console.error(`Magpie launch nudge failed for ${u.id}:`, e);
+      try { await logEvent({ type: "launch_nudge_send_failed", actorId: adminUser ? adminUser.id : null, actorRole: "admin", subjectId: u.id, market: marketName, data: { error: String(e && e.message || e).slice(0, 200), gaps } }); } catch (e2) { /* the claim stands either way */ }
+      summary.skipped += 1;
+    }
+  }
+  if (summary.eligible > 0) {
+    await logEvent({ type: "launch_nudge_fanout", actorId: adminUser ? adminUser.id : null, actorRole: "admin", market: marketName, data: summary });
+  }
+  return summary;
 }
 
 // One-time backfill for records written before profileComplete
@@ -31322,6 +31441,8 @@ async function route(event) {
           // summary on the same payload said 60 complete.
           pub.profileComplete = profileCompleteOf(u);
           if (pub.creator) pub.creator.profileComplete = pub.profileComplete;
+          // Build -221: the Review flag reads the same gaps.
+          pub.completionGaps = completionGaps221(u);
         }
         if (u.role === "business") {
           // Preferred language (S3): attached explicitly so
@@ -31550,7 +31671,15 @@ async function route(event) {
         market: market.name,
         data: { market: market.name, label: market.label },
       });
-      return json(200, { market: market.name, label: market.label, live });
+      // Build -221: activating a market nudges its approved but
+      // unfinished creators in-app. A nudge failure must never
+      // fail the activation itself.
+      let launchNudges = null;
+      if (live === true) {
+        try { launchNudges = await runLaunchNudges221(user, market.name); }
+        catch (e) { console.error("Magpie launch nudge fanout failed:", e); launchNudges = { market: market.name, eligible: 0, sent: 0, alreadySent: 0, skipped: 0 }; }
+      }
+      return json(200, { market: market.name, label: market.label, live, ...(live === true ? { launchNudges } : {}) });
     }
     // Bench override (Build -42): open a market's creator Bench
     // by hand, ahead of (or without) launch. A launched market's
@@ -37962,4 +38091,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail };

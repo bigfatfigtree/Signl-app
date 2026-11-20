@@ -17899,6 +17899,7 @@ async function loadCreatorHome() {
     const q3 = queue.slice(0, 3);
     el.innerHTML = `
     ${wsHead("Home", { sub: "Start here.", subKey: "cr-home" })}
+    ${completionPrompt221Html(u)}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}.</div></div>
     ${strikeStatusHtml(u)}
     ${sigHero137Html(brief137)}
@@ -31442,6 +31443,44 @@ async function saveMinOverride(prefix, userId, setting) {
   return false;
 }
 
+// Build -221: the Review flag. Information only: it names the two
+// facts Jeff checks first (follower count, local %) from the same
+// completionGaps the server computed, and never touches decisions.
+function completionFlag221Html(u) {
+  if (!u || u.role !== "creator") return "";
+  const gaps = u.completionGaps || [];
+  const hasF = gaps.includes("followers");
+  const hasL = gaps.includes("localPct");
+  if (!hasF && !hasL) return "";
+  const label = hasF && hasL ? "Needs follower count and local %" : hasF ? "Needs follower count" : "Needs local %";
+  return `<span class="badge bad flag221">${esc(label)}</span>`;
+}
+
+// Build -221: the creator home prompt. Plain words, no insider
+// terms. It names only the fields actually missing, in the same
+// wording Maggie's launch nudge uses, and it is computed from the
+// payload on every home load, so it clears itself once the profile
+// is complete. No dismiss control, no stored state.
+function completionPrompt221Html(u) {
+  if (!u || u.role !== "creator" || u.status !== "approved") return "";
+  const gaps = u.completionGaps || [];
+  if (!gaps.length) return "";
+  const labels221 = {
+    followers: "your follower count",
+    localPct: "your local audience percentage, the share of your followers who live in your city",
+    categories: "your content categories",
+    city: "your home city",
+  };
+  const parts = gaps.map((g) => labels221[g]).filter(Boolean);
+  if (!parts.length) return "";
+  let list;
+  if (parts.length === 1) list = parts[0];
+  else if (parts.length === 2) list = parts.join(" and ");
+  else list = parts.slice(0, -1).join(", ") + ", and " + parts[parts.length - 1];
+  const urgent = gaps.includes("followers");
+  return `<div class="prompt221${urgent ? " prompt221-urgent" : ""}"><strong>Your profile is not finished.</strong> Businesses cannot find or book you until it is. Still missing: ${esc(list)}.<div style="margin-top:10px"><button class="btn" onclick="return goFinishProfile()">Finish my profile</button></div></div>`;
+}
+
 function adminUserCardFactsHtml(u) {
   if (u.role === "creator" && u.creator) {
     const c = u.creator;
@@ -31474,6 +31513,7 @@ function adminUserCardFactsHtml(u) {
       <div class="admin-card-total"><span class="admin-card-total-num">${fmtNum(total || 0)}</span> <span class="muted">total followers, all platforms stacked (as reported by the creator)</span></div>
       <div class="admin-card-plats">${plats}</div>
       ${under ? `<p class="admin-card-warn"><strong>Under the 500 minimum:</strong> ${fmtNum(under)} total followers. Approving keeps this application pending until their audience reaches 500, unless the minimum is overridden for this record.</p>` : ""}
+      ${completionFlag221Html(u) ? `<div style="margin-top:8px">${completionFlag221Html(u)}</div>` : ""}
       ${ovr !== null ? `<p class="admin-card-oknote"><strong>500 minimum overridden by admin</strong>${ovr ? ` — ${esc(ovr)}` : ""}. Approving works for this record; the reason stays on the record.</p>` : ""}
       <div class="admin-card-facts">
         <span><strong>Local audience:</strong> ${typeof c.localAudiencePct === "number" ? c.localAudiencePct + "%" : "not reported"} <span class="muted">(Self-reported)</span></span>
@@ -31837,7 +31877,7 @@ async function loadApplications() {
           : "";
       return `<tr>
         <td><strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.email)}</span></td>
-        <td>${esc(u.role)}${standing}${businessState}${dualRef}</td><td>${esc(marketDisplayName(u.market))}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span>${suggestion}</td>
+        <td>${esc(u.role)}${standing}${businessState}${completionFlag221Html(u) ? `<br>${completionFlag221Html(u)}` : ""}${dualRef}</td><td>${esc(marketDisplayName(u.market))}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span>${suggestion}</td>
         <td class="small">${detail}</td>
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
