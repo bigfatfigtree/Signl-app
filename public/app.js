@@ -7990,6 +7990,11 @@ function introSkip() {
 function introSkipToHome() {
   introClearTimers();
   state.introSkipped = true;
+  // The sign-in surface is only ever reached with state.view set to
+  // "signin", and render() checks that view before introSkipped, so
+  // without this the "See how Magpie works" link could never leave
+  // the sign-in surface (rendered-walk catch, 2026-11-20).
+  state.view = "home";
   render();
   return false;
 }
