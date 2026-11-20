@@ -6291,7 +6291,14 @@ async function loadBlockHome213(role) {
     clearInterval(timer);
     const div = document.createElement("div");
     div.id = "block-home-213";
-    host.insertBefore(div, host.children[1] || null);
+    // Build -221 (review fix): the profile-completion prompt is
+    // the FIRST strip on creator Home, ahead of this card. When a
+    // .prompt221 strip is present in the host, the card lands
+    // right after it; with no prompt present the insertion is
+    // exactly the original children[1] behavior.
+    const prompt221 = host.querySelector ? host.querySelector(".prompt221") : null;
+    if (prompt221) host.insertBefore(div, prompt221.nextSibling);
+    else host.insertBefore(div, host.children[1] || null);
     try {
       if (role === "business") {
         const [pd, bd, pr] = await Promise.all([api("GET", "/me/pitches").catch(() => null), api("GET", "/block").catch(() => null), api("GET", "/block/proof").catch(() => null)]);
@@ -31467,7 +31474,7 @@ function completionPrompt221Html(u) {
   if (!gaps.length) return "";
   const labels221 = {
     followers: "your follower count",
-    localPct: "your local audience percentage, the share of your followers who live in your city",
+    localPct: "your local audience percentage (the share of your followers who live in your city)",
     categories: "your content categories",
     city: "your home city",
   };

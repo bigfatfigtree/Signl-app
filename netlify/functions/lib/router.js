@@ -12174,7 +12174,7 @@ function completionGaps221(user) {
 // launch nudge, so every surface names a missing field the same way.
 const GAP_LABELS_221 = {
   followers: "your follower count",
-  localPct: "your local audience percentage, the share of your followers who live in your city",
+  localPct: "your local audience percentage (the share of your followers who live in your city)",
   categories: "your content categories",
   city: "your home city",
 };
