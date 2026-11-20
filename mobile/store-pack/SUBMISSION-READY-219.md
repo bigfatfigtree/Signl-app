@@ -195,8 +195,10 @@ guideline-4.2-evidence.md.
     exists; the v1 master has a visible corner tonal step. Jeff picks.
 11. **iPad decision:** file iPad screenshots (2064×2752) or restrict
     the build to iPhone.
-12. **GA Signals check** in Jeff's Google Analytics console (decides
-    the "Data Used to Track You: None" answer).
+12. **GA Signals check: DONE 2026-11-20.** Jeff checked the Magpie
+    GA4 property (G-0V1YPFCTSD, the property still named for
+    joinsignl.com) and Google Signals is OFF; no change was needed.
+    The Apple answer stands: "Data Used to Track You: None."
 13. **Demo accounts for App Review:** one creator login, one business
     login, one staff PIN, created in the live app before submitting.
 14. **Build the binaries on Jeff's Mac** (blocker + workaround below)
