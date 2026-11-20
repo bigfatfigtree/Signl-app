@@ -640,6 +640,9 @@ body.admin-on .preview-cta .btn.ghost:hover { background: var(--hover); border-c
 .ev125-group h5 { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); margin: 0 2px 8px; }
 .ev125-row { margin-bottom: 8px; text-decoration: none; }
 .ev125-status { margin-left: auto; font-style: normal; font-weight: 700; color: var(--accent); font-size: .86rem; }
+/* Build -219b: menu tags (Founding only, In Wallet, Team admins...) ride the row's right edge as a small soft pill, distinct from a value word. */
+.ev219-tag { margin-left: auto; padding: 2px 8px; border-radius: 999px; background: var(--tint2, #eef4ff); font-size: .78rem; }
+.ev125-status + .ev219-tag { margin-left: 8px; }
 @media (max-width: 767.98px) {
   /* Build -168: the Everything panel is a LEFT DRAWER on
      phones now (see the Build -168 block at the file's end). */

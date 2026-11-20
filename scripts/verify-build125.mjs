@@ -103,7 +103,11 @@ check("panel machinery exists (groups, open, close) and renders a panel, not a p
   appJs.includes("function closeEverything125()") && appJs.includes('class="ev125-panel"') &&
   appJs.includes('el.id = "everything-panel125"'));
 check("the button rides the top bar beside chat + help, the desktop rail, and the admin top row",
-  appJs.includes('class="tb2-btn tb2-ev125"') && appJs.includes('class="tab-item tab-ev125"') && appJs.includes('class="tr-ev125"'));
+  // Build -219b supersedes the top-bar half: every shell's top-bar
+  // menu button opens the unified hamburger (tb2-burger137); the
+  // Everything panel itself stays functional and its rail trigger
+  // (tab-ev125) and the admin top-row trigger (tr-ev125) remain.
+  appJs.includes('class="tb2-btn tb2-burger137"') && appJs.includes('class="tab-item tab-ev125"') && appJs.includes('class="tr-ev125"'));
 check("panel CSS: sheet on phones, top-right card on desktop",
   css.includes(".ev125-overlay") && css.includes(".ev125-panel") && css.includes("border-radius: 22px 22px 0 0") &&
   css.includes("width: 400px") && css.includes(".ev125-group h5"));

@@ -167,7 +167,7 @@ check("the BD rail item calls bdMenuTap168 too",
 check("BD drawer carries the shell's full destination set",
   appJs.includes('dest("home", "Home"') && appJs.includes('dest("users", "My Leads"')
   && appJs.includes('dest("deck", "Seller Kit"') && appJs.includes('dest("stats", "My Money"')
-  && appJs.includes('dest("menu", "Menu & PIN"') && appJs.includes('"Your account"'));
+  && appJs.includes('dest("menu", "Claim link, city & PIN"') && appJs.includes('"Your account"'));
 check("BD drawer: admin gets Manage, a rep gets My creator side, sign out always rides",
   // Build -193: the controls ride the drawer's bottom identity
   // block (bdIdentity193) instead of destination rows — same

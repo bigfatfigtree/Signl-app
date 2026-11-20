@@ -144,11 +144,18 @@ for (const role of roles) {
     [...railSet].every((t) => rendererUniverse.includes(`"${t}"`)), [...railSet].filter((t) => !rendererUniverse.includes(`"${t}"`)).join(","));
   // Build -137: the hamburger set equals the rail set, Sig
   // excepted for creator/business (their Sig is the bar orb).
+  // Build -219b: the checkpoint v2 unified menu deliberately
+  // carries destinations the rail drops (the route inventory's
+  // obscure-only set: creator Find Offers, business Counter and
+  // Applicants/Requests, and the Biz Dev home door for seat
+  // holders) plus Sig as a row for every role - those menu-only
+  // tabs are allowed on the hamburger side of the comparison.
+  const MENU_ONLY_219 = { creator: ["Find Offers", "BD Home"], business: ["Counter", "Requests", "BD Home"], partner: [] };
   const hamBlock = roleBlock(hamSrc, role, [...roles, "admin", "recruiter", "pilot_partner"]);
   const hamSet = new Set(rTabsOf(hamBlock));
   const sigExcept = role === "partner" ? [] : ["Sig"];
   check(`${role}: hamburger carries the full rail set`,
-    [...railSet].every((t) => hamSet.has(t) || sigExcept.includes(t)) && [...hamSet].every((t) => railSet.has(t)),
+    [...railSet].every((t) => hamSet.has(t) || sigExcept.includes(t)) && [...hamSet].every((t) => railSet.has(t) || (MENU_ONLY_219[role] || []).includes(t)),
     `ham:${[...hamSet].join(",")} rail:${[...railSet].join(",")}`);
 }
 
@@ -188,16 +195,19 @@ check("admin hamburger carries the full rail set (+ Account)",
   railLabels.every((l) => hamAdmin.has(l)) && [...hamAdmin].every((t) => railLabels.includes(t) || t === "Account"),
   [...hamAdmin].join(","));
 
-// Build -202: no duplicate Find offers destination. The creator rail's
-// primary pill (railPrimary187 / plus187) and the menu pill
-// (menuPrimary193) carry Find Offers; neither the tabItemsFor creator
-// lead nor the hamburger creator groups may ALSO carry it as a row.
+// Build -202: no duplicate Find offers destination on the RAIL.
+// The creator rail's primary pill (railPrimary187 / plus187) and
+// the menu pill (menuPrimary193) carry Find Offers, and the
+// tabItemsFor creator lead must not ALSO carry it as a rail row.
+// Build -219b supersedes the menu half of that rule: the
+// checkpoint v2 menu spec puts a Find offers ROW in the creator
+// hamburger's Your work group, repeating the pill by design.
 const tabBarSrc202 = fnWindow("tabBarHtml");
 check("Build -202: creator primary pill exists (rail + menu)", tabBarSrc202.includes("railPrimary187") && app.includes("menuPrimary193"), "");
 const creatorTabBlock202 = roleBlock(tabItems, "creator", ["business", "creator", "partner", "recruiter", "pilot_partner"]);
 check("Build -202: tabItemsFor creator lead has no duplicate Find Offers row", !creatorTabBlock202.includes('tab: "Find Offers"'), creatorTabBlock202.slice(0, 200));
 const creatorHamBlock202 = roleBlock(hamSrc, "creator", ["admin", "creator", "business", "partner", "recruiter", "pilot_partner"]);
-check("Build -202: hamburger creator groups have no duplicate Find Offers row under the pill", !creatorHamBlock202.includes('"Find Offers"'), "");
+check("Build -219b: hamburger creator groups carry the Find Offers row (checkpoint v2 spec; the pill repeats it by design)", creatorHamBlock202.includes('"Find Offers"'), "");
 
 console.log(`\nverify-navparity: ${passed} passed, ${failed} failed`);
 if (failed) { console.log("failures:", failures.join(" | ")); process.exit(1); }

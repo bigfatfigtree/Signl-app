@@ -3118,29 +3118,39 @@ function hamburgerGroups137() {
   const b = state.badges || {};
   const wc = state.waitCounts || {};
   const R = (icon, label, sub, tab, extra) => Object.assign({ icon, label, sub, tab }, extra || {});
+  // Build -219b: ONE unified hamburger for every shell, built to
+  // the checkpoint v2 menu spec (menu-coverage.md). Every
+  // destination in the route inventory appears exactly once,
+  // under the spec's groups, labels, value words and tags.
+  // Conditional rows render only when their condition holds,
+  // exactly as the gates below state.
   if (u.role === "creator") {
     const lvl = standingLevelName((u.momentum && u.momentum.points) || (u.creator && u.creator.momentumPoints) || 0);
     const founding = !(u.founding && u.founding.marketLive);
     return [
       { title: "Your work", rows: [
         R("home", "Home", "Maggie, your highlights, your next steps", "Dashboard"),
+        R("deck", "Find offers", "Open offers near you", "Find Offers"),
         R("deck", "My offers", "Invites and deals you are working on", "Offers", { badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) }),
         R("calendar", "Visits", "Your visits and post deadlines", "My Visits", { badge: wc.crVisits || 0 }),
+        R("bubble", "Messages", "Talk to a business about a visit or an offer", "Messages", { badge: b.messages || 0 }),
       ] },
       { title: "Money & page", rows: [
         R("banknote", "Wallet", "Cash, comps and history, kept separate", "Earnings", { badge: wc.crLicense || 0 }),
         R("person", "My profile", "What businesses see, your rate, your links", "Profile"),
       ] },
       { title: "Standing", rows: [
+        R("sig", "Maggie", "Your numbers and next moves, in plain sentences", "Sig"),
         R("bars", "Stats", "What your posts and visits did", "Numbers"),
         R("bolt", "Momentum", "", "Momentum", { status: lvl }),
-        R("users", "Bench", "Creators in your market", "Bench"),
+        R("users", "Bench", "Creators in your market", "Bench", { status: "Your market" }),
       ] },
       { title: "Account", rows: [
-        R("bubble", "Messages", "Talk to a business about a visit or an offer", "Messages", { badge: b.messages || 0 }),
-        ...(founding ? [R("status", "Founding status", "Where your enrollment stands", "Status")] : []),
+        ...(founding ? [R("status", "Founding status", "Where your enrollment stands", "Status", { tag: "Founding only" })] : []),
+        ...(u.bizdevSeat && u.bizdevSeat.active ? [Object.assign(R("building", "Biz Dev home", "Your seller dashboard", "BD Home"), { act: "return bdGoShell()", tag: "Seat holders" })] : []),
         R("sliders", "Settings", "Account and notifications", "Settings"),
-        R("help", "Help", "How Magpie works, in plain words", "Help"),
+        R("help", "Help", "How Magpie works, in plain words", "Help", { status: "Guides" }),
+        { icon: "bubble", label: "Talk to support", sub: "hello@magpielocal.com", href: "mailto:hello@magpielocal.com", tag: "Email" },
         { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
       ] },
     ];
@@ -3148,6 +3158,8 @@ function hamburgerGroups137() {
   if (u.role === "business" && u.business && u.business.scope === "national") {
     // Build -189 (PL-08): the national menu is the national set,
     // same destinations and labels as the national rail.
+    // Build -219b: the campaign row and the top pill now share
+    // one wording, "Start a new campaign".
     return [
       { title: "Start", rows: [
         R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
@@ -3155,7 +3167,7 @@ function hamburgerGroups137() {
       ] },
       { title: "Campaigns", rows: [
         R("deck", "Campaigns", "Your campaigns and the hands they raised", "NatCampaigns", { badge: wc.bizApps || 0 }),
-        R("notice", "New campaign", "Write a new campaign", "NatNew"),
+        R("notice", "Start a new campaign", "Write a new campaign", "NatNew"),
         R("users", "Find creators", "Every approved creator, by market", "NatDiscover"),
         R("bars", "Reports", "What your campaigns did", "NatReports"),
       ] },
@@ -3172,22 +3184,26 @@ function hamburgerGroups137() {
     return [
       { title: "Sell", rows: [
         R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
+        R("sig", "Maggie", "Your attention list", "Sig"),
         R("deck", "Find creators", "Shop local creators near you", "Discover"),
-        R("pin", "Book the Block", "The creators closest to your door, booked together", "Block"),
-        R("notice", "Start a campaign", "Build a new campaign, step by step or with Maggie", "Campaign Setup"),
+        R("pin", "Book the Block", "The creators closest to your door, booked together", "Block", { status: "Near your door" }),
+        R("notice", "Start a new campaign", "Build a new campaign, step by step or with Maggie", "Campaign Setup"),
         R("bars", "Your campaigns", "Current and past campaigns, who applied, and what they did", "My Offers", { badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) }),
+        Object.assign(R("requests", "Applicants", "Creators who applied to your campaigns", "Requests"), { act: "return goApplicants()", tag: "In Your campaigns" }),
         R("heart", "Saved creators", "Your shortlist", "Favorites", { badge: wc.bizSaved || 0 }),
       ] },
       { title: "Run", rows: [
-        R("calendar", "Visits", "Visits and posts. The counter is inside", "Visits & Posts", { badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) }),
-        ...(u.business && u.business.scope === "national" ? [] : [R("users", "My Regulars", "Creators who visited you. Book them again", "Regulars")]),
+        R("calendar", "Visits & Posts", "Visits and posts. The counter is inside.", "Visits & Posts", { badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) }),
+        R("receipt", "Counter", "The register where codes are redeemed", "Counter", { status: "Redeem" }),
+        R("users", "My Regulars", "Creators who visited you. Book them again.", "Regulars"),
         R("play", "Posts & licenses", "Every post about you, and the ones you can reuse", "Content"),
         R("bubble", "Messages", "Talk to a creator about a visit or an offer", "Messages", { badge: b.messages || 0 }),
       ] },
       { title: "Account", rows: [
         R("person", "Business profile", "What creators see", "Profile"),
-        ...(u.business && u.business.scope === "national" ? [] : [R("receipt", "Wallet", "Your plan, your visits, your billing", "Plan")]),
+        R("receipt", "Wallet", "Your plan, your visits, your billing", "Plan"),
         R("bars", "Stats", "What your campaigns did", "Analytics"),
+        ...(u.bizdevSeat && u.bizdevSeat.active ? [Object.assign(R("building", "Biz Dev home", "Your seller dashboard", "BD Home"), { act: "return bdGoShell()", tag: "Seat holders" })] : []),
         R("sliders", "Settings", "Account, staff PIN, notifications", "Settings"),
         R("help", "Help", "How Magpie works, in plain words", "Help"),
         { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
@@ -3195,28 +3211,74 @@ function hamburgerGroups137() {
     ];
   }
   if (u.role === "partner" && !state.pilotScopeId) {
+    const pilotScopes219 = ((u.partner && u.partner.scopes) || []).filter((s) => s && s.kind === "pilot" && s.pilotId);
+    const portalRow219 = pilotScopes219.length === 1
+      ? { icon: "building", label: "Impact Portal: your pilot scopes", sub: "Open your pilot scope in the Impact Portal", act: `return enterPilotScope('${String(pilotScopes219[0].pilotId).replace(/[^A-Za-z0-9_-]/g, "")}')`, tag: "Pilot" }
+      : pilotScopes219.length > 1
+        ? { icon: "building", label: "Impact Portal: your pilot scopes", sub: "Pick a scope from the Your scopes card on Home", tab: "Home", tag: "Pilot" }
+        : null;
     return [
       { title: "Start", rows: [
-        R("home", "Overview", "Maggie, your highlights, your next steps", "Home"),
+        R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
         R("sig", "Maggie", "Your numbers and next moves, in plain sentences", "Sig"),
       ] },
       { title: "Your market", rows: [
         R("pin", "Markets", "Each market's funnel, end to end", "Markets"),
         R("person", "Creators", "The bench your links brought in", "Creators"),
         R("deck", "Businesses", "Businesses your links brought in", "Businesses"),
-        R("bubble", "Messages", "Messages from the Magpie team", "Messages"),
+        R("bubble", "Messages", "Messages from the Magpie team", "Messages", { badge: b.messages || 0 }),
       ] },
       { title: "Money", rows: [
-        R("banknote", "Wallet", "Money & packs: fund terms and the payout schedule live inside", "Earnings"),
+        R("banknote", "Wallet", "Money and packs: fund terms and the payout schedule live inside", "Earnings"),
+        { icon: "banknote", label: "Fund terms", sub: "Activation and monthly terms", tab: "Earnings", act: "return ptEarnGo125('fund')", tag: "In Wallet" },
+        { icon: "receipt", label: "Payout schedule", sub: "What has been paid, and what is owed", tab: "Earnings", act: "return ptEarnGo125('returns')", tag: "In Wallet" },
         R("bars", "Reports", "Visits, posts, and what they earned", "Performance"),
       ] },
       { title: "Grow", rows: [
         R("play", "Links & assets", "Your tracked links, QR codes, and the one-pager", "Links"),
-        ...(u.partner && u.partner.teamAdmin ? [R("users", "Team", "Your people's seats: invite, resend, revoke", "Team")] : []),
+        ...(u.partner && u.partner.teamAdmin ? [R("users", "Team", "Your people's seats: invite, resend, revoke", "Team", { tag: "Team admins" })] : []),
       ] },
       { title: "Account", rows: [
+        ...(portalRow219 ? [portalRow219] : []),
         R("sliders", "Account", "Your partner profile and agreement", "Account"),
         R("help", "Help", "How your share works, in plain words", "Help"),
+        { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
+      ] },
+    ];
+  }
+  if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) {
+    // Build -219b: the Impact Portal gets the same shared
+    // hamburger as every other shell (it had none before).
+    return [
+      { title: "Your pilot", rows: [
+        R("home", "Overview", "Your pilot at a glance", "Overview"),
+        R("building", "Businesses", "The businesses in your pilot", "Businesses"),
+        R("bars", "Results", "What the visits did", "Results", { status: "Your numbers" }),
+        R("receipt", "Report", "The report you take to your board", "Report", { status: "To share" }),
+        R("sig", "Maggie", "Your pilot's numbers, in plain sentences", "Sig"),
+        ...((u.teamAdmin || (u.partner && u.partner.teamAdmin)) ? [R("users", "Team", "Your pilot team's seats: invite, resend, revoke", "Team", { tag: "Team admins" })] : []),
+        R("help", "Help", "How the pilot works, in plain words", "Help"),
+      ] },
+      { title: "Account", rows: [
+        R("profile", "Your account", "Your sign-in, email and password", "Account"),
+        ...(u.role === "partner" ? [R("home", "Partner view", "Back to your partner console", "__partner_scope_exit", { tag: "Scoped partners" })] : []),
+        { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
+      ] },
+    ];
+  }
+  if (u.role === "recruiter") {
+    // Build -219b: the recruiter console gets the same shared
+    // hamburger as every other shell (its menu button opened
+    // the Everything panel before, which carried only Maggie
+    // and Help). The header is just the role name.
+    return [
+      { title: "Your console", rows: [
+        R("users", "Queue", "Creators waiting on you", "Queue"),
+        R("bubble", "Outreach", "Your outreach workbench", "Outreach"),
+        R("bars", "Results", "What your outreach did", "Results"),
+        R("sig", "Maggie", "Ask anything about your queue and your market", "Sig"),
+        R("help", "Help", "Your launch guide and scripts, in plain words", "Help"),
+        R("profile", "Your account", "Your sign-in, email and password", "Account"),
         { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
       ] },
     ];
@@ -3228,17 +3290,19 @@ function hamburgerGroups137() {
         R("sig", "Maggie", "Your attention list", "Sig"),
       ] },
       { title: "Review & people", rows: [
-        R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
+        R("inbox", "Review", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
         R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
+        R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages", { badge: b.messages || 0 }),
         R("pin", "Markets", "Every market, ranked", "Markets"),
         R("users", "Creators", "Every creator, with the local numbers", "Creators"),
         R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
         R("users", "Outreach", "Campaigns and sends", "Outreach"),
+      ] },
+      { title: "Partners & programs", rows: [
         R("building", "Partners", "Media partners and their deals", "Partners"),
         R("building", "National", "National brand accounts, verification and campaigns", "National"),
         R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
         R("users", "Campaign", "The current campaign", "Campaign"),
-        R("chat", "Messages", "Send a message to everyone, a market, a tier, or one person", "Messages", { badge: b.messages || 0 }),
       ] },
       { title: "Watch", rows: [
         R("stats", "Stats", "Charts, money and the books", "Stats"),
@@ -3248,15 +3312,18 @@ function hamburgerGroups137() {
       { title: "Run the platform", rows: [
         R("notice", "Marketing", "Campaign email to your own lists", "Marketing"),
         R("star", "Learn", "Write and publish Learn articles", "Learn"),
+        R("search", "SEO / AI search", "Every page built for the search climb", "SEO / AI search"),
         R("play", "Social", "What Magpie posted, and what it did", "Social"),
         R("bolt", "Automations", "Every automatic email and text, and its switch", "Automations"),
         R("deck", "Templates", "The wording behind emails, posts and messages", "Templates"),
       ] },
       { title: "System", rows: [
         R("users", "Team", "Who can do what in Admin", "Team"),
-        { icon: "building", label: "Preview as business", sub: "Walk the app as a business", act: "return enterPreview()" },
-        { icon: "building", label: "Business dashboard", sub: "The founding business view", act: "return enterPreviewDashboard()" },
-        R("person", "Your account", "Your settings: sign-in, email and password", "Account"),
+        { icon: "building", label: "Preview as business", sub: "Walk the app as a business", act: "return enterPreview()", status: "Walk the app" },
+        { icon: "building", label: "Business dashboard", sub: "The founding business view", act: "return enterPreviewDashboard()", status: "Founding view" },
+        { icon: "person", label: "Preview as creator", sub: "The read-only creator preview", act: "return adminPreviewAs126('creator')", status: "Read only" },
+        { icon: "person", label: "Preview as partner", sub: "The read-only partner preview", act: "return adminPreviewAs126('partner')", status: "Read only" },
+        R("profile", "Your account", "Your settings: sign-in, email and password", "Account"),
         { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
       ] },
     ].map((g) => ({ ...g, rows: g.rows.filter((r) => {
@@ -3279,13 +3346,17 @@ function hamburgerRowHtml137(r) {
     return `<button type="button" class="more-row ev125-row nav-locked187" aria-disabled="true" onclick="closeHamburger137(); return navLockedTap187('${lock187}')">${innerL}</button>`;
   }
   // Build -193: flat rows, same treatment as everythingRowHtml125.
-  const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : ""}`;
+  const inner = `<span class="more-ic">${r.icon === "sig" ? `${sigMarkHtml("tab-sig-img")}` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : ""}${r.tag ? `<span class="ev125-status ev219-tag">${esc(r.tag)}</span>` : ""}`;
   const onCls187 = r.tab && r.tab === state.tab ? " row-on187" : "";
   if (r.href) return `<a class="more-row ev125-row${onCls187}" href="${esc(r.href)}" onclick="closeHamburger137()">${inner}</a>`;
   const act = r.act || `return go('dashboard','${r.tab}')`;
   return `<button type="button" class="more-row ev125-row${onCls187}" onclick="closeHamburger137(); ${act}">${inner}</button>`;
 }
 function openHamburger137() {
+  // Build -219b: inside the Biz Dev shell, the shared menu is
+  // the rep drawer (the same unified groups, with the seat
+  // identity block) - open that instead of the generic panel.
+  if (bdShellActive()) return bdOpenDrawer168();
   // Build -168: kill any outgoing panel on the spot (see
   // openEverything125); the animated dismiss is only for
   // closes the person asked for.
@@ -3331,12 +3402,22 @@ function menuIdentityStateLine187(u) {
   if (u.role === "business" && isFoundingBusiness(u)) return `On the founding list — ${foundingBizPlace(u)} has not opened yet`;
   if (u.role === "business") return `Active in ${u.market || "your market"}`;
   if (u.role === "creator") return (u.founding && u.founding.marketLive) ? `Creator in ${u.market || "your market"} — your market is open` : `Creator on the founding roster for ${u.market || "your market"}`;
+  if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) return "Impact Portal";
   if (u.role === "partner") return "Partner";
+  if (u.role === "recruiter") return "Recruiter";
   return "";
 }
 function menuIdentityCard187(u, name) {
   const other = u.linkedSide ? (u.role === "creator" ? "business" : "creator") : null;
-  const profTab = u.role === "admin" ? "Settings" : "Profile";
+  // Build -219b: the identity action matches each shell's own
+  // account surface (checkpoint v2 spec). Admin goes to the
+  // Account tab: there is no admin Settings tab, and the old
+  // card sent admin there (the inconsistency the route
+  // inventory flags). Partner reads "Account"; pilot and
+  // recruiter read "Your account".
+  const inPilot219 = u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId);
+  const profTab = (u.role === "admin" || u.role === "partner" || u.role === "recruiter" || inPilot219) ? "Account" : "Profile";
+  const profLabel219 = (u.role === "admin" || u.role === "recruiter" || inPilot219) ? "Your account" : u.role === "partner" ? "Account" : "Profile and account";
   const photo189 = selfAvatarUrl122(u);
   const initial189 = String(name || u.name || "").trim().charAt(0).toUpperCase() || "S";
   return `<div class="menu-idcard187">
@@ -3344,7 +3425,7 @@ function menuIdentityCard187(u, name) {
     <div class="menu-idcard187-who"><span class="menu-idcard187-name">${esc(name || "")}</span><span class="menu-idcard187-state">${esc(menuIdentityStateLine187(u))}</span></div>
     <div class="menu-idcard187-acts">
     ${other ? `<button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return switchSide180()">Switch to your ${other} side</button>` : ""}
-    <button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return go('dashboard','${profTab}')">Profile and account</button>
+    <button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return go('dashboard','${profTab}')">${profLabel219}</button>
     </div>
   </div>`;
 }
@@ -3460,7 +3541,7 @@ function bdMenuTap168() {
 function bdDrawerRowHtml168(r) {
   // Build -193: flat rows in the Biz Dev drawer too — icon and
   // one label, active destination carries the soft pill.
-  const inner = `<span class="more-ic">${bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span></span>`;
+  const inner = `<span class="more-ic">${bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : ""}${r.tag ? `<span class="ev125-status ev219-tag">${esc(r.tag)}</span>` : ""}`;
   const onCls193 = r.tab && r.tab === state.tab ? " row-on187" : "";
   return `<button type="button" class="more-row ev125-row${onCls193}" onclick="closeBdDrawer168(); ${r.act}">${inner}</button>`;
 }
@@ -3476,24 +3557,30 @@ function bdOpenDrawer168() {
   const seat = u.bizdevSeat || {};
   const dest = (icon, label, sub, tab) => ({ icon, label, sub, tab, act: `return go('dashboard','${tab}')` });
   const groups = [
-    // Build -188 (PL-05): seat gone — the Sell group collapses
+    // Build -188 (PL-05): seat gone - the Sell group collapses
     // to Home (the panel) so the drawer stops offering seven
     // dead destinations.
     ...(state.bdNoSeat ? [{ title: "Sell", rows: [dest("home", "Home", "Your seat status and the next step", "BD Home")] }] : [
     { title: "Sell", rows: [
       dest("home", "Home", "Your day, your next best doors", "BD Home"),
       dest("users", "My Leads", "Your book, one business at a time", "BD Leads"),
-      dest("book", "Contacts", "Your rolodex — every person, one place", "BD Contacts"),
+      dest("book", "Contacts", "Your rolodex, every person in one place", "BD Contacts"),
       dest("receipt", "Orders", "Orders you have recorded", "BD Orders"),
       dest("deck", "Seller Kit", "The cards and pages you show", "BD Kit"),
       dest("stats", "My Money", "What you have earned so far", "BD Money"),
     ] }]),
-    // Build -193: the account controls (your account, the
-    // side switch, sign out) live in the bottom identity
-    // block now, like every other shell — this group keeps
-    // only the seat's own destination.
+    // Build -219b: the seat group follows the checkpoint v2
+    // spec. The BD Menu page is named for what a rep looks
+    // for first (the claim link), and Your account, the shell
+    // exit and Sign out ride as rows here as well as in the
+    // bottom identity block (bdIdentity193).
     { title: "Your seat", rows: [
-      dest("menu", "Menu & PIN", "Your claim link, your city, your Show Mode PIN", "BD Menu"),
+      dest("menu", "Claim link, city & PIN", "Your claim link, your city, your Show Mode PIN", "BD Menu"),
+      dest("profile", "Your account", "Your sign-in, email and password", "Account"),
+      u.role === "admin"
+        ? { icon: "switch180", label: "Manage", sub: "Back to the HQ Biz Dev room", act: "return bdGoManage161()" }
+        : { icon: "switch180", label: "My creator side", sub: "Your own account, outside the rep shell", act: "return bdGoCreator()" },
+      { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" },
     ] },
   ];
   const el = document.createElement("div");
@@ -4064,7 +4151,7 @@ function renderTopBar2(full) {
     <span class="tb2-brand mbrand"><span class="brand-lockup tb2-lockup"><img src="/assets/logo.png" alt="Magpie"></span></span>
     <span class="tb2-actions">
       ${full && (live || u.role === "creator") ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Messages')" aria-label="Messages">${bnIcon("bubble")}${b.messages ? `<span class="tab-badge">${b.messages > 99 ? "99+" : b.messages}</span>` : ""}</button>` : ""}
-      ${(u.role === "creator" || u.role === "business" || (u.role === "partner" && !state.pilotScopeId)) ? `<button type="button" class="tb2-btn tb2-burger137" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>` : `<button type="button" class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("menu")}</button>`}
+      ${bdShellActive() ? `<button type="button" class="tb2-btn tb2-burger137" onclick="return bdOpenDrawer168()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>` : `<button type="button" class="tb2-btn tb2-burger137" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>`}
     </span>
   </div>`;
 }
