@@ -1,9 +1,13 @@
-/* Magpie app entry experience (design-intro, PROPOSED, pending Jeff's review).
-   Signed-out cold open only: full-screen intro film, then the Sign in /
-   Apply controls fade in over the film's landing frame. Signed-in sessions
-   never render this surface (boot restores the session before first paint).
-   The intro film is a normal web asset under /assets/intro/ so it can be
-   swapped without an app store resubmission. */
+/* Magpie app entry experience — Build -219a (F2 entry, locked by
+   Jeff 2026-11-20). Signed-out cold open only: the locked v5 intro
+   film full-screen, then the F2 sign-in surface (renderSignin in
+   app.js) — real logo over the settled film frame, borderless
+   fields, gradient Sign in pill. Signed-in sessions never render
+   either surface (boot restores the session before first paint).
+   The intro film is a normal web asset under /assets/intro/ so it
+   can be swapped without an app store resubmission. */
+
+/* ---------- Intro film stage ---------- */
 
 .intro-stage {
   position: fixed;
@@ -11,10 +15,6 @@
   z-index: 500;
   background: #ffffff;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
 }
 
 .intro-video,
@@ -28,103 +28,190 @@
   background: #ffffff;
 }
 
-/* After the film ends it holds its landing frame with a barely-there
-   slow push-in, so the surface stays alive but calm behind the controls. */
-.intro-video.intro-settled {
-  animation: intro-settle 9s ease-out forwards;
-}
-@keyframes intro-settle {
-  from { transform: scale(1); }
-  to { transform: scale(1.045); }
-}
-
-.intro-shade {
+/* Visible Skip control: a solid pale pill, readable over any
+   frame of the film, clear of the phone's top safe area. */
+.intro-skip {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(255,255,255,0) 46%, rgba(255,255,255,0.72) 74%, rgba(255,255,255,0.96) 100%);
-  opacity: 0;
-  transition: opacity 900ms ease;
+  top: calc(16px + env(safe-area-inset-top));
+  right: 16px;
+  z-index: 3;
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  padding: 9px 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #0b0d0c;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 0.92rem;
+  font-weight: 700;
+  box-shadow: 0 2px 14px rgba(11, 13, 12, 0.22);
 }
-.intro-stage.intro-revealed .intro-shade { opacity: 1; }
 
-.intro-ui {
+/* ---------- F2 sign-in surface ---------- */
+
+.entry-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: #ffffff;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* The settled film frame: the v5 poster itself. The wash below
+   keeps the footage faintly visible — never vivid, never dark —
+   and washes the poster's own baked-in mock controls down so the
+   real controls on top are the only ones that read. */
+.entry-bg {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  background: #ffffff;
+}
+
+.entry-wash {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(255,255,255,0.80) 45%, rgba(255,255,255,0.92) 100%);
+}
+
+.entry-ui {
   position: relative;
   z-index: 2;
   width: 100%;
   max-width: 430px;
-  padding: 0 26px calc(30px + env(safe-area-inset-bottom));
-  text-align: center;
-  opacity: 0;
-  transform: translateY(16px);
-  pointer-events: none;
-}
-.intro-stage.intro-revealed .intro-ui {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-  transition: opacity 850ms ease, transform 850ms ease;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: calc(28px + env(safe-area-inset-top)) 34px calc(26px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
-.intro-logo {
-  width: 172px;
+/* Real Magpie logo, centered, modest: about 40% of the frame
+   width at phone size, never on a white box or pill. */
+.entry-logo {
+  width: 40%;
+  max-width: 172px;
+  min-width: 120px;
   height: auto;
-  margin: 0 auto 14px;
+  margin: 6vh auto 34px;
   display: block;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
-.intro-headline {
-  font-family: Anton, "Instrument Sans", sans-serif;
-  font-size: 2.35rem;
-  line-height: 1.04;
-  letter-spacing: 0.01em;
+/* Borderless fields: label above in caps, the value as plain
+   text on the frame — no boxes, cards, panels or underlines. */
+.entry-field { margin: 0 0 26px; }
+.entry-field label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
+  color: #26312b;
+  margin: 0 0 7px;
+}
+.entry-ui .entry-field input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #0b0d0c;
-  margin: 0 0 10px;
+  font-size: 1.06rem;
+  box-shadow: none;
 }
-.intro-headline .grad-text {
-  background: linear-gradient(93deg, #006afc 0%, #019bfc 38%, #03c9ab 74%, #2fe07e 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.intro-sub {
-  color: #41534a;
-  font-size: 0.98rem;
-  margin: 0 auto 22px;
-  max-width: 320px;
+.entry-ui .entry-field input::placeholder { color: #7c8a83; opacity: 1; }
+.entry-ui .entry-field input:focus {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+  text-decoration: underline;
+  text-decoration-color: rgba(1, 155, 252, 0.55);
+  text-underline-offset: 5px;
 }
 
-.intro-signin {
+.entry-signin-btn {
   width: 100%;
-  padding: 15px 20px;
-  font-size: 1.02rem;
+  padding: 16px 20px;
+  margin-top: 2px;
+  font-size: 1.05rem;
   border-radius: 999px;
   background: linear-gradient(93deg, #006afc 0%, #019bfc 38%, #03c9ab 74%, #2fe07e 100%);
-}
-
-.intro-apply {
-  width: 100%;
-  padding: 14px 20px;
-  font-size: 1.02rem;
-  border-radius: 999px;
-  margin-top: 10px;
-  background: #0b0d0c;
   color: #ffffff;
-  border: 1px solid #0b0d0c;
 }
 
-.intro-biz {
-  display: inline-block;
-  margin-top: 16px;
-  font-size: 0.9rem;
-  color: #41534a;
+.entry-forgot {
+  text-align: center;
+  margin: 18px 0 0;
+  font-size: 0.98rem;
 }
-.intro-biz a { color: #0b0d0c; font-weight: 600; }
+.entry-forgot a { color: #26312b; font-weight: 600; text-decoration: none; }
+
+.entry-stay {
+  text-align: center;
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+  color: #5c6d64;
+}
+
+/* Google + emailed sign-in link: below the password block, same
+   quiet borderless style — text-weight actions, no boxes. */
+.entry-alt { margin-top: 30px; text-align: center; }
+.entry-google {
+  display: inline-block;
+  color: #0b0d0c;
+  font-weight: 700;
+  font-size: 0.98rem;
+  text-decoration: none;
+  padding: 6px 4px;
+}
+.entry-alt-note {
+  font-size: 0.88rem;
+  color: #41534a;
+  margin: 14px 0 16px;
+  text-align: left;
+}
+.entry-alt .entry-field { text-align: left; margin-bottom: 12px; }
+.entry-quiet-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 6px 4px;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #006afc;
+}
+.entry-note { font-size: 0.86rem; color: #41534a; margin: 8px 0 0; min-height: 1em; }
+
+.entry-ui .error-box { margin-bottom: 18px; }
+
+/* Bottom block, per the F2 frame: pinned to the bottom of the
+   surface when there is room, in normal flow when there is not. */
+.entry-bottom {
+  margin-top: auto;
+  padding-top: 36px;
+  text-align: center;
+}
+.entry-new { color: #41534a; font-size: 0.95rem; margin: 0 0 8px; }
+.entry-join { margin: 0; font-size: 1rem; }
+.entry-join a { color: #006afc; font-weight: 700; text-decoration: none; }
+.entry-join span { color: #7c8a83; margin: 0 6px; }
+.entry-more { margin: 14px 0 0; font-size: 0.88rem; }
+.entry-more a { color: #41534a; font-weight: 600; }
+.entry-more-note { display: block; color: #7c8a83; font-size: 0.8rem; margin-top: 3px; }
 
 /* Splash / first paint: plain white, the real logo, nothing else.
-   Rendered by index.html before app.js boots, and by the intro stage
-   itself until the film can play. */
+   Rendered by index.html before app.js boots. */
 .splash-first-paint {
   min-height: 62vh;
   display: flex;
@@ -134,11 +221,8 @@
 }
 .splash-first-paint img { width: 188px; height: auto; }
 
-/* Reduced motion, or no playable video: the poster still is the stage
-   and the controls are simply there. No waiting, ever. */
+/* Reduced motion: no film (renderIntro hands straight to the
+   sign-in surface in JS as well) and no transitions here. */
 @media (prefers-reduced-motion: reduce) {
   .intro-video { display: none; }
-  .intro-ui { opacity: 1; transform: none; pointer-events: auto; }
-  .intro-shade { opacity: 1; }
-  .intro-video.intro-settled { animation: none; }
 }

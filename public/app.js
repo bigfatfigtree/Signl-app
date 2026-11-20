@@ -22,7 +22,7 @@ const state = {
   boot: null, // markets, tiers, categories, plans
   joinMode: "quick", // two-step claim: "quick" (default) or "full"
   view: "home",
-  introSkipped: false, // design-intro: true once the visitor chooses "See how Magpie works" over the film
+  introSkipped: false, // Build -219a: true once the visitor chooses "See how Magpie works" over the entry
   tab: null,
   prefill: null, // claim-link prefill: sanitized ?handle=&market=&tier=
   claimStep: 1, // Build -85 claim flow: 1 welcome, 2 facts, 3 markets (Build -160), 4 account, 5 done
@@ -7839,10 +7839,11 @@ async function render() {
     if (state.view === "signin") return renderSignin();
     if (state.view === "forgot") return renderForgot();
     if (state.view === "reset") return renderReset();
-    // design-intro (PROPOSED, pending Jeff's review): the signed-out
-    // cold open is the intro film, not the classic home. Signed-in
-    // sessions never reach this branch: boot() restores state.user
-    // before the first render, so they land on their dashboard.
+    // Build -219a (F2 entry, locked by Jeff 2026-11-20): the
+    // signed-out cold open is the v5 intro film, then the F2
+    // sign-in surface. Signed-in sessions never reach this branch:
+    // boot() restores state.user before the first render, so they
+    // land on their dashboard.
     if (state.introSkipped) return renderHome();
     return renderIntro();
   }
@@ -7868,27 +7869,34 @@ async function render() {
 
 // ---------------- logged-out views ----------------
 
-// design-intro (PROPOSED, pending Jeff's review): the signed-out entry.
-// Full-screen film first, then the Sign in / Apply controls fade in over
-// the film's landing frame. The film is a web asset under /assets/intro/
-// (served like any other web file) so Jeff can swap the cut later with
-// no app store resubmission: replace the file, or point INTRO_CUT at a
-// different cut. Every sign-in and apply flow behind the controls is the
-// existing one, unchanged.
-const INTRO_CUT = "/assets/intro/intro-cut-1-crowd.mp4";
-const INTRO_POSTER = "/assets/intro/intro-cut-1-crowd-poster.jpg";
-const INTRO_REVEAL_MS = 3400; // controls start fading in as the cut settles
-const INTRO_REVEAL_HARD_MS = 4600; // controls are up by now no matter what
+// Build -219a (F2 entry, locked by Jeff 2026-11-20): the signed-out
+// entry. The locked v5 film plays full-screen first; on its end (or
+// Skip) the surface becomes the F2 sign-in (renderSignin) — the
+// film's own final frame is that same design, over the poster with
+// a pale wash. The film is a web asset under /assets/intro/ (served
+// like any other web file) so the cut can be swapped later with no
+// app store resubmission: replace the file, or point INTRO_CUT at a
+// different cut. Every sign-in and join flow behind the surface is
+// the existing one, unchanged.
+const INTRO_CUT = "/assets/intro/intro-film-v5.mp4";
+const INTRO_POSTER = "/assets/intro/intro-film-v5-poster.jpg";
+const INTRO_HARD_MS = 14000; // fallback: never strand a visitor on the film (v5 runs 11.4s)
 
 let introTimers = [];
 function introClearTimers() {
   introTimers.forEach((t) => clearTimeout(t));
   introTimers = [];
 }
-function introReveal() {
-  const stage = document.getElementById("intro-stage");
-  if (stage) stage.classList.add("intro-revealed");
+function introMarkSeen() {
   try { sessionStorage.setItem("magpie_intro_seen", "1"); } catch (e) { /* private mode */ }
+}
+function introToSignin() {
+  introClearTimers();
+  introMarkSeen();
+  return go('signin');
+}
+function introSkip() {
+  return introToSignin();
 }
 function introSkipToHome() {
   introClearTimers();
@@ -7902,43 +7910,28 @@ function renderIntro() {
   let seen = false;
   try { seen = sessionStorage.getItem("magpie_intro_seen") === "1"; } catch (e) { /* storage unavailable */ }
   const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced || seen) {
+    // Reduced motion (no autoplay) or a repeat open in this tab
+    // session: no film wait — the sign-in surface is simply there,
+    // over the poster still. Sign-in is never made to wait.
+    return renderSignin();
+  }
   app.innerHTML = `
   <section class="intro-stage" id="intro-stage" aria-label="Welcome to Magpie">
     <img class="intro-poster" src="${INTRO_POSTER}" alt="" onerror="this.style.display='none'">
     <video class="intro-video" id="intro-video" autoplay muted playsinline preload="auto" poster="${INTRO_POSTER}" src="${INTRO_CUT}"></video>
-    <div class="intro-shade"></div>
-    <div class="intro-ui">
-      <img class="intro-logo" src="/assets/logo.png" alt="Magpie">
-      <h1 class="intro-headline">Local creators.<br><span class="grad-text">Real regulars.</span></h1>
-      <p class="intro-sub">Local businesses comp a meal or a service. A local creator posts honestly. Every visit tracked.</p>
-      <button class="btn intro-signin" onclick="return go('signin')">Sign in</button>
-      <button class="btn intro-apply" onclick="return go('join-creator')">Apply as a creator</button>
-      <p class="intro-biz">Run a local business? <a href="#" onclick="return go('for-businesses')">Join as a business</a></p>
-      <p class="intro-biz" style="margin-top:6px"><a href="#" onclick="return introSkipToHome()">See how Magpie works</a></p>
-    </div>
+    <button class="intro-skip" type="button" onclick="return introSkip()">Skip</button>
   </section>`;
   const video = document.getElementById("intro-video");
-  if (reduced || seen || !video) {
-    // Reduced motion, a repeat open in this tab session, or no video
-    // element: the poster still is the stage and the controls are
-    // simply there. Sign-in is never made to wait on the film.
-    if (video && reduced) { try { video.pause(); video.removeAttribute("autoplay"); } catch (e) { /* still frame stays */ } }
-    introTimers.push(setTimeout(introReveal, reduced ? 0 : 350));
-    return;
-  }
-  const settle = () => {
-    if (video) video.classList.add("intro-settled");
-  };
-  video.addEventListener("ended", settle);
+  if (!video) return renderSignin();
+  video.addEventListener("ended", () => { introToSignin(); });
   video.addEventListener("error", () => {
-    // Film missing or undecodable: land on the poster with controls.
-    if (video) video.style.display = "none";
-    introReveal();
+    // Film missing or undecodable: land straight on sign-in.
+    introToSignin();
   });
   const p = video.play && video.play();
-  if (p && p.catch) p.catch(() => { /* autoplay refused: poster + timer still reveal on schedule */ });
-  introTimers.push(setTimeout(introReveal, INTRO_REVEAL_MS));
-  introTimers.push(setTimeout(introReveal, INTRO_REVEAL_HARD_MS));
+  if (p && p.catch) p.catch(() => { introToSignin(); });
+  introTimers.push(setTimeout(() => { if (document.getElementById("intro-stage")) introToSignin(); }, INTRO_HARD_MS));
 }
 
 function renderHome() {
@@ -8299,6 +8292,13 @@ function googleConfigured123() {
 }
 function googleButtonHtml(mode, label) {
   if (!googleConfigured123()) return "";
+  // Build -219a: on the F2 sign-in surface the Google lane sits
+  // below the password block in the same quiet borderless style
+  // (no boxed ghost button, no "or" rule). Apply surfaces keep
+  // the original boxed treatment below.
+  if (mode === "signin") {
+    return `<a class="entry-google" href="/api/auth/google/start?mode=${mode}"><strong style="margin-right:6px">G</strong> ${esc(label || "Continue with Google")}</a>`;
+  }
   return `<a class="btn ghost" style="width:100%;margin-bottom:10px" href="/api/auth/google/start?mode=${mode}"><strong style="margin-right:6px">G</strong> ${esc(label || "Continue with Google")}</a>
     <p class="small muted" style="text-align:center;margin:0 0 10px">or</p>`;
 }
@@ -8311,33 +8311,48 @@ function clearStoredGoogleLink() {
 }
 
 function renderSignin() {
+  // Build -219a (F2 entry, locked by Jeff 2026-11-20): the sign-in
+  // view IS the F2 surface — the real logo over the settled film
+  // frame (the v5 poster under a pale wash, footage faintly
+  // visible), borderless EMAIL / PASSWORD fields, the gradient
+  // Sign in pill, Forgot password?, and the join lines at the
+  // bottom. No boxes, cards or panels. Every existing auth route
+  // stays on this surface: password (doSignin), Google and the
+  // emailed sign-in link below the password block in the same
+  // quiet style, forgot/reset via the link, and the staff redeem
+  // door as a quiet line at the bottom.
+  introClearTimers();
   const gNotice = state.googleNotice;
   state.googleNotice = "";
   app.innerHTML = `
-  <section class="panel form-panel" style="max-width:460px;margin:30px auto">
-    <div class="form-head">
-    <h2>Sign in</h2>
-    </div>
-    <div class="form-body">
-    <div id="form-error">${gNotice ? `<div class="error-box">${esc(gNotice)}</div>` : ""}</div>
-    ${googleButtonHtml("signin")}
-    <form novalidate onsubmit="return doSignin(event)">
-      <div class="field"><label>Email</label><input type="email" id="si-email" required autocomplete="email"></div>
-      <div class="field"><label>Password</label><input type="password" id="si-password" required autocomplete="current-password"></div>
-      <button class="btn" type="submit" style="width:100%">Sign in</button>
-    </form>
-    <p class="small muted mt">You will stay signed in on this device for 30 days. <a class="tlink" href="#" onclick="return go('forgot')">Forgot password?</a></p>
-    <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
-      <p class="small" style="margin:0 0 6px"><strong>No password handy?</strong> We can email you a sign-in link instead. It works once and expires in 30 minutes, and your password stays as it is.</p>
-      <form novalidate onsubmit="return doSigninLink(event)">
-        <div class="field"><label>Email</label><input type="email" id="sl-email" required autocomplete="email"></div>
-        <button class="btn ghost" type="submit" style="width:100%">Email me a sign-in link</button>
+  <section class="entry-stage entry-signin" aria-label="Sign in to Magpie">
+    <img class="entry-bg" src="${INTRO_POSTER}" alt="" onerror="this.style.display='none'">
+    <div class="entry-wash"></div>
+    <div class="entry-ui">
+      <img class="entry-logo" src="/assets/logo.png" alt="Magpie">
+      <div id="form-error">${gNotice ? `<div class="error-box">${esc(gNotice)}</div>` : ""}</div>
+      <form novalidate onsubmit="return doSignin(event)">
+        <div class="entry-field"><label for="si-email">Email</label><input type="email" id="si-email" required autocomplete="email" placeholder="you@example.com"></div>
+        <div class="entry-field"><label for="si-password">Password</label><input type="password" id="si-password" required autocomplete="current-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"></div>
+        <button class="btn entry-signin-btn" type="submit">Sign in</button>
       </form>
-      <p class="small" id="sl-note" style="margin:8px 0 0"></p>
-    </div>
-    <p class="small muted mt">New to Magpie? <a class="tlink" href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a class="tlink" href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
-    <button class="btn ghost mt" style="width:100%" onclick="return goStaff()">Redeem a creator visit</button>
-    <p class="small muted">Staff at a Magpie business: the button above takes you straight to the register screen. PIN in, creator code in, redeemed.</p>
+      <p class="entry-forgot"><a href="#" onclick="return go('forgot')">Forgot password?</a></p>
+      <p class="entry-stay">You will stay signed in on this device for 30 days.</p>
+      <div class="entry-alt">
+        ${googleButtonHtml("signin")}
+        <p class="entry-alt-note"><strong>No password handy?</strong> We can email you a sign-in link instead. It works once and expires in 30 minutes, and your password stays as it is.</p>
+        <form novalidate onsubmit="return doSigninLink(event)">
+          <div class="entry-field"><label for="sl-email">Email</label><input type="email" id="sl-email" required autocomplete="email" placeholder="you@example.com"></div>
+          <button class="entry-quiet-btn" type="submit">Email me a sign-in link</button>
+        </form>
+        <p class="entry-note" id="sl-note"></p>
+      </div>
+      <div class="entry-bottom">
+        <p class="entry-new">New to Magpie?</p>
+        <p class="entry-join"><a href="#" onclick="return go('join-creator')">Join as a creator</a> <span aria-hidden="true">&middot;</span> <a href="#" onclick="return go('for-businesses')">Join as a business</a></p>
+        <p class="entry-more"><a href="#" onclick="return introSkipToHome()">See how Magpie works</a></p>
+        <p class="entry-more"><a href="#" onclick="return goStaff()">Redeem a creator visit</a> <span class="entry-more-note">Staff at a Magpie business: PIN in, creator code in, redeemed.</span></p>
+      </div>
     </div>
   </section>`;
 }
