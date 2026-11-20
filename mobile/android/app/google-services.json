@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "135107443701",
+    "project_id": "magpielocal",
+    "storage_bucket": "magpielocal.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:135107443701:android:50cf687938c5d000e3bebc",
+        "android_client_info": {
+          "package_name": "com.magpielocal.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCfjDmCUPSXINPJ8KRdlL_Awj58JTJjNgY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
