@@ -11366,7 +11366,7 @@ function claimLocalLabelSync() {
     const typed = document.getElementById("c85-city-text");
     place = (typed && typed.value.trim()) || place;
   }
-  label.textContent = T(`About how much of your audience is in ${place}?`, `¿Como qué parte de tu audiencia está en ${place}?`);
+  label.textContent = T(`About how much of your audience is in ${place}? (your best estimate works)`, `¿Como qué parte de tu audiencia está en ${place}? (tu mejor estimado está bien)`);
 }
 
 function syncClaimPlatform() {
@@ -11585,7 +11585,7 @@ function renderClaimWelcome() {
     </div>` : "";
   const handleBlock = resolved ? "" : `
     <div class="c85-handlebox">
-      <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("c85-platform", d.platform, "syncClaimPlatform")}<p class="small muted" id="c85-proof-note" style="display:${d.platform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+      <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")} <span class="muted" style="font-weight:400">${T("(pick your biggest one)", "(elige la más grande)")}</span></label>${platformChipsHtml("c85-platform", d.platform, "syncClaimPlatform")}<p class="small muted" id="c85-proof-note" style="display:${d.platform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
       <div class="field" style="margin-bottom:0"><label id="c85-handle-label">${T("Your", "Tu")} ${esc(primaryLabelClient(d.platform))} ${T("handle", "usuario")}</label><input id="c85-handle" placeholder="yourhandle" value="${esc(d.handle || "")}" oninput="syncClaimPlatform()"><p class="small muted" id="c85-ig-link">${d.handle ? esc(primaryMetaClient(d.platform).host + d.handle) : ""}</p><p class="small muted">${T("Paste your handle or a link to your page, so businesses and our team can view your page.", "Pega tu usuario o un enlace a tu página, para que los negocios y nuestro equipo puedan verla.")}</p></div>
       <p class="small" id="c85-handle-warn" style="display:none;color:#B3261E;margin:8px 0 0">${T("Add your handle so businesses can find your page.", "Agrega tu usuario para que los negocios encuentren tu página.")}</p>
     </div>`;
@@ -12046,6 +12046,7 @@ function renderClaimAccount() {
         <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on Magpie on Magpie, and I agree Magpie can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en Magpie las reservas que empiezan en Magpie, y acepto que Magpie me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
         <button class="btn" type="submit" style="width:100%">${T("Finish — join the founding roster", "Terminar: únete a la lista de fundadores")}</button>
       </form>
+      <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Once you are approved, you can update all your numbers and add every social channel you have, even ones not listed here.", "Una vez que te aprueben, puedes actualizar todos tus números y agregar todas tus redes sociales, incluso las que no aparecen aquí.")}</p>
       <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(3)">${T("Back", "Atrás")}</a></p>
     </div>
   </section>`;
