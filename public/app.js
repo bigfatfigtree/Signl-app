@@ -3852,7 +3852,9 @@ function openAddSide180(role) {
     <div class="field"><label>Where is your main audience?</label><select id="as180-platform">
       <option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="youtube">YouTube</option><option value="facebook">Facebook</option><option value="x">X</option><option value="linkedin">LinkedIn</option>
     </select></div>
-    <div class="field"><label>Your market</label><select id="as180-market" onchange="addSideCity180()">${marketOptions(u.market, true)}</select></div>`
+    <div class="field"><label>Your market</label><select id="as180-market" onchange="addSideCity180()">${marketOptions(u.market, true)}</select></div>
+    <div class="field"><label>Total follower count</label><input id="as180-followers" inputmode="numeric" placeholder="For example: 12400" autocomplete="off"></div>
+    <div class="field"><label>Total local percentage <span class="muted" style="font-weight:400">(your best estimate works)</span></label><input id="as180-localpct" inputmode="numeric" placeholder="For example: 65" autocomplete="off"><p class="small muted" style="margin:6px 0 0">The share of your followers who live in your city. If 65 out of every 100 followers are local, enter 65.</p></div>`
   : `
     <div class="field"><label>Your name</label><input id="as180-name" value="${esc(u.name || "")}" autocomplete="name"></div>
     <div class="field"><label>Business name</label><input id="as180-business" placeholder="Your business as customers know it"></div>
@@ -3905,6 +3907,21 @@ async function submitAddSide180(e, role) {
     body.quickClaim = true;
     body.handle = document.getElementById("as180-handle").value;
     body.primaryPlatform = document.getElementById("as180-platform").value;
+    // Build -220: the claim's facts (follower count + local %),
+    // asked here exactly like the claim form asks them. Before
+    // this build the add-side form never asked, so a creator side
+    // added from inside an account was created at 0 before
+    // Build -215 (Chelsea Moubarak's creator side, 2026-11-19)
+    // and can only be refused by the -215 register gate after
+    // it. The server validates and writes both on first create.
+    const fc = parseInt(String(document.getElementById("as180-followers").value || "").replace(/[^0-9]/g, ""), 10);
+    if (!fc || fc <= 0) { submitBusy(form, false); errBox("Your follower count is required"); return false; }
+    body.followerCount = fc;
+    const lpRaw = String(document.getElementById("as180-localpct").value || "").trim();
+    if (lpRaw === "") { submitBusy(form, false); errBox("Your self-reported local audience percentage is required. It is always labeled Self-reported on your profile."); return false; }
+    const lp = Number(lpRaw);
+    if (Number.isNaN(lp) || lp < 0 || lp > 100) { submitBusy(form, false); errBox("Local audience percentage must be a number from 0 to 100"); return false; }
+    body.localAudiencePct = lp;
   } else {
     body.name = document.getElementById("as180-name").value;
     body.businessName = document.getElementById("as180-business").value;
