@@ -251,8 +251,8 @@ const allLabels = railLabels;
 // the rail label has read "Maggie" since the Sig rename (the
 // tab id stays 'Sig'), which is why this check failed on the
 // pre-152 tree too.
-check("rail: TWENTY admin destinations in Jeff's order (Home first by Build -137; six rooms added by Build -138; Messages by Build -152)",
-  JSON.stringify(allLabels) === JSON.stringify(["Home", "Applications", "Requests", "Messages", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "Event Log", "Compliance", "Campaign", "Marketing", "Learn", "Social", "Automations", "Templates", "Stats", "Team", "Maggie"]),
+check("rail: TWENTY-THREE admin destinations in Jeff's order (Home first by Build -137; six rooms added by Build -138; Messages by Build -152; Biz Dev by Build -155; National by Build -178; SEO / AI search by Build -216)",
+  JSON.stringify(allLabels) === JSON.stringify(["Home", "Applications", "Requests", "Messages", "Biz Dev", "National", "Markets", "Creators", "Recruiters", "Outreach", "Partners", "Event Log", "Compliance", "Campaign", "Marketing", "Learn", "SEO / AI search", "Social", "Automations", "Templates", "Stats", "Team", "Maggie"]),
   allLabels.join(" | "));
 
 const renderAdminSrc = win("function renderAdmin() {", "function adminSigItems(");

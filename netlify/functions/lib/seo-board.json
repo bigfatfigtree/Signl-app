@@ -1,0 +1,214 @@
+{
+  "generatedAt": "2026-11-20T06:31:11.797Z",
+  "totals": {
+    "searchPages": 24,
+    "sitePages": 414,
+    "lastUpdated": "2026-11-19"
+  },
+  "nextUp": "Spas and med spas x 7 core markets.",
+  "queue": [
+    "Spas and med spas x 7 core markets.",
+    "Boutiques x remaining 4 core markets (Miami, Atlanta, Toronto, Hampton Roads).",
+    "Bars and nightlife x 7.",
+    "Brand deals by platform x 3 (Instagram, TikTok, YouTube).",
+    "Magpie vs FoodFluence.",
+    "Magpie vs TryNearby, on trigger only.",
+    "Salons x Austin + tier-2.",
+    "Case studies, still blocked on real usage, never invented."
+  ],
+  "tracking": {
+    "checkDate": "2026-11-18",
+    "facts": [
+      "Google Search Console, Nov 8–14: 1 click / 60 impressions, avg position 15.4.",
+      "GA4, Nov 9–15: chatgpt.com sent 34 sessions; Perplexity, Gemini and Copilot sent 0.",
+      "ChatGPT names and links Magpie on the business discovery question (first verified non-brand naming, 2026-11-16).",
+      "Google AI Overview, “local influencer marketing platform”: Magpie NOT mentioned, NOT cited (2026-11-16 probe, same as baseline).",
+      "Citehawk (2026-11-16): Magpie named in 2.1% of 41 prompts, ChatGPT only; visibility 14/100; share of voice 0.6%; Won 4 / Contested 3 / Lost 34."
+    ]
+  },
+  "groups": [
+    {
+      "name": "Learn articles",
+      "pages": [
+        {
+          "slug": "get-paid-to-post",
+          "title": "Get paid to post",
+          "url": "https://magpielocal.com/learn/get-paid-to-post.html",
+          "date": "2026-11-19",
+          "target": "get paid to post"
+        },
+        {
+          "slug": "what-is-magpie-local",
+          "title": "What is Magpie Local?",
+          "url": "https://magpielocal.com/learn/what-is-magpie-local.html",
+          "date": "2026-11-18",
+          "target": "What is Magpie Local? (the brand question)"
+        },
+        {
+          "slug": "magpie-creator",
+          "title": "What is a Magpie creator?",
+          "url": "https://magpielocal.com/learn/magpie-creator.html",
+          "date": "2026-11-18",
+          "target": "magpie creator"
+        },
+        {
+          "slug": "magpie-influencer",
+          "title": "What is a Magpie influencer?",
+          "url": "https://magpielocal.com/learn/magpie-influencer.html",
+          "date": "2026-11-18",
+          "target": "magpie influencer"
+        },
+        {
+          "slug": "what-is-a-local-influencer-platform",
+          "title": "What is a local influencer platform?",
+          "url": "https://magpielocal.com/learn/what-is-a-local-influencer-platform.html",
+          "date": "2026-11-18",
+          "target": "local influencer platform"
+        },
+        {
+          "slug": "what-is-a-micro-influencer-platform",
+          "title": "What is a micro influencer platform?",
+          "url": "https://magpielocal.com/learn/what-is-a-micro-influencer-platform.html",
+          "date": "2026-11-18",
+          "target": "micro influencer platform"
+        }
+      ]
+    },
+    {
+      "name": "City pages",
+      "pages": [
+        {
+          "slug": "influencer-marketing-for-atlanta-cafes-and-coffee-shops",
+          "title": "Influencer marketing for Atlanta cafes and coffee shops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-atlanta-cafes-and-coffee-shops.html",
+          "date": "2026-11-19",
+          "target": "influencer marketing for Atlanta cafes and coffee shops"
+        },
+        {
+          "slug": "influencer-marketing-for-hampton-roads-cafes-and-coffee-shops",
+          "title": "Influencer marketing for Hampton Roads cafes and coffee shops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-hampton-roads-cafes-and-coffee-shops.html",
+          "date": "2026-11-19",
+          "target": "influencer marketing for Hampton Roads cafes and coffee shops"
+        },
+        {
+          "slug": "influencer-marketing-for-los-angeles-cafes-and-coffee-shops",
+          "title": "Influencer marketing for Los Angeles cafes and coffee shops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-los-angeles-cafes-and-coffee-shops.html",
+          "date": "2026-11-19",
+          "target": "influencer marketing for Los Angeles cafes and coffee shops"
+        },
+        {
+          "slug": "influencer-marketing-for-miami-cafes-and-coffee-shops",
+          "title": "Influencer marketing for Miami cafes and coffee shops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-miami-cafes-and-coffee-shops.html",
+          "date": "2026-11-19",
+          "target": "influencer marketing for Miami cafes and coffee shops"
+        },
+        {
+          "slug": "influencer-marketing-for-nashville-cafes-and-coffee-shops",
+          "title": "Influencer marketing for Nashville cafes and coffee shops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-nashville-cafes-and-coffee-shops.html",
+          "date": "2026-11-19",
+          "target": "influencer marketing for Nashville cafes and coffee shops"
+        },
+        {
+          "slug": "influencer-marketing-for-new-york-city-cafes-and-coffee-shops",
+          "title": "Influencer marketing for New York City cafes and coffee shops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-new-york-city-cafes-and-coffee-shops.html",
+          "date": "2026-11-19",
+          "target": "influencer marketing for New York City cafes and coffee shops"
+        },
+        {
+          "slug": "influencer-marketing-for-toronto-cafes-and-coffee-shops",
+          "title": "Influencer marketing for Toronto cafes and coffee shops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-toronto-cafes-and-coffee-shops.html",
+          "date": "2026-11-19",
+          "target": "influencer marketing for Toronto cafes and coffee shops"
+        },
+        {
+          "slug": "influencer-marketing-for-atlanta-salons-and-barbershops",
+          "title": "Influencer marketing for Atlanta salons and barbershops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-atlanta-salons-and-barbershops.html",
+          "date": "2026-11-18",
+          "target": "influencer marketing for Atlanta salons and barbershops"
+        },
+        {
+          "slug": "influencer-marketing-for-los-angeles-boutiques",
+          "title": "Influencer marketing for Los Angeles boutiques and retail",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-los-angeles-boutiques.html",
+          "date": "2026-11-18",
+          "target": "influencer marketing for Los Angeles boutiques"
+        },
+        {
+          "slug": "influencer-marketing-for-los-angeles-salons-and-barbershops",
+          "title": "Influencer marketing for Los Angeles salons and barbershops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-los-angeles-salons-and-barbershops.html",
+          "date": "2026-11-18",
+          "target": "influencer marketing for Los Angeles salons and barbershops"
+        },
+        {
+          "slug": "influencer-marketing-for-miami-salons-and-barbershops",
+          "title": "Influencer marketing for Miami salons and barbershops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-miami-salons-and-barbershops.html",
+          "date": "2026-11-18",
+          "target": "influencer marketing for Miami salons and barbershops"
+        },
+        {
+          "slug": "influencer-marketing-for-nashville-boutiques",
+          "title": "Influencer marketing for Nashville boutiques and retail",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-nashville-boutiques.html",
+          "date": "2026-11-18",
+          "target": "influencer marketing for Nashville boutiques"
+        },
+        {
+          "slug": "influencer-marketing-for-nashville-salons-and-barbershops",
+          "title": "Influencer marketing for Nashville salons and barbershops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-nashville-salons-and-barbershops.html",
+          "date": "2026-11-18",
+          "target": "influencer marketing for Nashville salons and barbershops"
+        },
+        {
+          "slug": "influencer-marketing-for-new-york-city-boutiques",
+          "title": "Influencer marketing for New York City boutiques and retail",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-new-york-city-boutiques.html",
+          "date": "2026-11-18",
+          "target": "influencer marketing for New York City boutiques and retail"
+        },
+        {
+          "slug": "influencer-marketing-for-new-york-city-salons-and-barbershops",
+          "title": "Influencer marketing for New York City salons and barbershops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-new-york-city-salons-and-barbershops.html",
+          "date": "2026-11-18",
+          "target": "influencer marketing for New York City salons and barbershops"
+        },
+        {
+          "slug": "influencer-marketing-for-toronto-salons-and-barbershops",
+          "title": "Influencer marketing for Toronto salons and barbershops",
+          "url": "https://magpielocal.com/learn/influencer-marketing-for-toronto-salons-and-barbershops.html",
+          "date": "2026-11-18",
+          "target": "influencer marketing for Toronto salons and barbershops"
+        }
+      ]
+    },
+    {
+      "name": "Comparisons",
+      "pages": [
+        {
+          "slug": "magpie-vs-collabstr",
+          "title": "Magpie vs Collabstr: a local roster or a global marketplace?",
+          "url": "https://magpielocal.com/learn/magpie-vs-collabstr.html",
+          "date": "2026-11-18",
+          "target": "Magpie vs Collabstr / Collabstr alternative"
+        },
+        {
+          "slug": "magpie-vs-relish",
+          "title": "Magpie vs Relish: which fits a local business?",
+          "url": "https://magpielocal.com/learn/magpie-vs-relish.html",
+          "date": "2026-11-18",
+          "target": "Magpie vs Relish"
+        }
+      ]
+    }
+  ]
+}

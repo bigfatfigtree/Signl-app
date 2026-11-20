@@ -4492,6 +4492,7 @@ function adminTabsAllowed138() {
     "Campaign": ["campaign"], "Stats": ["stats.view"],
     "Marketing": ["marketing.draft", "marketing.approve"],
     "Learn": ["learn.view", "learn.edit", "learn.publish"],
+    "SEO / AI search": ["learn.view", "stats.view"],
     "Social": ["social.view", "social.draft", "social.approve"],
     "Automations": ["connections.view", "automations.manage"],
     "Templates": ["templates.view", "templates.edit"], "Team": ["team.manage"],
@@ -4547,6 +4548,11 @@ function railItems() {
     // platform's own lists.
     add("b", "notice", "Marketing", "return go('dashboard','Marketing')", t === "Marketing");
     add("b", "star", "Learn", "return go('dashboard','Learn')", t === "Learn");
+    // Build -216: the SEO / AI search board — every page built
+    // for the search climb, with its date and target phrase, the
+    // queue, and the latest tracking facts. Data is served only
+    // by the admin-gated GET /admin/seo-board endpoint.
+    add("b", "search", "SEO / AI search", "return go('dashboard','SEO / AI search')", t === "SEO / AI search");
     add("b", "play", "Social", "return go('dashboard','Social')", t === "Social");
     add("b", "bolt", "Automations", "return go('dashboard','Automations')", t === "Automations");
     add("b", "deck", "Templates", "return go('dashboard','Templates')", t === "Templates");
@@ -29075,6 +29081,7 @@ function renderAdmin() {
   // Build -138 rooms.
   if (tab === "Marketing") loadAdminMarketing138();
   if (tab === "Learn") loadAdminLearn138();
+  if (tab === "SEO / AI search") loadAdminSeoBoard216();
   if (tab === "Social") loadAdminSocial138();
   if (tab === "Automations") loadAdminAutomations138();
   if (tab === "Templates") loadAdminTemplates138();
@@ -29838,6 +29845,36 @@ async function a138TeamTplSave(id) {
   try { await api("PUT", "/admin/team/templates", { templates }); showToast("Template saved — future invites only"); loadAdminTeam138(); }
   catch (e) { alert(e.message); }
   return false;
+}
+
+// ---- SEO / AI search board (Build -216) ----
+// Jeff's one place to see the search climb: every page built
+// for search with the date it was added and the phrase it
+// targets, what is next in the queue, and the latest tracking
+// facts. The payload comes from GET /admin/seo-board, which is
+// admin-gated on the server (the board data file lives in the
+// function bundle, never under public/). Rendered in the Learn
+// room's flat-row idiom: hairline rows, no cards.
+function seoDate216(iso) {
+  if (!iso) return "";
+  try { return new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); } catch (e) { return String(iso); }
+}
+async function loadAdminSeoBoard216() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    const d = await api("GET", "/admin/seo-board");
+    const t = d.totals || {};
+    const tr = d.tracking || {};
+    el.innerHTML = `<h3>SEO / AI search</h3>
+    <p class="muted">Every page built for the search climb, newest first, with the phrase it targets. The board is regenerated from the search records each time a tranche ships.</p>
+    <div class="a138-row"><div class="a138-row-main"><strong>${fmtNum(t.searchPages || 0)} pages built for search</strong><span class="small muted">of ${fmtNum(t.sitePages || 0)} site pages in the sitemap</span></div><div class="a138-row-side"><span class="small muted">Last updated ${esc(seoDate216(t.lastUpdated) || "—")}</span></div></div>
+    <div class="a138-row"><div class="a138-row-main"><strong>Next in the queue</strong><span class="small muted">${esc(d.nextUp || "Nothing queued")}</span></div></div>
+    ${tr.facts && tr.facts.length ? `<h3 class="a138-h">How we are doing${tr.checkDate ? ` — latest check ${esc(seoDate216(tr.checkDate))}` : ""}</h3>${tr.facts.map((f) => `<div class="a138-row"><div class="a138-row-main"><span>${esc(f)}</span></div></div>`).join("")}` : ""}
+    ${(d.groups || []).map((g) => `<h3 class="a138-h">${esc(g.name)} (${(g.pages || []).length})</h3>${(g.pages || []).map((p) => `<div class="a138-row"><div class="a138-row-main"><strong><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a></strong><span class="small muted">Targets: ${esc(p.target || "")}</span></div><div class="a138-row-side"><span class="small muted">${esc(seoDate216(p.date))}</span></div></div>`).join("")}`).join("")}
+    ${d.degraded ? `<p class="small muted">The board data file could not be read just now; the counts above are empty rather than guessed.</p>` : ""}`;
+  } catch (e) { a138Err(el, e); }
 }
 
 // ---- Learn Studio ----

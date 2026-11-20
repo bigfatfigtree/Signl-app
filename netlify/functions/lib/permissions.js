@@ -215,6 +215,7 @@ const ROOM_FLAGS = {
   "Team": ["team.manage"],
   "Messages": ["messages.send"],
   "Biz Dev": ["bizdev.view"],
+  "SEO / AI search": ["learn.view", "stats.view"],
 };
 
 function roomAllowed(user, tab) {

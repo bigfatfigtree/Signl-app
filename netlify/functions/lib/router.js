@@ -24831,6 +24831,7 @@ function adminGate138(user, seg, method, query) {
     case "platform-totals": return null; // the handler scopes its own payload
     case "home-summary": return null; // Build -212: the handler serves the requester's own pre-scoped slice; the shared slices are perm-filtered inside the handler
     case "national": return need("approvals"); // Build -178: national accounts ride the approvals permission
+    case "seo-board": return (perms138.hasPerm(user, "learn.view") || perms138.hasPerm(user, "stats.view")) ? null : deny(); // Build -216: the SEO board rides the Learn/Stats view permissions
     default: return deny();
   }
 }
@@ -29450,6 +29451,25 @@ async function route(event) {
         }
       }
       return err(404, "Route not found");
+    }
+
+    // ---- Build -216: SEO / AI search board ----
+    // The board data is a generated JSON in the function bundle
+    // (scripts/generate-seo-board.mjs turns the goal-workspace
+    // search records into lib/seo-board.json). It is served ONLY
+    // here, behind the admin role check above and the
+    // learn.view/stats.view gate in adminGate138 — the file is
+    // never under public/, so neither the tab nor its data is
+    // reachable by non-admin accounts or the public. A missing
+    // or unreadable file degrades to an honest empty board,
+    // never a 500 (the Hardening A pattern).
+    if (seg[1] === "seo-board" && method === "GET" && seg.length === 2) {
+      let board = null;
+      try { board = require("./seo-board.json"); } catch (e) { board = null; }
+      if (!board || !Array.isArray(board.groups)) {
+        return json(200, { totals: { searchPages: 0, sitePages: 0, lastUpdated: null }, nextUp: null, queue: [], tracking: { checkDate: null, facts: [] }, groups: [], degraded: true });
+      }
+      return json(200, board);
     }
 
     // ---- Build -138: Learn Studio (Area 7) ----
