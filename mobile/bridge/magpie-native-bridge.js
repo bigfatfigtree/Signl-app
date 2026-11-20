@@ -21,11 +21,13 @@
  * Load order: anywhere before app code that calls MagpieNative; `defer`
  * alongside app.js is fine because every call below is defensive.
  *
- * BACKEND NOTE: push-token delivery expects POST /api/devices/push-token
- * (auth: the signed-in user's normal session). That endpoint does NOT exist
- * yet — see mobile/README.md "Web-side changes needed". Until it ships, the
- * token is kept in localStorage and re-sent on every launch, so no token is
- * lost once the endpoint lands.
+ * BACKEND NOTE (Build -218): push-token delivery posts to the verified
+ * contract POST /api/me/push/devices (auth: the signed-in user's normal
+ * session; body { token, platform }). The endpoint exists server-side
+ * (netlify/functions/lib/router.js, the /me/push/devices route family).
+ * The token is also kept in localStorage and re-sent on every foreground,
+ * so a token registered before sign-in, or rotated while the app was
+ * closed, still lands.
  */
 (function () {
   "use strict";
@@ -48,8 +50,7 @@
   function deliverTokenToBackend(token, plat) {
     try { localStorage.setItem("magpie.pushToken", token); localStorage.setItem("magpie.pushPlatform", plat); } catch (e) {}
     // Same-origin, cookie/session-authenticated like every other /api call.
-    // 404 until the backend endpoint ships — caught and ignored on purpose.
-    fetch("/api/devices/push-token", {
+    fetch("/api/me/push/devices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",

@@ -3473,7 +3473,17 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     return json(200, { orders: await ordersOf170(null) });
   }
   if (method === "GET" && sub === "overview" && seg.length === 3) {
-    const rawLeads = await allLeads();
+    // Build -218 (LOADER RULE): this handler used to await a
+    // dozen full prefix lists strictly one after another (leads,
+    // seats, users, then claims, escalations, referrals,
+    // activations, liability, prewarm, scoreboards, alarms, DNC),
+    // each one a Blobs list walk of N round trips at bounded
+    // concurrency. In series on a cold instance that stacked to
+    // the ~10s skeleton Jeff hit on the Biz Dev tab. Every read
+    // below is independent, so they now run in parallel through
+    // the same memoized listPrefix170 / list helpers — no serial
+    // per-key scans anywhere, and no read changed its meaning.
+    const [rawLeads, seatRows, users] = await Promise.all([allLeads(), listPrefix170("bdevrep:"), allUsers170()]);
     // Build -210 (item 41): market counts and the status rollup
     // run on the SAME deduped basis as the All leads list (one
     // business counted once) — the cards used to count raw
@@ -3482,8 +3492,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     // raw set: it is an action queue, and an approval must never
     // hide behind a dedupe.
     const leads = dedupeLeads210(rawLeads);
-    const seats = (await store().list("bdevrep:")).map((r) => r.value).filter((v) => v && v.active);
-    const users = await allUsers170();
+    const seats = seatRows.filter((v) => v && v.active);
     const byId = new Map(users.map((u) => [u.id, u]));
     const markets = {};
     for (const l of leads) {
@@ -3494,19 +3503,34 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       if (["Talked — needs to think", "Talked — wants a follow-up"].includes(l.stage)) m.interested += 1;
       if (l.stage === STAGE_CLAIMED) { m.claimed += 1; if (l.founding && l.founding.status === "Confirmed") m.confirmed += 1; }
     }
-    for (const mid of Object.keys(markets)) {
-      markets[mid].progress = await marketProgress(mid);
-      markets[mid].state = await marketState(mid);
-    }
-    const claims = (await listPrefix170("bdevclaim:"))
-      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    const escalations = (await listPrefix170("bdevesc:")).filter((v) => v && v.status === "open")
+    // Build -218: per-market progress/state and every remaining
+    // prefix read in this handler are independent — one parallel
+    // batch, not a serial chain (see the note at the handler top).
+    const marketIds218 = Object.keys(markets);
+    const [claimRows, escRows, pendingRefRows, acts, liabilityCalc, prewarmRows, scoreRows, alarmRows, dncRows, loaderStatus] = await Promise.all([
+      listPrefix170("bdevclaim:"),
+      listPrefix170("bdevesc:"),
+      listPrefix170("bdevpending:"),
+      allActivations(),
+      liability(),
+      listPrefix170("bdevprewarm:"),
+      listPrefix170("bdevscore:"),
+      listPrefix170("bdevalarm:"),
+      dncRecords(),
+      loaderStatusRecord(),
+      ...marketIds218.map(async (mid) => {
+        const [progress, state] = await Promise.all([marketProgress(mid), marketState(mid)]);
+        markets[mid].progress = progress;
+        markets[mid].state = state;
+        return mid;
+      }),
+    ]);
+    const claims = claimRows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    const escalations = escRows.filter((v) => v && v.status === "open")
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const pendingLeads = rawLeads.filter((l) => l.pendingApproval);
-    const pendingReferrals = (await listPrefix170("bdevpending:")).filter((v) => v && v.status === "pending");
-    const acts = await allActivations();
+    const pendingReferrals = pendingRefRows.filter((v) => v && v.status === "pending");
     for (const mid of Object.keys(markets)) markets[mid].active = acts.filter((a) => a.marketId === mid).length;
-    const liabilityCalc = await liability();
     // Disputes: unmatched claims + soft-duplicate holds + double-source.
     const disputes = claims.filter((c) => !c.leadId).map((c) => ({ kind: "unmatched-claim", id: c.id, businessName: c.businessName, contact: c.contact, createdAt: c.createdAt }));
     // Build -157: status rollup per market / city / neighborhood,
@@ -3536,7 +3560,7 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
     // one attached to the dedupe keeper lead when there is one.
     const keeperIds210 = new Set(leads.map((l) => l.id));
     const pwSeen210 = new Map();
-    for (const r of await listPrefix170("bdevprewarm:")) {
+    for (const r of prewarmRows) {
       const p = { leadId: r.leadId, business: r.business, toName: r.toName, draft: r.draft };
       const k = `${String(p.business || "").trim().toLowerCase()}|${String(p.toName || "").trim().toLowerCase()}`;
       const cur = pwSeen210.get(k);
@@ -3551,10 +3575,10 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       }
       return [...map.values()];
     };
-    const scoreboards = latestByRep(await listPrefix170("bdevscore:"))
+    const scoreboards = latestByRep(scoreRows)
       .map((r) => ({ repId: r.repId, weekOf: r.weekOf, lines: r.lines, stats: r.stats, createdAt: r.createdAt }))
       .sort((a, b) => String(a.repId).localeCompare(String(b.repId)));
-    const alarmSummary = latestByRep(await listPrefix170("bdevalarm:"))
+    const alarmSummary = latestByRep(alarmRows)
       .map((r) => ({ repId: r.repId, date: r.date, count: Array.isArray(r.items) ? r.items.length : 0 }))
       .sort((a, b) => String(a.repId).localeCompare(String(b.repId)));
     return json(200, {
@@ -3563,13 +3587,13 @@ async function handleAdminBizdevApi({ user, seg, method, event }) {
       // payload — a stalled seed/enrich/dest/Jeff-seat load is
       // visible here (and in GET /api/verify/counts) instead of
       // silently leaving every book empty.
-      loaderStatus: await loaderStatusRecord(),
+      loaderStatus,
       statusRollup, prewarm, scoreboards, alarmSummary,
       reps: seats.map((s) => { const u = byId.get(s.userId); return { userId: s.userId, name: u ? u.name : "", email: u ? u.email : "", marketId: s.marketId, marketName: s.marketName, repCode: s.repCode, seatState: s.seatState, vestedAt: s.vestedAt || null, warningMonth: s.warningMonth || null, atRisk: s.atRisk || null, hqSeat: !!s.hqSeat, markets: seatMarkets(s) }; }),
       unconfirmedClaims: claims.filter((c) => c.status === "waiting HQ confirm"),
       escalations, pendingLeads: pendingLeads.map((l) => adminLeadPayload(l)), pendingReferrals,
       disputes, liability: liabilityCalc,
-      dnc: await dncRecords(),
+      dnc: dncRows,
     });
   }
 

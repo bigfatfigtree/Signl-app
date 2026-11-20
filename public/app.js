@@ -22,6 +22,7 @@ const state = {
   boot: null, // markets, tiers, categories, plans
   joinMode: "quick", // two-step claim: "quick" (default) or "full"
   view: "home",
+  introSkipped: false, // design-intro: true once the visitor chooses "See how Magpie works" over the film
   tab: null,
   prefill: null, // claim-link prefill: sanitized ?handle=&market=&tier=
   claimStep: 1, // Build -85 claim flow: 1 welcome, 2 facts, 3 markets (Build -160), 4 account, 5 done
@@ -4069,6 +4070,13 @@ function renderTopBar2(full) {
 }
 async function refreshBadges() {
   if (!state.user) { state.badges = null; return; }
+  // Build -218: every authenticated flow (password, sign-in
+  // link, Google, registration, boot restore) funnels through
+  // here, so this is the one hook that guarantees the native
+  // bridge's push registration runs after sign-in, whichever
+  // door the user came through. The bridge makes it
+  // idempotent; in a plain browser it is a no-op.
+  magpieNativeInitPush218();
   try {
     const data = await api("GET", "/notifications");
     state.badges = data.badges || null;
@@ -6212,11 +6220,17 @@ function moneyTopHtml213(m) {
   if (!m) return "";
   const next = m.next || {};
   const btnLabel = next.tab === "Find Offers" ? "See offers" : next.tab === "Dashboard" ? "See Maggie's pitches" : "Open your profile";
+  // Build -218: the third card returns. GET /me/money has
+  // always computed paidOut server-side; the -213 top block
+  // rendered only Made and On its way, so money that had
+  // actually landed never showed on the Wallet. All three
+  // render now, from the same payload.
   return `
   ${m.marketLive ? "" : `<div class="empty-card" style="margin-bottom:14px"><div class="ec-t">Paid bookings start when ${esc(m.market || "your market")} opens</div><div class="ec-s">Everything you set up now counts from day one. Your next move below is the fastest way to be ready.</div></div>`}
-  <div class="kpi-grid c2">
+  <div class="kpi-grid c3">
     ${kpiCard("Made", `$${fmtMoney(m.made || 0)}`, { sub: "Paid bookings, plus what businesses paid to reuse your posts" })}
     ${kpiCard("On its way", `$${fmtMoney(m.onItsWay || 0)}`, { sub: "Booked at your rate, paid when the post is live" })}
+    ${kpiCard("Paid out", `$${fmtMoney(m.paidOut || 0)}`, { sub: "Sent to your payout account" })}
   </div>
   <div class="money-next">
     <p class="mn-k">Your next move</p>
@@ -6824,6 +6838,9 @@ function sigCtx() {
 // (flow: string or function of ctx returning a label or null).
 function sigBankFor(biz) {
   if (biz) return [
+    { id: "nextstep", q: "What should I do next?", ph: ["what should i do next", "what do i do next", "whats next", "what's next", "what next", "next step", "next steps", "where do i start", "what should i do", "what do i do", "what do i need to do"], g: [["next", "do", "start"], ["step", "steps", "now", "first", "should"]], s: [],
+      a: (c) => sigNextStepsText218(c) || (c.national ? "Your account is set up. The next step is a campaign: post what creators get and what you ask, and creators across every market can raise a hand." : (c.live ? "Nothing is open on your account. Your market is open and your business is active, so the next step is Find creators or a fresh offer." : "Nothing is open on your account right now. While your market is founding, posting an offer saves it as a draft for opening day.")),
+      flow: (c) => c.status === "pending" ? null : (c.national ? "Start a campaign" : (c.live ? "Find creators" : "Post an offer")) },
     { id: "cost", q: "What does Magpie cost?", ph: ["how much does it cost", "what does it cost", "how much is it", "how much is", "per month", "cost", "price", "pricing"], g: [["plan", "subscription", "month"], ["cost", "price", "much", "pay"]], s: ["cost", "pricing"],
       a: (c) => c.national
         ? "Your national account has no plan and no price yet. Magpie has not set national pricing, and nothing is charged: the Magpie team will share plan options before anything is ever billed."
@@ -6873,6 +6890,9 @@ function sigBankFor(biz) {
       a: "Settings, staff, and counter basics live right in the app. For anything a person needs to handle, email hello@magpielocal.com and a person answers.", flow: "Set the staff PIN" },
   ];
   return [
+    { id: "nextstep", q: "What should I do next?", ph: ["what should i do next", "what do i do next", "whats next", "what's next", "what next", "next step", "next steps", "where do i start", "what should i do", "what do i do", "what do i need to do"], g: [["next", "do", "start"], ["step", "steps", "now", "first", "should"]], s: [],
+      a: (c) => sigNextStepsText218(c) || (c.live ? "Nothing is open on your account: your profile is finished and your market is open. The next step is yours to pick: check new offers, or your Momentum." : "Nothing else is open on your account: your profile is finished. Bookings start the day your market opens, and finished founding profiles are first in line."),
+      flow: (c) => !c.profileComplete ? "Finish my profile" : (c.live ? "See my wallet" : "Check my Momentum") },
     { id: "payout", q: "When and how do I get paid?", ph: ["when do i get paid", "paid out", "payout", "pay out", "when do i get", "how do i get paid", "payment timing"], g: [["paid", "pay", "payout", "payment"], ["when", "how", "long", "timing", "arrive", "receive"]], s: ["payout"],
       a: "For a paid booking, the rate you set is the rate the business books at, and you keep 97% of it. Payout setup runs on Stripe's secure pages: Stripe asks for identity details, your address, your bank account, and tax information, and a first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, and the app does not promise a payout date. Your Wallet keeps the record of every booking and license, so it is always there to check.", flow: (c) => c.live ? "See my wallet" : null },
     { id: "terms98", q: "Where are the creator terms in plain words?", ph: ["creator terms", "terms in plain words", "my terms", "the terms"], g: [["terms", "term"], ["creator", "plain", "where", "read", "my"]], s: ["terms"],
@@ -7007,8 +7027,51 @@ function sigTopicReply(topic, ctx) {
   const label = typeof topic.flow === "function" ? topic.flow(ctx) : topic.flow;
   return { text, flow: sigFlowIndex(label) };
 }
-function sigFallbackReply(match) {
+// Build -218 (Jeff's live walk, 2026-11-20): Maggie answers
+// from the asker's own scoped state. A free-typed "What
+// should I do next?" from a creator with an unfinished
+// profile used to land on the canned "I don't know that one
+// yet." even though her open items were sitting right there
+// in the context. These helpers turn the context into the
+// open-items answer; the nextstep bank topics and the
+// fallback both speak from them, and neither invents
+// anything the context does not carry.
+function sigOpenItems218(c) {
+  const items = [];
+  if (!c) return items;
+  if (c.status === "pending") items.push("your application is still in review, and every applicant is owed an answer within 2 business days");
+  if (!c.biz && c.missing && c.missing.length) items.push(`your profile is still missing: ${c.missing.join(", ")}`);
+  if (!c.biz && !c.audTotal) items.push("no audience counts are on your record yet, so there is no follower total for businesses to rank");
+  if (!c.live && !c.national) items.push(`${c.market || "your market"} has not opened yet, so bookings have not started`);
+  if (c.biz && c.founding && !c.national) items.push("while your market is founding, offers save as drafts and nothing is sent to a creator before opening day");
+  return items;
+}
+function sigNextStepsText218(c) {
+  const items = sigOpenItems218(c);
+  if (!items.length) return "";
+  const head = items.length === 1 ? "Here is the one thing open on your account: " : "Here is what is open on your account: ";
+  let tail = "";
+  if (!c.biz && c.missing && c.missing.length) tail = " Finishing your profile is the next step: businesses only see finished profiles, and finished founding profiles get first pick when your market opens.";
+  else if (!c.live && !c.national) tail = " Nothing else is waiting on you; the moment your market opens, you get an email and everything you set up counts from day one.";
+  else if (c.status === "pending") tail = " There is nothing you need to send in the meantime.";
+  return head + items.join("; ") + "." + tail;
+}
+function sigFallbackReply(match, ctx) {
   const near = (match.scored || []).filter((s) => s.score >= 4).slice(0, 3).map((s) => s.topic);
+  const c = ctx || sigCtx();
+  // Build -218: when the asker has live state, the fallback
+  // answers from it (open items, next steps) instead of
+  // deflecting. The canned line remains only for a genuinely
+  // unknown question from an account with nothing open.
+  const steps = sigNextStepsText218(c);
+  if (steps) {
+    const reply = { text: steps, suggest: [] };
+    if (near.length) {
+      reply.text += " If one of these is closer to what you meant, tap it and I will tell you straight. For anything else, hello@magpielocal.com reaches a person.";
+      reply.suggest = near.map((topic) => topic.q);
+    }
+    return reply;
+  }
   // Maggie Rebuild v1 (Jeff, 2026-11-07): the canned
   // deflection is retired. A genuine unknown gets an honest
   // plain answer and a useful offer, in her voice.
@@ -7030,7 +7093,7 @@ function sigRouteAsk(text) {
   const t = sigNorm(text);
   const flows = sigFlowsFor();
   for (let i = 0; i < flows.length; i++) if (flows[i].keys.some((k) => t.includes(k))) return { text: `That lives under "${flows[i].label}". One tap takes you there.`, flow: i };
-  return sigFallbackReply(match);
+  return sigFallbackReply(match, ctx);
 }
 // Ask Sig: the server first (Build -69: its live-data brain
 // answers factual questions straight from the records with
@@ -7776,7 +7839,12 @@ async function render() {
     if (state.view === "signin") return renderSignin();
     if (state.view === "forgot") return renderForgot();
     if (state.view === "reset") return renderReset();
-    return renderHome();
+    // design-intro (PROPOSED, pending Jeff's review): the signed-out
+    // cold open is the intro film, not the classic home. Signed-in
+    // sessions never reach this branch: boot() restores state.user
+    // before the first render, so they land on their dashboard.
+    if (state.introSkipped) return renderHome();
+    return renderIntro();
   }
   // Build -85: the claim flow's done state replaces the pending
   // wall for the claim session itself ("You're on the roster").
@@ -7799,6 +7867,79 @@ async function render() {
 }
 
 // ---------------- logged-out views ----------------
+
+// design-intro (PROPOSED, pending Jeff's review): the signed-out entry.
+// Full-screen film first, then the Sign in / Apply controls fade in over
+// the film's landing frame. The film is a web asset under /assets/intro/
+// (served like any other web file) so Jeff can swap the cut later with
+// no app store resubmission: replace the file, or point INTRO_CUT at a
+// different cut. Every sign-in and apply flow behind the controls is the
+// existing one, unchanged.
+const INTRO_CUT = "/assets/intro/intro-cut-1-crowd.mp4";
+const INTRO_POSTER = "/assets/intro/intro-cut-1-crowd-poster.jpg";
+const INTRO_REVEAL_MS = 3400; // controls start fading in as the cut settles
+const INTRO_REVEAL_HARD_MS = 4600; // controls are up by now no matter what
+
+let introTimers = [];
+function introClearTimers() {
+  introTimers.forEach((t) => clearTimeout(t));
+  introTimers = [];
+}
+function introReveal() {
+  const stage = document.getElementById("intro-stage");
+  if (stage) stage.classList.add("intro-revealed");
+  try { sessionStorage.setItem("magpie_intro_seen", "1"); } catch (e) { /* private mode */ }
+}
+function introSkipToHome() {
+  introClearTimers();
+  state.introSkipped = true;
+  render();
+  return false;
+}
+
+function renderIntro() {
+  introClearTimers();
+  let seen = false;
+  try { seen = sessionStorage.getItem("magpie_intro_seen") === "1"; } catch (e) { /* storage unavailable */ }
+  const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  app.innerHTML = `
+  <section class="intro-stage" id="intro-stage" aria-label="Welcome to Magpie">
+    <img class="intro-poster" src="${INTRO_POSTER}" alt="" onerror="this.style.display='none'">
+    <video class="intro-video" id="intro-video" autoplay muted playsinline preload="auto" poster="${INTRO_POSTER}" src="${INTRO_CUT}"></video>
+    <div class="intro-shade"></div>
+    <div class="intro-ui">
+      <img class="intro-logo" src="/assets/logo.png" alt="Magpie">
+      <h1 class="intro-headline">Local creators.<br><span class="grad-text">Real regulars.</span></h1>
+      <p class="intro-sub">Local businesses comp a meal or a service. A local creator posts honestly. Every visit tracked.</p>
+      <button class="btn intro-signin" onclick="return go('signin')">Sign in</button>
+      <button class="btn intro-apply" onclick="return go('join-creator')">Apply as a creator</button>
+      <p class="intro-biz">Run a local business? <a href="#" onclick="return go('for-businesses')">Join as a business</a></p>
+      <p class="intro-biz" style="margin-top:6px"><a href="#" onclick="return introSkipToHome()">See how Magpie works</a></p>
+    </div>
+  </section>`;
+  const video = document.getElementById("intro-video");
+  if (reduced || seen || !video) {
+    // Reduced motion, a repeat open in this tab session, or no video
+    // element: the poster still is the stage and the controls are
+    // simply there. Sign-in is never made to wait on the film.
+    if (video && reduced) { try { video.pause(); video.removeAttribute("autoplay"); } catch (e) { /* still frame stays */ } }
+    introTimers.push(setTimeout(introReveal, reduced ? 0 : 350));
+    return;
+  }
+  const settle = () => {
+    if (video) video.classList.add("intro-settled");
+  };
+  video.addEventListener("ended", settle);
+  video.addEventListener("error", () => {
+    // Film missing or undecodable: land on the poster with controls.
+    if (video) video.style.display = "none";
+    introReveal();
+  });
+  const p = video.play && video.play();
+  if (p && p.catch) p.catch(() => { /* autoplay refused: poster + timer still reveal on schedule */ });
+  introTimers.push(setTimeout(introReveal, INTRO_REVEAL_MS));
+  introTimers.push(setTimeout(introReveal, INTRO_REVEAL_HARD_MS));
+}
 
 function renderHome() {
   app.innerHTML = `
@@ -8222,6 +8363,7 @@ async function doSignin(e) {
     state.view = "dashboard";
     render();
     refreshBadges();
+    magpieNativeInitPush218();
   } catch (err) {
     submitBusy(form, false);
     document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -24380,7 +24522,7 @@ async function runDiscover() {
     }
     state.discover = data.creators;
     state.discoverReconciliation202 = data.reconciliation || null;
-    { const rc = state.discoverReconciliation202; const dc = document.getElementById("discover-count"); if (dc && rc) dc.textContent = `${rc.bookable} bookable here \u00b7 ${rc.approvedHome} approved call this market home \u00b7 ${Math.max(0, rc.approvedHome - rc.approvedComplete)} still finishing profiles (${rc.approvedComplete} finished and bookable-ready at home)`; }
+    { const rc = state.discoverReconciliation202; const dc = document.getElementById("discover-count"); if (dc && rc) dc.textContent = `${rc.bookable} bookable here \u00b7 ${rc.approvedHome} approved call this market home \u00b7 ${Math.max(0, rc.approvedHome - rc.approvedComplete)} still finishing profiles (${rc.bookableAtHome != null ? rc.bookableAtHome : rc.approvedComplete} finished and bookable-ready at home${rc.listedFromElsewhere ? `, plus ${rc.listedFromElsewhere} listed from another market` : ""})`; }
     // Build -146 (the -145 remainder): the brief this list was
     // scored against rides a grid Book into the deal (and the
     // offer it becomes) as sourceBrief, the same normalization
@@ -29021,8 +29163,13 @@ async function loadAdminHome137() {
 function renderAdmin() {
   const tab = state.tab || "Home";
   state.tab = tab;
-  // Build -137: Home is the landing now (Sig-first); the
-  // Applications queue keeps its rich -121 work layout.
+  // Build -137: Home is the landing now (Sig-first).
+  // Build -218: the rail's active state is repainted from the
+  // tab this render actually chose, on every Admin surface, so
+  // the highlight follows the surface by construction (several
+  // Admin flows call renderAdmin/render directly, bypassing the
+  // renderNav pass that used to be the rail's only repaint).
+  try { renderRail(); } catch (e) { /* the rail repaints on the next navigation */ }
   if (tab === "Home") {
     app.innerHTML = `
     <h2>Magpie Admin</h2>
@@ -29032,39 +29179,26 @@ function renderAdmin() {
   }
   // One nav system (Build -47, audit A1/A2): the left rail is
   // the Admin nav (Jeff's standing call), so the in-page tab
-  // strip that duplicated it is gone, and the Business Preview
-  // card + Sig attention list open only the landing destination
-  // instead of crowding all ten. The full attention list lives
-  // on the Sig destination.
+  // strip that duplicated it is gone.
   const landing = tab === "Applications";
-  // Build -121: the landing is a work grid, not a scroll —
-  // a tappable summary strip on top (filled by loadAdminSig
-  // from the same payloads), then the queue in the wide
-  // column with Sig's attention list + the preview card in
-  // a side column on desktop; on phones the side column
-  // stacks compactly above the queue.
+  // Build -218 (Jeff's live walk, 2026-11-20): Review is its
+  // OWN queue view. The -121 landing stacked a copy of Home
+  // above the queue (the Sig home hero, the platform totals
+  // strip, the Preview-as tabs, and Maggie's attention panel
+  // in a side column), so Review read as Home with a queue
+  // underneath, and the rail's Review highlight looked stuck
+  // while Home content was on screen. That furniture lives on
+  // Home and on the Maggie destination now. Review keeps only
+  // what belongs to the queue itself: its summary strip (the
+  // queue counts loadAdminSig computes from the same payloads)
+  // and the queue, full width.
   app.innerHTML = `
     <h2>Magpie Admin</h2>
     ${landing ? `
-    ${sigHomeTopHtml()}
-    <div id="admin-totals126" class="totals126" aria-label="Platform totals"></div>
-    <div class="pv-tabs126" role="group" aria-label="Preview the app as another role">
-      <span class="pv-tabs126-label">Preview as</span>
-      <button type="button" class="pv-tab126" onclick="enterPreview()">Business</button>
-      <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('creator')">Creator</button>
-      <button type="button" class="pv-tab126" onclick="return adminCreatePreviewCreator192()">Set up creator preview</button>
-      <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('partner')">Partner</button>
-    </div>
-    <p id="pv-note126" class="small muted" role="status" style="margin:2px 0 10px"></p>
     <div id="admin-summary"></div>
-    <div class="admin-home121">
-      <div class="admin-home-side">
-        <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Maggie is reading the same numbers Admin shows...</p></div></div>
-      </div>
-      <div class="admin-home-main"><div id="tab-body">${skelHtml("Loading this room...", 2)}</div></div>
-    </div>` : `
+    <div id="tab-body">${skelHtml("Loading the review queue...", 2)}</div>` : `
     <div id="tab-body">${skelHtml("Loading this room...", 2)}</div>`}`;
-  if (landing) { loadAdminSig(); loadAdminTotals126(); loadSigTopNudges(); }
+  if (landing) { loadAdminSig(); }
   if (tab === "Account") renderAdminAccount126();
   if (tab === "Sig") renderAdminSig();
   if (tab === "Applications") loadApplications();
@@ -29296,13 +29430,23 @@ function scheduleSigUpgrade213(hid) {
 async function loadAdminSig(hostId) {
   const hid = hostId || "admin-sig";
   const host = document.getElementById(hid);
-  if (!host) return;
+  // Build -218: Review no longer carries the #admin-sig panel
+  // (it is a queue view now), but its summary strip still comes
+  // from this loader. Summary-only mode: fill #admin-summary
+  // from the same payload and skip every panel write.
+  const summaryOnly218 = !host && !!document.getElementById("admin-summary");
+  if (!host && !summaryOnly218) return;
   // Build -212: the attention list reads the same precomputed
   // summary Admin Home reads (one fetch), not three aggregate
   // computes.
   const summary = await loadAdminHomeSummary212();
-  if (!document.getElementById(hid)) return;
+  if (summaryOnly218 ? !document.getElementById("admin-summary") : !document.getElementById(hid)) return;
   if (summary && summary.preparing && !summary.fallback) {
+    if (summaryOnly218) {
+      pingAdminHomeRefresh212();
+      setTimeout(() => { if (document.getElementById("admin-summary") && !document.getElementById(hid)) loadAdminSig(hostId); }, 4000);
+      return;
+    }
     host.innerHTML = `<div class="panel"><p class="small muted" style="margin:0">Maggie is preparing the Admin numbers. They will be ready in a moment.</p></div>`;
     pingAdminHomeRefresh212();
     scheduleSigUpgrade213(hid);
@@ -29317,7 +29461,7 @@ async function loadAdminSig(hostId) {
   const isFallback213 = !!(summary && summary.fallback);
   if (isFallback213) {
     pingAdminHomeRefresh212();
-    scheduleSigUpgrade213(hid);
+    if (!summaryOnly218) scheduleSigUpgrade213(hid);
   } else if (summary) {
     delete sigUpgrade213[hid];
   }
@@ -29325,6 +29469,7 @@ async function loadAdminSig(hostId) {
   const items = adminSigItems(apps, marketsData, partnersData);
   const sumEl = document.getElementById("admin-summary");
   if (sumEl && !isFallback213) sumEl.innerHTML = adminSummaryHtml121(adminSummaryCounts121(apps, marketsData, partnersData));
+  if (summaryOnly218) return;
   const loaded = apps || marketsData || partnersData;
   host.innerHTML = `
   <div class="panel admin-sig-panel">
@@ -30194,6 +30339,11 @@ function sigAdminRouteAsk(text) {
   if (top && top.score >= 8) return { text: top.topic.a, flow: null };
   const near = scored.filter((s) => s.score >= 4).slice(0, 3).map((s) => s.topic);
   const reply = { text: "I don't know that one yet.", flow: null, suggest: [] };
+  // Build -218: same rule as the member fallback. When the
+  // console has live waiting state, the admin fallback leads
+  // with it instead of only deflecting.
+  const pending218 = Number(((typeof state !== "undefined" && state.waitCounts) || {}).adminPending) || 0;
+  if (pending218 > 0) reply.text = `${pending218} application${pending218 === 1 ? " is" : "s are"} waiting in the Review queue right now; that is the open item on the console. On the question itself: I don't know that one yet.`;
   if (near.length) {
     reply.text += " The closest things I can answer are right here; tap one and I will tell you straight.";
     reply.suggest = near.map((topic) => topic.q);
@@ -32562,6 +32712,12 @@ function astRender() {
 async function loadStats() {
   const el = document.getElementById("tab-body");
   try {
+    // Build -218: paint the shell's loading state FIRST. The
+    // partner-options fetch used to run before any paint, so on
+    // a slow read the Stats tab sat on the previous screen (or
+    // a stale skeleton) for the whole fetch; the options only
+    // feed one filter select in the shell built below.
+    if (el && !document.getElementById("ast-charts")) el.innerHTML = `${wsHead("Stats", { sub: "The platform in numbers — creators, reach, money and the books." })}${skelHtml("Loading your numbers...", 3)}`;
     if (!ccPartnerOpts) {
       try { const pd = await api("GET", "/admin/partners"); ccPartnerOpts = (pd.partners || []).map((p) => ({ id: p.id, name: p.name })); } catch (e) { ccPartnerOpts = []; }
     }
@@ -33965,7 +34121,7 @@ async function runPreviewDiscover() {
     // preview used to discard it, so the bookable-vs-home counts
     // stayed unexplained on the surface Jeff checks.
     state.preview.reconciliation208 = data.reconciliation || null;
-    { const rc = state.preview.reconciliation208; const dc = document.getElementById("pv-discover-count"); if (dc && rc) dc.textContent = `${rc.bookable} bookable here \u00b7 ${rc.approvedHome} approved call this market home \u00b7 ${Math.max(0, rc.approvedHome - rc.approvedComplete)} still finishing profiles (${rc.approvedComplete} finished and bookable-ready at home)`; }
+    { const rc = state.preview.reconciliation208; const dc = document.getElementById("pv-discover-count"); if (dc && rc) dc.textContent = `${rc.bookable} bookable here \u00b7 ${rc.approvedHome} approved call this market home \u00b7 ${Math.max(0, rc.approvedHome - rc.approvedComplete)} still finishing profiles (${rc.bookableAtHome != null ? rc.bookableAtHome : rc.approvedComplete} finished and bookable-ready at home${rc.listedFromElsewhere ? `, plus ${rc.listedFromElsewhere} listed from another market` : ""})`; }
     // Build -175 twin: the "people here" floor, client-side over
     // the canon count exactly as the live Find applies it.
     const pvMinPeople = Number(val("pvf-minpeople")) || 0;
@@ -35058,6 +35214,7 @@ function previewDashboardHtml(d) {
     if (payoutsParam || cardParam) { try { history.replaceState(null, "", location.pathname); } catch (e) { /* cosmetic only */ } }
     render();
     if (state.user) refreshBadges();
+    if (state.user) magpieNativeInitPush218();
     if (code && state.user && state.user.role === "business" && state.tab === "Counter") {
       setTimeout(() => renderCounter(code.toUpperCase()), 60);
     }
@@ -35066,6 +35223,56 @@ function previewDashboardHtml(d) {
   }
 })();
 
+
+// ---------------- native shell bridge (Build -218, Workstream E) ----------------
+// public/native-bridge.js (the shipped copy of
+// mobile/bridge/magpie-native-bridge.js) wraps the Capacitor
+// shell in window.MagpieNative. Two adoption duties live here,
+// by the exact names the bridge and the store evidence file
+// call: after sign-in the app calls MagpieNative.initPush(),
+// and the app defines window.magpieNativeRoute(path) so deep
+// links and push taps land inside the SPA. In a plain browser
+// MagpieNative exists but isNative is false and initPush is a
+// quiet no-op, so every call below is safe unconditionally.
+function magpieNativeInitPush218() {
+  try {
+    if (window.MagpieNative && typeof window.MagpieNative.initPush === "function") window.MagpieNative.initPush();
+  } catch (e) { /* push is an enhancement; sign-in never waits on it */ }
+}
+window.magpieNativeRoute = function (path) {
+  if (!path || typeof path !== "string") return false;
+  let p = path.trim();
+  if (!p) return false;
+  try { if (/^https?:\/\//i.test(p)) { const u = new URL(p); p = u.pathname + u.search + u.hash; } } catch (e) { /* keep the raw path */ }
+  // Hash-style in-app routes (push payloads carry "/#/offers"
+  // style paths): map the route word to the signed-in user's
+  // own tab and walk there with the normal router.
+  const hashRoute = p.startsWith("/#") ? p.slice(2) : (p.startsWith("#/") ? p.slice(1) : null);
+  if (hashRoute !== null) {
+    if (!state.user) return false;
+    const role = state.user.role;
+    const tab = {
+      "/": "Home", "/home": "Home",
+      "/offers": role === "business" ? "My Offers" : "Offers",
+      "/visits": role === "business" ? "Visits & Posts" : "My Visits",
+      "/wallet": "Earnings", "/earnings": "Earnings",
+      "/profile": "Profile", "/discover": "Discover",
+      "/momentum": "Momentum", "/numbers": "Numbers",
+    }[hashRoute.split("?")[0].replace(/\/$/, "") || "/"];
+    if (!tab) return false;
+    go("dashboard", tab);
+    return true;
+  }
+  // Full-page routes the boot router owns (claim and invite
+  // links, public profiles, the register card): navigate for
+  // real, so the boot handling runs exactly as it does for a
+  // tapped link, signed in or not.
+  if (/^\/(claim|invite|r|roster|c|redeem)(\/|$)/.test(p) || p === "/founding-claim" || p.startsWith("/founding-claim?")) {
+    location.assign(p);
+    return true;
+  }
+  return false;
+};
 
 // ---------------- recruiter console (Build -70) ----------------
 // One console, two doors: a staff recruiter (Bella, Dubai) signs

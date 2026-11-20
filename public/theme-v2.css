@@ -1776,23 +1776,27 @@ input.sw:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2p
 .stk-card { position: relative; z-index: 1; touch-action: pan-y; cursor: grab; }
 .stk-card img { -webkit-user-drag: none; user-select: none; -webkit-user-select: none; }
 .stk-card:active { cursor: grabbing; }
+/* Build -218 (Jeff's live walk, 2026-11-20): the action row
+   used to be a sticky dock floating at bottom:84px, which
+   parked the Later / Save / Invite buttons ON the creator's
+   photo, over the face. The row is in normal flow now,
+   directly under the card it acts on: controls never overlay
+   the photo at any scroll position. */
+/* Build -218 (Jeff's live walk, 2026-11-20): the action row
+   used to be a sticky dock floating at bottom:84px, which
+   parked the Later / Save / Invite buttons ON the creator's
+   photo, over the face. The dock keeps its pill styling but
+   sits in normal flow now, directly under the card it acts
+   on: controls never overlay the photo at any scroll
+   position. */
 .stk-actions {
   display: flex; align-items: center; justify-content: center;
   gap: 16px; margin: 18px auto 0; width: fit-content;
-  /* One floating action dock on both stacks. An offer card is
-     taller than the viewport, so the dock sticks above the
-     bottom nav while the card scrolls under it: Pass / Apply
-     are always one thumb-reach away. The frosted plate keeps
-     the dock readable over card content while it is stuck. */
-  position: sticky; bottom: 84px; z-index: 6;
   background: rgba(250, 252, 250, .85);
-  /* Build -38: on phones there is no bottom nav left to clear,
-     so the dock hugs the bottom edge there. */
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   border: 1.5px solid var(--line2); border-radius: 999px;
   padding: 8px 12px; box-shadow: var(--sh-md);
 }
-@media (max-width: 767.98px) { .stk-actions { bottom: 16px; } }
+/* Build -218: the phone bottom-offset rule for the old floating dock is retired with it. */
 .stk-pass {
   height: 58px; flex: none; border-radius: 999px; padding: 0 28px;
   border: 1.5px solid var(--line); background: #fff; color: var(--ink);
@@ -1858,7 +1862,16 @@ input.sw:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2p
 }
 .dcard.paused { opacity: .62; filter: grayscale(.6); }
 .dcard-photo { position: relative; aspect-ratio: 4 / 3.3; background: var(--bg2); }
-.dcard-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dcard-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Build -218: anchor the crop toward the top of the frame,
+     where faces sit in a portrait; a centered crop on a tall
+     card could push the face toward the card's lower half. */
+  object-position: 50% 22%;
+  display: block;
+}
 .dcard-photo.no-photo { background: var(--mint); }
 .dcard-mono { height: 100%; display: grid; place-items: center; }
 .dcard-mono span { font-size: 5.2rem; font-weight: 800; color: var(--black); letter-spacing: -.03em; }

@@ -82,7 +82,12 @@ check("admin Sig knows the demo seed state", adminSig.includes("The demo partner
 check("admin Sig routes items to the acting tabs", adminSig.includes('tab: "Applications"') && adminSig.includes('tab: "Markets"') && adminSig.includes('tab: "Partners"'));
 check("admin Sig has an honest caught-up line", adminSig.includes("Nothing needs a decision right now"));
 check("admin Sig presence rides the shared hero stack", adminSig.includes("sigHeroMediaHtml()") && adminSig.includes('sigHeroSet("idle")'));
-check("renderAdmin mounts the Sig panel", appJs.includes('id="admin-sig"') && appJs.includes("loadAdminSig();"));
+// Build -218: Review (Applications) no longer mounts the Sig
+// panel — it is a distinct queue view (Jeff's live walk,
+// 2026-11-20). The Admin Sig destination carries the brief:
+// renderAdminSig mounts #admin-sig-brief and loads it.
+check("the Admin Sig destination mounts the Sig brief", appJs.includes('id="admin-sig-brief"') && appJs.includes('loadAdminSig("admin-sig-brief")'));
+check("Review keeps its own summary strip loader", appJs.includes("loadAdminSig();") && appJs.includes('id="admin-summary"'));
 
 // --- build identity agrees
 const buildId = (buildJs.match(/BUILD_ID = "([^"]+)"/) || [])[1];

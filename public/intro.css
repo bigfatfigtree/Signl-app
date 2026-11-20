@@ -1,0 +1,144 @@
+/* Magpie app entry experience (design-intro, PROPOSED, pending Jeff's review).
+   Signed-out cold open only: full-screen intro film, then the Sign in /
+   Apply controls fade in over the film's landing frame. Signed-in sessions
+   never render this surface (boot restores the session before first paint).
+   The intro film is a normal web asset under /assets/intro/ so it can be
+   swapped without an app store resubmission. */
+
+.intro-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: #ffffff;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.intro-video,
+.intro-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  background: #ffffff;
+}
+
+/* After the film ends it holds its landing frame with a barely-there
+   slow push-in, so the surface stays alive but calm behind the controls. */
+.intro-video.intro-settled {
+  animation: intro-settle 9s ease-out forwards;
+}
+@keyframes intro-settle {
+  from { transform: scale(1); }
+  to { transform: scale(1.045); }
+}
+
+.intro-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0) 46%, rgba(255,255,255,0.72) 74%, rgba(255,255,255,0.96) 100%);
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+.intro-stage.intro-revealed .intro-shade { opacity: 1; }
+
+.intro-ui {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 430px;
+  padding: 0 26px calc(30px + env(safe-area-inset-bottom));
+  text-align: center;
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+}
+.intro-stage.intro-revealed .intro-ui {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition: opacity 850ms ease, transform 850ms ease;
+}
+
+.intro-logo {
+  width: 172px;
+  height: auto;
+  margin: 0 auto 14px;
+  display: block;
+}
+
+.intro-headline {
+  font-family: Anton, "Instrument Sans", sans-serif;
+  font-size: 2.35rem;
+  line-height: 1.04;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: #0b0d0c;
+  margin: 0 0 10px;
+}
+.intro-headline .grad-text {
+  background: linear-gradient(93deg, #006afc 0%, #019bfc 38%, #03c9ab 74%, #2fe07e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.intro-sub {
+  color: #41534a;
+  font-size: 0.98rem;
+  margin: 0 auto 22px;
+  max-width: 320px;
+}
+
+.intro-signin {
+  width: 100%;
+  padding: 15px 20px;
+  font-size: 1.02rem;
+  border-radius: 999px;
+  background: linear-gradient(93deg, #006afc 0%, #019bfc 38%, #03c9ab 74%, #2fe07e 100%);
+}
+
+.intro-apply {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 1.02rem;
+  border-radius: 999px;
+  margin-top: 10px;
+  background: #0b0d0c;
+  color: #ffffff;
+  border: 1px solid #0b0d0c;
+}
+
+.intro-biz {
+  display: inline-block;
+  margin-top: 16px;
+  font-size: 0.9rem;
+  color: #41534a;
+}
+.intro-biz a { color: #0b0d0c; font-weight: 600; }
+
+/* Splash / first paint: plain white, the real logo, nothing else.
+   Rendered by index.html before app.js boots, and by the intro stage
+   itself until the film can play. */
+.splash-first-paint {
+  min-height: 62vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+}
+.splash-first-paint img { width: 188px; height: auto; }
+
+/* Reduced motion, or no playable video: the poster still is the stage
+   and the controls are simply there. No waiting, ever. */
+@media (prefers-reduced-motion: reduce) {
+  .intro-video { display: none; }
+  .intro-ui { opacity: 1; transform: none; pointer-events: auto; }
+  .intro-shade { opacity: 1; }
+  .intro-video.intro-settled { animation: none; }
+}

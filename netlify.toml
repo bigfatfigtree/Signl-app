@@ -94,3 +94,20 @@
   for = "/data/*"
   [headers.values]
     Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
+
+# Deep-link association files (Build -218, Workstream D/E):
+# the files live in public/.well-known/ (copied from
+# mobile/deep-links/), so the unforced SPA fallback below
+# never sees these paths — the real files serve. These rules
+# pin the JSON content type both platforms require (the AASA
+# file has no extension to infer from). Team ID and SHA-256
+# values inside stay placeholders until submission.
+[[headers]]
+  for = "/.well-known/apple-app-site-association"
+  [headers.values]
+    Content-Type = "application/json"
+
+[[headers]]
+  for = "/.well-known/assetlinks.json"
+  [headers.values]
+    Content-Type = "application/json"

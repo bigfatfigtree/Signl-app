@@ -5759,6 +5759,26 @@ function plausibleBizName(s) {
   const t = String(s == null ? "" : s).trim();
   return t.length >= 2 && /[A-Za-z]/.test(t) ? t : "";
 }
+// Build -218: a display name or a typed city can never be a URL
+// or a URL query tail. The Austin creator record whose name read
+// "_r=1&_t=ZT-…" (a TikTok share link's query tail, stored by a
+// pre-151 intake) is the name case; the Stats market row labeled
+// "Spanish" is the city case (a language word typed into the
+// city field on the unlisted path, then rendered as a market row
+// by every place-label surface). Intake now refuses both shapes
+// with a plain message instead of storing junk a person has to
+// clean up later. Ampersands in real names ("Salt & Ember") are
+// fine: only URL/query markers and bare language names refuse.
+function nameLooksLikeUrlJunk(s) {
+  const t = String(s == null ? "" : s).trim();
+  if (!t) return false;
+  return /^https?:\/\//i.test(t) || t.includes("://") || t.includes("?") || t.includes("=") || t.includes("#");
+}
+const CITY_LANGUAGE_WORDS_218 = new Set(["spanish", "english", "espanol", "español", "francais", "français", "portuguese", "português", "german", "deutsch", "italian", "italiano", "arabic", "hindi", "mandarin", "cantonese", "korean", "japanese", "russian", "french"]);
+function cityLooksLikeLanguage218(s) {
+  const t = String(s == null ? "" : s).trim().toLowerCase();
+  return CITY_LANGUAGE_WORDS_218.has(t);
+}
 function displayBusinessName(offer, biz) {
   const live = biz && biz.business ? biz.business.businessName : "";
   const stamped = offer ? offer.businessName : "";
@@ -10672,6 +10692,42 @@ function cardLocalPeople(card) {
 // and the admin Business Preview so both answer identically. `viewer`
 // only drives the favorite flag and the default market; every filter
 // reads a field stored on the creator record.
+// Build -218: ONE bookable-count logic for the Discover header.
+// The old header mixed two different counts in one sentence: the
+// "bookable here" number was the FILTERED discover result count
+// (which includes creators listed into this market from another
+// home market), while the parenthetical counted only finished
+// home-market profiles — so the line read "25 bookable here …
+// (24 finished and bookable-ready at home)" and contradicted
+// itself. The reconciliation now derives every number from the
+// same roster predicates discoverCards uses, UNFILTERED by the
+// search box, and names the listed-from-elsewhere remainder so
+// the arithmetic closes in the sentence itself:
+//   bookable = bookableAtHome + listedFromElsewhere.
+// approvedHome / approvedComplete / finishing keep the Admin
+// market-row definitions (home market, approved, non-tester) so
+// this header and the Markets page never disagree.
+async function discoverReconciliation218(marketNameRaw) {
+  const mk = canonicalMarketName(marketNameRaw || "");
+  if (!mk) return null;
+  const rows = await adminMarketRows();
+  const row = rows.find((r) => r.name === mk);
+  if (!row) return null;
+  const users = await allUsers();
+  const bookablePool = users.filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned");
+  const bookable = bookablePool.filter((u) => isListedInMarket(u, mk)).length;
+  const bookableAtHome = bookablePool.filter((u) => canonicalMarketName(u.market) === mk).length;
+  return {
+    bookable,
+    approvedHome: row.creatorsApproved,
+    approvedComplete: row.creatorsApprovedComplete,
+    finishing: Math.max(0, row.creatorsApproved - row.creatorsApprovedComplete),
+    bookableAtHome,
+    listedFromElsewhere: Math.max(0, bookable - bookableAtHome),
+    market: row.name,
+  };
+}
+
 async function discoverCards(query, viewer, opts) {
   const users = await allUsers();
   // Banned creators (redeemed a comp, never posted, cure expired) are
@@ -12033,8 +12089,21 @@ async function runHandleRepair151({ dryRun = false } = {}) {
       unrecoverable.push({ userId: u.id, name: u.name || "", email: u.email || "", handle: before });
       continue;
     }
-    changed.push({ userId: u.id, name: u.name || "", before, after: recovered });
+    // Build -218: a quick claim made before the -151 normalizer
+    // stored the broken handle as the record's NAME too (the
+    // claim's name stand-in copies the handle verbatim: "the
+    // handle stands in until the creator sets their real name").
+    // That is how the Austin record read "_r=1&_t=ZT-…" at the
+    // top of Admin Creators: the handle repair fixed handles but
+    // never the copied name. When the name IS the broken handle
+    // (an exact copy, not a name the creator typed), restore it
+    // to the recovered handle, the same stand-in the claim would
+    // have stored with a clean link. A typed name that merely
+    // resembles the handle is never touched.
+    const nameWasBrokenHandle = String(u.name || "").trim() === String(before).trim();
+    changed.push({ userId: u.id, name: u.name || "", before, after: recovered, nameRepaired: nameWasBrokenHandle });
     if (!dryRun) {
+      if (nameWasBrokenHandle) u.name = recovered;
       u.creator.handle = recovered;
       const plat = primaryPlatformOf(u.creator);
       u.creator.primaryProfileUrl = primaryPlatformUrl(plat, recovered);
@@ -15005,6 +15074,37 @@ async function previewDisplayCode(used) {
   return "SGNL-PREVUE";
 }
 
+// Build -218 (LOADER RULE): the preview dashboard minted its
+// five display codes with five SERIAL store.get round trips,
+// one per simulated booking. The batch version generates the
+// candidates up front and checks them against the code index
+// in ONE getMany (bounded concurrency in the store layer), so
+// the whole dashboard pays a single parallel read for codes.
+async function previewDisplayCodes218(count, used) {
+  const out = [];
+  let guard = 0;
+  while (out.length < count && guard < 6) {
+    guard += 1;
+    const need = count - out.length;
+    const cands = [];
+    while (cands.length < need) {
+      let code = "SGNL-";
+      for (let i = 0; i < 6; i++) code += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+      if (!used.has(code) && !cands.includes(code)) cands.push(code);
+    }
+    let taken = new Set();
+    if (typeof store.getMany === "function") {
+      const rows = await store.getMany(cands.map((c) => `code:${c}`));
+      taken = new Set(rows.map((r) => String(r.key).slice("code:".length)));
+    } else {
+      for (const c of cands) if (await store.get(`code:${c}`)) taken.add(c);
+    }
+    for (const c of cands) if (!taken.has(c)) { used.add(c); out.push(c); }
+  }
+  while (out.length < count) { used.add("SGNL-PREVUE"); out.push("SGNL-PREVUE"); }
+  return out;
+}
+
 // A display-only audience code for a simulated booking (the
 // Magpie ROAS creator code). Derived from the creator's handle
 // like the real ones; never written to the ccode: index, so a
@@ -15102,11 +15202,12 @@ async function previewDashboard() {
   const usedCodes = new Set();
   const usedCreatorCodes = new Set();
   const bookings = [];
+  const codes218 = await previewDisplayCodes218(briefs.length, usedCodes);
   for (let i = 0; i < briefs.length; i++) {
     const brief = briefs[i];
     const creator = slotCreator(brief.slot);
     if (!creator) continue;
-    const code = await previewDisplayCode(usedCodes);
+    const code = codes218[i];
     const b = {
       id: `preview-dash-${i + 1}`,
       preview: true,
@@ -17342,6 +17443,7 @@ async function handleRegister(event, linkCtx) {
   if (!isEmail(b.email || "")) return err(400, "A valid email is required");
   if (!linkPrimarySeed && (typeof b.password !== "string" || b.password.length < 10)) return err(400, "Password must be at least 10 characters");
   if (!quickClaim && (!b.name || typeof b.name !== "string")) return err(400, "Name is required");
+  if (typeof b.name === "string" && nameLooksLikeUrlJunk(b.name)) return err(400, "That name looks like a pasted link. Use the name you want shown on your profile.");
   const unlisted = b.market === UNLISTED;
   // Build -181: self-serve NATIONAL signup (Jeff, 2026-11-16: he
   // expected businesses to sign up THEMSELVES and pick National;
@@ -17368,6 +17470,7 @@ async function handleRegister(event, linkCtx) {
     customCountry = (b.customCountry || "").trim().slice(0, 60);
     customState = (b.customState || "").trim().slice(0, 60);
     if (!customCity) return err(400, "Tell us your city, so your sign-up counts toward opening Magpie there");
+    if (cityLooksLikeLanguage218(customCity)) return err(400, "That reads as a language, not a city. Tell us the city you live in, so your sign-up counts toward opening Magpie there");
     if (!customCountry) return err(400, "Tell us your country, so your sign-up counts toward opening Magpie there");
     if (customState.length === 2) customState = customState.toUpperCase();
   }
@@ -27107,6 +27210,44 @@ async function route(event) {
     }
   }
 
+  // Push devices (Build -218, Workstream E): the native shell's
+  // bridge (public/native-bridge.js) registers the device's push
+  // token here, on the signed-in session, so the notify lane can
+  // reach this person's phone. This is the verified contract the
+  // bridge posts to: POST /api/me/push/devices { token, platform }.
+  // One record per (user, token): pushdevice:{userId}:{tokenHash}.
+  // Registration is an upsert; a rotated token lands as a new
+  // record and the bridge re-sends on every foreground, so no
+  // token is lost. Tokens are never returned in full (GET masks
+  // all but the last six characters).
+  if (seg[0] === "me" && seg[1] === "push" && seg[2] === "devices" && seg.length === 3) {
+    const tokenHash218 = (t) => crypto.createHash("sha256").update(String(t)).digest("hex").slice(0, 24);
+    if (method === "POST") {
+      const b = parseBody(event);
+      const token = typeof (b && b.token) === "string" ? b.token.trim() : "";
+      const platform = typeof (b && b.platform) === "string" ? b.platform.trim().toLowerCase() : "";
+      if (!token || token.length < 16 || token.length > 4096) return err(400, "A valid push token is required");
+      if (!["ios", "android", "web"].includes(platform)) return err(400, "Platform must be ios, android, or web");
+      const key = `pushdevice:${user.id}:${tokenHash218(token)}`;
+      const existing = await store.get(key);
+      const now = nowIso();
+      await store.set(key, { userId: user.id, token, platform, createdAt: existing ? existing.createdAt || now : now, updatedAt: now, lastSeenAt: now });
+      if (!existing) await logEvent({ type: "push_device_registered", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { platform } });
+      return json(200, { ok: true, registered: true, platform });
+    }
+    if (method === "GET") {
+      const rows = (await store.list(`pushdevice:${user.id}:`)).map((r) => r.value).filter(Boolean);
+      return json(200, { devices: rows.map((d) => ({ platform: d.platform, tokenTail: String(d.token || "").slice(-6), createdAt: d.createdAt || null, lastSeenAt: d.lastSeenAt || null })) });
+    }
+    if (method === "DELETE") {
+      const b = parseBody(event);
+      const token = typeof (b && b.token) === "string" ? b.token.trim() : "";
+      if (!token) return err(400, "A push token is required");
+      await store.del(`pushdevice:${user.id}:${tokenHash218(token)}`);
+      return json(200, { ok: true, removed: true });
+    }
+  }
+
   if (method === "GET" && seg[0] === "me" && seg[1] === "payouts" && seg.length === 2) {
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
     const record = (await store.get(`user:${user.id}`)) || user;
@@ -27437,6 +27578,7 @@ async function route(event) {
       const customCountry = String(b.customCountry || "").trim().slice(0, 60);
       let customState = String(b.customState || "").trim().slice(0, 60);
       if (!customCity) return err(400, "Tell us your city, so your sign-up counts toward opening Magpie there");
+      if (cityLooksLikeLanguage218(customCity)) return err(400, "That reads as a language, not a city. Tell us the city you live in, so your sign-up counts toward opening Magpie there");
       if (!customCountry) return err(400, "Tell us your country, so your sign-up counts toward opening Magpie there");
       if (customState.length === 2) customState = customState.toUpperCase();
       user.market = UNLISTED;
@@ -27597,6 +27739,7 @@ async function route(event) {
       // handle; the completion flow is where the real name lands.
       if (b.name !== undefined) {
         const nn = String(b.name || "").trim().slice(0, 80);
+        if (nn && nameLooksLikeUrlJunk(nn)) return err(400, "That name looks like a pasted link. Use the name you want shown on your profile.");
         if (nn) { changes.name = [user.name, nn]; user.name = nn; }
       }
       // Primary platform + handle (Jeff, 2026-10-22): the handle is
@@ -27828,6 +27971,7 @@ async function route(event) {
         const newCity = String(b.city).trim().slice(0, 60);
         if (user.market === UNLISTED) {
           // Unlisted creators type their own city; it can be corrected.
+          if (newCity && cityLooksLikeLanguage218(newCity)) return err(400, "That reads as a language, not a city. Use the city you live in.");
           if (newCity) { changes.city = [user.city, newCity]; user.city = newCity; }
         } else {
           const mkt = marketByName(user.market);
@@ -32080,10 +32224,15 @@ async function route(event) {
     }
 
     if (method === "GET" && seg[1] === "stats") {
-      const users = (await allUsers()).filter((u) => u.role !== "admin");
-      const offers = await allOffers();
-      const bookings = await allBookings();
-      const posts = await allPosts();
+      // Build -218 (LOADER RULE): the four prefix lists are
+      // independent; awaiting them one after another stacked
+      // four full Blobs list walks in series on a cold instance
+      // (each list is N round trips at bounded concurrency), a
+      // real share of the Stats tab's ~10s skeleton. They now
+      // read in parallel; the lists themselves stay list /
+      // getMany based, never serial per-key gets.
+      const [usersRaw, offers, bookings, posts] = await Promise.all([allUsers(), allOffers(), allBookings(), allPosts()]);
+      const users = usersRaw.filter((u) => u.role !== "admin");
       const perMarket = {};
       for (const m of MARKETS) perMarket[m.name] = { creators: 0, businesses: 0, bookings: 0, posts: 0 };
       for (const u of users) {
@@ -32107,8 +32256,12 @@ async function route(event) {
       }
       const unlistedByCity = Object.values(unlistedMap).sort((a, b) => b.creators - a.creators);
       for (const bk of bookings) if (perMarket[bk.market]) perMarket[bk.market].bookings += 1;
+      // Build -218: index bookings once; the old per-post
+      // bookings.find made this loop quadratic in the two
+      // biggest lists on the platform.
+      const bookingsById218 = new Map(bookings.map((x) => [x.id, x]));
       for (const p of posts) {
-        const bk = bookings.find((x) => x.id === p.bookingId);
+        const bk = bookingsById218.get(p.bookingId);
         if (bk && perMarket[bk.market]) perMarket[bk.market].posts += 1;
       }
       const onTime = posts.filter((p) => p.onTime).length;
@@ -32552,7 +32705,7 @@ async function route(event) {
     if (method === "GET" && seg[1] === "preview" && seg[2] === "discover") {
       const disc = await discoverCards(query, { id: "__preview__", role: "business", market: null });
       let reconciliation202 = null;
-      try { const rows202 = await adminMarketRows(); const mk202 = canonicalMarketName(query.market || ""); const row202 = rows202.find((r) => r.name === mk202); if (row202) reconciliation202 = { bookable: disc.creators.length, approvedHome: row202.creatorsApproved, approvedComplete: row202.creatorsApprovedComplete, finishing: Math.max(0, row202.creatorsApproved - row202.creatorsApprovedComplete), market: row202.name }; } catch (e) {}
+      try { reconciliation202 = await discoverReconciliation218(query.market || ""); } catch (e) {}
       return json(200, { creators: disc.creators.map(decoratePreviewCard), universities: disc.universities, matchBrief: disc.matchBrief || null, preview: true, reconciliation: reconciliation202 });
     }
     if (method === "GET" && seg[1] === "preview" && seg[2] === "creator" && seg[3]) {
@@ -33583,7 +33736,7 @@ async function route(event) {
       data: { filters, resultCount: disc.creators.length, zeroResults: disc.creators.length === 0, briefed: !!disc.matchBrief },
     });
     let reconciliation202 = null;
-    try { const rows202 = await adminMarketRows(); const mk202 = canonicalMarketName(query.market || user.market || ""); const row202 = rows202.find((r) => r.name === mk202); if (row202) reconciliation202 = { bookable: disc.creators.length, approvedHome: row202.creatorsApproved, approvedComplete: row202.creatorsApprovedComplete, finishing: Math.max(0, row202.creatorsApproved - row202.creatorsApprovedComplete), market: row202.name }; } catch (e) {}
+    try { reconciliation202 = await discoverReconciliation218(query.market || user.market || ""); } catch (e) {}
     return json(200, { creators: disc.creators, universities: disc.universities, matchBrief: disc.matchBrief || null, reconciliation: reconciliation202 });
   }
 
@@ -37608,4 +37761,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };
