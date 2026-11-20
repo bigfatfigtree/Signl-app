@@ -152,7 +152,7 @@ try {
   part("phase 1: email failure is recorded per sender + email-health");
   const failUser = makeClient();
   const freg = await failUser("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email: "stubfail-reset@fixtures.dev", password: "<MASKED_SECRET_006>",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "stubfail-reset@fixtures.dev", password: "<MASKED_SECRET_006>",
     market: "Hampton Roads", handle: "stubfail46", primaryPlatform: "instagram",
     agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
   });

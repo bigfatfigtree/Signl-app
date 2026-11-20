@@ -133,7 +133,7 @@ const admin = new Client(BASE);
 console.log("== Live: a London claim stores the picked area; home city stays London ==");
 const claim = new Client(BASE);
 const claimReg = await claim.req("POST", "/api/auth/register", {
-  role: "creator", quickClaim: true, email: "hackney@b88.dev", password: "b88-pass-1234", market: "London",
+  role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "hackney@b88.dev", password: "b88-pass-1234", market: "London",
   handle: "b88hackney", primaryPlatform: "instagram", agreedTerms: true, area: "Hackney",
 });
 check("claim registers (201)", claimReg.status === 201, `status=${claimReg.status}`);
@@ -173,7 +173,7 @@ console.log("== Live: Admin shows the area ==");
 console.log("== Live: Nashville control claim is unchanged ==");
 const nash = new Client(BASE);
 const nashReg = await nash.req("POST", "/api/auth/register", {
-  role: "creator", quickClaim: true, email: "nash@b88.dev", password: "b88-pass-1234", market: "Nashville",
+  role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "nash@b88.dev", password: "b88-pass-1234", market: "Nashville",
   handle: "b88nash", primaryPlatform: "instagram", agreedTerms: true,
 });
 check("Nashville claim registers (201)", nashReg.status === 201, `status=${nashReg.status}`);

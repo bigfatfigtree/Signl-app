@@ -185,10 +185,12 @@ console.log("== B: parseClaimParams resolves what outreach actually sent ==");
 }
 
 // --- C: registration files the parsed market ------------------
+// Build -215: fixture claims carry their facts on the register
+// call (now required); market filing is what is asserted here.
 console.log("== C: POST /auth/register files what the claim carries ==");
 {
   const reg = async (tag, body) => {
-    const r = await anon("POST", "/api/auth/register", { role: "creator", quickClaim: true, password: "<redacted>", agreedTerms: true, ...body });
+    const r = await anon("POST", "/api/auth/register", { role: "creator", quickClaim: true, password: "<redacted>", agreedTerms: true, audienceStack: { instagram: 1200 }, followerCount: 1200, localAudiencePct: 50, ...body });
     const rec = r.data && r.data.user ? await store.get(`user:${r.data.user.id}`) : null;
     return { r, rec };
   };
@@ -199,7 +201,7 @@ console.log("== C: POST /auth/register files what the claim carries ==");
   const unl = await reg("unl", { email: "fix173-unl@fixtures.dev", market: "Not listed yet", handle: "fixture173unl", customCity: "Tulsa", customCountry: "United States" });
   check("register: the unlisted path files as Not listed yet with the typed city (201)",
     unl.r.status === 201 && !!unl.rec && unl.rec.market === "Not listed yet" && unl.rec.city === "Tulsa", `status=${unl.r.status} market=${unl.rec && unl.rec.market} city=${unl.rec && unl.rec.city}`);
-  const bogus = await anon("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "fix173-bogus@fixtures.dev", password: "<redacted>", agreedTerms: true, market: "Bogusville", handle: "fixture173bogus" });
+  const bogus = await anon("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "fix173-bogus@fixtures.dev", password: "<redacted>", agreedTerms: true, market: "Bogusville", handle: "fixture173bogus", audienceStack: { instagram: 1200 }, followerCount: 1200, localAudiencePct: 50 });
   check("register: an unknown market is refused outright (400) — the server never defaults either",
     bogus.status === 400, `got ${bogus.status}`);
 }

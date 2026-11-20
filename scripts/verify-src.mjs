@@ -97,7 +97,7 @@ try {
   // ---------- quick claim carries the source ----------
   const claimer = client();
   const claim = await claimer("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "srcmoms@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: "srcmoms",
     signupSource: "moms",
@@ -122,7 +122,7 @@ try {
   // ---------- invalid values are sanitized ----------
   const dirty = client();
   const dirtyReg = await dirty("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "srcdirty@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Raleigh", handle: "srcdirty",
     signupSource: "Moms Page!! <x>",
@@ -132,7 +132,7 @@ try {
 
   const junk = client();
   const junkReg = await junk("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "srcjunk@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Raleigh", handle: "srcjunk",
     signupSource: "!! $$ %%",
@@ -142,7 +142,7 @@ try {
 
   const long = client();
   const longReg = await long("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "srclong@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Raleigh", handle: "srclong",
     signupSource: "a".repeat(60),
@@ -153,7 +153,7 @@ try {
   // ---------- absent src leaves the record unchanged ----------
   const plain = client();
   const plainReg = await plain("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "srcplain@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: "srcplain",
     ...AGREE,

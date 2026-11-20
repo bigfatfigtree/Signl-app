@@ -153,7 +153,7 @@ try {
 
   const quickClaim = async (email, handle, market) => {
     const c = client();
-    const r = await c("POST", "/api/auth/register", { role: "creator", quickClaim: true, email, password: "claim-" + "pass-1234", market, handle, ...AGREE });
+    const r = await c("POST", "/api/auth/register", { role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email, password: "claim-" + "pass-1234", market, handle, ...AGREE });
     return { c, r };
   };
 

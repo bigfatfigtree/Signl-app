@@ -105,7 +105,7 @@ try {
   // ---------- attribution: creator claim through partner A's link ----------
   const claimerA = client();
   const claimA = await claimerA("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, handle: "acmeclaimed", market: "Virginia Beach",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, handle: "acmeclaimed", market: "Virginia Beach",
     email: "acmeclaimed@fixtures.dev", password: "fixture-pass-123", signupSource: "partner-acme-media", ...AGREE,
   });
   check("creator claim with partner A src returns 201", claimA.status === 201, JSON.stringify(claimA.data));
@@ -113,14 +113,14 @@ try {
 
   const claimerB = client();
   const claimB = await claimerB("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, handle: "betaclaimed", market: "Virginia Beach",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, handle: "betaclaimed", market: "Virginia Beach",
     email: "betaclaimed@fixtures.dev", password: "fixture-pass-123", signupSource: "partner-beta-profile", ...AGREE,
   });
   check("creator claim with partner B src returns 201", claimB.status === 201, JSON.stringify(claimB.data));
 
   const claimerPlain = client();
   const claimPlain = await claimerPlain("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, handle: "nocodeclaimed", market: "Virginia Beach",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, handle: "nocodeclaimed", market: "Virginia Beach",
     email: "nocode@fixtures.dev", password: "fixture-pass-123", ...AGREE,
   });
   check("creator claim without src returns 201 and stores no source", claimPlain.status === 201 && !!claimPlain.data.user && claimPlain.data.user.signupSource === undefined, JSON.stringify(claimPlain.data));

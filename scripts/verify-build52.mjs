@@ -218,7 +218,7 @@ try {
 
   const claim = async (email, handle, customCity, extra) => {
     const c = client();
-    const r = await c("POST", "/api/auth/register", { role: "creator", quickClaim: true, email, password: PW, market: UNLISTED_NAME, customCity, customCountry: "United States", handle, ...AGREE, ...(extra || {}) });
+    const r = await c("POST", "/api/auth/register", { role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email, password: PW, market: UNLISTED_NAME, customCity, customCountry: "United States", handle, ...AGREE, ...(extra || {}) });
     return { c, r };
   };
 

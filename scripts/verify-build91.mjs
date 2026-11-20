@@ -186,7 +186,7 @@ const claimer = new Client(BASE);
 let claimerId = null;
 {
   const r = await claimer.req("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email: "wish91@fixtures.dev", password: "fixture-password-91",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "wish91@fixtures.dev", password: "fixture-password-91",
     market: "Nashville", handle: "wishlistcreator91", primaryPlatform: "instagram", agreedTerms: true,
   });
   check("wishlist creator claims (quick claim, unfinished)", r.status === 201 && r.data.user.creator.profileComplete === false, `status=${r.status}`);

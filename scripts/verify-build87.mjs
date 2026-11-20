@@ -191,7 +191,7 @@ console.log("== Live: preference OFF suppresses that type only (real HTTP sweep)
 console.log("== Live: settings switches persist via the real API ==");
 {
   const c = new Client(BASE);
-  const reg = await c.req("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "set@b87.dev", password: "<redacted>", market: "Nashville", handle: "b87settings", primaryPlatform: "instagram", agreedTerms: true });
+  const reg = await c.req("POST", "/api/auth/register", { role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "set@b87.dev", password: "<redacted>", market: "Nashville", handle: "b87settings", primaryPlatform: "instagram", agreedTerms: true });
   check("settings creator registers", reg.status === 201, `status=${reg.status}`);
   const p1 = await c.req("PATCH", "/api/me/notifications", { offers: true, bookings: true, postClock: false, licences: true, applications: true, roster: false, phone: "+15550009999" });
   check("clock prefs + phone save and echo", p1.status === 200 && p1.data.notifyPrefs.postClock === false && p1.data.notifyPrefs.roster === false && p1.data.notifyPrefs.offers === true && p1.data.phone === "+15550009999", JSON.stringify(p1.data).slice(0, 220));

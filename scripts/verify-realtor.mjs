@@ -192,7 +192,7 @@ try {
   const claimer = client();
   const claim = await claimer("POST", "/api/auth/register", {
     role: "creator",
-    quickClaim: true,
+    quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "realtorclaim@fixtures.dev",
     password: "<MASKED_SECRET_002>",
     market: "Hampton Roads",

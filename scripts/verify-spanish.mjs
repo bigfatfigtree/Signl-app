@@ -144,7 +144,7 @@ try {
 
   // ---------- S1: Spanish claim path ----------
   const qcPayload = (email, handle, extra) => ({
-    role: "creator", quickClaim: true, email, password: "password1234", market: "Virginia Beach",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email, password: "password1234", market: "Virginia Beach",
     handle, primaryPlatform: "instagram",
     agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true, ...(extra || {}),
   });
@@ -181,7 +181,7 @@ try {
   await business("PATCH", "/api/me/profile", { preferredLanguage: "es" });
   const sjClaim = client();
   const sjReg = await sjClaim("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email: "isabela@example.com", password: "password1234",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "isabela@example.com", password: "password1234",
     market: "Not listed yet", customCity: "Ponce", customCountry: "Puerto Rico",
     handle: "isabela.crea", primaryPlatform: "instagram", lang: "es", ...AGREE,
   });

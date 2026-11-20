@@ -134,7 +134,7 @@ try {
   const regIncomplete = await incomplete("POST", "/api/auth/register", {
     role: "creator", name: "Meta Incomplete", email: "metaincomplete@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", city: "Norfolk", handle: "metaincomplete",
-    quickClaim: true, ...AGREE,
+    quickClaim: true, followerCount: 1200, localAudiencePct: 45, ...AGREE,
   });
   check("incomplete creator quick-claims (profile not complete)", (regIncomplete.status === 200 || regIncomplete.status === 201) && regIncomplete.data.user.creator.profileComplete === false, JSON.stringify(regIncomplete.data).slice(0, 250));
   await admin("POST", "/api/admin/review", { userId: regIncomplete.data.user.id, decision: "approve" });

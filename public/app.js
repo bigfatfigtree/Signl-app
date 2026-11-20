@@ -432,6 +432,19 @@ function parseClaimParams(params) {
   }
   const tierRaw = String(params.get("tier") || "").trim().slice(0, 20);
   if (tierRaw && state.boot && state.boot.tiers.some((t) => t.id === tierRaw)) out.tier = tierRaw;
+  // Hero-card params (Build -215): the marketing site's hero card
+  // sends what the creator already typed there, so she does not
+  // type it twice: followers (her count on the chosen platform),
+  // localpct (her local share), and city (her typed city, used
+  // when the market takes the unlisted path). All sanitized and
+  // clamped here; the draft seeds them as TOUCHED, real values,
+  // and they ride the register payload end to end.
+  const followersRaw = String(params.get("followers") || "").trim();
+  if (/^\d{1,9}$/.test(followersRaw)) out.followers = parseInt(followersRaw, 10);
+  const localpctRaw = String(params.get("localpct") || "").trim();
+  if (/^\d{1,3}$/.test(localpctRaw)) out.localpct = Math.max(0, Math.min(100, parseInt(localpctRaw, 10)));
+  const cityRaw = String(params.get("city") || "").trim().slice(0, 60);
+  if (cityRaw) out.city = cityRaw;
   return out;
 }
 
@@ -7916,7 +7929,7 @@ function marketOptions(selected, forJoin) {
   // whose market string resolves to the unlisted path seeds
   // exactly this value, and an unselected select falls back
   // to the first option (Atlanta) — a wrong pre-pick again.
-  return forJoin ? groups + `<option value="${esc(unlistedLabel())}" ${selected === unlistedLabel() ? "selected" : ""}>My city is not listed yet</option>` : groups;
+  return forJoin ? groups + `<option value="${esc(unlistedLabel())}" ${selected === unlistedLabel() ? "selected" : ""}>Add your city</option>` : groups;
 }
 
 // Options for the per-market audience share rows on the creator
@@ -10901,7 +10914,12 @@ function claimDraftInit() {
     resolvedFor: "",
     resolving: false,
     countedNote: "",
-    stackTouched: false,
+    // Build -215: the count lookup runs once per handle+platform
+    // (lookupFor is the key it ran for); its plain note renders
+    // under the count rows. A lookup never blocks the claim.
+    lookupFor: "",
+    lookupNote: "",
+    stackTouched: pf.followers !== undefined && pf.followers > 0,
     // Build -173: no parsed market = NO market. The draft used
     // to default to "Virginia Beach" here, which greeted (and
     // filed) Raleigh and Dallas-Fort Worth invitees as Virginia
@@ -10915,8 +10933,20 @@ function claimDraftInit() {
     area: "",
     cats: [],
     catsSeeded: false,
-    localPct: 50,
-    stack: {},
+    // Build -215: NO default local %. The draft starts empty
+    // (null, untouched); the old 50 default silently stamped
+    // "50%, Self-reported" on creators who never answered.
+    // Only a real answer — typed on the facts step, seeded by
+    // the hero card (localpct), or carried from a checked hook
+    // record — sets a value, and each sets localTouched.
+    localPct: pf.localpct !== undefined ? pf.localpct : null,
+    localTouched: pf.localpct !== undefined,
+    // Build -215: hero-card city seeds the typed-city field on
+    // the unlisted path (a listed market picks its own city).
+    customCity: pf.city && (pf.marketUnrecognized || pf.market === unlistedLabel()) ? pf.city : "",
+    customCountry: "",
+    customState: "",
+    stack: pf.followers !== undefined && pf.followers > 0 ? { [pf.platform || "instagram"]: pf.followers } : {},
     // Build -160: the optional second-market declaration from
     // Screen 3. Saves OFF unless the creator flips its switch
     // on under the travel copy; empty means skipped.
@@ -10987,6 +11017,9 @@ function claimApplyResolution() {
     input.value = String(d.stack.instagram);
     const note = document.getElementById("c85-counted-note");
     if (note && d.countedNote) { note.textContent = d.countedNote; note.style.display = ""; }
+    // A counted number replaces any "can't look up" note.
+    const lookupNote = document.getElementById("c85-lookup-note");
+    if (lookupNote && d.countedNote) { lookupNote.style.display = "none"; d.lookupNote = ""; }
     claimStackSync();
   }
 }
@@ -11252,7 +11285,7 @@ function claimHookGo() {
   const d = claimDraftInit();
   // Her checked local % prefills the facts screen's slider; she
   // can move it — what she leaves is what her record carries.
-  if (h && typeof h.localPct === "number") d.localPct = Math.max(0, Math.min(100, Math.round(h.localPct)));
+  if (h && typeof h.localPct === "number") { d.localPct = Math.max(0, Math.min(100, Math.round(h.localPct))); d.localTouched = true; }
   state.claimStep = 2;
   render();
   window.scrollTo(0, 0);
@@ -11358,7 +11391,7 @@ function renderClaimFacts() {
     ? T("Your city is not listed yet. Tell us your city below and sign up anyway — your sign-up counts toward opening Magpie there. You can change it later, any time, in your profile.", "Tu ciudad aún no está en la lista. Dinos tu ciudad abajo y regístrate igual: tu registro cuenta para abrir Magpie ahí. Puedes cambiarlo después, cuando quieras, en tu perfil.")
     : pfMarket
       ? T("Your invite picked this market. If your audience is really somewhere else, pick the market where most of your followers live. You can change it later, any time, in your profile.", "Tu invitación eligió este mercado. Si tu audiencia está en otro lugar, elige el mercado donde vive la mayoría de tus seguidores. Puedes cambiarlo después, cuando quieras, en tu perfil.")
-      : T("Pick the market where most of your followers live. City not listed? Choose \"My city is not listed yet\" and sign up anyway — your sign-up counts toward opening Magpie there.", "Elige el mercado donde vive la mayoría de tus seguidores. ¿Tu ciudad no está en la lista? Elige «Mi ciudad aún no está en la lista» y regístrate igual: tu registro cuenta para abrir Magpie ahí.");
+      : T("Pick the market where most of your followers live. City not listed? Choose \"Add your city\" and sign up anyway — your sign-up counts toward opening Magpie there.", "Elige el mercado donde vive la mayoría de tus seguidores. ¿Tu ciudad no está en la lista? Elige «Mi ciudad aún no está en la lista» y regístrate igual: tu registro cuenta para abrir Magpie ahí.");
   const marketOpts = (pfMarket ? "" : `<option value="" disabled selected>${T("Pick your market", "Elige tu mercado")}</option>`) + marketOptions(pfMarket, true);
   const allCats = state.boot.creatorCategories || [];
   const cats = allCats.map((c) => `<label class="catpick-row"><input type="checkbox" data-cat="${esc(c)}" ${d.cats.includes(c) ? "checked" : ""} onchange="return claimToggleCat(this)"><span>${esc(c)}</span></label>`).join("");
@@ -11377,7 +11410,7 @@ function renderClaimFacts() {
         <div class="field" id="c85-city-wrap" style="margin-bottom:0"><label>${T("Your home city", "Tu ciudad")}</label><select id="c85-city" onchange="claimLocalLabelSync()">${pfMarket && pfMarket !== unlistedLabel() ? cityOptions(pfMarket) : ""}</select></div>
         <div class="field" id="c85-area-wrap" style="display:none;margin-bottom:0"><label>${T("Your area in London", "Tu zona en Londres")}</label><input id="c85-area-search" placeholder="${T("Search areas, for example: Brixton", "Busca zonas, por ejemplo: Brixton")}" oninput="filterAreaOptions('c85-area-search','c85-area')" style="margin-bottom:6px"><select id="c85-area" onchange="claimLocalLabelSync()">${areaOptions("London")}</select><p class="small muted">${T("London is one market. Your home city stays London, and your area is saved on your record.", "Londres es un solo mercado. Tu ciudad queda como Londres y tu zona se guarda en tu registro.")}</p></div>
         <div id="c85-custom-wrap" style="display:none">
-          <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="c85-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}" oninput="claimLocalLabelSync()"></div>
+          <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="c85-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}" value="${esc(d.customCity || "")}" oninput="claimLocalLabelSync()"></div>
           <div class="field"><label>${T("Your country", "Tu país")}</label><input id="c85-country-text" placeholder="${T("For example: United States", "Por ejemplo: Estados Unidos")}"></div>
           <div class="field" style="margin-bottom:0"><label>${T("Your state or province (optional)", "Tu estado o provincia (opcional)")}</label><input id="c85-state-text" placeholder="${T("Optional, for example: OK", "Opcional, por ejemplo: OK")}"></div>
           <p class="small muted">${T("Not open there yet. Your sign-up counts toward opening it.", "Todavía no abrimos ahí. Tu registro cuenta para abrirlo.")}</p>
@@ -11394,13 +11427,17 @@ function renderClaimFacts() {
       <div class="c85-fact">
         <p class="fg-kicker">${T("Your audience here", "Tu audiencia aquí")}</p>
         <label class="c85-localq" id="c85-local-q"></label>
-        <div class="c85-localrow"><input type="range" class="c85-range" id="c85-localpct" min="0" max="100" step="5" value="${esc(String(d.localPct))}" oninput="claimLocalSync()"><span class="c85-pct" id="c85-localpct-read">${esc(String(d.localPct))}%</span></div>
+        <div class="c85-localrow"><input type="number" id="c85-localpct" min="0" max="100" inputmode="numeric" placeholder="${T("For example 60", "Por ejemplo 60")}" value="${d.localPct === null || d.localPct === undefined ? "" : esc(String(d.localPct))}" oninput="claimLocalSync()"><span class="c85-pct">%</span></div>
+        <p class="small muted" style="margin:6px 0 0">${T("This is the share of your followers who live in your city.", "Es la parte de tus seguidores que vive en tu ciudad.")}</p>
         <p class="small muted" style="margin:6px 0 0">${T("A rough number is fine. It's labeled self-reported everywhere.", "Un número aproximado está bien. Se marca como autodeclarado en todas partes.")}</p>
+        <p class="small" id="c85-local-warn" style="display:none;color:#B3261E;margin:8px 0 0">${T("Add your best guess — you can change it later in your profile.", "Agrega tu mejor estimado: puedes cambiarlo luego en tu perfil.")}</p>
       </div>
       <div class="c85-fact">
         <p class="fg-kicker">${T("Your followers", "Tus seguidores")}</p>
         <p class="small muted" id="c85-counted-note" style="display:${d.countedNote ? "" : "none"};margin:0 0 4px">${esc(d.countedNote || "")}</p>
+        <p class="small muted" id="c85-lookup-note" style="display:${d.lookupNote ? "" : "none"};margin:0 0 4px">${esc(d.lookupNote || "")}</p>
         ${stackRows}
+        <p class="small" id="c85-count-warn" style="display:none;color:#B3261E;margin:8px 0 0"></p>
         <p class="c85-counted" id="c85-counted">${T("Counted so far:", "Contados hasta ahora:")} ${claimFmtCount(total)}</p>
         <p class="small" id="c85-min-line" style="display:${total > 0 && total < 500 ? "" : "none"};margin:6px 0 0"><strong>${T("Magpie starts at 500 total followers across your platforms.", "Magpie empieza con 500 seguidores en total, sumando todas tus plataformas.")}</strong> ${T("Add every platform you post on. The counts add up.", "Agrega cada plataforma donde publicas. Los conteos se suman.")}</p>
       </div>
@@ -11416,6 +11453,7 @@ function renderClaimFacts() {
   syncClaimMarketChoice();
   claimLocalLabelSync();
   claimCatAllSync();
+  claimCountLookup();
 }
 
 // Build -176: the category picker is real checkboxes now (the
@@ -11459,10 +11497,72 @@ function claimCatAllSync() {
 }
 
 function claimLocalSync() {
-  const slider = document.getElementById("c85-localpct");
-  const read = document.getElementById("c85-localpct-read");
-  if (slider && read) read.textContent = `${slider.value}%`;
+  // Build -215: typing in the local % box is what makes it a
+  // real answer. An untouched (empty) box stays null in the
+  // draft and can never become a value on its own.
+  const input = document.getElementById("c85-localpct");
+  const d = claimDraftInit();
+  if (input) {
+    if (input.value === "") { d.localPct = null; d.localTouched = false; }
+    else { d.localPct = Math.max(0, Math.min(100, parseInt(input.value, 10) || 0)); d.localTouched = true; }
+    const warn = document.getElementById("c85-local-warn");
+    if (warn && d.localTouched) warn.style.display = "none";
+  }
   return false;
+}
+
+// Build -215: the primary platform's label, for plain-words
+// messages ("enter yours from your profile" and friends).
+function claimPlatformLabel(id) {
+  const p = CLAIM_STACK_PLATFORMS.find((x) => x.id === id);
+  if (p) return p.label.replace(/ (followers|subscribers|connections)$/i, "");
+  const meta = primaryMetaClient(id || "instagram");
+  return meta && meta.label ? meta.label : "Instagram";
+}
+
+// Build -215: one automatic count lookup per handle+platform,
+// only while the primary count field is still empty. "found"
+// prefills the field (never overwriting anything typed) with a
+// plain note saying where the number came from; "manual"
+// platforms get the plain enter-yours note. Every other answer
+// stays silent, and a failed lookup changes nothing: it never
+// blocks or delays the claim.
+async function claimCountLookup() {
+  const d = claimDraftInit();
+  const platform = d.platform || "instagram";
+  const handle = normalizeHandleClient(d.handle || "");
+  if (!handle) return;
+  const key = `${platform}:${handle.toLowerCase()}`;
+  if (d.lookupFor === key) return;
+  d.lookupFor = key;
+  const field = document.getElementById(`c85-stack-${platform}`);
+  if (!field || field.value) return;
+  let res = null;
+  try {
+    res = await api("POST", "/count-lookup", { platform, handle });
+  } catch (e) { return; }
+  if (!res) return;
+  const label = claimPlatformLabel(platform);
+  if (res.reason === "found" && typeof res.count === "number") {
+    const current = document.getElementById(`c85-stack-${platform}`);
+    if (current && !current.value) {
+      current.value = String(res.count);
+      d.stack = claimReadStack();
+      d.stackTouched = true;
+      claimStackSync();
+    }
+    d.lookupNote = T(`We found this on your public profile: ${label} · @${handle} · ${claimFmtCount(res.count)} followers. Check it and fix it if it's off.`, `Lo encontramos en tu perfil público: ${label} · @${handle} · ${claimFmtCount(res.count)} seguidores. Revísalo y corrígelo si no está bien.`);
+  } else if (res.reason === "manual") {
+    // Instagram has its own counted-prefill path (claimResolve):
+    // when that already counted her, a "can't look up" note
+    // would contradict it, so it stays silent.
+    if (d.countedNote) return;
+    d.lookupNote = T(`We can't look up ${label} counts automatically — enter yours from your profile.`, `No podemos buscar los conteos de ${label} automáticamente: escribe el tuyo desde tu perfil.`);
+  } else {
+    return;
+  }
+  const note = document.getElementById("c85-lookup-note");
+  if (note) { note.textContent = d.lookupNote; note.style.display = ""; }
 }
 
 function claimReadStack() {
@@ -11488,10 +11588,11 @@ function claimStackSync() {
 }
 
 // Read Screen 2 out of the DOM into the draft and advance.
-// Nothing here can dead-end: the only hard stops are the ones
-// the server itself enforces at registration (an unlisted
-// market needs its typed city and country) and the one-tap
-// category pick the gate is built on.
+// The hard stops are the ones the server itself enforces at
+// registration (an unlisted market needs its typed city and
+// country, the primary count and the local % are required) and
+// the one-tap category pick the gate is built on. Each stop
+// says in plain words what to add; nothing is guessed.
 function claimFactsGo() {
   const d = claimDraftInit();
   const warn = (msg) => {
@@ -11502,7 +11603,7 @@ function claimFactsGo() {
   const marketVal = document.getElementById("c85-market").value;
   // Build -173: an unpicked market stops here with the ask —
   // the claim never files a creator under a default city.
-  if (!marketVal) { warn(T("Pick your market — the one where most of your followers live. If your city isn't listed, choose \"My city is not listed yet\" and sign up anyway.", "Elige tu mercado: aquel donde vive la mayoría de tus seguidores. Si tu ciudad no está en la lista, elige «Mi ciudad aún no está en la lista» y regístrate igual.")); return false; }
+  if (!marketVal) { warn(T("Pick your market — the one where most of your followers live. If your city isn't listed, choose \"Add your city\" and sign up anyway.", "Elige tu mercado: aquel donde vive la mayoría de tus seguidores. Si tu ciudad no está en la lista, elige «Mi ciudad aún no está en la lista» y regístrate igual.")); return false; }
   d.market = marketVal;
   const isUnlisted = marketVal === unlistedLabel();
   if (isUnlisted) {
@@ -11533,9 +11634,30 @@ function claimFactsGo() {
     document.getElementById("c85-cats").scrollIntoView({ block: "center" });
     return false;
   }
-  const slider = document.getElementById("c85-localpct");
-  d.localPct = slider ? Math.max(0, Math.min(100, parseInt(slider.value, 10) || 0)) : 50;
+  // Build -215: the primary platform's count is required, in
+  // plain words. Other rows stay optional; the counts add up.
   d.stack = claimReadStack();
+  const primaryCount = d.stack[d.platform || "instagram"] || 0;
+  if (!primaryCount) {
+    const label = claimPlatformLabel(d.platform || "instagram");
+    const cw = document.getElementById("c85-count-warn");
+    if (cw) { cw.textContent = T(`Add your ${label} follower count — it's the main count businesses see first. You can add your other platforms too; the counts add up.`, `Agrega tu conteo de seguidores de ${label}: es el conteo principal que los negocios ven primero. También puedes agregar tus otras plataformas; los conteos se suman.`); cw.style.display = ""; }
+    const field = document.getElementById(`c85-stack-${d.platform || "instagram"}`);
+    if (field) { field.scrollIntoView({ block: "center" }); field.focus(); }
+    return false;
+  }
+  // Build -215: no local % answer, no advance — and no default
+  // fills one in. The box must have been typed in (or seeded by
+  // the hero card or a checked hook record, both real answers).
+  const localInput = document.getElementById("c85-localpct");
+  if (localInput && localInput.value !== "") { d.localPct = Math.max(0, Math.min(100, parseInt(localInput.value, 10) || 0)); d.localTouched = true; }
+  if (!d.localTouched || d.localPct === null || d.localPct === undefined) {
+    const lw = document.getElementById("c85-local-warn");
+    if (lw) lw.style.display = "";
+    warn(T("Add about how much of your audience lives in your city — it's the share of your followers who live there. A rough number is fine.", "Agrega como qué parte de tu audiencia vive en tu ciudad: es la parte de tus seguidores que vive ahí. Un número aproximado está bien."));
+    if (localInput) localInput.focus();
+    return false;
+  }
   state.claimStep = 3;
   render();
   window.scrollTo(0, 0);
@@ -11617,8 +11739,10 @@ function claimBack(step) {
   if ((state.claimStep || 1) === 2) {
     const d = claimDraftInit();
     d.stack = claimReadStack();
-    const slider = document.getElementById("c85-localpct");
-    if (slider) d.localPct = parseInt(slider.value, 10) || 0;
+    // Build -215: stepping back keeps a typed local %; an
+    // untouched box stays empty (never 0, never a default).
+    const localInput = document.getElementById("c85-localpct");
+    if (localInput && localInput.value !== "") { d.localPct = Math.max(0, Math.min(100, parseInt(localInput.value, 10) || 0)); d.localTouched = true; }
   }
   // Build -160: stepping back from the markets screen keeps
   // the declaration and its switch exactly as left.
@@ -11678,6 +11802,11 @@ async function doQuickClaim(e) {
   const form = e.target;
   if (!submitBusy(form, true)) return false;
   try {
+    // Build -215: every fact rides THIS register call — the
+    // count stack, the primary count, the local % (only when
+    // actually answered), the home city and the categories.
+    // The record is complete on first write; the PATCH below
+    // is now only a sync, never the carrier.
     const data = await api("POST", "/auth/register", {
       role: "creator",
       quickClaim: true,
@@ -11687,9 +11816,14 @@ async function doQuickClaim(e) {
       customCity: isUnlisted ? d.customCity : undefined,
       customCountry: isUnlisted ? d.customCountry : undefined,
       customState: isUnlisted ? d.customState : undefined,
+      city: !isUnlisted && d.city ? d.city : undefined,
       handle: qcHandle,
       area: d.area || undefined,
       primaryPlatform: d.platform,
+      audienceStack: Object.keys(d.stack || {}).length ? d.stack : undefined,
+      followerCount: (d.stack && d.stack[d.platform || "instagram"]) || undefined,
+      localAudiencePct: d.localTouched && d.localPct !== null && d.localPct !== undefined ? d.localPct : undefined,
+      categories: d.cats && d.cats.length ? d.cats.slice() : undefined,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
       goldenTicket: storedTicket() || undefined,
@@ -11703,18 +11837,19 @@ async function doQuickClaim(e) {
     });
     clearStoredGoogleLink();
     state.user = data.user;
-    // The four facts land through the same profile write the
-    // Finish Engine uses, so the completion gate reads them
-    // exactly as if the creator had finished from the
-    // checklist. Best-effort on purpose: the spot is already
-    // claimed, and anything that did not land stays on the
-    // dashboard checklist. It can never dead-end the claim.
+    // Build -215: the facts already landed on the register
+    // call above. This PATCH is a harmless sync through the
+    // same profile write the Finish Engine uses (it also
+    // carries the display name and the second-market
+    // declaration, which register does not take). Its failure
+    // can no longer strand the record: the register write is
+    // the record.
     const patch = {};
     if (d.displayName) patch.name = d.displayName;
     if (!isUnlisted && d.city) patch.city = d.city;
     if (d.area) patch.area = d.area;
     if (d.cats.length) patch.categories = d.cats.slice();
-    patch.localAudiencePct = d.localPct;
+    if (d.localTouched && d.localPct !== null && d.localPct !== undefined) patch.localAudiencePct = d.localPct;
     if (Object.keys(d.stack).length) patch.audienceStack = d.stack;
     // Build -160: the Screen 3 declaration rides the same
     // write, with its switch exactly as the creator left it
@@ -11733,7 +11868,11 @@ async function doQuickClaim(e) {
       const nb = await api("POST", "/neighbor/claim-complete", { variant: (state.claimHook && state.claimHook.variant) || "generic" });
       if (nb && nb.neighbor) state.neighbor = nb.neighbor;
     } catch (err3) { /* the done screen still renders; the lock retries on her next claim-complete */ }
-    const total = claimStackTotal(d);
+    // Build -215: the Done screen trusts the server's record
+    // over the client draft when the register returned one —
+    // the draft is what she typed, the record is what saved.
+    const serverTotal = state.user && state.user.creator && typeof state.user.creator.totalAudience === "number" ? state.user.creator.totalAudience : null;
+    const total = serverTotal !== null ? serverTotal : claimStackTotal(d);
     state.claimDone = {
       firstName: claimFirstName(d),
       total,
@@ -11984,7 +12123,7 @@ function renderJoinCreator() {
     <div class="form-body">
     <p class="muted">${T("Build your full profile now. When your market opens, founding creators get priority. This is your real profile, not a waitlist.", "Crea tu perfil completo ahora. Cuando tu mercado abra, los creadores fundadores tienen prioridad. Este es tu perfil real, no una lista de espera.")}</p>
     <p class="small muted">${T("How this works: one form, in four short parts: about you, where you are, your audience, and what you create. After you join, you land on a page that explains exactly what happens next.", "Cómo funciona: un formulario, en cuatro partes cortas: sobre ti, dónde estás, tu audiencia y lo que creas. Al terminar, llegas a una página que explica exactamente qué sigue.")}</p>
-    <p class="small muted">${T("City missing? Pick \"My city is not listed yet\" and sign up anyway.", "¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\" y regístrate igual.")}</p>
+    <p class="small muted">${T("City missing? Pick \"Add your city\" and sign up anyway.", "¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\" y regístrate igual.")}</p>
     <div class="lrow"><span class="ldot"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post: the goal is within 48 hours of your visit.", "— comidas, servicios y experiencias, por una publicación honesta: la meta es dentro de 48 horas de tu visita.")}</span></div></div>
     <div class="lrow"><span class="ldot off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— separate bookings at your own rate. You keep 97%.", "— reservas aparte a tu tarifa. Te quedas con el 97%.")}</span></div></div>
     ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link. Check it and finish.", "Ya viene lleno desde tu enlace de invitación. Revísalo y termina.")}</div>` : ""}
@@ -12004,7 +12143,7 @@ function renderJoinCreator() {
       <div class="fgroup">
         <p class="fg-kicker">${T("Where you are", "Dónde estás")}</p>
         <div class="form-2col">
-          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${jcMarketOpts}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="jc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to join, and Magpie walks founding creators through it.</p><p id="jc-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to join; the label is built into every Magpie post.</p></div>
+          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${jcMarketOpts}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"Add your city\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="jc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to join, and Magpie walks founding creators through it.</p><p id="jc-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to join; the label is built into every Magpie post.</p></div>
           <div class="field" id="jc-city-wrap"><label>${T("Your home city", "Tu ciudad")}</label><select id="jc-city">${pfMarket && pfMarket !== unlistedLabel() ? cityOptions(pfMarket) : ""}</select></div>
           <div id="jc-custom-wrap" style="display:none">
             <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="jc-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}"></div>
@@ -12227,7 +12366,7 @@ async function doRegisterCreator(e) {
   const marketVal = document.getElementById("jc-market").value;
   // Build -173: no market picked, no submit — the form never
   // files a creator under a default city.
-  if (!marketVal) { errBox(T("Pick your market — the one where most of your followers live. If your city isn't listed, choose \"My city is not listed yet\" and sign up anyway.", "Elige tu mercado: aquel donde vive la mayoría de tus seguidores. Si tu ciudad no está en la lista, elige «Mi ciudad aún no está en la lista» y regístrate igual.")); return false; }
+  if (!marketVal) { errBox(T("Pick your market — the one where most of your followers live. If your city isn't listed, choose \"Add your city\" and sign up anyway.", "Elige tu mercado: aquel donde vive la mayoría de tus seguidores. Si tu ciudad no está en la lista, elige «Mi ciudad aún no está en la lista» y regístrate igual.")); return false; }
   const isUnlisted = marketVal === unlistedLabel();
   const customCity = isUnlisted ? document.getElementById("jc-city-text").value.trim() : "";
   const customCountry = isUnlisted ? document.getElementById("jc-country-text").value.trim() : "";
@@ -12354,7 +12493,7 @@ function renderForBusinesses() {
       <div class="fgroup">
         <p class="fg-kicker">Where + what</p>
         <div class="field"><label>Category</label>${chipSelectHtml("jb-category", state.boot.businessCategories.map((c) => ({ value: c, label: c })), state.boot.businessCategories[0], null, false)}</div>
-        <div class="field" id="jb-market-field"><label>Market</label><input id="jb-market-search" placeholder="Search markets" oninput="filterBizMarketOptions()" style="margin-bottom:6px"><select id="jb-market" onchange="syncBizMarketChoice()">${marketOptions("", true)}</select><p class="small muted">City missing? Pick "My city is not listed yet".</p></div>
+        <div class="field" id="jb-market-field"><label>Market</label><input id="jb-market-search" placeholder="Search markets" oninput="filterBizMarketOptions()" style="margin-bottom:6px"><select id="jb-market" onchange="syncBizMarketChoice()">${marketOptions("", true)}</select><p class="small muted">City missing? Pick "Add your city".</p></div>
       <div id="jb-custom-wrap" style="display:none">
         <div class="notice blue">Your sign-up counts toward opening Magpie in your city. Founding pricing held — we email you at launch.</div>
         <div class="form-2col">
@@ -34712,7 +34851,7 @@ function previewDashboardHtml(d) {
       state.view = "reset";
     }
     const claim = parseClaimParams(params);
-    if (claim.handle || claim.market || claim.marketUnrecognized || claim.tier || claim.platform) {
+    if (claim.handle || claim.market || claim.marketUnrecognized || claim.tier || claim.platform || claim.followers !== undefined || claim.localpct !== undefined || claim.city) {
       state.prefill = claim;
       // A claim link is an invitation to the form itself: a logged-out
       // visitor lands on the sign-up, pre-filled. Signed-in visitors

@@ -84,7 +84,7 @@ const admin = new Client();
 }
 async function quickClaim(email, handle, market, extra = {}) {
   const c = new Client();
-  const r = await c.req("POST", "/api/auth/register", { role: "creator", quickClaim: true, email, password: "<MASKED_SECRET_002>", market, handle, ...AGREE, ...extra });
+  const r = await c.req("POST", "/api/auth/register", { role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email, password: "<MASKED_SECRET_002>", market, handle, ...AGREE, ...extra });
   return { c, r };
 }
 async function eventsOf(type) {

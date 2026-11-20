@@ -316,6 +316,9 @@ try {
     password: "cleo-pass-1234",
     market: "Nashville",
     handle: "cleoclaim160",
+    audienceStack: { instagram: 2000 },
+    followerCount: 2000,
+    localAudiencePct: 40,
     ...AGREE,
   });
   const cleoId = cleoReg.data.user.id;

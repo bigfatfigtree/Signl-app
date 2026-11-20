@@ -145,7 +145,7 @@ const admin = new Client(BASE);
 async function claimRegister(email, handle, market, extra = {}) {
   const c = new Client(BASE);
   const r = await c.req("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email, password: "b86-pass-1234", market,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email, password: "b86-pass-1234", market,
     handle, primaryPlatform: "instagram", agreedTerms: true, ...extra,
   });
   return { c, r };

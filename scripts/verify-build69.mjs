@@ -86,7 +86,7 @@ function batteryRunner(label) {
 // ---------- seed helpers ----------
 async function quickClaim(handle, market) {
   const c = client();
-  const reg = await c("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: `${handle}@fixtures.dev`, password: "<MASKED_SECRET_002>", market, handle, ...AGREE });
+  const reg = await c("POST", "/api/auth/register", { role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: `${handle}@fixtures.dev`, password: "<MASKED_SECRET_002>", market, handle, ...AGREE });
   if (reg.status !== 201) throw new Error(`quick claim ${handle} failed: ${JSON.stringify(reg.data)}`);
   return { client: c, id: reg.data.user.id };
 }
@@ -194,9 +194,12 @@ try {
     ["how many businesses in nashville", ["0 approved businesses in Nashville", "1 on file"]],
     // Re-aimed by Build -126: the platform-numbers answer now
     // leads with the Admin home strip's two numbers (creators
+    // Build -215: the four counted claims now carry their
+    // register count (1,200 each = 4,800) in the total:
+    // 24,400 full-form + 4,800 claims = 29,200.
     // signed up = approved + pending; total followers as
     // reported by creators) instead of the raw record count.
-    ["give me the platform numbers", ["Platform totals", "7 creators signed up (4 approved, 3 pending, 24,400 total followers as reported by creators; 3 finished profiles)", "2 businesses (0 active)"]],
+    ["give me the platform numbers", ["Platform totals", "7 creators signed up (4 approved, 3 pending, 29,200 total followers as reported by creators; 3 finished profiles)", "2 businesses (0 active)"]],
     ["how many creators are rejected", ["1 creator rejected, out of 8 in total"]],
   ]);
   // fragment follow-up: market re-scope of the previous question

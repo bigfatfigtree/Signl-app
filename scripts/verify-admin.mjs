@@ -98,7 +98,7 @@ server.stderr.on("data", (d) => process.stderr.write("[server] " + d));
 async function quickClaim(handle, market, extra = {}) {
   const c = client();
   const reg = await c("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: `${handle}@fixtures.dev`, password: "<MASKED_SECRET_002>",
     market, handle, ...AGREE, ...extra,
   });
@@ -244,13 +244,13 @@ try {
   //     cannot), admin only.
   const urlForm = client();
   const urlFormReg = await urlForm("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email: "admurlform@fixtures.dev", password: "<MASKED_SECRET_002>",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "admurlform@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: "https://www.instagram.com/admurlform/", ...AGREE,
   });
   check("quick claim accepts a pasted Instagram profile link (201)", urlFormReg.status === 201, `${urlFormReg.status} ${JSON.stringify(urlFormReg.data).slice(0, 160)}`);
   const tokForm = client();
   const tokFormReg = await tokForm("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email: "admtokform@fixtures.dev", password: "<MASKED_SECRET_002>",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "admtokform@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: "https://www.tiktok.com/@admtokform", primaryPlatform: "tiktok", ...AGREE,
   });
   check("quick claim accepts a pasted TikTok profile link (201)", tokFormReg.status === 201, `${tokFormReg.status} ${JSON.stringify(tokFormReg.data).slice(0, 160)}`);
@@ -267,12 +267,12 @@ try {
 
   const noHandle = client();
   const noHandleRes = await noHandle("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email: "admnohandle@fixtures.dev", password: "<MASKED_SECRET_002>",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "admnohandle@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: "", ...AGREE,
   });
   check("quick claim with an empty handle is refused (400, handle required)", noHandleRes.status === 400 && /handle is required/.test(noHandleRes.data.error || ""), `${noHandleRes.status} ${JSON.stringify(noHandleRes.data).slice(0, 160)}`);
   const atOnlyRes = await noHandle("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email: "admatonly@fixtures.dev", password: "<MASKED_SECRET_002>",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "admatonly@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: " @ ", ...AGREE,
   });
   check("quick claim with only an @ is refused (400)", atOnlyRes.status === 400, `${atOnlyRes.status} ${JSON.stringify(atOnlyRes.data).slice(0, 160)}`);

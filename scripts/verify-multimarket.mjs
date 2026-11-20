@@ -352,7 +352,7 @@ try {
   const stub = client();
   const stubReg = await stub("POST", "/api/auth/register", {
     role: "creator",
-    quickClaim: true,
+    quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "stub@fixtures.dev",
     password: "stub-pass-1234",
     market: "Nashville",

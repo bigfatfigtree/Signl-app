@@ -198,7 +198,7 @@ try {
   const stub = makeClient();
   const regStub = await stub("POST", "/api/auth/register", {
     role: "creator", name: "Stub NinetyTwo", email: "b92stub@fixtures.dev", password: "<MASKED_SECRET_002>",
-    market: "Nashville", city: "Nashville", handle: "b92stub", quickClaim: true, ...AGREE,
+    market: "Nashville", city: "Nashville", handle: "b92stub", quickClaim: true, followerCount: 1200, localAudiencePct: 45, ...AGREE,
   });
   await admin("POST", "/api/admin/review", { userId: regStub.data.user.id, decision: "approve" });
   const stubPage = await makeClient()("GET", "/c/b92stub");

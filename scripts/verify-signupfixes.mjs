@@ -120,7 +120,7 @@ try {
   };
   const quickClaim = async (email, handle, market) => {
     const c = client();
-    const r = await c("POST", "/api/auth/register", { role: "creator", quickClaim: true, email, password: "claim-" + "pass-1234", market, handle, ...AGREE });
+    const r = await c("POST", "/api/auth/register", { role: "creator", quickClaim: true, email, password: "claim-" + "pass-1234", market, handle, audienceStack: { instagram: 900 }, followerCount: 900, localAudiencePct: 40, ...AGREE });
     return { c, r };
   };
 

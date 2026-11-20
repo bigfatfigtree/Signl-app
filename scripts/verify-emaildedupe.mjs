@@ -115,7 +115,7 @@ check("admin login succeeds", login.status === 200, `got ${login.status}`);
 console.log("== (i) claim + finish within minutes: exactly one email ==");
 const dem = makeClient();
 const claim = await dem("POST", "/api/auth/register", {
-  role: "creator", quickClaim: true, email: "demecia@fixtures.dev", password: "claim-pass-1234",
+  role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "demecia@fixtures.dev", password: "claim-pass-1234",
   market: "Not listed yet", customCity: "Columbus", customCountry: "United States", handle: "demecia", ...AGREE,
 });
 check("quick claim registers (201)", claim.status === 201, JSON.stringify(claim.data).slice(0, 200));

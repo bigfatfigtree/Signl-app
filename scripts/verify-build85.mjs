@@ -61,7 +61,7 @@ check("lanes are NOT controls (no radios, no lane bullets, no lane select)", !sl
 check("unresolved path: one handle field + a gentle prompt, no error wall", slice.includes('id="c85-handle"') && slice.includes("Add your handle so businesses can find your page.") && !slice.includes("could not find") && !slice.includes("No account found"));
 check("facts screen: per-platform rows for all 7 stack platforms", ["instagram", "tiktok", "youtube", "facebook", "x", "linkedin", "snapchat"].every((p) => slice.includes(`{ id: "${p}"`)) && slice.includes("CLAIM_STACK_PLATFORMS"));
 check("facts screen: live counted line + the plain under-500 line", slice.includes("Counted so far:") && slice.includes(MIN_LINE));
-check("facts screen: the local % is one slider", slice.includes('type="range"') && slice.includes('id="c85-localpct"'));
+check("facts screen: the local % is one number input with no pre-filled value (Build -215: the slider + its 50 default are gone)", slice.includes('type="number" id="c85-localpct"') && !slice.includes('type="range" class="c85-range" id="c85-localpct"'));
 check("account screen: Finish button + the founding-roster wording", slice.includes("Finish — join the founding roster"));
 check("done state: roster headline + the two-day line + the optional button", slice.includes("You're on the roster,") && slice.includes("We review every creator personally. You'll hear within two business days.") && slice.includes("Add your rates and best work"));
 check("submit: same register payload discipline (quickClaim + attribution)", slice.includes("quickClaim: true") && slice.includes("signupSource: storedSrc() || undefined") && slice.includes("referredBy: storedRef() || undefined") && slice.includes("goldenTicket: storedTicket() || undefined") && slice.includes('lang: state.lang === "es" ? "es" : undefined'));
@@ -115,7 +115,7 @@ async function claimRegister(email, handle, extra = {}) {
   const c = new Client(BASE);
   const r = await c.req("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email, password: "<redacted>", market: "Nashville",
-    handle, primaryPlatform: "instagram", agreedTerms: true, ...extra,
+    handle, primaryPlatform: "instagram", agreedTerms: true, audienceStack: { instagram: 1500 }, followerCount: 1500, localAudiencePct: 45, ...extra,
   });
   return { c, r };
 }

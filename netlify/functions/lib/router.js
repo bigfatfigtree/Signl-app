@@ -2658,6 +2658,7 @@ const { videoEmbedFor } = require("./video-embed");
 const intentLib = require("./intent");
 const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, declaredOffMarketsFor, gateMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT, verifiedInMarket, computeAudienceVerification, canonicalMarketName, COUNT_PLATFORM_KEYS, PLATFORM_LABELS, MATCHED_LOCAL_PLATFORMS, normalizePlatformLocalPct, normalizePlatformLinks, localRateModel, geoBreakdownState } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
+const countLookup = require("./count-lookup");
 const recruiters = require("./recruiters");
 const bizdev = require("./bizdev");
 // National business accounts (Build -178): the module owns the
@@ -17298,6 +17299,37 @@ async function handleRegister(event, linkCtx) {
     if (!claimHandle) return err(400, handleUnreadableMessage(b.handle, primaryPlatformLabel(claimPlatform)));
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from Magpie.");
   }
+  // Build -215: the claim's facts ride the register call. Before
+  // this build the quick-claim branch hardcoded every fact to
+  // empty and a follow-up PATCH carried them; a failed PATCH
+  // (its catch was empty on the client) left the record at 0
+  // forever. Now the register validates and writes the facts on
+  // FIRST CREATE, mirroring the full form below: the primary
+  // platform's count is required, the local audience % is
+  // required, and both carry the full form's wording. The
+  // computed facts are read by the quick-claim record builder.
+  let quickFacts = null;
+  if (quickClaim) {
+    const stack = normalizeAudienceStack(b.audienceStack);
+    if (!stack[claimPlatform]) {
+      if (b.followerCount === undefined || b.followerCount === null || b.followerCount === "") return err(400, "Your follower count is required");
+      const followers = Math.max(0, parseInt(b.followerCount, 10) || 0);
+      if (followers > 0) stack[claimPlatform] = followers;
+    }
+    if (!stack[claimPlatform]) return err(400, "Your follower count is required");
+    if (b.localAudiencePct === undefined || b.localAudiencePct === null || b.localAudiencePct === "") {
+      return err(400, "Your self-reported local audience percentage is required. It is always labeled Self-reported on your profile.");
+    }
+    const localPct = Math.max(0, Math.min(100, Number(b.localAudiencePct)));
+    if (Number.isNaN(localPct)) return err(400, "Local audience percentage must be a number from 0 to 100");
+    quickFacts = {
+      stack,
+      followerCount: stack.instagram || 0,
+      totalAudience: Object.values(stack).reduce((s, n) => s + n, 0),
+      localPct,
+      categories: cleanStringList(b.categories, CREATOR_CATEGORIES, CREATOR_CATEGORIES.length),
+    };
+  }
   // Business registration is founding-list intake (Jeff restored
   // the standing launch shape, 2026-10-20): a business registers
   // with the full form, is reviewed like any application, and
@@ -17558,12 +17590,14 @@ async function handleRegister(event, linkCtx) {
     // (Build -60). A client that still volunteers the three
     // confirmations at sign-up (an older build, a claim link in
     // the wild) has them recorded as given — they are accepted,
-    // never required. The gate fields (home city, audience counts,
-    // categories, local audience %) stay empty on purpose, so
-    // profileComplete computes false until the creator finishes
-    // step two after approval. City for a listed market is a
-    // completion step; an unlisted claim already carries its
-    // typed city on the user record from the market block above.
+    // never required. Build -215: the gate fields the claim
+    // form collects (audience counts, categories, local
+    // audience %) are validated above and written here on first
+    // create; the home city rides user.city from the market
+    // block above (the typed city on the unlisted path). A
+    // claim that carries every gate field computes
+    // profileComplete true from birth; one missing a city or
+    // categories still finishes from the dashboard checklist.
     user.creator = {
       handle: claimHandle,
       primaryPlatform: claimPlatform,
@@ -17576,14 +17610,17 @@ async function handleRegister(event, linkCtx) {
       xHandle: claimPlatform === "x" ? claimHandle : null,
       xUrl: claimPlatform === "x" ? `https://x.com/${claimHandle}` : null,
       linkedinUrl: claimPlatform === "linkedin" ? `https://www.linkedin.com/in/${claimHandle}` : null,
-      followerCount: 0,
-      audienceStack: {},
-      totalAudience: 0,
+      // Build -215: the facts the creator entered on the claim
+      // land HERE, on first create (validated above) — never
+      // only in a follow-up PATCH that might not fire.
+      followerCount: quickFacts.followerCount,
+      audienceStack: quickFacts.stack,
+      totalAudience: quickFacts.totalAudience,
       avgViews: 0,
-      tierBand: tierForFollowers(0),
-      suggestedTier: tierForFollowers(0),
-      computedTier: tierForFollowers(0),
-      categories: [],
+      tierBand: tierForFollowers(quickFacts.totalAudience),
+      suggestedTier: tierForFollowers(quickFacts.totalAudience),
+      computedTier: tierForFollowers(quickFacts.totalAudience),
+      categories: quickFacts.categories,
       compCategories: [],
       openToPaidCampaigns: false,
       compOpen: true,
@@ -17605,9 +17642,9 @@ async function handleRegister(event, linkCtx) {
       // Profile. Empty at claim; the home share is
       // localAudiencePct below, never an entry here.
       audienceMarkets: [],
-      localAudiencePct: null,
-      localAudienceSource: null,
-      localAudienceAsOf: null,
+      localAudiencePct: quickFacts.localPct,
+      localAudienceSource: "Self-reported",
+      localAudienceAsOf: ts.slice(0, 10),
       agreedHonestPosts: b.agreedHonestPosts === true,
       agreedFtcDisclosure: b.agreedFtcDisclosure === true,
       agreedPostCompliance: b.agreedPostCompliance === true,
@@ -18120,6 +18157,7 @@ async function handleAddSide(event, ctx) {
 }
 
 const igPrefillHits = new Map();
+const countLookupHits = new Map();
 const loginAttempts = new Map();
 // Build -186: the dual-role link path in handleRegister checks
 // a submitted password against an existing account — the same
@@ -19281,6 +19319,21 @@ const FOUNDING_APPLICATION_ORIGINS = ["https://magpielocal.com", "https://www.ma
 function foundingApplicationCors(event) {
   const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || "";
   const allow = FOUNDING_APPLICATION_ORIGINS.indexOf(origin) > -1 ? origin : FOUNDING_APPLICATION_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    Vary: "Origin",
+  };
+}
+
+// Count lookup CORS (Build -215): the marketing site's hero card
+// (magpielocal.com) calls /api/count-lookup cross-origin. This
+// origin is allowed on the count-lookup route ONLY; no other
+// route gains CORS from this helper.
+function countLookupCors(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || "";
+  const allow = origin === "https://magpielocal.com" ? origin : "https://magpielocal.com";
   return {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -25816,6 +25869,37 @@ async function route(event) {
     if (!res.ok) return json(200, { draft: null, reason: res.reason });
     const draft = side === "business" ? igPrefill.businessPrefill(res.profile) : igPrefill.creatorPrefill(res.profile);
     return json(200, { draft, cached: !!res.cached });
+  }
+
+  // Count lookup (Build -215): POST /api/count-lookup
+  // { platform, handle } -> always HTTP 200 { count, platform,
+  // handle, reason }. Public and pre-auth like /ig-prefill: the
+  // claim flow asks before the creator has an account, and the
+  // marketing site's hero card asks cross-origin (CORS for
+  // https://magpielocal.com on THIS route only, preflight
+  // included). Per-IP rate limit: 10 lookups per hour, in memory.
+  // Every failure is a soft reason in the body, never an error
+  // status: a lookup can never block or break a claim.
+  if (seg[0] === "count-lookup" && seg.length === 1) {
+    const cors = countLookupCors(event);
+    if (method === "OPTIONS") {
+      return { statusCode: 204, headers: cors, body: "" };
+    }
+    if (method === "POST") {
+      const b = parseBody(event);
+      const ip = (event.headers["x-nf-client-connection-ip"] || event.headers["x-forwarded-for"] || "unknown").toString();
+      const nowMs = Date.now();
+      const hits = (countLookupHits.get(ip) || []).filter((t) => nowMs - t < 60 * 60 * 1000);
+      if (hits.length >= 10) {
+        const p = countLookup.normalizePlatform(typeof b.platform === "string" ? b.platform : "");
+        const h = countLookup.normalizeHandle(typeof b.handle === "string" ? b.handle : "");
+        return json(200, { count: null, platform: p || "", handle: h || "", reason: "blocked" }, cors);
+      }
+      hits.push(nowMs);
+      countLookupHits.set(ip, hits);
+      const res = await countLookup.lookupCount(b.platform, b.handle);
+      return json(200, { count: res.count, platform: res.platform, handle: res.handle, reason: res.reason, cached: !!res.cached }, cors);
+    }
   }
 
   // The Neighbor Number claim hook (Build -156): a creator who

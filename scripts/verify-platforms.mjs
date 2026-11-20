@@ -125,7 +125,7 @@ try {
   const tt = client();
   const ttClaim = await tt("POST", "/api/auth/register", {
     role: "creator",
-    quickClaim: true,
+    quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "ttclaim@fixtures.dev",
     password: "claim-pass-1234",
     market: "Hampton Roads",
@@ -144,7 +144,7 @@ try {
   const ig = client();
   const igClaim = await ig("POST", "/api/auth/register", {
     role: "creator",
-    quickClaim: true,
+    quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "igclaim@fixtures.dev",
     password: "claim-pass-1234",
     market: "Hampton Roads",
@@ -157,7 +157,7 @@ try {
   // ---------- bogus platform value falls back to Instagram ----------
   const bogus = await client()("POST", "/api/auth/register", {
     role: "creator",
-    quickClaim: true,
+    quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "bogus@fixtures.dev",
     password: "claim-pass-1234",
     market: "Hampton Roads",

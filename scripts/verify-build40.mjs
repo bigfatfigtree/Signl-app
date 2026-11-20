@@ -70,7 +70,7 @@ async function makeCreator(admin, { name, email, handle, market, approve = true 
 async function makeIncompleteCreator(admin, { email, handle, market }) {
   const c = client();
   const reg = await c("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email, password: "claim-pass-1234", market, handle, ...AGREE,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email, password: "claim-pass-1234", market, handle, ...AGREE,
   });
   if (reg.status !== 201) throw new Error(`quick claim ${handle} failed: ${JSON.stringify(reg.data)}`);
   await admin("POST", "/api/admin/review", { userId: reg.data.user.id, decision: "approve" });

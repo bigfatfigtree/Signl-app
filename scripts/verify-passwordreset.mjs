@@ -114,7 +114,7 @@ try {
   // ---------- a creator to reset ----------
   const creator = client();
   const reg = await creator("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email: "pwreset@fixtures.dev", password: "originalpass1",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "pwreset@fixtures.dev", password: "originalpass1",
     market: "Hampton Roads", handle: "pwreset757", primaryPlatform: "instagram",
     agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
   });
@@ -203,7 +203,7 @@ try {
 
   // Registration now points an existing email at the recovery route.
   const dupe = await client()("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true, email: "pwreset@fixtures.dev", password: "whateverpass1",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "pwreset@fixtures.dev", password: "whateverpass1",
     market: "Hampton Roads", handle: "another757", primaryPlatform: "instagram",
     agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
   });

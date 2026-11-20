@@ -255,7 +255,7 @@ try {
   const stub = makeClient();
   const regStub = await stub("POST", "/api/auth/register", {
     role: "creator", name: "Stub Sixtysix", email: "stub66@fixtures.dev", password: "<MASKED_SECRET_002>",
-    market: "Nashville", city: "Nashville", handle: "stub66", quickClaim: true, ...AGREE,
+    market: "Nashville", city: "Nashville", handle: "stub66", quickClaim: true, followerCount: 1200, localAudiencePct: 45, ...AGREE,
   });
   await admin("POST", "/api/admin/review", { userId: regStub.data.user.id, decision: "approve" });
   const stubPage = await anon("GET", "/c/stub66");

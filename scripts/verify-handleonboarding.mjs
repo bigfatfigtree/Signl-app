@@ -196,7 +196,7 @@ try {
   // that starts with a handle and nothing else filled.
   const crReg = await crClient("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: `${crHandle}@fixtures.dev`, password: "password123",
-    market: "Virginia Beach", handle: crHandle, primaryPlatform: "instagram",
+    market: "Virginia Beach", handle: crHandle, primaryPlatform: "instagram", audienceStack: { instagram: 100 }, followerCount: 100, localAudiencePct: 42,
     agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
   });
   if (crReg.status !== 201) throw new Error(`creator register failed: ${crReg.status} ${JSON.stringify(crReg.data)}`);
@@ -205,8 +205,13 @@ try {
   check("creator confirm save: name and the Instagram count land in the audience stack",
     crSaved.status === 200 && crSaved.data.user.name === "Signl" && cc && cc.followerCount === 993 && (cc.audienceStack || {}).instagram === 993,
     JSON.stringify(crSaved.data).slice(0, 300));
-  check("creator confirm save: the never-prefill fields stay exactly as they were (unset)",
-    cc && (cc.localAudiencePct === null || cc.localAudiencePct === undefined) && (cc.spanishAudiencePct === null || cc.spanishAudiencePct === undefined),
+  // Build -215: a claim now registers with the creator's own
+  // reported count + local % (they are required at register).
+  // The guardrail's spirit is unchanged: the ig-prefill draft
+  // never carries local %, so the confirm save must not move
+  // the value she reported herself (42), and Spanish stays unset.
+  check("creator confirm save: the never-prefill fields stay exactly as the creator left them (local % still her own 42, Spanish unset)",
+    cc && cc.localAudiencePct === 42 && (cc.spanishAudiencePct === null || cc.spanishAudiencePct === undefined),
     JSON.stringify(cc && { local: cc.localAudiencePct, spanish: cc.spanishAudiencePct }));
 
   // ---------- rate limit (fresh process: the counter is in-memory) ----------

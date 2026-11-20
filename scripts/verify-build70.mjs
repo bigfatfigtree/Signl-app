@@ -109,7 +109,7 @@ class DirectClient {
 
 async function registerCreator(client, { handle, market, email, signupSource }) {
   return client.req("POST", "/auth/register", {
-    role: "creator", quickClaim: true, email, password: "build-70-creator-password",
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email, password: "build-70-creator-password",
     market, handle, primaryPlatform: "instagram", agreedTerms: true,
     ...(signupSource ? { signupSource } : {}),
   });
@@ -366,7 +366,7 @@ async function phaseB() {
     if (invite.status !== 200) { cageBlocked("HTTP invite (store writes over HTTP)", `status=${invite.status} ${serverErr.slice(-160)}`); return; }
     check("HTTP: admin invites a Dubai recruiter end to end", invite.data.recruiter && invite.data.recruiter.marketName === "Dubai");
     const code = invite.data.recruiter.code;
-    const reg = await req("POST", "/auth/register", { role: "creator", quickClaim: true, email: "httpcase70@fixtures.dev", password: "build-70-creator-password", market: "Dubai", handle: "httpcase70", primaryPlatform: "instagram", agreedTerms: true, signupSource: "recruiter-" + code });
+    const reg = await req("POST", "/auth/register", { role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "httpcase70@fixtures.dev", password: "build-70-creator-password", market: "Dubai", handle: "httpcase70", primaryPlatform: "instagram", agreedTerms: true, signupSource: "recruiter-" + code });
     check("HTTP: creator registers through the recruiter link", reg.status === 201, `status=${reg.status}`);
     // The registration response sets the CREATOR's session cookie,
     // which clobbers this client's single cookie jar; sign back in

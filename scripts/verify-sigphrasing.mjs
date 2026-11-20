@@ -60,7 +60,21 @@ const TS = "2026-11-05T12:00:00.000Z";
     creator: null, business: null,
     partner: { name: "Phrase Media", type: "media", contactName: "Pat Partner", code: "phrase-partner", markets: ["Richmond"], sharePct: 50, status: "active", agreementStatus: "unsigned", demo: false, createdAt: TS },
   };
-  fs.writeFileSync(DB, JSON.stringify({ [`user:${partner.id}`]: partner, [`email:${partner.email}`]: { userId: partner.id } }));
+  // Creator B (Build -215): a LEGACY bare claim — the record
+  // shape the old claim created (no counts, no local %). The
+  // register endpoint can no longer create one (facts are
+  // required at register now), so B is seeded directly, the
+  // same way the partner above is. Sig's no-data answers are
+  // still the behavior under test for records like this.
+  const bHash = auth.hashPassword("creator-pass-123");
+  const bare = {
+    id: "creator-bare-id", role: "creator", email: "bare@fixtures.dev", name: "barecr",
+    passwordSalt: bHash.salt, passwordHash: bHash.hash, status: "pending", tester: false, market: "Richmond", city: "",
+    createdAt: TS, updatedAt: TS, reviewedAt: null, termsVersion: "2026-10-19", termsAcceptedAt: TS,
+    creator: { handle: "barecr", primaryPlatform: "instagram", followerCount: 0, audienceStack: {}, totalAudience: 0, categories: [], compCategories: [], localAudiencePct: null, localAudienceSource: null, localAudienceAsOf: null, tierBand: "Neighbors", suggestedTier: "Neighbors", computedTier: "Neighbors", profileComplete: false, signupPath: "quick_claim", publicPage: true, compOpen: true, bestWork: [], bio: "", hasPhoto: false },
+    business: null,
+  };
+  fs.writeFileSync(DB, JSON.stringify({ [`user:${partner.id}`]: partner, [`email:${partner.email}`]: { userId: partner.id }, [`user:${bare.id}`]: bare, [`email:${bare.email}`]: { userId: bare.id } }));
 }
 
 // No AI provider in this environment on purpose: the spawn env
@@ -81,8 +95,8 @@ try {
   check("creator A registered with audience stack", rA.status === 201 || rA.status === 200, JSON.stringify(rA.data).slice(0, 160));
   // Creator B: no audience data at all.
   const crB = client();
-  const rB = await crB("POST", "/api/auth/register", { role: "creator", quickClaim: true, handle: "barecr", market: "Richmond", email: "bare@fixtures.dev", password: "creator-pass-123", ...AGREE });
-  check("creator B registered with no audience data", rB.status === 201 || rB.status === 200, JSON.stringify(rB.data).slice(0, 160));
+  const rB = await crB("POST", "/api/auth/login", { email: "bare@fixtures.dev", password: "creator-pass-123" });
+  check("creator B (seeded legacy bare claim) logs in with no audience data", rB.status === 200, JSON.stringify(rB.data).slice(0, 160));
 
   const biz = client();
   const rBiz = await biz("POST", "/api/auth/register", { role: "business", name: "Phrase Owner", businessName: "Phrase Cafe", email: "phrasebiz@fixtures.dev", password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Coffee & Bakery", planId: "self-service", agreedTerms: true });

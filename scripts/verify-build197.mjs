@@ -132,7 +132,7 @@ try {
   // ---------- Step 2: a UTM-tagged claim stores everything ----------
   const claimer = client();
   const claim = await claimer("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "attrmeta@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: "attrmeta",
     signupSource: "watchlist",
@@ -163,7 +163,7 @@ try {
   // ---------- Step 2: junk UTM falls back to the signup source ----------
   const junk = client();
   const junkReg = await junk("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "attrjunk@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Raleigh", handle: "attrjunk",
     signupSource: "learn", utmSource: "!! $$ %%",
@@ -174,7 +174,7 @@ try {
   // ---------- Step 2: campaign cap + a dotless referrer host ----------
   const cap = client();
   const capReg = await cap("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "attrcap@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Raleigh", handle: "attrcap",
     utmSource: "tiktok", utmCampaign: "x".repeat(80), referrerHost: "localhost",
@@ -186,7 +186,7 @@ try {
   // ---------- Step 2: no attribution at all ----------
   const plain = client();
   const plainReg = await plain("POST", "/api/auth/register", {
-    role: "creator", quickClaim: true,
+    role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45,
     email: "attrplain@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: "attrplain",
     ...AGREE,

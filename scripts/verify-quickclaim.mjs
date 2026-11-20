@@ -138,6 +138,9 @@ try {
   check("computed completion for a bare claim: incomplete, all four gate items missing", completionOfClaim.complete === false && JSON.stringify(completionOfClaim.missing) === JSON.stringify(["city", "audience", "categories", "local"]), JSON.stringify(completionOfClaim.missing));
 
   // ---------- step one: the quick claim ----------
+  // Build -215: the claim's facts ride the register call (this
+  // claimer sends counts + local % but no city and no
+  // categories, so the profile still completes in step two).
   const claimer = client();
   const claim = await claimer("POST", "/api/auth/register", {
     role: "creator",
@@ -146,6 +149,9 @@ try {
     password: "claim-pass-1234",
     market: "Hampton Roads",
     handle: "quickclaim757",
+    audienceStack: { instagram: 3000, tiktok: 1200 },
+    followerCount: 3000,
+    localAudiencePct: 55,
     referredBy: "foundingfriend",
     ...AGREE,
   });
@@ -153,9 +159,10 @@ try {
   const claimerId = claim.data.user && claim.data.user.id;
   check("quick claim starts pending", claim.data.user && claim.data.user.status === "pending");
   check("quick claim is flagged profileComplete=false, signupPath quick_claim", !!claim.data.user && claim.data.user.creator.profileComplete === false && claim.data.user.creator.signupPath === "quick_claim", JSON.stringify(claim.data.user && claim.data.user.creator));
+  check("Build -215: the entered facts are on the record at first write, no PATCH involved (stack, total, followerCount, local % + Self-reported stamp)", !!claim.data.user && claim.data.user.creator.audienceStack.instagram === 3000 && claim.data.user.creator.audienceStack.tiktok === 1200 && claim.data.user.creator.totalAudience === 4200 && claim.data.user.creator.followerCount === 3000 && claim.data.user.creator.localAudiencePct === 55 && claim.data.user.creator.localAudienceSource === "Self-reported" && !!claim.data.user.creator.localAudienceAsOf, JSON.stringify(claim.data.user && claim.data.user.creator));
   check("quick claim name falls back to the handle", claim.data.user && claim.data.user.name === "quickclaim757", claim.data.user && claim.data.user.name);
   check("quick claim referral credit persisted (claim links with ?ref= keep working)", claim.data.user && claim.data.user.referredBy === "foundingfriend");
-  check("quick claim payload carries profileCompletion (incomplete, 0 of 4 essentials)", !!claim.data.user.profileCompletion && claim.data.user.profileCompletion.complete === false && claim.data.user.profileCompletion.requiredDone === 0 && claim.data.user.profileCompletion.requiredTotal === 4, JSON.stringify(claim.data.user.profileCompletion));
+  check("quick claim payload carries profileCompletion (incomplete, 2 of 4 essentials: counts + local % landed, city + categories still to do)", !!claim.data.user.profileCompletion && claim.data.user.profileCompletion.complete === false && claim.data.user.profileCompletion.requiredDone === 2 && claim.data.user.profileCompletion.requiredTotal === 4 && JSON.stringify(claim.data.user.profileCompletion.missing) === JSON.stringify(["city", "categories"]), JSON.stringify(claim.data.user.profileCompletion));
   check("quick claim turns the booking page on (publicPage stamped at claim, Build -61)", claim.data.user.creator.publicPage === true, JSON.stringify(claim.data.user.creator.publicPage));
   const pubAtClaim = await client()("GET", "/api/c/quickclaim757");
   check("the claim-tier page is live from the moment of the claim: 200, claim facts + rate card only, no audience/proof fields", pubAtClaim.status === 200 && pubAtClaim.data.profile && pubAtClaim.data.profile.pageState === "claimed" && pubAtClaim.data.profile.handle === "quickclaim757" && pubAtClaim.data.profile.market === claim.data.user.market && pubAtClaim.data.profile.paidRate === null && pubAtClaim.data.profile.localAudiencePct === undefined && pubAtClaim.data.profile.momentumPoints === undefined && pubAtClaim.data.profile.proof === undefined, JSON.stringify(pubAtClaim.data && pubAtClaim.data.profile));
@@ -166,6 +173,13 @@ try {
   check("quick claim without the terms agreement is refused (400)", noTerms.status === 400, String(noTerms.status));
   const bizClaim = await client()("POST", "/api/auth/register", { role: "business", quickClaim: true, email: "bizclaim@fixtures.dev", password: "claim-pass-1234", market: "Hampton Roads", handle: "bizclaim", ...AGREE });
   check("quickClaim does not bypass the business form (400 without business fields)", bizClaim.status === 400, String(bizClaim.status));
+  // Build -215: the register itself refuses a claim with no
+  // primary count or no local % (the full form's wording) —
+  // the record-at-0 defect can no longer be created.
+  const noCount = await client()("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "nocount@fixtures.dev", password: "claim-pass-1234", market: "Hampton Roads", handle: "nocount757", localAudiencePct: 40, ...AGREE });
+  check("Build -215: quick claim without a follower count is refused (400, full-form wording)", noCount.status === 400 && noCount.data.error === "Your follower count is required", JSON.stringify(noCount.data));
+  const noLocal = await client()("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "nolocal@fixtures.dev", password: "claim-pass-1234", market: "Hampton Roads", handle: "nolocal757", audienceStack: { instagram: 900 }, followerCount: 900, ...AGREE });
+  check("Build -215: quick claim without a local % is refused (400, full-form wording)", noLocal.status === 400 && /self-reported local audience percentage is required/.test(noLocal.data.error || ""), JSON.stringify(noLocal.data));
 
   // The old full form, untouched: lands complete.
   const full = client();
@@ -196,9 +210,12 @@ try {
     customCity: "Tulsa",
     customCountry: "United States",
     handle: "tulsaclaims",
+    audienceStack: { instagram: 1500 },
+    followerCount: 1500,
+    localAudiencePct: 30,
     ...AGREE,
   });
-  check("unlisted quick claim registers with its typed city and stays incomplete (city not among the missing)", unlReg.status === 201 && unlReg.data.user.city === "Tulsa" && unlReg.data.user.creator.profileComplete === false && !unlReg.data.user.profileCompletion.missing.includes("city"), JSON.stringify(unlReg.data.user && unlReg.data.user.profileCompletion));
+  check("unlisted quick claim registers with its typed city and stays incomplete (only categories missing: typed city, counts and local % all landed at register)", unlReg.status === 201 && unlReg.data.user.city === "Tulsa" && unlReg.data.user.creator.profileComplete === false && JSON.stringify(unlReg.data.user.profileCompletion.missing) === JSON.stringify(["categories"]), JSON.stringify(unlReg.data.user && unlReg.data.user.profileCompletion));
 
   // ---------- admin approval ----------
   const admin = client();
@@ -262,7 +279,7 @@ try {
 
   // ---------- step two: finish the profile ----------
   const partial = await claimer("PATCH", "/api/me/profile", { city: "Norfolk" });
-  check("partial completion moves progress (city done, still incomplete)", partial.status === 200 && partial.data.user.profileCompletion.complete === false && !partial.data.user.profileCompletion.missing.includes("city") && partial.data.user.profileCompletion.requiredDone === 1, JSON.stringify(partial.data.user && partial.data.user.profileCompletion));
+  check("partial completion moves progress (city done, still incomplete: 3 of 4 after Build -215 landed counts + local % at register)", partial.status === 200 && partial.data.user.profileCompletion.complete === false && !partial.data.user.profileCompletion.missing.includes("city") && partial.data.user.profileCompletion.requiredDone === 3, JSON.stringify(partial.data.user && partial.data.user.profileCompletion));
   const finish = await claimer("PATCH", "/api/me/profile", {
     name: "Quinn Claim",
     categories: ["Food & Drink"],
@@ -306,6 +323,9 @@ try {
     password: "claim-pass-1234",
     market: "Hampton Roads",
     handle: "latefinisher757",
+    audienceStack: { instagram: 800 },
+    followerCount: 800,
+    localAudiencePct: 45,
     ...AGREE,
   });
   const lateId = lateReg.data.user.id;
@@ -337,6 +357,15 @@ try {
   // escape hatch and the quickClaim payload are unchanged.
   check("client ships the quick claim form + the full-form escape hatch", appJs.includes("Claim my page") && appJs.includes("You're invited,") && appJs.includes("Prefer to complete everything now?") && appJs.includes("quickClaim: true"), "");
   check("client ships the completion checklist card + pending claimed copy", appJs.includes("profileCompletionHtml") && appJs.includes("Finish your profile to be launch-ready") && appJs.includes("Your spot is claimed") && appJs.includes("badge info\">Needed</span>"), "");
+  // Build -215 client pins: facts ride the register, no 50%
+  // default, the local % explainer, the Add-your-city label,
+  // the count lookup wiring, and the hero-card params.
+  check("Build -215: client sends the facts on the register call", appJs.includes("audienceStack: Object.keys(d.stack || {}).length ? d.stack : undefined") && appJs.includes("localAudiencePct: d.localTouched") && appJs.includes("categories: d.cats && d.cats.length ? d.cats.slice() : undefined"));
+  check("Build -215: no 50% local default anywhere in the claim draft", !appJs.includes("localPct: 50") && appJs.includes("localTouched: pf.localpct !== undefined"));
+  check("Build -215: local % explainer line ships in plain words", appJs.includes("This is the share of your followers who live in your city."));
+  check("Build -215: unlisted option reads Add your city", appJs.includes(">Add your city</option>") && !appJs.includes(">My city is not listed yet</option>"));
+  check("Build -215: count lookup wired into the claim facts step", appJs.includes('"/count-lookup"') && appJs.includes("We found this on your public profile:") && appJs.includes("counts automatically — enter yours from your profile."));
+  check("Build -215: hero-card params parsed (followers, localpct, city)", appJs.includes('params.get("followers")') && appJs.includes('params.get("localpct")') && appJs.includes('params.get("city")'));
 } finally {
   server.kill("SIGTERM");
   try { fs.unlinkSync(DB); } catch (e) { /* ignore */ }

@@ -149,7 +149,8 @@
     "verify-build209": "node scripts/verify-build209.mjs",
     "verify-build211": "node scripts/verify-build211.mjs",
     "verify-build212": "node scripts/verify-build212.mjs",
-    "verify-build214-features": "node scripts/verify-build214-features.mjs"
+    "verify-build214-features": "node scripts/verify-build214-features.mjs",
+    "verify-build215": "node scripts/verify-build215.mjs"
   },
   "type": "commonjs",
   "version": "1.0.0"
