@@ -1,17 +1,16 @@
 {
-  "generatedAt": "2026-11-20T06:43:51.672Z",
+  "generatedAt": "2026-11-20T19:01:09.806Z",
   "totals": {
     "searchPages": 24,
-    "sitePages": 414,
+    "sitePages": 439,
     "lastUpdated": "2026-11-19"
   },
-  "nextUp": "Spas and med spas x 7 core markets.",
+  "nextUp": "Boutiques x remaining 4 core markets (Miami, Atlanta, Toronto, Hampton Roads).",
   "queue": [
-    "Spas and med spas x 7 core markets.",
     "Boutiques x remaining 4 core markets (Miami, Atlanta, Toronto, Hampton Roads).",
-    "Bars and nightlife x 7.",
-    "Brand deals by platform x 3 (Instagram, TikTok, YouTube).",
-    "Magpie vs FoodFluence.",
+    "Bars and nightlife x 7 core markets.",
+    "Business-type Tranche 2 (25 types, Group F), built a few pages per run.",
+    "Storytime gap pages (Group: food and drink brands national, bar creator nights, fashion, hotels, in-person visits platform page, nano influencer marketing, micro influencer platform landing), in the order listed in the phrase map.",
     "Magpie vs TryNearby, on trigger only.",
     "Salons x Austin + tier-2.",
     "Case studies, still blocked on real usage, never invented."
@@ -212,7 +211,7 @@
     }
   ],
   "inventory": {
-    "total": 414,
+    "total": 439,
     "groups": [
       {
         "name": "Main pages",
@@ -225,6 +224,16 @@
           {
             "title": "Anyone Can Be a Creator: Get Comped or Paid With the Followers You Have",
             "url": "https://magpielocal.com/anyone-can-be-a-creator.html",
+            "date": null
+          },
+          {
+            "title": "Bakery Marketing Ideas With Local Creators",
+            "url": "https://magpielocal.com/for-bakery.html",
+            "date": null
+          },
+          {
+            "title": "Book Local Influencers for a Grand Opening",
+            "url": "https://magpielocal.com/for-grand-opening.html",
             "date": null
           },
           {
@@ -253,8 +262,18 @@
             "date": null
           },
           {
+            "title": "Find Micro Influencers for a Yoga Studio",
+            "url": "https://magpielocal.com/for-yoga-studio.html",
+            "date": null
+          },
+          {
             "title": "Food Creators: Get Comped at the Restaurants You Already Post",
             "url": "https://magpielocal.com/for-foodies.html",
+            "date": null
+          },
+          {
+            "title": "Food Truck Marketing Ideas With Local Creators",
+            "url": "https://magpielocal.com/for-food-truck.html",
             "date": null
           },
           {
@@ -273,8 +292,18 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for Barbershops",
+            "url": "https://magpielocal.com/for-barbershop.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Bars, Breweries and Nightlife",
             "url": "https://magpielocal.com/for-nightlife.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for BBQ Restaurants",
+            "url": "https://magpielocal.com/for-bbq.html",
             "date": null
           },
           {
@@ -283,8 +312,18 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for Brunch Restaurants",
+            "url": "https://magpielocal.com/for-brunch-spot.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Cafes, Bakeries and Coffee Shops",
             "url": "https://magpielocal.com/for-cafes.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Coffee Shops",
+            "url": "https://magpielocal.com/for-coffee-shop-roastery.html",
             "date": null
           },
           {
@@ -298,14 +337,44 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for Ice Cream Shops",
+            "url": "https://magpielocal.com/for-ice-cream-gelato.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Local Businesses and Restaurants",
             "url": "https://magpielocal.com/businesses.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Med Spas",
+            "url": "https://magpielocal.com/for-med-spa.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Mexican Restaurants",
+            "url": "https://magpielocal.com/for-tacos-mexican.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Pilates Studios",
+            "url": "https://magpielocal.com/for-pilates-studio.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Pizza Restaurants",
+            "url": "https://magpielocal.com/for-pizza.html",
             "date": null
           },
           {
             "title": "Influencer Marketing for Realtors and Brokerages",
             "url": "https://magpielocal.com/for-realtors.html",
             "date": "2026-10-22"
+          },
+          {
+            "title": "Influencer Marketing for Salons",
+            "url": "https://magpielocal.com/for-hair-salon.html",
+            "date": null
           },
           {
             "title": "Influencer Marketing for Salons, Barbershops and Beauty Studios",
@@ -315,6 +384,11 @@
           {
             "title": "Influencer Marketing for Spas, Massage Therapists and Wellness Studios",
             "url": "https://magpielocal.com/for-spas.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Sushi Restaurants",
+            "url": "https://magpielocal.com/for-sushi-omakase.html",
             "date": null
           },
           {
@@ -360,6 +434,11 @@
           {
             "title": "Mustard Alternative for Local Businesses: Magpie vs Mustard",
             "url": "https://magpielocal.com/mustard-alternative.html",
+            "date": null
+          },
+          {
+            "title": "Nail Salon Marketing with Local Influencers",
+            "url": "https://magpielocal.com/for-nail-salon.html",
             "date": null
           },
           {
@@ -1473,6 +1552,11 @@
             "date": "2026-11-16"
           },
           {
+            "title": "How to Follow Up on a Brand Deal Pitch Without Being Pushy",
+            "url": "https://magpielocal.com/learn/how-to-follow-up-on-a-brand-deal-pitch.html",
+            "date": "2026-11-20"
+          },
+          {
             "title": "How to Get Brand Deals in Atlanta",
             "url": "https://magpielocal.com/learn/how-to-get-brand-deals-in-atlanta.html",
             "date": "2026-11-15"
@@ -1828,6 +1912,11 @@
             "date": "2026-11-18"
           },
           {
+            "title": "Influencer Marketing for Atlanta Spas and Med Spas",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-atlanta-spas-and-med-spas.html",
+            "date": "2026-11-20"
+          },
+          {
             "title": "Influencer Marketing for Austin Restaurants",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-austin-restaurants.html",
             "date": "2026-11-15"
@@ -1856,6 +1945,11 @@
             "title": "Influencer Marketing for Hampton Roads Cafes and Coffee Shops",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-hampton-roads-cafes-and-coffee-shops.html",
             "date": "2026-11-19"
+          },
+          {
+            "title": "Influencer Marketing for Hampton Roads Spas and Med Spas",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-hampton-roads-spas-and-med-spas.html",
+            "date": "2026-11-20"
           },
           {
             "title": "Influencer Marketing for Houston Restaurants",
@@ -1893,6 +1987,11 @@
             "date": "2026-11-18"
           },
           {
+            "title": "Influencer Marketing for Los Angeles Spas and Med Spas",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-los-angeles-spas-and-med-spas.html",
+            "date": "2026-11-20"
+          },
+          {
             "title": "Influencer Marketing for Miami Cafes and Coffee Shops",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-miami-cafes-and-coffee-shops.html",
             "date": "2026-11-19"
@@ -1901,6 +2000,11 @@
             "title": "Influencer Marketing for Miami Salons and Barbershops",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-miami-salons-and-barbershops.html",
             "date": "2026-11-18"
+          },
+          {
+            "title": "Influencer Marketing for Miami Spas and Med Spas",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-miami-spas-and-med-spas.html",
+            "date": "2026-11-20"
           },
           {
             "title": "Influencer Marketing for Nashville Boutiques and Retail",
@@ -1921,6 +2025,11 @@
             "title": "Influencer Marketing for Nashville Salons and Barbershops",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-nashville-salons-and-barbershops.html",
             "date": "2026-11-18"
+          },
+          {
+            "title": "Influencer Marketing for Nashville Spas and Med Spas",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-nashville-spas-and-med-spas.html",
+            "date": "2026-11-20"
           },
           {
             "title": "Influencer Marketing for New Orleans Restaurants",
@@ -1946,6 +2055,11 @@
             "title": "Influencer Marketing for New York City Salons and Barbershops",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-new-york-city-salons-and-barbershops.html",
             "date": "2026-11-18"
+          },
+          {
+            "title": "Influencer Marketing for New York City Spas and Med Spas",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-new-york-city-spas-and-med-spas.html",
+            "date": "2026-11-20"
           },
           {
             "title": "Influencer Marketing for Norfolk Restaurants",
@@ -2021,6 +2135,11 @@
             "title": "Influencer Marketing for Toronto Salons and Barbershops",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-toronto-salons-and-barbershops.html",
             "date": "2026-11-18"
+          },
+          {
+            "title": "Influencer Marketing for Toronto Spas and Med Spas",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-toronto-spas-and-med-spas.html",
+            "date": "2026-11-20"
           },
           {
             "title": "Influencer Marketing for Virginia Beach Restaurants",
@@ -2295,6 +2414,11 @@
           {
             "title": "Privacy Policy",
             "url": "https://magpielocal.com/privacy.html",
+            "date": null
+          },
+          {
+            "title": "Support",
+            "url": "https://magpielocal.com/support.html",
             "date": null
           },
           {
