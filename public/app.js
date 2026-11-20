@@ -29847,11 +29847,15 @@ async function a138TeamTplSave(id) {
   return false;
 }
 
-// ---- SEO / AI search board (Build -216) ----
+// ---- SEO / AI search board (Build -216; inventory added -217) ----
 // Jeff's one place to see the search climb: every page built
 // for search with the date it was added and the phrase it
 // targets, what is next in the queue, and the latest tracking
-// facts. The payload comes from GET /admin/seo-board, which is
+// facts. Below the climb groups, Build -217 adds "Every page
+// on the site": the full sitemap inventory from the same
+// payload (d.inventory), grouped Main / City / Learn / Other,
+// each row a link with its date shown only when the page's own
+// file carries one. The payload comes from GET /admin/seo-board, which is
 // admin-gated on the server (the board data file lives in the
 // function bundle, never under public/). Rendered in the Learn
 // room's flat-row idiom: hairline rows, no cards.
@@ -29873,6 +29877,7 @@ async function loadAdminSeoBoard216() {
     <div class="a138-row"><div class="a138-row-main"><strong>Next in the queue</strong><span class="small muted">${esc(d.nextUp || "Nothing queued")}</span></div></div>
     ${tr.facts && tr.facts.length ? `<h3 class="a138-h">How we are doing${tr.checkDate ? ` — latest check ${esc(seoDate216(tr.checkDate))}` : ""}</h3>${tr.facts.map((f) => `<div class="a138-row"><div class="a138-row-main"><span>${esc(f)}</span></div></div>`).join("")}` : ""}
     ${(d.groups || []).map((g) => `<h3 class="a138-h">${esc(g.name)} (${(g.pages || []).length})</h3>${(g.pages || []).map((p) => `<div class="a138-row"><div class="a138-row-main"><strong><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a></strong><span class="small muted">Targets: ${esc(p.target || "")}</span></div><div class="a138-row-side"><span class="small muted">${esc(seoDate216(p.date))}</span></div></div>`).join("")}`).join("")}
+    ${d.inventory ? `<h3 class="a138-h">Every page on the site (${fmtNum(d.inventory.total || 0)})</h3>${(d.inventory.groups || []).map((g) => `<h3 class="a138-h">${esc(g.name)} (${(g.pages || []).length})</h3>${(g.pages || []).map((p) => `<div class="a138-row"><div class="a138-row-main"><strong><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a></strong></div>${p.date ? `<div class="a138-row-side"><span class="small muted">${esc(seoDate216(p.date))}</span></div>` : ""}</div>`).join("")}`).join("")}` : ""}
     ${d.degraded ? `<p class="small muted">The board data file could not be read just now; the counts above are empty rather than guessed.</p>` : ""}`;
   } catch (e) { a138Err(el, e); }
 }

@@ -27,6 +27,15 @@
 // with no establishable date is emitted with date: null and the
 // board shows no date for it rather than a guessed one.
 //
+// Build -217 adds a full site inventory alongside the climb
+// board: EVERY <loc> in the site repo's sitemap.xml, classified
+// into Main pages / City pages / Learn articles / Other, each row
+// carrying the page's own <title> (site-name suffix trimmed) and
+// a date ONLY when that page's own file carries a schema
+// datePublished (the sitemap <lastmod> is never used as a date).
+// The inventory total is asserted equal to totals.sitePages
+// before anything is written.
+//
 // Run:  node scripts/generate-seo-board.mjs
 // Then commit the regenerated seo-board.json with the app repo.
 // The daily climb re-runs this after each tranche ships (see the
@@ -161,6 +170,152 @@ need(/named in 2\.1% of answers[\s\S]{0,200}?Visibility 14\/100/,
 const checkDate = (trackingLog.match(/Scoreboard[\s\S]{0,400}?baseline (?:filled )?(\d{4}-\d{2}-\d{2})/) || [])[1]
   || (trackingLog.match(/baseline (\d{4}-\d{2}-\d{2})/) || [])[1] || null;
 
+// ---- Full site inventory (Build -217) ----
+// Every <loc> in sitemap.xml lands in exactly one inventory
+// group. Classification is deterministic, in this order:
+//   1. Path starts with /learn/            -> "Learn articles"
+//      (includes the /learn/ index itself).
+//   2. City pages: path under /markets/, OR the root slug is a
+//      known city slug, OR the slug is built from a known city
+//      slug (brand-deals-<city>, <city>-creators-to-watch,
+//      get-comped-<city>, get-paid-to-post-<city>, and the
+//      <city>-es Spanish variant, e.g. miami-es).
+//   3. "Main pages": the site's core non-city, non-learn pages —
+//      the homepage, the slugs in MAIN_SLUGS below, and every
+//      for-* category page. Judgment calls, stated plainly:
+//      musicians.html and race.html are primary program pages,
+//      so they are Main; brand-deals-small-following.html is a
+//      national creator landing (its remainder is not a city),
+//      so it is Main, not City.
+//   4. "Other": everything left — today that is exactly the
+//      legal pages (privacy, terms, creator-terms) and the two
+//      Spanish homepages (es, negocios).
+//
+// The known-city set is DERIVED from the sitemap itself, never
+// hardcoded: seed = the /markets/<city>.html slugs; expansion =
+// any pattern remainder (brand-deals-<x>, <x>-creators-to-watch,
+// get-comped-<x>, get-paid-to-post-<x>) that is itself a root
+// page in the sitemap. That expansion is what catches
+// virginia-beach, which has a root landing page and a
+// brand-deals- page but no /markets/ page. brand-deals-small-
+// following correctly derives nothing ("small-following" is not
+// a root page).
+const sitemapUrls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+const rootSlugOfUrl = (u) => {
+  const m = u.match(/^https:\/\/magpielocal\.com\/([^/]+)\.html$/);
+  return m ? m[1] : null;
+};
+const citySet = new Set();
+for (const u of sitemapUrls) {
+  const m = u.match(/\/markets\/([^/]+)\.html$/);
+  if (m) citySet.add(m[1]);
+}
+const CITY_PATTERNS = [
+  /^brand-deals-(.+)$/,
+  /^(.+)-creators-to-watch$/,
+  /^get-comped-(.+)$/,
+  /^get-paid-to-post-(.+)$/,
+];
+const patternRemainder = (slug) => {
+  for (const re of CITY_PATTERNS) {
+    const m = slug.match(re);
+    if (m) return m[1];
+  }
+  return null;
+};
+const rootSlugs = new Set(sitemapUrls.map(rootSlugOfUrl).filter(Boolean));
+for (const slug of rootSlugs) {
+  const rem = patternRemainder(slug);
+  if (rem && rootSlugs.has(rem)) citySet.add(rem);
+}
+const isCitySlug = (slug) => {
+  if (citySet.has(slug)) return true;
+  const rem = patternRemainder(slug);
+  if (rem && citySet.has(rem)) return true;
+  // Spanish variant of a city landing page (miami-es -> miami).
+  if (slug.endsWith("-es") && citySet.has(slug.slice(0, -3))) return true;
+  return false;
+};
+// The one explicit list in the inventory: the core non-city
+// pages that count as "Main". Everything else non-city,
+// non-learn that is not listed here (and is not a for-* page)
+// falls to "Other" by the rule above.
+const MAIN_SLUGS = new Set([
+  "creators", "businesses", "pricing", "why-local", "about",
+  "alternatives", "mustard-alternative", "storytime-alternative",
+  "cities", "get-comped", "creator-faq", "anyone-can-be-a-creator",
+  "free-meals-for-posting", "brand-deals-small-following",
+  "musicians", "race",
+]);
+const INV_GROUP_ORDER = ["Main pages", "City pages", "Learn articles", "Other"];
+const classifyUrl = (u) => {
+  const pathname = new URL(u).pathname;
+  if (pathname.startsWith("/learn/")) return "Learn articles";
+  if (pathname.startsWith("/markets/")) return "City pages";
+  const slug = pathname === "/" ? "" : pathname.slice(1).replace(/\.html$/, "");
+  if (slug && isCitySlug(slug)) return "City pages";
+  if (slug === "" || MAIN_SLUGS.has(slug) || slug.startsWith("for-")) return "Main pages";
+  return "Other";
+};
+const siteFileFor = (u) => {
+  const p = u.replace("https://magpielocal.com", "").replace(/^\//, "");
+  if (p === "") return path.join(SITE_ROOT, "index.html");
+  if (p.endsWith("/")) return path.join(SITE_ROOT, p, "index.html");
+  return path.join(SITE_ROOT, p);
+};
+const decodeEntities = (s) => s
+  .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
+  .replace(/&middot;/g, "·").replace(/&mdash;/g, "—").replace(/&ndash;/g, "–")
+  .replace(/&rsquo;/g, "’").replace(/&hellip;/g, "…")
+  .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+const cleanText = (raw) => decodeEntities(raw.replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
+const inventoryPages = { "Main pages": [], "City pages": [], "Learn articles": [], "Other": [] };
+const invWarnings = [];
+for (const u of sitemapUrls) {
+  const pathname = new URL(u).pathname;
+  const slug = pathname === "/" ? "" : pathname.replace(/^\//, "").replace(/\.html$/, "");
+  let title = "";
+  let date = null;
+  const file = siteFileFor(u);
+  if (fs.existsSync(file)) {
+    const html = read(file);
+    const tm = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (tm) {
+      // Trim the trailing site-name suffix the files use
+      // consistently (" | Magpie" on most pages, "| Magpie
+      // <City>" on /markets/ pages). A title whose last segment
+      // does not start with "Magpie" (e.g. about.html's
+      // "... | Named for the Bird That Never Leaves") is kept
+      // whole — it is the page's own title, not a suffix.
+      title = cleanText(tm[1]).replace(/\s*\|\s*Magpie(?:\s+[^|]+)?\s*$/, "").trim();
+    }
+    if (!title) {
+      const h1m = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/);
+      if (h1m) title = cleanText(h1m[1]);
+    }
+    const dm = html.match(/"datePublished"\s*:\s*"(\d{4}-\d{2}-\d{2})/);
+    date = dm ? dm[1] : null;
+  } else {
+    invWarnings.push(`${u}: site file missing (${path.relative(SITE_ROOT, file)}), slug title used`);
+  }
+  if (!title) title = slug || "index";
+  inventoryPages[classifyUrl(u)].push({ title, url: u, date });
+}
+for (const name of INV_GROUP_ORDER) {
+  inventoryPages[name].sort((a, b) => a.title.localeCompare(b.title, "en", { sensitivity: "base" }) || (a.url < b.url ? -1 : 1));
+}
+const inventory = {
+  total: sitemapUrls.length,
+  groups: INV_GROUP_ORDER.map((name) => ({ name, pages: inventoryPages[name] })),
+};
+const invSum = inventory.groups.reduce((n, g) => n + g.pages.length, 0);
+if (inventory.total !== sitePages || invSum !== inventory.total || new Set(sitemapUrls).size !== inventory.total) {
+  console.error(`generate-seo-board: REFUSING to write — inventory mismatch (total ${inventory.total}, group sum ${invSum}, sitePages ${sitePages}, unique URLs ${new Set(sitemapUrls).size})`);
+  process.exit(1);
+}
+
 const board = {
   generatedAt: new Date().toISOString(),
   totals: { searchPages: pages.length, sitePages, lastUpdated },
@@ -168,11 +323,15 @@ const board = {
   queue,
   tracking: { checkDate, facts },
   groups,
+  inventory,
 };
 fs.writeFileSync(OUT, JSON.stringify(board, null, 2) + "\n");
 console.log(`generate-seo-board: wrote ${OUT}`);
 console.log(`  search pages: ${pages.length} (${groups.map((g) => `${g.name} ${g.pages.length}`).join(", ")})`);
 console.log(`  site pages (sitemap): ${sitePages}; last updated: ${lastUpdated}; next up: ${queue[0]}`);
 console.log(`  tracking: check date ${checkDate}, ${facts.length} facts`);
+const invDated = inventory.groups.reduce((n, g) => n + g.pages.filter((p) => p.date).length, 0);
+console.log(`  inventory: ${inventory.total} pages (${inventory.groups.map((g) => `${g.name} ${g.pages.length}`).join(", ")}); ${invDated} with a datePublished, ${inventory.total - invDated} dateless`);
+for (const w of invWarnings) console.log(`  WARNING ${w}`);
 const noDate = pages.filter((p) => !p.date);
 if (noDate.length) console.log(`  WARNING no establishable date (shown dateless): ${noDate.map((p) => p.slug).join(", ")}`);

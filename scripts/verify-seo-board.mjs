@@ -10,6 +10,10 @@
 //     each group is newest-first
 //   - anonymous reads are refused (401/403)
 //   - a signed-in NON-admin (creator) is refused (403)
+//   - the board's inventory (Build -217) covers every sitemap
+//     URL exactly once across Main/City/Learn/Other, each row
+//     with a title and a magpielocal.com URL, dates null or
+//     YYYY-MM-DD, total read live from the site repo's sitemap
 //   - the data file is NOT under public/ (never publicly served)
 //   - source pins: the rail carries the "SEO / AI search" room,
 //     renderAdmin dispatches it, and both permission maps
@@ -90,6 +94,40 @@ check("every row has title, live URL, date, and target phrase", rowsOk);
 check("each group is newest-first", orderOk);
 check("tracking strip: check date + recorded facts", !!board && board.tracking && board.tracking.checkDate === "2026-11-18" && Array.isArray(board.tracking.facts) && board.tracking.facts.length >= 4 && board.tracking.facts.some((f) => f.includes("1 click / 60 impressions")),
   board && JSON.stringify(board.tracking).slice(0, 200));
+
+// ---- inventory (Build -217): every sitemap page, grouped ----
+// The expected total is read LIVE from the site repo's
+// sitemap.xml, never hardcoded, so this check tracks the site
+// as it grows.
+const sitemapText = fs.readFileSync(new URL("../../signl-site/sitemap.xml", import.meta.url), "utf8");
+const sitemapCount = (sitemapText.match(/<loc>/g) || []).length;
+const inv = board && board.inventory;
+check("inventory present, total equals the live sitemap count", !!inv && inv.total === sitemapCount && sitemapCount > 0,
+  `inventory ${inv && inv.total} vs sitemap ${sitemapCount}`);
+check("inventory total equals totals.sitePages", !!inv && !!board.totals && inv.total === board.totals.sitePages,
+  inv && board && JSON.stringify({ inv: inv.total, sitePages: board.totals.sitePages }));
+const invGroups = (inv && inv.groups) || [];
+const invSum = invGroups.reduce((n, g) => n + ((g.pages || []).length), 0);
+check("inventory groups are Main/City/Learn/Other and counts sum to total",
+  JSON.stringify(invGroups.map((g) => g.name)) === JSON.stringify(["Main pages", "City pages", "Learn articles", "Other"]) && invSum === (inv && inv.total),
+  JSON.stringify(invGroups.map((g) => [g.name, (g.pages || []).length])));
+let invRowsOk = true;
+let invDatesOk = true;
+let invDup = false;
+const invSeen = new Set();
+for (const g of invGroups) {
+  for (const p of g.pages || []) {
+    if (!p.title || !/^https:\/\/magpielocal\.com/.test(p.url || "")) invRowsOk = false;
+    if (!(p.date === null || /^\d{4}-\d{2}-\d{2}$/.test(p.date || ""))) invDatesOk = false;
+    if (invSeen.has(p.url)) invDup = true;
+    invSeen.add(p.url);
+  }
+}
+check("every inventory row has a title and a magpielocal.com URL", invRowsOk);
+check("inventory dates are null or YYYY-MM-DD", invDatesOk);
+check("inventory lists each sitemap URL exactly once", !invDup && invSeen.size === sitemapCount,
+  `unique ${invSeen.size} vs sitemap ${sitemapCount}, dup ${invDup}`);
+check("renderer carries the Every page on the site section", appJs.includes("Every page on the site") && appJs.includes("d.inventory"));
 
 // ---- refusals ----
 const anon = await handler(evt("GET", "/api/admin/seo-board"));
