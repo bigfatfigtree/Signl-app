@@ -207,12 +207,19 @@ console.log("discover card controls (item 8)");
 }
 
 // ---------- 8. deep links ----------
-console.log("deep links (Workstream D)");
+// Build -219 change (ship-sequence order, 2026-11-20): the placeholder
+// association files are HELD OUT of the deploy. Publishing literal
+// NEEDS_JEFFS_TEAM_ID / NEEDS_SIGNING_CERT values would serve invalid files
+// the platforms cache. The canonical templates stay in mobile/deep-links/;
+// the real files land in public/.well-known only when Jeff supplies his
+// Team ID and the Play signing SHA-256 at submission. The netlify.toml
+// content-type pins stay, ready for those files.
+console.log("deep links (Workstream D, held out at -219)");
 {
-  const aasa = JSON.parse(fs.readFileSync(path.join(ROOT, "public/.well-known/apple-app-site-association"), "utf8"));
-  const asset = JSON.parse(fs.readFileSync(path.join(ROOT, "public/.well-known/assetlinks.json"), "utf8"));
-  ok(aasa.applinks.details[0].appID === "NEEDS_JEFFS_TEAM_ID.com.magpielocal.app", "the AASA serves as JSON with its placeholder Team ID intact");
-  ok(asset[0].target.package_name === "com.magpielocal.app", "assetlinks.json serves as JSON for the app package");
+  ok(!fs.existsSync(path.join(ROOT, "public/.well-known/apple-app-site-association")), "placeholder AASA is held out of public/ until Jeff's Team ID lands");
+  ok(!fs.existsSync(path.join(ROOT, "public/.well-known/assetlinks.json")), "placeholder assetlinks.json is held out of public/ until the signing fingerprint lands");
+  const aasaTpl = JSON.parse(fs.readFileSync(path.join(ROOT, "mobile/deep-links/apple-app-site-association"), "utf8"));
+  ok(!!aasaTpl && !!aasaTpl.applinks, "the canonical AASA template is preserved in mobile/deep-links/");
   const toml = fs.readFileSync(path.join(ROOT, "netlify.toml"), "utf8");
   ok(toml.includes('for = "/.well-known/apple-app-site-association"') && toml.includes('for = "/.well-known/assetlinks.json"'), "netlify.toml pins the JSON content type on both paths");
 }

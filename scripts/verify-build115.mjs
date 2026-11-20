@@ -72,7 +72,9 @@ check("client: Sig queue caught-up line is role-aware, business string verbatim"
 check("client: Sig chat opener speaks creator for creators", appJs.includes("how visits and points run, what you earn, when your market opens"));
 check("client: checklist renders info rows and founding step 4 is one", seg(appJs, "function checklistHtml(steps)", "function wireChecklist").includes("s.info") && appJs.includes('info: "Opens at launch"'));
 const signinSeg = seg(appJs, "function renderSignin()", "async function doSignin");
-check("client: sign-in join lines sit above the staff redeem button", signinSeg.indexOf("Join as a founding creator") > -1 && signinSeg.indexOf("Join as a founding creator") < signinSeg.indexOf("Redeem a creator visit"));
+// Build -219: the locked F2 sign-in frame's copy is "Join as a creator"
+// (Jeff-approved frame, 2026-11-20); it supersedes the old line pinned here.
+check("client: sign-in join lines sit above the staff redeem button", signinSeg.indexOf("Join as a creator") > -1 && signinSeg.indexOf("Join as a creator") < signinSeg.indexOf("Redeem a creator visit"));
 check("client: founding Offers empty state always carries an action", seg(appJs, "function foundingEmptyActionHtml()", "function foundingOffersEmptyHtml").includes("Share your invite") && appJs.includes("Finish your profile") && appJs.includes("Add your rates"));
 check("client: direct-offers empty points at Find offers (Build -136: the open-offer deck left the Offers view; open offers live in Find offers)", appJs.includes("Offers open to every creator in your market live in Find offers."));
 check("client: wallet Cash empty card carries a next step (Build -125 Wallet supersedes the Earnings empty card)", appJs.includes("No cash yet") && appJs.includes("Paid bookings you complete pay out here, in cash.") && appJs.includes("Set your paid rate") && appJs.includes("See offers"));
