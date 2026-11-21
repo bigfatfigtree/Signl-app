@@ -9487,7 +9487,10 @@ function approvalEmail(user, band) {
       "",
       `Good news: you're approved. You are a Founding Creator for ${user.city}, and your founding status page is live.`,
     ];
-    if (band) lines.push(`You are in the first ${band} to sign up in ${user.city}. Founding spots are held in sign-up order, and when ${user.city} opens, founding sign-ups are first in line for offers.`);
+    // Build -240 (Jeff, 2026-11-21): the approval email never
+    // states the creator's founding number or position; the
+    // first-in-line-for-offers line stays, without the number.
+    lines.push(`When ${user.city} opens, founding sign-ups are first in line for offers.`);
     lines.push(
       ...stepLines,
       "",
@@ -9506,7 +9509,9 @@ function approvalEmail(user, band) {
     "",
     `Good news: your application was reviewed and approved. You are now a Founding Creator in ${user.market}, and your founding status page is live.`,
   ];
-  if (band) lines.push(`You are in the first ${band} founding creators in ${user.market}. Founding spots are held in sign-up order, and founding creators are shown to businesses in that order.`);
+  // Build -240 (Jeff, 2026-11-21): no founding number or
+  // sign-up-order statement in the approval email. The band
+  // line carried only those two statements, so it is gone.
   lines.push(
     ...stepLines,
     "",

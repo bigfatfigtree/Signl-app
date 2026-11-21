@@ -97,7 +97,11 @@ const aListed = router.approvalEmail(listed, 100);
 check("approval (listed): subject unchanged", aListed.subject === "You are approved. Welcome to Magpie.", aListed.subject);
 check("approval (listed): lead sentence verbatim", aListed.text.includes("Good news: your application was reviewed and approved. You are now a Founding Creator in Hampton Roads"));
 check("approval (listed): shorter than the old 398 words", words(aListed.text) < 300, `${words(aListed.text)} words`);
-check("approval (listed): prize, step, gloss, hype, free line, invite all present", aListed.text.includes("first 100 founding creators") && aListed.text.includes("finish your profile to be launch-ready") && aListed.text.includes("Momentum is the priority score") && aListed.text.includes("founding creators get first pick of every offer") && aListed.text.includes(router.CREATOR_FREE_LINE) && aListed.text.includes("+3 when a creator joins through your link") && aListed.text.includes("+10 when they are approved") && aListed.text.includes("your standing is part of the order they see"), aListed.text);
+// Build -240 (Jeff, 2026-11-21): the approval email no longer states the
+// creator's founding number ("We don't say what number they are"), so the
+// prize element of this pin is now the approved-and-founding line itself,
+// and the number statement is asserted ABSENT.
+check("approval (listed): prize, step, gloss, hype, free line, invite all present", aListed.text.includes("You are now a Founding Creator in") && !aListed.text.includes("first 100 founding creators") && !aListed.text.includes("sign-up order") && aListed.text.includes("finish your profile to be launch-ready") && aListed.text.includes("Momentum is the priority score") && aListed.text.includes("founding creators get first pick of every offer") && aListed.text.includes(router.CREATOR_FREE_LINE) && aListed.text.includes("+3 when a creator joins through your link") && aListed.text.includes("+10 when they are approved") && aListed.text.includes("your standing is part of the order they see"), aListed.text);
 check("approval (listed): no checklist bulk, no em dashes, no lock language", !aListed.text.includes("[needed to go live]") && !aListed.text.includes("—") && !/\block(ed|s|ing)?\b/i.test(aListed.text));
 
 const unlisted = { name: "Tulsa Creator", email: "t@fixtures.dev", market: "Not listed yet", city: "Tulsa", creator: { handle: "tulsaeats", tierBand: "Locals" } };
