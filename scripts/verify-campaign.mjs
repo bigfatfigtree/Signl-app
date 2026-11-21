@@ -41,6 +41,14 @@
 //     and the global daily ceiling (pinned to 40/day for this
 //     suite) binds across both real campaigns combined.
 //
+// Repair (2026-11-21, Jeff's order after the Build -242 finding):
+// the template pins were re-pinned from the pre-rebrand SIGNL copy
+// to the current Magpie copy the code actually renders
+// (magpielocal.com links, Founder, Magpie sign-off, canonical payout
+// timing), and the harness now survives the sandbox's intermittent
+// EPERM write fault (see adminClient) instead of dying at the
+// Part B admin login with a misleading 401.
+//
 // Run: node scripts/verify-campaign.mjs
 
 import { spawn } from "node:child_process";
@@ -93,7 +101,7 @@ async function waitUp() {
 
 function makeClient() {
   const jar = new Map();
-  return async function api(method, p, body) {
+  async function once(method, p, body) {
     const headers = { "Content-Type": "application/json" };
     const cookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
     if (cookie) headers.Cookie = cookie;
@@ -107,14 +115,43 @@ function makeClient() {
     let data = null;
     try { data = JSON.parse(text); } catch (e) { /* html error page */ }
     return { status: res.status, data, text };
+  }
+  return async function api(method, p, body) {
+    // GETs are idempotent, so a transient 500 from the sandbox
+    // write fault (see adminClient) is retried a few times; POSTs
+    // are never blindly retried (a sweep or import must not be
+    // replayed on an ambiguous failure).
+    const attempts = method === "GET" ? 6 : 1;
+    let r = null;
+    for (let i = 0; i < attempts; i++) {
+      r = await once(method, p, body);
+      if (r.status !== 500) return r;
+      await new Promise((res) => setTimeout(res, 1000));
+    }
+    return r;
   };
 }
 
 async function adminClient() {
   const c = makeClient();
-  const r = await c("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
-  if (r.status !== 200) throw new Error("admin login failed: " + r.status);
-  return c;
+  // Sandbox write-fault resilience (diagnosed 2026-11-21): the
+  // local store persists via writeFileSync, and this sandbox
+  // intermittently refuses writes with EPERM in multi-minute
+  // windows. While a window is closed, ensureAdmin cannot persist
+  // the admin user, so a correct login answers 401 and the suite
+  // used to die here before Parts B-J ever ran. The fault is
+  // transient (isolated writes succeed between refusals), so the
+  // login retries with patience instead of giving up. This does
+  // not weaken any check: a login that never succeeds still
+  // throws after the retry budget.
+  let last = null;
+  for (let attempt = 1; attempt <= 40; attempt++) {
+    const r = await c("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    if (r.status === 200) return c;
+    last = r;
+    await new Promise((res) => setTimeout(res, 1500));
+  }
+  throw new Error("admin login failed after retries: " + (last && last.status));
 }
 async function countEvents(admin, type) {
   const r = await admin("GET", `/api/admin/events?type=${encodeURIComponent(type)}&limit=2000`);
@@ -136,21 +173,21 @@ try {
   check("greeting uses the first name only", hr.text.startsWith("Hi Maya,"), hr.text.slice(0, 40));
   check("opener slot is filled", hr.text.includes("I found you through your Oceanfront food posts."));
   check("legacy Hampton Roads recipient gets the Hampton Roads founding paragraph, with no launch date promised (Build -38)", hr.text.includes("Hampton Roads is a founding market: sign-ups are open now and offers open as the founding roster fills.") && !hr.text.includes("Black Friday") && !hr.text.includes("launches in November"));
-  check("claim link is prefilled with handle + market", hr.text.includes("app.joinsignl.com/?handle=maya757&market=Hampton%20Roads"));
+  check("claim link is prefilled with handle + market", hr.text.includes("app.magpielocal.com/?handle=maya757&market=Hampton%20Roads"));
   check("founding email carries the approval status sentence", hr.text.includes("If you apply, you will get a decision or a clear status within 2 business days."));
-  check("founding pitch leads with both lanes: comp or the creator's own paid rate at 97%", hr.text.includes("Local businesses book creators two ways on SIGNL: they comp you a meal, service or experience for an honest post, or they pay your own listed rate (you keep 97%). Most founding creators do both."));
+  check("founding pitch leads with both lanes: comp or the creator's own paid rate at 97%", hr.text.includes("Local businesses book creators two ways on Magpie: they comp you a meal, service or experience for an honest post, or they pay your own listed rate (you keep 97%). Most founding creators do both."));
   check("founding pitch keeps the mechanics after the lanes: 48 hours, no script, full disclosure, live founding profile", hr.text.includes("you post honestly about it within 48 hours. No script, no required praise, full disclosure.") && hr.text.includes("your founding profile is live and shareable from day one."));
   check("founding email carries the local-reach line verbatim (Jeff, 2026-10-25)", hr.text.includes("We don't rank you by followers. We rank you by how much of your audience actually lives here. That share is your local reach, and it is the number businesses look at first."));
   check("founding email carries the Momentum clause: on-time posts earn points that raise visibility", hr.text.includes("Every post you deliver on time earns Momentum points, and those points raise your visibility to businesses."));
   check("local-reach paragraph sits between the both-lanes pitch and the market paragraph", hr.text.indexOf("Local businesses book creators two ways") > -1 && hr.text.indexOf("We don't rank you by followers") > hr.text.indexOf("Local businesses book creators two ways") && hr.text.indexOf("Hampton Roads is a founding market") > hr.text.indexOf("We don't rank you by followers"));
-  check("sign-off is Jeff, Founder, SIGNL, with the tagline", hr.text.includes("\nJeff\nFounder, SIGNL\nhello@joinsignl.com | joinsignl.com\nNational platforms sell reach. We sell regulars."));
+  check("sign-off is Jeff, Founder, Magpie, with the tagline", hr.text.includes("\nJeff\nFounder, Magpie\nhello@magpielocal.com | magpielocal.com\nNational platforms sell reach. We sell regulars."));
   check("no last name anywhere in the email", !hr.text.includes("Rimmer") && !hr.subject.includes("Rimmer"));
   check("no em dashes anywhere in the email", !hr.text.includes("—") && !hr.subject.includes("—"));
   const rva = campaignEmail({ name: "", handle: "rvabites", market: "Richmond", opener: "your Carytown posts" });
   check("missing name falls back to Hi there,", rva.text.startsWith("Hi there,"), rva.text.slice(0, 40));
   check("other markets get the founding paragraph", rva.text.includes("Richmond is a founding market: sign-ups are open now and offers open city by city as the roster fills."));
   check("other markets never mention Black Friday", !rva.text.includes("Black Friday"));
-  check("other-market claim link encodes its market", rva.text.includes("app.joinsignl.com/?handle=rvabites&market=Richmond"));
+  check("other-market claim link encodes its market", rva.text.includes("app.magpielocal.com/?handle=rvabites&market=Richmond"));
 
   startServer();
   await waitUp();
@@ -395,15 +432,15 @@ try {
   check("crossover greeting uses the first name only", xo.text.startsWith("Hi Jordan,"), xo.text.slice(0, 40));
   check("crossover opener slot is filled", xo.text.includes("I found you through your GRIN campaign posts and your Shockoe Bottom food reviews."));
   check("platforms named the approved generic way", xo.text.includes("platforms like Grin, Cohley, or Momfluence"));
-  check("additive and non-exclusive: keep every national deal", xo.text.includes("not asking you to leave any of them") && xo.text.includes("nothing about SIGNL is exclusive") && xo.text.includes("Keep every national deal you have."));
+  check("additive and non-exclusive: keep every national deal", xo.text.includes("not asking you to leave any of them") && xo.text.includes("nothing about Magpie is exclusive") && xo.text.includes("Keep every national deal you have."));
   check("local perks: comps, honest post within 48 hours, tracked public track record", xo.text.includes("Local businesses comp you a meal, a service, or an experience") && xo.text.includes("post honestly about it within 48 hours") && xo.text.includes("Every visit is tracked") && xo.text.includes("public track record"));
-  check("local money route 1: own paid rate, keep 97 percent, business covers 3 percent, escrow released when the post is live", xo.text.includes("set a paid rate on your SIGNL profile") && xo.text.includes("you keep 97 percent of your rate") && xo.text.includes("the business covers another 3 percent") && xo.text.includes("SIGNL holds the payment and releases it when your post is live"));
+  check("local money route 1: own paid rate, keep 97 percent, business covers 3 percent, Magpie holds the payment, paid after the post is live and verified within 48 hours once payout details are set up", xo.text.includes("set a paid rate on your Magpie profile") && xo.text.includes("you keep 97 percent of your rate") && xo.text.includes("the business covers another 3 percent") && xo.text.includes("Magpie holds the payment") && xo.text.includes("You are paid after your post is live and verified, within 48 hours, once your payout details are set up."));
   check("local money route 2: 15k+ followers first in line for paid cash campaigns", xo.text.includes("15k+ followers are first in line for paid cash campaigns"));
-  check("why local pays: the audience share in the market is the number SIGNL leads with", xo.text.includes("cannot tell a business what share of a creator's audience lives in its market") && xo.text.includes("SIGNL leads with exactly that number"));
+  check("why local pays: the audience share in the market is the number Magpie leads with", xo.text.includes("cannot tell a business what share of a creator's audience lives in its market") && xo.text.includes("Magpie leads with exactly that number"));
   check("founding mechanics: free profile, founding standing that never expires, founding-market paragraph (Build -242: sign-up order language removed)", xo.text.includes("Your founding profile is free") && xo.text.includes("You would be a founding creator here, and that standing never expires.") && !xo.text.includes("sign-up order") && xo.text.includes("Richmond is a founding market: sign-ups are open now and offers open city by city as the roster fills."));
-  check("crossover claim link is the full prefilled URL", xo.text.includes("https://app.joinsignl.com/?handle=jordancreates&market=Richmond"));
+  check("crossover claim link is the full prefilled URL", xo.text.includes("https://app.magpielocal.com/?handle=jordancreates&market=Richmond"));
   check("crossover email carries the approval status sentence", xo.text.includes("If you apply, you will get a decision or a clear status within 2 business days."));
-  check("crossover sign-off is Jeff, Founder, SIGNL, with the tagline", xo.text.includes("\nJeff\nFounder, SIGNL\nhello@joinsignl.com | joinsignl.com\nNational platforms sell reach. We sell regulars."));
+  check("crossover sign-off is Jeff, Founder, Magpie, with the tagline", xo.text.includes("\nJeff\nFounder, Magpie\nhello@magpielocal.com | magpielocal.com\nNational platforms sell reach. We sell regulars."));
   check("no last name anywhere in the crossover email", !xo.text.includes("Rimmer") && !xo.subject.includes("Rimmer"));
   check("no em dashes anywhere in the crossover email", !xo.text.includes("—") && !xo.subject.includes("—"));
   const xoHr = crossoverEmail({ name: "", handle: "hrfoodie", market: "Hampton Roads", opener: "your Momfluence posts" });
