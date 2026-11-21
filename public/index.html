@@ -11,11 +11,22 @@
 <meta name="theme-color" content="#FFFFFF">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=2026.11.20-225">
-<link rel="stylesheet" href="/intro.css?v=design-intro-3">
-<link rel="stylesheet" href="/theme-v2.css?v=2026.11.20-225">
-<link rel="stylesheet" href="/theme-v3.css?v=2026.11.20-225">
-<script>window.__SIGNL_BUILD__ = "2026.11.20-225";</script>
+<link rel="stylesheet" href="/styles.css?v=2026.11.21-227">
+<link rel="stylesheet" href="/intro.css?v=design-intro-4">
+<link rel="stylesheet" href="/theme-v2.css?v=2026.11.21-227">
+<link rel="stylesheet" href="/theme-v3.css?v=2026.11.21-227">
+<style>
+/* Build -227: critical first-paint splash, inline so the very
+   first paint is already the designed splash before any
+   stylesheet arrives: a solid dark ground, the real Magpie
+   wordmark centered, nothing else. No app icon, no box, no
+   square. intro.css carries the same rules for the styled
+   cascade; the two must agree. */
+.splash-first-paint{position:fixed;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;background:#0b0d0c}
+.splash-first-paint img{width:200px;max-width:56vw;height:auto}
+#app>.splash-first-paint{animation:none}
+</style>
+<script>window.__SIGNL_BUILD__ = "2026.11.21-227";</script>
 </head>
 <body>
 <header class="topbar">
@@ -37,6 +48,6 @@
   <p class="muted">Magpie &middot; magpielocal.com &middot; Honest posts only &middot; Comps disclosed, always.</p>
 </footer>
 <script src="/native-bridge.js" defer></script>
-<script src="/app.js?v=2026.11.20-225"></script>
+<script src="/app.js?v=2026.11.21-227"></script>
 </body>
 </html>

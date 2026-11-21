@@ -5,7 +5,12 @@
    fields, gradient Sign in pill. Signed-in sessions never render
    either surface (boot restores the session before first paint).
    The intro film is a normal web asset under /assets/intro/ so it
-   can be swapped without an app store resubmission. */
+   can be swapped without an app store resubmission.
+   Build -227: the first-paint splash (bottom of this file) was
+   redesigned — solid dark ground, wordmark only — after the old
+   native launch-screen art (app icon pasted on black) was traced
+   to the baked iOS Splash imageset; the native art in mobile/
+   was regenerated to the same design for the next native build. */
 
 /* ---------- Intro film stage ---------- */
 
@@ -216,16 +221,31 @@
 .entry-more a { color: #41534a; font-weight: 600; }
 .entry-more-note { display: block; color: #7c8a83; font-size: 0.8rem; margin-top: 3px; }
 
-/* Splash / first paint: plain white, the real logo, nothing else.
-   Rendered by index.html before app.js boots. */
+/* Splash / first paint (Build -227): a designed splash, not a
+   pasted asset: solid dark ground (#0b0d0c), the real Magpie
+   wordmark centered, nothing else. No app icon, no box, no
+   square. Rendered by index.html before app.js boots; the same
+   rules are inlined in index.html so the first paint is already
+   this design. It covers the full viewport (fixed) so no shell
+   chrome peeks around it while the session restores; app.js
+   replaces it on first render: signed-in sessions land on Home,
+   signed-out on the intro film. */
 .splash-first-paint {
-  min-height: 62vh;
+  position: fixed;
+  inset: 0;
+  z-index: 900;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
+  background: #0b0d0c;
 }
-.splash-first-paint img { width: 188px; height: auto; }
+.splash-first-paint img { width: 200px; max-width: 56vw; height: auto; }
+
+/* The splash is exempt from theme-v2's #app > * rise animation:
+   it must be at full opacity, solid, from the very first frame,
+   never a grey fade-in (reviewer catch, Build -227). The ID +
+   class selector outranks theme-v2's ID + universal rule. */
+#app > .splash-first-paint { animation: none; }
 
 /* Build -225: while the first-paint splash is on screen, hide the
    static shell chrome (top bar + footer) so the paint reads as one
