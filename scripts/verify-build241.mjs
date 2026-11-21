@@ -36,9 +36,12 @@ function check(name, cond, extra) {
 const banned = (t) => !t.includes("sign-up order") && !/in the first \d+/.test(t) && !/first \d+ (creators|founding)/.test(t);
 
 console.log("== Build -241: claim, signup and reminder emails carry no number or order ==");
-check("build stamp is 2026.11.21-241 in both homes",
-  fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.21-241"')
-  && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.21-241"'), "");
+// Build -242 note (2026-11-21): the stamp moved on the same day (the
+// generic message notice and the invite-email cleanup joined the
+// same ruling); the pin is both homes agree and >= 241, the house
+// relaxation for same-day follow-on builds.
+check("build stamp is >= 2026.11.21-241 and agrees in both homes",
+  (() => { const a = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").match(/BUILD_ID = "2026\.11\.21-(\d+)"/); const b = fs.readFileSync(path.join(root, "public/index.html"), "utf8").match(/window\.__SIGNL_BUILD__ = "2026\.11\.21-(\d+)"/); return !!a && !!b && a[1] === b[1] && Number(a[1]) >= 241; })(), "");
 
 const listed = { id: "u241a", name: "Casey Creator", email: "c241@fixtures.dev", role: "creator", status: "pending", market: "Nashville", city: "Nashville", creator: { handle: "c241", categories: ["Food & Drink"] } };
 const unlisted = { ...listed, id: "u241b", market: "Not listed yet", city: "Tulsa", state: "OK" };

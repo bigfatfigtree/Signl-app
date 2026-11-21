@@ -7932,14 +7932,15 @@ function platformMessagePreview(body) {
 function platformMessageEmail(creator, body, senderName) {
   const preview = platformMessagePreview(body);
   const base = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
-  // Build -239: the sender line names the actual thread sender.
-  // Team messages (the platform thread, PLATFORM_PEER_ID) are
-  // Maggie's; the old hard-coded Jeff line misattributed them.
-  const sender = senderName || "Maggie";
+  // Build -242 (Jeff, 2026-11-21): the notice names no person.
+  // The -239 line named the thread sender, but the notice never
+  // checks who actually sent from the team thread, so it could
+  // misattribute (a Jeff send arriving as Maggie's). The line is
+  // generic now; the message itself says who it is from.
   return {
     subject: "You have a new message on Magpie",
     text: [
-      `${sender} from Magpie sent you a message.`,
+      "You have a new message from Magpie.",
       "",
       `"${preview}"`,
       "",
@@ -15730,8 +15731,8 @@ function marketTalkName(market) {
 // open as the roster fills.
 function campaignMarketParagraph(market) {
   return normalizeMarketName(market) === "Virginia Beach"
-    ? "Hampton Roads is a founding market: sign-ups are open now and offers open as the founding roster fills. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
-    : `${market} is a founding market: sign-ups are open now and offers open city by city as the roster fills. Founding creators join in sign-up order, and the first ones in get seen first when businesses start choosing.`;
+    ? "Hampton Roads is a founding market: sign-ups are open now and offers open as the founding roster fills. Founding creators are joining now, and the first ones in get seen first when businesses start choosing."
+    : `${market} is a founding market: sign-ups are open now and offers open city by city as the roster fills. Founding creators are joining now, and the first ones in get seen first when businesses start choosing.`;
 }
 
 function campaignClaimLink(recipient) {
@@ -15797,7 +15798,7 @@ function crossoverEmail(recipient) {
     "",
     campaignMarketParagraph(market),
     "",
-    "Your founding profile is free, and your spot is held in sign-up order. Claim yours here, it takes about two minutes:",
+    "Your founding profile is free. You would be a founding creator here, and that standing never expires. Claim yours here, it takes about two minutes:",
     `https://${campaignClaimLink(recipient)}`,
     "",
     "If you apply, you will get a decision or a clear status within 2 business days.",
