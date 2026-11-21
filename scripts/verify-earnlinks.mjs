@@ -173,7 +173,7 @@ try {
   const biz = makeClient();
   const breg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Earn Links Owner", businessName: "Earn Links Table", email: "earnbiz@fixtures.dev",
-    password: "password123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "growth", agreedTerms: true,
+    password: "password123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers", breg.status === 201, JSON.stringify(breg.data).slice(0, 200));
   await admin("POST", "/api/admin/review", { userId: breg.data.user.id, decision: "approve" });

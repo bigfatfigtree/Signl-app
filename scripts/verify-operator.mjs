@@ -246,7 +246,7 @@ try {
     const email = `biz-${uniq()}@fixtures.dev`;
     const r = await client("POST", "/api/auth/register", {
       role: "business", name: "Biz Owner", email, password: "password123",
-      market: "Hampton Roads", city: "Norfolk", businessName, category: "Restaurant", planId, agreedTerms: true,
+      market: "Hampton Roads", city: "Norfolk", businessName, category: "Restaurant", planId, agreedTerms: true, agreedPostCompliance: true,
     });
     if (r.status !== 201 || !r.data.user) throw new Error(`business register failed: ${r.status} ${JSON.stringify(r.data)}`);
     return { client, user: r.data.user, email };

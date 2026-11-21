@@ -2780,3 +2780,15 @@ body.v3-slim .ham137-panel .more-row, body.v3-slim .ev125-panel .more-row, body.
 .u226-inputbar { display: block; height: 6px; border-radius: 3px; background: #E7EEF6; margin-top: 6px; overflow: hidden; }
 .u226-inputfill { display: block; height: 100%; border-radius: 3px; background: var(--grad); }
 .u226-inputval { color: #0B2B4F; font-size: 1rem; }
+
+/* Build -230 (Jeff's locked clean standard): the app shell runs
+   on Inter, normal weights. Semibold (600) is reserved for the
+   primary button and a person's name. This block loads last, so
+   it settles the family everywhere without rewriting the layout
+   rules above it; Anton stays on the marketing site only. */
+body, button, input, select, textarea, h1, h2, h3, h4, .display, .num, .stat .num, .plan-card .price {
+  font-family: Inter, system-ui, -apple-system, sans-serif !important;
+}
+h1, h2, h3, h4, strong, b { font-weight: 400 !important; }
+.btn, .ws-primary, .rail-primary187, button.btn { font-weight: 600 !important; }
+.tu-name, .pdp-sim-name, .u226-heroname, .person-name { font-weight: 600 !important; }

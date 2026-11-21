@@ -230,7 +230,7 @@ try {
   const biz = client();
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", businessName: "Portsmouth Eats", email: "portsmouthbiz@fixtures.dev", password: PW,
-    market: UNLISTED_NAME, customCity: "Portsmouth", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true,
+    market: UNLISTED_NAME, customCity: "Portsmouth", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registration on the unlisted path files under the metro too (Portsmouth -> Virginia Beach)",
     bizReg.status === 201 && !!bizReg.data.user && bizReg.data.user.market === "Virginia Beach" && bizReg.data.user.city === "Portsmouth" && bizReg.data.user.marketResolvedFrom === "typed_city",

@@ -188,10 +188,10 @@ const primTabsOf = (role) => {
   const m = primTabsSrc.match(new RegExp(`${role}: \\[([^\\]]+)\\]`));
   return m ? [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]) : [];
 };
-check("creator mobile bar is Home · Find · Sig · Wallet · Offers",
-  JSON.stringify(primTabsOf("creator")) === JSON.stringify(["Dashboard", "Find Offers", "Sig", "Earnings", "Offers"]), primTabsOf("creator").join(","));
-check("business mobile bar is Home · Find · Sig · Wallet · Start",
-  JSON.stringify(primTabsOf("business")) === JSON.stringify(["Home", "Discover", "Sig", "Plan", "Campaign Setup"]), primTabsOf("business").join(","));
+check("creator mobile bar is Home · Find · Maggie · Stats · Menu (Build -230 locked bar)",
+  JSON.stringify(primTabsOf("creator")) === JSON.stringify(["Dashboard", "Find Offers", "Sig", "Numbers", "__menu137"]), primTabsOf("creator").join(","));
+check("business mobile bar is Home · Find · Maggie · Stats · Menu (Build -230 locked bar)",
+  JSON.stringify(primTabsOf("business")) === JSON.stringify(["Home", "Discover", "Sig", "Analytics", "__menu137"]), primTabsOf("business").join(","));
 check("partner mobile bar stays as held (Home · Business · Sig · Stats · Menu)",
   JSON.stringify(primTabsOf("partner")) === JSON.stringify(["Home", "Businesses", "Sig", "Performance", "__menu137"]), primTabsOf("partner").join(","));
 

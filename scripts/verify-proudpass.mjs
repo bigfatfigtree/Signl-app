@@ -85,7 +85,7 @@ try {
     role: "business", name: "Pass Biz", businessName: "Pass Biz", contactName: "Pat",
     email: "passbiz@fixtures.dev", password: "<MASKED_SECRET_004>", market: "Virginia Beach",
     businessCity: "Virginia Beach", category: "Restaurant", neighborhood: "Oceanfront",
-    agreedTerms: true, plan: "growth",
+    agreedTerms: true, agreedPostCompliance: true, plan: "growth",
   });
   check("business registers", regBiz.status === 201, JSON.stringify(regBiz.data).slice(0, 120));
   await admin("POST", "/api/admin/review", { userId: regBiz.data.user.id, decision: "approve" });

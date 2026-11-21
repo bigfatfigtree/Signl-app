@@ -105,7 +105,7 @@ async function registerBusiness(admin, businessName) {
   const email = `biz226u-${uniq()}@fixtures.dev`;
   const r = await c("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", email, password: "<redacted>", market: "Hampton Roads", city: "Norfolk",
-    businessName, category: "Restaurant", planId: "self-service", agreedTerms: true,
+    businessName, category: "Restaurant", planId: "self-service", agreedTerms: true, agreedPostCompliance: true,
   });
   if (r.status === 201) {
     await admin("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });

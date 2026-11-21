@@ -224,7 +224,7 @@ try {
     city: "Norfolk",
     category: "Restaurant",
     planId: "managed",
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registration returns 201", regB.status === 201, JSON.stringify(regB.data));
   check("business plan recorded as Managed $699", regB.data.user.business && regB.data.user.business.plan === "managed" && regB.data.user.business.planPriceMonthly === 699);

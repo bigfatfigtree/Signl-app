@@ -102,7 +102,7 @@ function creatorPayload(overrides = {}) {
     agreedHonestPosts: true,
     agreedFtcDisclosure: true,
     agreedPostCompliance: true,
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
     ...overrides,
   };
 }
@@ -124,7 +124,7 @@ async function registerBusiness(admin, planId, businessName) {
     businessName,
     category: "Restaurant",
     planId,
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   if (r.status === 201) {
     await admin("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });

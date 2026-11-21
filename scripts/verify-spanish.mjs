@@ -88,7 +88,7 @@ try {
   const business = client();
   const bizReg = await business("POST", "/api/auth/register", {
     role: "business", name: "Spanish Biz Owner", businessName: "La Mesa", email: "spanishbiz@fixtures.dev",
-    password: "spanish-pass-1234", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "growth", agreedTerms: true,
+    password: "spanish-pass-1234", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   await admin("POST", "/api/admin/review", { userId: bizReg.data.user.id, decision: "approve" });
   await admin("POST", "/api/admin/businesses/activate", { userId: bizReg.data.user.id });

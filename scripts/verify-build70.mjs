@@ -110,7 +110,7 @@ class DirectClient {
 async function registerCreator(client, { handle, market, email, signupSource }) {
   return client.req("POST", "/auth/register", {
     role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email, password: "build-70-creator-password",
-    market, handle, primaryPlatform: "instagram", agreedTerms: true,
+    market, handle, primaryPlatform: "instagram", agreedTerms: true, agreedPostCompliance: true,
     ...(signupSource ? { signupSource } : {}),
   });
 }

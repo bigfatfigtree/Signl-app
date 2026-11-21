@@ -134,7 +134,7 @@ try {
   const reg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Billing Biz Owner", businessName: "Billing Test Bistro", email: "billingbiz@fixtures.dev",
     password: "<MASKED_SECRET_002>", market: "Virginia Beach", city: "Virginia Beach", category: "Restaurant",
-    planId: "growth", agreedTerms: true,
+    planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers (founding)", (reg.status === 200 || reg.status === 201) && reg.data.user.business.accessState === "founding", JSON.stringify(reg.data).slice(0, 250));
   bizId = reg.data.user.id;

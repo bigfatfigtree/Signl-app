@@ -110,7 +110,7 @@ async function registerCreator(admin, followerCount) {
     agreedHonestPosts: true,
     agreedFtcDisclosure: true,
     agreedPostCompliance: true,
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   if (r.status === 201) await admin("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });
   return { client: c, res: r, user: r.data && r.data.user };
@@ -127,7 +127,7 @@ async function registerBusiness(admin, planId, businessName) {
     businessName,
     category: "Restaurant",
     planId,
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   if (r.status === 201) {
     await admin("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });

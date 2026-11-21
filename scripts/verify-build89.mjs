@@ -77,7 +77,7 @@ async function registerBusiness(market, city, name) {
   const client = makeClient();
   const r = await client("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", email: `b89-${uniq()}@fixtures.dev`, password: "password123",
-    market, city, businessName: name, category: "Restaurant", planId: "growth", agreedTerms: true,
+    market, city, businessName: name, category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   return { client, res: r, user: r.data && r.data.user };
 }

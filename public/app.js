@@ -2089,7 +2089,7 @@ function dealPlainWordsHtml(o) {
   return `<details class="deal-details"><summary>${T("The deal, in plain words", "El trato, en palabras simples")}</summary><div class="dd-body">
     <div class="showcase-block">
       ${o.kind === "paid"
-        ? `<p class="small"><strong>You get paid:</strong> $${fmtPrice(o.cashRate)} for this paid booking. You keep $${o.paidMath ? fmtMoney(o.paidMath.creatorNet) : ""} (97% of the rate); Magpie holds the payment and releases it when your post is live.</p>`
+        ? `<p class="small"><strong>You get paid:</strong> $${fmtPrice(o.cashRate)} for this paid booking. You keep $${o.paidMath ? fmtMoney(o.paidMath.creatorNet) : ""} (97% of the rate); Magpie holds the payment. You are paid after your post is live and verified, within 48 hours, once your payout details are set up.</p>`
         : o.kind === "coupon"
           ? `<p class="small"><strong>You'd get:</strong> ${esc(o.couponSummary || couponSummaryClient(o.coupon, o.businessName))}${o.coupon && o.coupon.expiresAt ? `, expires ${esc(fmtDay(o.coupon.expiresAt))}` : ""}. The coupon is your payment for this post. No cash changes hands.</p>`
           : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${fmtMoney(o.dollarCap)}) &middot; ${coversLine(o)}</p>`}
@@ -2821,6 +2821,11 @@ function moreRowsFor() {
   }
   if (u.role === "creator") {
     const rows = [
+      // Build -230: Find Offers is a bottom-bar stop (Home / Find /
+      // Maggie / Stats / Menu), so it must be a real row here;
+      // before this build the tab existed as a view but never as
+      // a rail row, and the bar silently showed four stops.
+      { icon: "deck", label: "Find offers", sub: "Open visits near you, with the value up front.", tab: "Find Offers" },
       { icon: "calendar", label: "Visits", sub: "Your visits and post deadlines.", tab: "My Visits", badge: wc.crVisits != null ? wc.crVisits : (b.visits || 0) },
       { icon: "banknote", label: "Wallet", sub: "Cash, comps and history, kept separate.", tab: "Earnings", badge: wc.crLicense || 0 },
       { icon: "person", label: "My profile", sub: "What businesses see, your rate, your links.", tab: "Profile" },
@@ -2889,8 +2894,14 @@ function moreRowsFor() {
 // derives its order from this list: it lists the full
 // destination set in tabItemsFor() order (see tabBarHtml).
 const PRIMARY_TABS_125 = {
-  business: ["Home", "Discover", "Sig", "Plan", "Campaign Setup"],
-  creator: ["Dashboard", "Find Offers", "Sig", "Earnings", "Offers"],
+  // Build -230 (Jeff's locked bar): Home / Find / Maggie / Stats /
+  // Menu on both sides. Stats is the Numbers tab for creators and
+  // the Analytics tab for businesses (NAV_LABEL_125 names both
+  // "Stats"); Menu is the hamburger slot the partner bar already
+  // uses. The old fifth stops (Wallet, Offers, Start) stay one tap
+  // away in the Menu panel and on the desktop rail.
+  business: ["Home", "Discover", "Sig", "Analytics", "__menu137"],
+  creator: ["Dashboard", "Find Offers", "Sig", "Numbers", "__menu137"],
   partner: ["Home", "Businesses", "Sig", "Performance", "__menu137"],
   pilot: ["Overview", "Businesses", "Results", "Report"],
   recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"],
@@ -2906,7 +2917,7 @@ function primaryTabs125() {
 }
 // The bar's one-word display labels (design): the internal
 // tab ids stay stable; only what the person reads changes.
-const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Find creators", "My Offers": "Campaigns", Performance: "Reports", Businesses: "Businesses", "Find Offers": "Find", Offers: "Offers" };
+const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Find", "My Offers": "Campaigns", Performance: "Reports", Businesses: "Businesses", "Find Offers": "Find", Offers: "Offers", Numbers: "Stats", Analytics: "Stats" };
 // Where the identity row (photo + name) lands per role: the
 // person's own home base — the creator's real profile, the
 // business's page, the partner's account. (Build -125: it
@@ -3904,7 +3915,7 @@ async function submitAddSide180(e, role) {
   if (!submitBusy(form, true)) return false;
   const marketVal = document.getElementById("as180-market").value;
   const isUnlisted = marketVal === unlistedLabel();
-  const body = { role, market: marketVal, agreedTerms: true };
+  const body = { role, market: marketVal, agreedTerms: true, agreedPostCompliance: true };
   if (isUnlisted) {
     body.customCity = document.getElementById("as180-custom-city").value.trim();
     body.customCountry = document.getElementById("as180-custom-country").value.trim();
@@ -4080,8 +4091,11 @@ function tabBarHtml() {
     return { label: "Offers", aria: "Find offers", act: "return go('dashboard','Find Offers')" };
   })();
   const barIdx = {};
-  (plus187 ? [...prim.slice(0, 2), "__plus187", ...prim.slice(2)] : prim).forEach((tb, i) => { barIdx[tb] = i; });
-  const plusBtn187 = plus187 ? `
+  // Build -230: for creator/business the phone bar is exactly the
+  // five locked stops; the + keeps its desktop rail pill only.
+  const barPrim230 = redesigned137 ? prim : (plus187 ? [...prim.slice(0, 2), "__plus187", ...prim.slice(2)] : prim);
+  barPrim230.forEach((tb, i) => { barIdx[tb] = i; });
+  const plusBtn187 = plus187 && !redesigned137 ? `
     <button type="button" class="tab-item tab-bar137 tab-plus187" style="--bar-ord:${barIdx["__plus187"]}" onclick="${plus187.act}" aria-label="${plus187.aria}">
       <span class="tab-ic tab-plus-ic187">+</span>
       <span class="tab-label"><span class="lbl-full">${plus187.label}</span><span class="lbl-short">${plus187.label}</span></span>
@@ -4111,7 +4125,7 @@ function tabBarHtml() {
     </button>`;
   };
   const seen137 = new Set();
-  const menuBtn137 = u.role === "partner" && !state.pilotScopeId ? `
+  const menuBtn137 = (u.role === "partner" || redesigned137) && !state.pilotScopeId ? `
     <button type="button" class="tab-item tab-bar137 tab-menu137" style="--bar-ord:${barIdx["__menu137"] != null ? barIdx["__menu137"] : 4}" onclick="return openHamburger137()" aria-label="Menu — all sections">
       <span class="tab-ic">${bnIcon("menu")}</span>
       <span class="tab-label"><span class="lbl-full">Menu</span><span class="lbl-short">Menu</span></span>
@@ -6060,7 +6074,7 @@ function renderHelpTab() {
     ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
     ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
     ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. The 90 days start the day you approve. You approve each use and keep 97%. It lives in your Wallet.")}
-    ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
+    ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. You are paid after your post is live and verified, within 48 hours, once your payout details are set up.")}
     ${qa("What will payout setup ask me?", isUkUser() ? "Stripe will ask for identity details, your address, and a UK bank account (sort code and account number), each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers sole trader or limited company setup, and why a first payout can be held briefly while identity checks clear." : "Stripe will ask for identity details, your address, your bank account, and tax information, each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers Form 1099-K and why a first payout can be held briefly while identity checks clear.")}
     ${isUkUser() ? qa("I'm in the UK. How is my data handled?", ukPrivacyText()) : ""}
   `}
@@ -6354,7 +6368,7 @@ function moneyTopHtml213(m) {
   ${m.marketLive ? "" : `<div class="empty-card" style="margin-bottom:14px"><div class="ec-t">Paid bookings start when ${esc(m.market || "your market")} opens</div><div class="ec-s">Everything you set up now counts from day one. Your next move below is the fastest way to be ready.</div></div>`}
   <div class="kpi-grid c3">
     ${kpiCard("Made", `$${fmtMoney(m.made || 0)}`, { sub: "Paid bookings, plus what businesses paid to reuse your posts" })}
-    ${kpiCard("On its way", `$${fmtMoney(m.onItsWay || 0)}`, { sub: "Booked at your rate, paid when the post is live" })}
+    ${kpiCard("On its way", `$${fmtMoney(m.onItsWay || 0)}`, { sub: "Booked at your rate. Paid after the post is live and verified, within 48 hours, once payout details are set up" })}
     ${kpiCard("Paid out", `$${fmtMoney(m.paidOut || 0)}`, { sub: "Sent to your payout account" })}
   </div>
   <div class="money-next">
@@ -7021,7 +7035,7 @@ function sigBankFor(biz) {
       a: (c) => sigNextStepsText218(c) || (c.live ? "Nothing is open on your account: your profile is finished and your market is open. The next step is yours to pick: check new offers, or your Momentum." : "Nothing else is open on your account: your profile is finished. Bookings start the day your market opens, and finished founding profiles are first in line."),
       flow: (c) => !c.profileComplete ? "Finish my profile" : (c.live ? "See my wallet" : "Check my Momentum") },
     { id: "payout", q: "When and how do I get paid?", ph: ["when do i get paid", "paid out", "payout", "pay out", "when do i get", "how do i get paid", "payment timing"], g: [["paid", "pay", "payout", "payment"], ["when", "how", "long", "timing", "arrive", "receive"]], s: ["payout"],
-      a: "For a paid booking, the rate you set is the rate the business books at, and you keep 97% of it. Payout setup runs on Stripe's secure pages: Stripe asks for identity details, your address, your bank account, and tax information, and a first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, and the app does not promise a payout date. Your Wallet keeps the record of every booking and license, so it is always there to check.", flow: (c) => c.live ? "See my wallet" : null },
+      a: "For a paid booking, the rate you set is the rate the business books at, and you keep 97% of it. Payout setup runs on Stripe's secure pages: Stripe asks for identity details, your address, your bank account, and tax information, and a first payout can be held briefly while identity checks clear. You are paid after your post is live and verified, within 48 hours, once your payout details are set up. Your Wallet keeps the record of every booking and license, so it is always there to check.", flow: (c) => c.live ? "See my wallet" : null },
     { id: "terms98", q: "Where are the creator terms in plain words?", ph: ["creator terms", "terms in plain words", "my terms", "the terms"], g: [["terms", "term"], ["creator", "plain", "where", "read", "my"]], s: ["terms"],
       a: "Creator terms in plain words: https://magpielocal.com/creator-terms.html. The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer." },
     { id: "money", q: "How do I make money on Magpie?", ph: ["make money", "earn money", "making money", "how do i earn", "can i make money", "make some money", "earn cash"], g: [["money", "earn", "earning", "income", "cash", "paid", "pay"], ["how", "can", "do i", "ways", "make", "get"]], s: ["money"],
@@ -13412,7 +13426,7 @@ function renderClaimHook() {
     <div class="c85-photo" style="background-image:url('${esc(photo)}')">
       <div class="c85-photo-inner">
         ${claimDots(1)}
-        <h1 class="c85-h">${first ? `${esc(first)},` : ""} <span class="c85-accent">${claimFmtCount(h.neighborCount)} ${h.extrapolated ? T("of your followers are potential neighbors here.", "de tus seguidores son vecinos potenciales aquí.") : T("of your followers live here.", "de tus seguidores viven aquí.")}</span></h1>
+        <h1 class="c85-h">${first ? `${esc(first)},` : ""} <span class="c85-accent">${claimFmtCount(h.neighborCount)} ${h.extrapolated ? T("of your followers are potential local followers here.", "de tus seguidores son seguidores locales potenciales aquí.") : T("of your followers live here.", "de tus seguidores viven aquí.")}</span></h1>
         <div class="c85-idrow">
           ${h.photoUrl ? `<img class="c85-avatar" src="${esc(h.photoUrl)}" alt="" onerror="this.style.display='none'">` : `<span class="c85-avatar c85-avatar-init">${esc(initial)}</span>`}
           <div>
@@ -13938,6 +13952,7 @@ function renderClaimAccount() {
       <form novalidate onsubmit="return doQuickClaim(event)">
         <div class="field"><label>${T("Email (how we reach you)", "Correo electrónico (así te contactamos)")}</label><input type="email" id="c85-email" required autocomplete="email" value="${esc(gp ? gp.email : "")}"></div>
         <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input type="password" id="c85-password" required minlength="10" autocomplete="new-password"></div>
+        <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-post" required><span>${T("I agree to the post agreement: when a business comps my visit, I will post 1 post or reel plus 1 story that shares the post, honest and disclosed, within 48 hours of the visit, and keep the post live for at least 30 days. Paid visits follow the posting terms on the booking.", "Acepto el acuerdo de publicación: cuando un negocio me dé una visita en cortesía, publicaré 1 publicación o reel más 1 historia que comparta la publicación, honesta y revelada, dentro de 48 horas de la visita, y mantendré la publicación activa al menos 30 días. Las visitas pagadas siguen los términos de publicación de la reserva.")}</span></label></div>
         <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on Magpie on Magpie, and I agree Magpie can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en Magpie las reservas que empiezan en Magpie, y acepto que Magpie me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
         <button class="btn" type="submit" style="width:100%">${T("Finish — join the founding roster", "Terminar: únete a la lista de fundadores")}</button>
       </form>
@@ -13956,6 +13971,7 @@ async function doQuickClaim(e) {
     window.scrollTo(0, 0);
   };
   if (!document.getElementById("c85-agree-terms").checked) { errBox(T("Please agree to the Terms of Service and email consent so we can reach you at launch.", "Acepta los Términos de Servicio y el consentimiento de correo para poder contactarte al lanzar, por favor.")); return false; }
+  if (!document.getElementById("c85-agree-post").checked) { errBox(T("Please agree to the post agreement: when a business comps your visit, you post honestly and disclose the comp, within 48 hours of the visit.", "Acepta el acuerdo de publicación: cuando un negocio te dé una visita en cortesía, publicas con honestidad y revelas la cortesía, dentro de 48 horas de la visita, por favor.")); return false; }
   const qcHandle = normalizeHandleClient(d.handle || "");
   if (!qcHandle) { state.claimStep = 1; render(); return false; }
   d.handle = qcHandle;
@@ -13985,7 +14001,7 @@ async function doQuickClaim(e) {
       followerCount: (d.stack && d.stack[d.platform || "instagram"]) || undefined,
       localAudiencePct: d.localTouched && d.localPct !== null && d.localPct !== undefined ? d.localPct : undefined,
       categories: d.cats && d.cats.length ? d.cats.slice() : undefined,
-      agreedTerms: true,
+      agreedTerms: true, agreedPostCompliance: true,
       referredBy: storedRef() || undefined,
       goldenTicket: storedTicket() || undefined,
       signupSource: storedSrc() || undefined,
@@ -14223,7 +14239,7 @@ function neighborCardSave() {
   const handle = (u.creator && u.creator.handle) || "";
   const photoAbs = u.creator.hasPhoto ? `${location.origin}/api/users/${u.id}/photo` : "";
   const rankLine = f && f.band ? `Founding creator · first ${f.band} in ${marketLabel}` : marketLabel;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><circle cx="540" cy="215" r="85" fill="#E3F5EA"/><text x="540" y="245" font-family="Arial, sans-serif" font-size="72" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc((name || handle || "M").trim().charAt(0).toUpperCase())}</text>${photoAbs ? `<image href="${esc(photoAbs)}" x="455" y="130" width="170" height="170" preserveAspectRatio="xMidYMid slice"/>` : ""}<text x="540" y="380" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(name)}</text><text x="540" y="435" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">@${esc(handle)} · ${esc(marketLabel)}</text><text x="540" y="620" font-family="Arial, sans-serif" font-size="130" font-weight="800" fill="#0B0D0C" text-anchor="middle">${claimFmtCount(nb.neighborCount)}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">${nb.extrapolated ? "total potential neighbors" : "neighbors"}</text>${nb.localWords ? `<text x="540" y="745" font-family="Arial, sans-serif" font-size="34" fill="#5F7265" text-anchor="middle">${esc(nb.localWords)}</text>` : ""}<text x="540" y="830" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(rankLine)}</text><text x="540" y="950" font-family="Arial, sans-serif" font-size="32" fill="#5F7265" text-anchor="middle">Magpie · Local beats famous</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><circle cx="540" cy="215" r="85" fill="#E3F5EA"/><text x="540" y="245" font-family="Arial, sans-serif" font-size="72" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc((name || handle || "M").trim().charAt(0).toUpperCase())}</text>${photoAbs ? `<image href="${esc(photoAbs)}" x="455" y="130" width="170" height="170" preserveAspectRatio="xMidYMid slice"/>` : ""}<text x="540" y="380" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(name)}</text><text x="540" y="435" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">@${esc(handle)} · ${esc(marketLabel)}</text><text x="540" y="620" font-family="Arial, sans-serif" font-size="130" font-weight="800" fill="#0B0D0C" text-anchor="middle">${claimFmtCount(nb.neighborCount)}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">${nb.extrapolated ? "total potential local followers" : "local followers"}</text>${nb.localWords ? `<text x="540" y="745" font-family="Arial, sans-serif" font-size="34" fill="#5F7265" text-anchor="middle">${esc(nb.localWords)}</text>` : ""}<text x="540" y="830" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(rankLine)}</text><text x="540" y="950" font-family="Arial, sans-serif" font-size="32" fill="#5F7265" text-anchor="middle">Magpie · Local beats famous</text></svg>`;
   const blob = new Blob([svg], { type: "image/svg+xml" });
   api("POST", "/neighbor/card-event", { action: "generated" }).catch(() => {});
   const file = new File([blob], "magpie-neighbor-card.svg", { type: "image/svg+xml" });
@@ -14381,6 +14397,7 @@ function renderJoinCreator() {
           <li>${T("If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.", "Si una publicación nunca llega, la visita no cuenta, y las faltas repetidas pueden pausar tu cuenta. Aquí importa que cumplas.")}</li>
         </ul>
       </div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-compliance" required><span>${T("I agree to the post agreement: when a business comps my visit, I will post 1 post or reel plus 1 story that shares the post, honest and disclosed, within 48 hours of the visit, and keep the post live for at least 30 days. Paid visits follow the posting terms on the booking.", "Acepto el acuerdo de publicación: cuando un negocio me dé una visita en cortesía, publicaré 1 publicación o reel más 1 historia que comparta la publicación, honesta y revelada, dentro de 48 horas de la visita, y mantendré la publicación activa al menos 30 días. Las visitas pagadas siguen los términos de publicación de la reserva.")}</span></label></div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on Magpie on Magpie, and I agree Magpie can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en Magpie las reservas que empiezan en Magpie, y acepto que Magpie me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
       <div id="jc-save-warn"></div>
       <button class="btn" type="submit" style="width:100%">${T("Create my profile", "Crear mi perfil")}</button>
@@ -14520,6 +14537,7 @@ async function doRegisterCreator(e) {
     if (v > 0) stackFromForm[platform] = v;
   }
   if (!document.getElementById("jc-agree-terms").checked) { errBox(T("Please agree to the Terms of Service and email consent so we can reach you at launch.", "Acepta los Términos de Servicio y el consentimiento de correo para poder contactarte al lanzar, por favor.")); return false; }
+  if (!document.getElementById("jc-agree-compliance").checked) { errBox(T("Please agree to the post agreement: when a business comps your visit, you post honestly and disclose the comp, within 48 hours of the visit.", "Acepta el acuerdo de publicación: cuando un negocio te dé una visita en cortesía, publicas con honestidad y revelas la cortesía, dentro de 48 horas de la visita, por favor.")); return false; }
   // The primary social link is required (Jeff, 2026-10-26): it is
   // how businesses and our team view and verify the creator's
   // page. A pasted profile link normalizes to the clean handle.
@@ -14581,7 +14599,7 @@ async function doRegisterCreator(e) {
       categories: cats,
       compCategories: comps,
       bio: document.getElementById("jc-bio").value,
-      agreedTerms: true,
+      agreedTerms: true, agreedPostCompliance: true,
       referredBy: storedRef() || undefined,
       goldenTicket: storedTicket() || undefined,
       signupSource: storedSrc() || undefined,
@@ -14886,7 +14904,7 @@ async function jbConvoFile() {
       planId: a.planId,
       moment: a.moment || undefined,
       applicationSource: "conversation",
-      agreedTerms: true,
+      agreedTerms: true, agreedPostCompliance: true,
       signupSource: storedSrc() || undefined,
       utmSource: storedAttribution().utmSource || undefined,
       utmMedium: storedAttribution().utmMedium || undefined,
@@ -17375,10 +17393,12 @@ async function dealConfirm(bookingId) {
 // Disclosure Done For You: the line itself, one tap to copy,
 // and a confirmation the business can see on the booking.
 function disclosureLine(b) {
-  if (b.kind === "coupon") return `#ad — paid with a coupon by ${b.businessName || "this business"} through Magpie`;
+  // Build -230 (Jeff, 2026-11-21): no em dash in the caption
+  // starter. A comma carries the line instead.
+  if (b.kind === "coupon") return `#ad, paid with a coupon by ${b.businessName || "this business"} through Magpie`;
   return b.kind === "paid" || b.paidLane
-    ? `#ad — paid partnership with ${b.businessName || "this business"} through Magpie`
-    : `#ad — comped by ${b.businessName || "this business"} through Magpie`;
+    ? `#ad, paid partnership with ${b.businessName || "this business"} through Magpie`
+    : `#ad, comped by ${b.businessName || "this business"} through Magpie`;
 }
 function disclosureCopy(btn) {
   const wrap = btn && btn.closest(".field");
@@ -20672,7 +20692,7 @@ function lineupCreatorBlockHtml(o) {
   return `<div class="notice blue" style="margin-top:10px">
     <strong>You're in the Lineup for ${esc(lu.businessName || o.businessName)}</strong>
     <div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap">${faces}</div>
-    <p class="small" style="margin:0">Maggie picked ${nWord} local creators for ${esc(lu.businessName || o.businessName)} — together you reach about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential neighbors" : "neighbors"}. You each visit on your own; this invite is yours alone, like any booking.</p>
+    <p class="small" style="margin:0">Maggie picked ${nWord} local creators for ${esc(lu.businessName || o.businessName)} — together you reach about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential local followers" : "local followers"}. You each visit on your own; this invite is yours alone, like any booking.</p>
     <p style="margin:8px 0 0"><button type="button" class="btn small-btn ghost" onclick="return lineupShareCard('${o.id}')">Save my Lineup card</button></p>
   </div>`;
 }
@@ -20681,7 +20701,7 @@ function lineupShareCard(offerId) {
   if (!o || !o.lineup) return false;
   const lu = o.lineup;
   const others = (lu.members || []).filter((m) => m.userId !== (state.user && state.user.id)).map((m) => m.name).join(" · ");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><text x="540" y="300" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#5F7265" text-anchor="middle">I'M IN THE LINEUP</text><text x="540" y="430" font-family="Arial, sans-serif" font-size="76" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc(lu.businessName || o.businessName || "A local business")}</text><text x="540" y="540" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">with ${esc(others || "four other local creators")}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#0B0D0C" text-anchor="middle">Together: about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential neighbors" : "neighbors"}</text><text x="540" y="880" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">Picked by Maggie · Magpie</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><text x="540" y="300" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#5F7265" text-anchor="middle">I'M IN THE LINEUP</text><text x="540" y="430" font-family="Arial, sans-serif" font-size="76" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc(lu.businessName || o.businessName || "A local business")}</text><text x="540" y="540" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">with ${esc(others || "four other local creators")}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#0B0D0C" text-anchor="middle">Together: about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential local followers" : "local followers"}</text><text x="540" y="880" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">Picked by Maggie · Magpie</text></svg>`;
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   const a = document.createElement("a");
   a.href = url;
@@ -21949,9 +21969,52 @@ function visitCard(b, role) {
     }
   }
   html += visitActions226Html(b, role);
+  html += disputeBlock230Html(b);
   const otherId = role === "creator" ? b.businessId : b.creatorId;
   html += `<div class="mt"><button class="btn small-btn ghost" onclick="openThread('${otherId}')">Message</button></div></div>`;
   return html;
+}
+
+// Report a problem (Build -230): reason + one note, filed from
+// the visit card by either side. The server holds every
+// automatic strike or pause from this booking while the case is
+// open; the copy says exactly that, in plain words.
+function disputeBlock230Html(b) {
+  return `<div class="mt" id="dispute-${b.id}">
+    <button class="btn small-btn ghost" type="button" onclick="return disputeToggle230('${b.id}')">${T("Report a problem", "Reportar un problema")}</button>
+    <div id="dispute-form-${b.id}" style="display:none;margin-top:8px">
+      <div class="field"><label>${T("What went wrong?", "¿Qué salió mal?")}</label>
+        <select id="dispute-reason-${b.id}">
+          <option value="visit_problem">${T("Something about the visit", "Algo de la visita")}</option>
+          <option value="post_problem">${T("Something about the post", "Algo de la publicación")}</option>
+          <option value="payment_problem">${T("Something about payment", "Algo del pago")}</option>
+          <option value="business_unreachable">${T("I cannot reach the business", "No puedo contactar al negocio")}</option>
+          <option value="creator_unreachable">${T("I cannot reach the creator", "No puedo contactar a la creadora")}</option>
+          <option value="other">${T("Something else", "Otra cosa")}</option>
+        </select></div>
+      <div class="field"><label>${T("One note for the Magpie team", "Una nota para el equipo de Magpie")}</label><textarea id="dispute-note-${b.id}" rows="2" placeholder="${T("What happened, in a sentence or two", "Qué pasó, en una o dos frases")}"></textarea></div>
+      <button class="btn small-btn" type="button" onclick="return disputeSubmit230('${b.id}')">${T("Send to the Magpie team", "Enviar al equipo de Magpie")}</button>
+      <p class="small muted">${T("While your case is open, nothing automatic happens to either account because of this booking. The team reads it and writes back here in the app.", "Mientras tu caso esté abierto, nada automático le pasa a ninguna cuenta por esta reserva. El equipo lo lee y responde aquí en la app.")}</p>
+      <p class="small" id="dispute-note-out-${b.id}"></p>
+    </div>
+  </div>`;
+}
+function disputeToggle230(id) {
+  const f = document.getElementById(`dispute-form-${id}`);
+  if (f) f.style.display = f.style.display === "none" ? "" : "none";
+  return false;
+}
+async function disputeSubmit230(id) {
+  const out = document.getElementById(`dispute-note-out-${id}`);
+  const note = (document.getElementById(`dispute-note-${id}`) || {}).value || "";
+  const reason = (document.getElementById(`dispute-reason-${id}`) || {}).value || "other";
+  if (!note.trim()) { if (out) out.textContent = T("Add one note about what went wrong, so the team can help.", "Agrega una nota sobre qué salió mal, para que el equipo pueda ayudar."); return false; }
+  try {
+    await api("POST", `/bookings/${id}/report-problem`, { reason, note });
+    if (out) out.textContent = T("Sent. Your case is open, and the Magpie team will write back in the app.", "Enviado. Tu caso está abierto, y el equipo de Magpie responderá en la app.");
+    const ta = document.getElementById(`dispute-note-${id}`); if (ta) ta.value = "";
+  } catch (err) { if (out) out.textContent = err.message; }
+  return false;
 }
 
 async function checkIn(bookingId) {
@@ -25387,7 +25450,7 @@ function peopleHereBits(c) {
   const pct = cardLocalPct(c);
   const model = localCountModel(c);
   if (pct === null || model.count === null) return null;
-  return { pct, count: model.count, extrapolated: model.extrapolated, words: model.extrapolated ? "potential people here" : "people here" };
+  return { pct, count: model.count, extrapolated: model.extrapolated, words: model.extrapolated ? "potential local followers" : "local followers" };
 }
 function shelfPriceLine(c) {
   const p = (c && c.profile) || {};
@@ -25593,7 +25656,7 @@ function similarCreatorsHtml(c) {
   // Build -140 (Item B): this block renders at the very bottom
   // of the profile, below the booking box, behind a divider —
   // the pdp-similar-bottom class carries that treatment.
-  return `<div class="pdp-block pdp-similar-bottom"><h4>Similar creators nearby</h4><div class="pdp-similar">${ranked.map((x) => { const pct = cardLocalPct(x); const n175 = cardLocalCount(x); return `<button type="button" class="pdp-sim" onclick="openCreatorProfile('${x.userId}')">${avatarHtml(x, "pdp-sim-img")}<span class="pdp-sim-name">${esc(x.name || "")}</span><span class="pdp-sim-meta">${pct === null ? "Local % not reported" : `${n175 !== null ? `${fmtFull(n175)} people here · ` : ""}${pct}% local`} · ${esc(shelfPriceLine(x).main)}</span></button>`; }).join("")}</div></div>`;
+  return `<div class="pdp-block pdp-similar-bottom"><h4>Similar creators nearby</h4><div class="pdp-similar">${ranked.map((x) => { const pct = cardLocalPct(x); const n175 = cardLocalCount(x); return `<button type="button" class="pdp-sim" onclick="openCreatorProfile('${x.userId}')">${avatarHtml(x, "pdp-sim-img")}<span class="pdp-sim-name">${esc(x.name || "")}</span><span class="pdp-sim-meta">${pct === null ? "Local % not reported" : `${n175 !== null ? `${fmtFull(n175)} local followers · ` : ""}${pct}% local`} · ${esc(shelfPriceLine(x).main)}</span></button>`; }).join("")}</div></div>`;
 }
 // Build -140 (Item F): the clickable channels list, lower on
 // the profile — every platform the creator entered, as a real
@@ -25743,7 +25806,7 @@ function buyBoxHtml(c) {
       <p class="small muted" style="margin:6px 0 0">Your terms open the deal instead of the listed ones. The creator can accept, counter once, or decline. Nothing is charged until you both agree, and their rate floor still applies.</p>
     </details>
     <button type="button" class="btn pdp-send" onclick="pdpSendOffer('${c.userId}')">Send offer</button>
-    <p class="small muted" style="margin:8px 0 0">Money is released the moment their post is live. Your offer opens with these terms filled in; the creator can accept, counter once, or decline with a reason.</p>
+    <p class="small muted" style="margin:8px 0 0">You pay after their post is live and verified, within 48 hours, once their payout details are set up. Your offer opens with these terms filled in; the creator can accept, counter once, or decline with a reason.</p>
   </div>`;
 }
 function pdpPickDay(btn) {
@@ -26152,7 +26215,7 @@ async function loadDiscover() {
         <div class="df-label">Where &amp; sort</div>
         <div class="filters disc-top">
           <div><label>Market</label><select id="f-market" class="ctl189" onchange="runDiscover()">${discoverMarketOptions189(u.market)}</select></div>
-          <div><label>Sort by</label><select id="f-sort" class="ctl189" onchange="runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></div>
+          <div><label>Sort by</label><select id="f-sort" class="ctl189" onchange="runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="people">Most local followers</option><option value="">Founding order (first to join)</option><option value="score">Best overall (local reach and track record)</option><option value="momentum">Most reliable (posts on time)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></div>
         </div>
       </div>
       <div class="df-group">
@@ -26193,7 +26256,7 @@ async function loadDiscover() {
       </div>
       <div class="df-group">
         <div class="df-label">How many people they reach here</div>
-        ${[["", "Any number"], ["1000", "1,000+ people here"], ["10000", "10,000+ people here"], ["50000", "50,000+ people here"], ["100000", "100,000+ people here"]].map(([v, l]) => `<label class="rail-row"><input type="radio" name="disc-minpeople" value="${v}" ${String(state.discoverMinPeople || "") === v ? "checked" : ""} onchange="return discMinPeopleSet('${v}')"><span class="rr-tx">${esc(l)}</span></label>`).join("")}
+        ${[["", "Any number"], ["1000", "1,000+ local followers"], ["10000", "10,000+ local followers"], ["50000", "50,000+ local followers"], ["100000", "100,000+ local followers"]].map(([v, l]) => `<label class="rail-row"><input type="radio" name="disc-minpeople" value="${v}" ${String(state.discoverMinPeople || "") === v ? "checked" : ""} onchange="return discMinPeopleSet('${v}')"><span class="rr-tx">${esc(l)}</span></label>`).join("")}
       </div>
       <div class="df-group">
         <div class="df-label">Tier (their audience size)</div>
@@ -26283,7 +26346,7 @@ function lineupCardHtml(lu) {
     </div>
     <p class="small" style="margin:6px 0 0">Maggie picked the ${nWord} creators who match ${esc(lu.businessName || "your business")} best. <strong>A Lineup is optional:</strong> each creator visits on their own, exactly like any booking — book one, book all ${nWord}, or skip it.</p>
     <div>${rows}</div>
-    <p style="margin:10px 0 0"><strong>Together: about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential neighbors" : "neighbors"}</strong> <span class="muted">— the ${nWord} creators' local audiences added up${lu.anyExtrapolated ? "; part of that count is estimated at each creator's confirmed local rate, so it is labeled potential" : ""}. ${esc(terms)}.</span></p>
+    <p style="margin:10px 0 0"><strong>Together: about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential local followers" : "local followers"}</strong> <span class="muted">— the ${nWord} creators' local audiences added up${lu.anyExtrapolated ? "; part of that count is estimated at each creator's confirmed local rate, so it is labeled potential" : ""}. ${esc(terms)}.</span></p>
     <p style="margin:12px 0 0"><button type="button" class="btn" onclick="return lineupBookAll()">Book all ${nWord}</button> <span class="small muted">One offer, sent as ${nWord} separate invites. Booking one at a time works exactly as always.</span></p>
   </section>`;
 }
@@ -26453,7 +26516,7 @@ async function runDiscover() {
       setDiscoverCount(0);
       const tg0 = document.getElementById("discover-toggle");
       if (tg0) tg0.innerHTML = discoverModeToggleHtml();
-      el.innerHTML = `<div class="stk-end"><h3>No creators match those filters</h3><p class="small muted">Nobody in this market reaches that many local people yet. Lower the "people here" floor, or clear the filters and start again.</p><div class="stk-end-actions"><button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
+      el.innerHTML = `<div class="stk-end"><h3>No creators match those filters</h3><p class="small muted">Nobody in this market reaches that many local people yet. Lower the local followers floor, or clear the filters and start again.</p><div class="stk-end-actions"><button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
       return;
     }
     const tg = document.getElementById("discover-toggle");
@@ -28007,7 +28070,7 @@ async function loadCampaignSetup() {
     return `<label class="tier-toggle"><input type="checkbox" class="sw" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tt-body"><span class="tt-name">${esc(t)}</span><span class="tt-line">floor $${fmtPrice(gd.floor)} &middot; typ. $${fmtPrice(gd.typicalLow)}&ndash;$${fmtPrice(gd.typicalHigh)}</span></span></label>`;
   }).join("")}</div>`;
   el.innerHTML = `
-  ${wsHead("Start a campaign", { sub: "Build a new campaign here. Checking on one you already made lives in Your campaigns.", subKey: "biz-setup" })}
+  ${wsHead("Create an offer", { sub: "Build a new offer here. Checking on one you already made lives in Your campaigns.", subKey: "biz-setup" })}
   ${pushReminder226Html("business", "offer")}
   <div class="camp-wrap"><div class="camp-layout"><div class="camp-main">
   <div id="offers-live-only">
@@ -32853,10 +32916,34 @@ async function loadCompliance() {
       <p class="small muted" style="margin-top:8px">The sweep runs on a schedule and sends the 48-hour reminder, the day-5 reminder, and the day-6 final warning; it pauses creators at the one-week hard stop, and a redeemed comp with no post one month after the visit makes the account no longer active (the paid-visit posting-terms rules). A hard stop with no post and no word from the creator counts a silent no-show strike; two strikes remove the creator. Paid visits run on their agreed posting terms instead. Counts: ${Object.entries(data.counts || {}).map(([k, v]) => `${esc(statusLabel[k] || k)} ${v}`).join(" &middot; ") || "none yet"}</p>
       <div id="sweep-note" class="small saved"></div>
       ${rows || `<p class="muted">No redeemed visits yet. Compliance rows appear here the moment a comp is redeemed.</p>`}
+      <div id="admin-cases-230"></div>
       ${bizRows ? `<h3 class="mt">Businesses with honor reports</h3><p class="small muted">Creator reports that a business did not honor a comp. Admin only; there is no public surface for this.</p>${bizRows}` : ""}`;
+    loadAdminCases230();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+async function loadAdminCases230() {
+  const host = document.getElementById("admin-cases-230");
+  if (!host) return;
+  try {
+    const data = await api("GET", "/admin/cases");
+    const rows = (data.cases || []).map((c) => `
+      <div class="card mb">
+        <div class="flex-between"><strong>${esc((c.context && c.context.title) || "Booking")}</strong><span class="badge ${c.status === "open" ? "warn" : "ok"}">${esc(c.status)}</span></div>
+        <p class="small muted">${esc((c.context && c.context.businessName) || "")} &middot; ${esc((c.context && c.context.creatorName) || "")} &middot; reported by ${esc(c.reporterRole || "")} &middot; ${c.createdAt ? esc(fmtDate(c.createdAt)) : ""}</p>
+        <p class="small">Reason: ${esc(c.reason || "")}</p>
+        <p class="small">&ldquo;${esc(c.note || "")}&rdquo;</p>
+        ${c.status === "open" ? `<div class="field"><label>Outcome note (both sides see this)</label><textarea id="case-note-${c.id}" rows="2"></textarea></div><button class="btn small-btn" onclick="resolveCase230('${c.id}')">Resolve case</button>` : `<p class="small">Outcome: ${esc(c.resolutionNote || "")}</p>`}
+      </div>`).join("");
+    host.innerHTML = `<h3 class="mt">Problem reports</h3><p class="small muted">While a case is open, no automatic strike or pause can come from that booking.</p>${rows || `<p class="muted">No cases yet.</p>`}`;
+  } catch (e) { host.innerHTML = ""; }
+}
+async function resolveCase230(id) {
+  const note = (document.getElementById(`case-note-${id}`) || {}).value || "";
+  if (!note.trim()) { alert("Add an outcome note, so both sides know what was decided."); return; }
+  try { await api("POST", `/admin/cases/${id}/resolve`, { note }); loadCompliance(); } catch (err) { alert(err.message); }
 }
 
 async function runSweepNow() {
@@ -35994,8 +36081,8 @@ function previewDiscoverHtml() {
     <div><label>Total audience min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
     <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
     <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
-    <div><label>Min people here (their local audience)</label><select id="pvf-minpeople"><option value="">Any number</option><option value="1000">1,000+ people here</option><option value="10000">10,000+ people here</option><option value="50000">50,000+ people here</option><option value="100000">100,000+ people here</option></select></div>
-    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit</option><option value="people">Most people here</option></select></div>
+    <div><label>Minimum local followers</label><select id="pvf-minpeople"><option value="">Any number</option><option value="1000">1,000+ local followers</option><option value="10000">10,000+ local followers</option><option value="50000">50,000+ local followers</option><option value="100000">100,000+ local followers</option></select></div>
+    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order (first to join)</option><option value="score">Best overall (local reach and track record)</option><option value="momentum">Most reliable (posts on time)</option><option value="fit">Best fit</option><option value="people">Most local followers</option></select></div>
     <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
     <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
   </div>
@@ -36104,7 +36191,7 @@ function renderPreviewResults() {
     // Build -175: a roster emptied by the people-here floor gets
     // the live filters empty state, not the roster-building one.
     if (state.preview.peopleFilteredEmpty) {
-      el.innerHTML = `<div class="stk-end"><h3>No creators match those filters</h3><p class="small muted">Nobody in this market reaches that many local people yet. Lower the "people here" floor, or clear the filters and search again.</p></div>`;
+      el.innerHTML = `<div class="stk-end"><h3>No creators match those filters</h3><p class="small muted">Nobody in this market reaches that many local people yet. Lower the local followers floor, or clear the filters and search again.</p></div>`;
       return;
     }
     // The live Discover empty state, verbatim (V4.2): the

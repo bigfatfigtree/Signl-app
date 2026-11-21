@@ -172,7 +172,7 @@ async function registerBusiness(admin, name) {
   const c = makeClient();
   const r = await c("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", email, password: PW, market: "Hampton Roads", city: "Norfolk",
-    businessName: name, category: "Restaurant", planId: "growth", agreedTerms: true,
+    businessName: name, category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   if (r.status !== 201) throw new Error("business register failed: " + JSON.stringify(r.data));
   await admin("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });

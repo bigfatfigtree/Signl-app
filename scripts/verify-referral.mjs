@@ -105,7 +105,7 @@ try {
     const c = client();
     const reg = await c("POST", "/api/auth/register", {
       role: "business", name: "Owner", businessName, email, password: "business-pass-123",
-      market: "Richmond", city: "Richmond", category: "Restaurant", planId: "growth", agreedTerms: true,
+      market: "Richmond", city: "Richmond", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
     });
     if (reg.status !== 201) throw new Error(`business ${businessName} failed: ${JSON.stringify(reg.data)}`);
     await admin("POST", "/api/admin/review", { userId: reg.data.user.id, decision: "approve" });

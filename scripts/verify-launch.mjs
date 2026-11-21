@@ -134,7 +134,7 @@ try {
   const bizAttempt = await hopefulBiz("POST", "/api/auth/register", {
     role: "business", name: "Hopeful Owner", businessName: "Hopeful Table", email: "hopeful@fixtures.dev",
     password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed",
-    neighborhood: "Ghent", about: "Neighborhood spot, chef counter.", agreedTerms: true,
+    neighborhood: "Ghent", about: "Neighborhood spot, chef counter.", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registration succeeds (201) as a pending founding account", bizAttempt.status === 201 && bizAttempt.data.user && bizAttempt.data.user.status === "pending", JSON.stringify(bizAttempt.data).slice(0, 200));
   const hopefulBizId = bizAttempt.data.user && bizAttempt.data.user.id;
@@ -147,7 +147,7 @@ try {
   check("business registration without the Terms agreement is refused (400)", bizNoTerms.status === 400, String(bizNoTerms.status));
   const bizUnlisted = await client()("POST", "/api/auth/register", {
     role: "business", name: "Unlisted Owner", businessName: "Unlisted Table", email: "unlisted-biz@fixtures.dev",
-    password: "business-pass-123", market: "Not listed yet", customCity: "Nowhere", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true,
+    password: "business-pass-123", market: "Not listed yet", customCity: "Nowhere", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   // UX audit fix (2026-10-22): an unlisted-market business no
   // longer dead-ends at registration. It joins the founding list
@@ -399,7 +399,7 @@ try {
   const lateBiz = client();
   const bizAfter = await lateBiz("POST", "/api/auth/register", {
     role: "business", name: "Late Owner", businessName: "Late Table", email: "late@fixtures.dev",
-    password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed", agreedTerms: true,
+    password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registration works the same in a live market (201): founding intake, the live flag does not change sign-up", bizAfter.status === 201 && bizAfter.data.user.status === "pending" && bizAfter.data.user.business.accessState === "founding", String(bizAfter.status));
   await admin("POST", "/api/admin/review", { userId: bizAfter.data.user.id, decision: "approve" });

@@ -87,7 +87,7 @@ async function makeBusiness(admin, { businessName, email, category, neighborhood
     password: "business-pass-123", market: "Richmond", city: "Richmond", category,
     planId: "self-service", neighborhood: neighborhood || "", about: "",
     ...(moment ? { moment } : {}), ...(applicationSource ? { applicationSource } : {}),
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   if (reg.status !== 201) throw new Error(`business ${businessName} failed: ${JSON.stringify(reg.data)}`);
   return { client: b, id: reg.data.user.id, user: reg.data.user };

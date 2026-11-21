@@ -132,7 +132,7 @@ async function registerCreator(admin, followerCount, localAudiencePct) {
     agreedHonestPosts: true,
     agreedFtcDisclosure: true,
     agreedPostCompliance: true,
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   if (r.status === 201) await admin("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });
   return { client: c, res: r, user: r.data && r.data.user };

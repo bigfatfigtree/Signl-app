@@ -121,7 +121,7 @@ async function main() {
   check("creator B registers pending", !!regB.data.user && regB.data.user.status === "pending");
   const dual = client();
   const dualReg = await dual("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "dual195@fixtures.dev", password: FIXPW, handle: "dual195", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true });
-  const dualSide = await dual("POST", "/api/auth/add-side", { role: "business", name: "Dual Owner", businessName: "Dual Fixture Bakery 195", category: "Bakery", market: "Nashville", agreedTerms: true });
+  const dualSide = await dual("POST", "/api/auth/add-side", { role: "business", name: "Dual Owner", businessName: "Dual Fixture Bakery 195", category: "Bakery", market: "Nashville", agreedTerms: true, agreedPostCompliance: true });
   check("dual fixture: both sides pending and linked", !!dualReg.data.user && !!dualSide.data.user && dualSide.data.user.status === "pending" && !!dualSide.data.user.linkedAccountId, JSON.stringify(dualSide.data).slice(0, 160));
   const biz = client();
   const regBiz = await biz("POST", "/api/auth/register", { role: "business", name: "Biz Owner", email: "biz195@fixtures.dev", password: FIXPW, businessName: "Biz Fixture Shop 195", market: "Nashville", city: "Nashville", category: "Restaurant", planId: "self-service", agreedTerms: true });

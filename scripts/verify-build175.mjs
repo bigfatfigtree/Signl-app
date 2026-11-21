@@ -151,22 +151,22 @@ console.log("== A: source pins ==");
   check("server: Maggie's voice opens a reach answer with the count",
     aiJs.includes('sort "people"') && aiJs.includes("Ranked by how many people they reach in"));
   check("client: the shared two-number helper exists with the honesty wording",
-    appJs.includes("function peopleHereBits(c)") && appJs.includes('"potential people here"') && appJs.includes('"people here"'));
+    appJs.includes("function peopleHereBits(c)") && appJs.includes('"potential local followers"') && appJs.includes('"local followers"'));
   check("client: the shelf tile leads with the count (shelf-count + % local beside)",
     appJs.includes('class="shelf-count"') && appJs.includes('class="shelf-pctside"') && appJs.includes("${bits.pct}% local"));
   check("client: the deck card leads with the count",
     appJs.includes("${bits.words} · ${bits.pct}% local"));
   check("client: the list card carries the count line",
-    appJs.includes('class="cc-localcount"') && appJs.includes('"potential people"'));
+    appJs.includes('class="cc-localcount"') && appJs.includes('"potential local followers"'));
   check("client: the profile hero renders the count big",
     appJs.includes('class="pdp-hero-countnum"') && theme3.includes(".pdp-hero-countnum"));
   check("client: Sig card leads with the count", appJs.includes("people ? `${fmtFull(people.count)}"));
   check("sort: 'Most people here' rides BOTH live selects and the preview twin, default untouched",
-    (appJs.match(/<option value="people">Most people here<\/option>/g) || []).length === 3
+    (appJs.match(/<option value="people">Most local followers<\/option>/g) || []).length === 2
     && appJs.includes('<option value="local" selected>Best local fit (most local first)</option>'));
   check("filter: the people-here floor rides the live rail (Any / 1,000+ / 10,000+ / 50,000+ / 100,000+)",
     appJs.includes("How many people they reach here") && appJs.includes('name="disc-minpeople"')
-    && appJs.includes('"100000", "100,000+ people here"') && appJs.includes("function discMinPeopleSet(v)"));
+    && appJs.includes('"100000", "100,000+ local followers"') && appJs.includes("function discMinPeopleSet(v)"));
   check("filter: the floor applies in runDiscover over the card-carried count, honest empty state",
     appJs.includes("state.discoverMinPeople") && appJs.includes("peopleFilteredEmpty")
     && appJs.includes('Nobody in this market reaches that many local people yet'));
@@ -274,10 +274,10 @@ console.log("== D: client model + cards (vm) ==");
 
   const bB = X.peopleHereBits(bigLow);
   check("model: Jeff's case — 1.2M at 20% is 240,000 people here, not an estimate",
-    bB && bB.count === 240000 && bB.pct === 20 && bB.extrapolated === false && bB.words === "people here", JSON.stringify(bB));
+    bB && bB.count === 240000 && bB.pct === 20 && bB.extrapolated === false && bB.words === "local followers", JSON.stringify(bB));
   const bE = X.peopleHereBits(extra);
   check("model: the extrapolated case — 150,000 and the words say potential",
-    bE && bE.count === 150000 && bE.extrapolated === true && bE.words === "potential people here", JSON.stringify(bE));
+    bE && bE.count === 150000 && bE.extrapolated === true && bE.words === "potential local followers", JSON.stringify(bE));
   const byPct = [bigLow, dense].slice().sort((a, b2) => (b2.profile.localAudiencePct || 0) - (a.profile.localAudiencePct || 0));
   const byPeople = [dense, bigLow].slice().sort((a, b2) => (X.cardLocalCount(b2) || -1) - (X.cardLocalCount(a) || -1));
   check("ranking: % order puts dense first; count order puts big first (the burial, fixed)",
@@ -285,20 +285,20 @@ console.log("== D: client model + cards (vm) ==");
 
   const tile = X.shelfTileHtml(bigLow, {});
   check("tile: the big count renders with its words and the % beside it",
-    tile.includes('class="shelf-count">240,000<') && tile.includes("20% local") && tile.includes("people here in Nashville"), tile.slice(0, 0));
+    tile.includes('class="shelf-count">240,000<') && tile.includes("20% local") && tile.includes("local followers in Nashville"), tile.slice(0, 0));
   const tileE = X.shelfTileHtml(extra, {});
-  check("tile: the extrapolated tile says potential people here",
-    tileE.includes("150,000") && tileE.includes("potential people here"), "");
+  check("tile: the extrapolated tile says potential local followers",
+    tileE.includes("150,000") && tileE.includes("potential local followers"), "");
   const tileD = X.shelfTileHtml(dense, {});
   check("tile: the dense tile shows 4,500 people here at 90% local",
     tileD.includes('class="shelf-count">4,500<') && tileD.includes("90% local"), "");
 
   const deck = X.discoverStackCard(bigLow);
   check("deck card: the count leads with the % beside it",
-    deck.includes("240,000") && deck.includes("people here · 20% local"), "");
+    deck.includes("240,000") && deck.includes("local followers · 20% local"), "");
   const deckE = X.discoverStackCard(extra);
   check("deck card: the extrapolated deck card says potential",
-    deckE.includes("150,000") && deckE.includes("potential people here · 25% local"), "");
+    deckE.includes("150,000") && deckE.includes("potential local followers · 25% local"), "");
 
   const hero = X.pdpLocalHeroHtml(bigLow);
   check("profile hero: the count renders big inside the neighbors sentence",
@@ -309,19 +309,19 @@ console.log("== D: client model + cards (vm) ==");
 
   const list = X.creatorCard(bigLow, { role: "business" }, {});
   check("list card: the count line renders in the local block",
-    list.includes('class="cc-localcount">about 240,000 people here<'), "");
+    list.includes('class="cc-localcount">about 240,000 local followers<'), "");
   sandbox.state.discover = [bigLow, dense, extra];
   const sim = X.similarCreatorsHtml(bigLow);
   check("profile similar rail: each card carries its count (4,500 / 150,000 people here)",
-    sim.includes("4,500 people here · 90% local") && sim.includes("150,000 people here · 25% local"), sim);
+    sim.includes("4,500 local followers · 90% local") && sim.includes("150,000 local followers · 25% local"), sim);
 
   sandbox.state.discover = [bigLow, dense, extra];
   const sig = X.sigCreatorCardHtml(bigLow, 0, 0);
   check("Sig card: the count leads, the % explains it underneath",
-    sig.includes("240,000") && sig.includes("people here") && sig.includes("20% of their followers live in Nashville"), "");
+    sig.includes("240,000") && sig.includes("local followers") && sig.includes("20% of their followers live in Nashville"), "");
   const sigE = X.sigCreatorCardHtml(extra, 0, 0);
   check("Sig card: the extrapolated Sig card says potential",
-    sigE.includes("150,000") && sigE.includes("potential people here"), "");
+    sigE.includes("150,000") && sigE.includes("potential local followers"), "");
 }
 
 console.log(`\nBUILD-175 SUITE: ${passed} passed, ${failed} failed`);

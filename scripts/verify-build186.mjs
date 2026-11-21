@@ -147,7 +147,7 @@ try {
   console.log("== Chelsea's case: approved business, then the creator claim ==");
   const bizReg = await client()("POST", "/api/auth/register", {
     role: "business", name: "Chelsea Fixture", email: CHELSEA_EMAIL, password: CHELSEA_PW,
-    businessName: BIZ_NAME, category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
+    businessName: BIZ_NAME, category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers (pending)", bizReg.status === 201 && bizReg.data.user.role === "business" && bizReg.data.user.status === "pending", JSON.stringify(bizReg.data).slice(0, 200));
   const bizId = bizReg.data.user.id;
@@ -156,14 +156,14 @@ try {
 
   const wrong = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: CHELSEA_EMAIL, password: "not-her-password-1",
-    handle: "fixturefriday", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true,
+    handle: "fixturefriday", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("claim with a WRONG password -> 409 dual_role_password", wrong.status === 409 && wrong.data.code === "dual_role_password", JSON.stringify(wrong.data).slice(0, 200));
   check("wrong-password claim created nothing", usersWithEmail(readDb(), CHELSEA_EMAIL).length === 1);
 
   const claim = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: CHELSEA_EMAIL, password: CHELSEA_PW,
-    handle: "fixturefriday", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true,
+    handle: "fixturefriday", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("claim with her account password -> creator side created", (claim.status === 201 || claim.status === 200) && claim.data.user.role === "creator", JSON.stringify(claim.data).slice(0, 200));
   const creatorId = claim.data.user && claim.data.user.id;
@@ -182,7 +182,7 @@ try {
 
   const dupeSide = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: CHELSEA_EMAIL, password: CHELSEA_PW,
-    handle: "fixturefriday2", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true,
+    handle: "fixturefriday2", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("claiming a role the account already holds -> standing 409", dupeSide.status === 409 && dupeSide.data.code !== "dual_role_password", JSON.stringify(dupeSide.data).slice(0, 160));
   check("still exactly two records", usersWithEmail(readDb(), CHELSEA_EMAIL).length === 2);
@@ -247,18 +247,18 @@ try {
   const carol = client();
   const carolReg = await carol("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: "carol@fixtures.dev", password: "carol-pass-123",
-    handle: "carolfixture", primaryPlatform: "tiktok", market: "Nashville", agreedTerms: true,
+    handle: "carolfixture", primaryPlatform: "tiktok", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("single-role creator registers clean (no link fields)", carolReg.status === 201 && !carolReg.data.user.linkedSide, JSON.stringify(carolReg.data).slice(0, 160));
   const noSwitch = await carol("POST", "/api/auth/switch-side", {});
   check("single-role switch -> 409 one-side message", noSwitch.status === 409, JSON.stringify(noSwitch.data).slice(0, 160));
   const addBiz = await carol("POST", "/api/auth/add-side", {
     role: "business", name: "Carol Fixture", businessName: "Carol Fixture Studio", category: "Retail",
-    market: "Nashville", city: "Nashville", agreedTerms: true,
+    market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("add-side creates the business side + lands on it", addBiz.status === 201 && addBiz.data.user.role === "business" && addBiz.data.user.status === "pending", JSON.stringify(addBiz.data).slice(0, 200));
   check("add-side response names the creator side", !!addBiz.data.user.linkedSide && addBiz.data.user.linkedSide.role === "creator");
-  const addAgain = await carol("POST", "/api/auth/add-side", { role: "business", name: "Carol Fixture", businessName: "Second Studio", market: "Nashville", agreedTerms: true });
+  const addAgain = await carol("POST", "/api/auth/add-side", { role: "business", name: "Carol Fixture", businessName: "Second Studio", market: "Nashville", agreedTerms: true, agreedPostCompliance: true });
   check("adding a side the account already holds -> 409", addAgain.status === 409, JSON.stringify(addAgain.data).slice(0, 160));
   const backAgain = await carol("POST", "/api/auth/switch-side", {});
   check("new dual account switches back to the creator side", backAgain.status === 200 && backAgain.data.user.role === "creator");
@@ -271,7 +271,7 @@ try {
   const gina = client();
   const ginaReg = await gina("POST", "/api/auth/register", {
     role: "business", name: "Gina Fixture", email: "gina@fixtures.dev", password: "gina-pass-123",
-    businessName: "Gina Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
+    businessName: "Gina Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("gina's business registers", ginaReg.status === 201, JSON.stringify(ginaReg.data).slice(0, 140));
   await stopServer();
@@ -284,13 +284,13 @@ try {
   check("server restarts for the Google-gate probe", await waitUp());
   const gClaim = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: "gina@fixtures.dev", password: "wrong-password-99",
-    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, googleLinkToken: gToken,
+    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true, googleLinkToken: gToken,
   });
   check("googleLinkToken + wrong password -> 409 dual_role_password", gClaim.status === 409 && gClaim.data.code === "dual_role_password", JSON.stringify(gClaim.data).slice(0, 200));
   check("the Google path created nothing either", usersWithEmail(readDb(), "gina@fixtures.dev").length === 1);
   const gClaim2 = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: "gina@fixtures.dev", password: "gina-pass-123",
-    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, googleLinkToken: gToken,
+    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true, googleLinkToken: gToken,
   });
   check("googleLinkToken + the account password links the side (and the identity)", (gClaim2.status === 201 || gClaim2.status === 200) && gClaim2.data.user.role === "creator" && !!gClaim2.data.user.linkedSide, JSON.stringify(gClaim2.data).slice(0, 200));
   const gRec = usersWithEmail(readDb(), "gina@fixtures.dev").find((u) => u.role === "creator");
@@ -333,14 +333,14 @@ try {
   const thr = client();
   const thrReg = await thr("POST", "/api/auth/register", {
     role: "business", name: "Throttled Owner", email: "throttle@fixtures.dev", password: "throttle-pass-123",
-    businessName: "Throttle Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
+    businessName: "Throttle Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("throttle fixture business registers", thrReg.status === 201, JSON.stringify(thrReg.data).slice(0, 120));
   let lastStatus = 0, sawDual = 0;
   for (let i = 0; i < 11; i++) {
     const r = await client()("POST", "/api/auth/register", {
       role: "creator", quickClaim: true, email: "throttle@fixtures.dev", password: `wrong-guess-${i}-xx`,
-      handle: "throttlefixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true,
+      handle: "throttlefixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
     });
     lastStatus = r.status;
     if (r.data && r.data.code === "dual_role_password") sawDual += 1;
@@ -365,7 +365,7 @@ try {
   check("server restarts for the guard probes", await waitUp());
   const roleProbe = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: "partner-seed@fixtures.dev", password: "partner-pass-123",
-    handle: "partnerseed", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true,
+    handle: "partnerseed", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("correct password against a PARTNER primary does NOT link (standing 409)", roleProbe.status === 409 && roleProbe.data.code !== "dual_role_password", JSON.stringify(roleProbe.data).slice(0, 160));
   const dbH2 = readDb();
@@ -373,12 +373,12 @@ try {
   check("the partner record gained no link", !dbH2["user:partner-seed-186"].linkedAccountId);
   const teamProbe = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: "team-seed@fixtures.dev", password: "any-guess-12345",
-    handle: "teamseed", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true,
+    handle: "teamseed", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("passwordless team-shaped primary: 409, not a 500", teamProbe.status === 409, `status=${teamProbe.status} ${JSON.stringify(teamProbe.data).slice(0, 120)}`);
   const pwlessProbe = await client()("POST", "/api/auth/register", {
     role: "business", name: "Pwless Biz", email: "pwless@fixtures.dev", password: "any-guess-12345",
-    businessName: "Pwless Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
+    businessName: "Pwless Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("passwordless creator primary: 409, not a 500", pwlessProbe.status === 409, `status=${pwlessProbe.status}`);
   const pwlessLogin = await client()("POST", "/api/auth/login", { email: "team-seed@fixtures.dev", password: "any-guess-12345" });

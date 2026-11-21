@@ -134,7 +134,7 @@ console.log("== Live: a London claim stores the picked area; home city stays Lon
 const claim = new Client(BASE);
 const claimReg = await claim.req("POST", "/api/auth/register", {
   role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "hackney@b88.dev", password: "b88-pass-1234", market: "London",
-  handle: "b88hackney", primaryPlatform: "instagram", agreedTerms: true, area: "Hackney",
+  handle: "b88hackney", primaryPlatform: "instagram", agreedTerms: true, agreedPostCompliance: true, area: "Hackney",
 });
 check("claim registers (201)", claimReg.status === 201, `status=${claimReg.status}`);
 {
@@ -152,7 +152,7 @@ const join = new Client(BASE);
 const joinReg = await join.req("POST", "/api/auth/register", {
   role: "creator", email: "brixton@b88.dev", password: "b88-pass-1234", name: "Brixton Creator", market: "London",
   city: "London", area: "Brixton", neighborhood: "Brixton", handle: "b88brixton", primaryPlatform: "instagram",
-  followerCount: 8000, categories: ["Music"], localAudiencePct: 70, agreedTerms: true,
+  followerCount: 8000, categories: ["Music"], localAudiencePct: 70, agreedTerms: true, agreedPostCompliance: true,
 });
 check("full join registers (201)", joinReg.status === 201, `status=${joinReg.status} ${JSON.stringify(joinReg.data).slice(0, 160)}`);
 {
@@ -174,7 +174,7 @@ console.log("== Live: Nashville control claim is unchanged ==");
 const nash = new Client(BASE);
 const nashReg = await nash.req("POST", "/api/auth/register", {
   role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "nash@b88.dev", password: "b88-pass-1234", market: "Nashville",
-  handle: "b88nash", primaryPlatform: "instagram", agreedTerms: true,
+  handle: "b88nash", primaryPlatform: "instagram", agreedTerms: true, agreedPostCompliance: true,
 });
 check("Nashville claim registers (201)", nashReg.status === 201, `status=${nashReg.status}`);
 {

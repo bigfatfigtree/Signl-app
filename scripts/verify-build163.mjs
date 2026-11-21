@@ -181,7 +181,7 @@ await seedMessage({ fromId: PEER, toId: cat1.id, body: CITY_BODY, createdAt: "20
 const bizC = makeClient();
 const bizReg = await bizC("POST", "/api/auth/register", {
   role: "business", name: "Biz Owner", businessName: "Threadless Kitchen", email: `biz-${uniq()}@fixtures.dev`, password: "business-pass-123",
-  market: "Nashville", city: "Nashville", category: "Restaurant", planId: "growth", neighborhood: "East Nashville", agreedTerms: true,
+  market: "Nashville", city: "Nashville", category: "Restaurant", planId: "growth", neighborhood: "East Nashville", agreedTerms: true, agreedPostCompliance: true,
 });
 if (bizReg.status !== 201) throw new Error("business register failed: " + JSON.stringify(bizReg.data));
 const bizId = bizReg.data.user.id;

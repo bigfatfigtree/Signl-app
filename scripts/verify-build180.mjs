@@ -147,7 +147,7 @@ try {
   console.log("== Chelsea's case: approved business, then the creator claim ==");
   const bizReg = await client()("POST", "/api/auth/register", {
     role: "business", name: "Chelsea Fixture", email: CHELSEA_EMAIL, password: CHELSEA_PW,
-    businessName: BIZ_NAME, category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
+    businessName: BIZ_NAME, category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers (pending)", bizReg.status === 201 && bizReg.data.user.role === "business" && bizReg.data.user.status === "pending", JSON.stringify(bizReg.data).slice(0, 200));
   const bizId = bizReg.data.user.id;
@@ -156,14 +156,14 @@ try {
 
   const wrong = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: CHELSEA_EMAIL, password: "not-her-password-1",
-    handle: "fixturefriday", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true,
+    handle: "fixturefriday", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("claim with a WRONG password -> 409 dual_role_password", wrong.status === 409 && wrong.data.code === "dual_role_password", JSON.stringify(wrong.data).slice(0, 200));
   check("wrong-password claim created nothing", usersWithEmail(readDb(), CHELSEA_EMAIL).length === 1);
 
   const claim = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: CHELSEA_EMAIL, password: CHELSEA_PW,
-    handle: "fixturefriday", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true,
+    handle: "fixturefriday", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("claim with her account password -> creator side created", (claim.status === 201 || claim.status === 200) && claim.data.user.role === "creator", JSON.stringify(claim.data).slice(0, 200));
   const creatorId = claim.data.user && claim.data.user.id;
@@ -182,7 +182,7 @@ try {
 
   const dupeSide = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: CHELSEA_EMAIL, password: CHELSEA_PW,
-    handle: "fixturefriday2", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true,
+    handle: "fixturefriday2", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("claiming a role the account already holds -> standing 409", dupeSide.status === 409 && dupeSide.data.code !== "dual_role_password", JSON.stringify(dupeSide.data).slice(0, 160));
   check("still exactly two records", usersWithEmail(readDb(), CHELSEA_EMAIL).length === 2);
@@ -247,18 +247,18 @@ try {
   const carol = client();
   const carolReg = await carol("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: "carol@fixtures.dev", password: "carol-pass-123",
-    handle: "carolfixture", primaryPlatform: "tiktok", market: "Nashville", agreedTerms: true,
+    handle: "carolfixture", primaryPlatform: "tiktok", market: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("single-role creator registers clean (no link fields)", carolReg.status === 201 && !carolReg.data.user.linkedSide, JSON.stringify(carolReg.data).slice(0, 160));
   const noSwitch = await carol("POST", "/api/auth/switch-side", {});
   check("single-role switch -> 409 one-side message", noSwitch.status === 409, JSON.stringify(noSwitch.data).slice(0, 160));
   const addBiz = await carol("POST", "/api/auth/add-side", {
     role: "business", name: "Carol Fixture", businessName: "Carol Fixture Studio", category: "Retail",
-    market: "Nashville", city: "Nashville", agreedTerms: true,
+    market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("add-side creates the business side + lands on it", addBiz.status === 201 && addBiz.data.user.role === "business" && addBiz.data.user.status === "pending", JSON.stringify(addBiz.data).slice(0, 200));
   check("add-side response names the creator side", !!addBiz.data.user.linkedSide && addBiz.data.user.linkedSide.role === "creator");
-  const addAgain = await carol("POST", "/api/auth/add-side", { role: "business", name: "Carol Fixture", businessName: "Second Studio", market: "Nashville", agreedTerms: true });
+  const addAgain = await carol("POST", "/api/auth/add-side", { role: "business", name: "Carol Fixture", businessName: "Second Studio", market: "Nashville", agreedTerms: true, agreedPostCompliance: true });
   check("adding a side the account already holds -> 409", addAgain.status === 409, JSON.stringify(addAgain.data).slice(0, 160));
   const backAgain = await carol("POST", "/api/auth/switch-side", {});
   check("new dual account switches back to the creator side", backAgain.status === 200 && backAgain.data.user.role === "creator");
@@ -271,7 +271,7 @@ try {
   const gina = client();
   const ginaReg = await gina("POST", "/api/auth/register", {
     role: "business", name: "Gina Fixture", email: "gina@fixtures.dev", password: "gina-pass-123",
-    businessName: "Gina Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
+    businessName: "Gina Fixture Goods", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("gina's business registers", ginaReg.status === 201, JSON.stringify(ginaReg.data).slice(0, 140));
   await stopServer();
@@ -284,13 +284,13 @@ try {
   check("server restarts for the Google-gate probe", await waitUp());
   const gClaim = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: "gina@fixtures.dev", password: "wrong-password-99",
-    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, googleLinkToken: gToken,
+    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true, googleLinkToken: gToken,
   });
   check("googleLinkToken + wrong password -> 409 dual_role_password", gClaim.status === 409 && gClaim.data.code === "dual_role_password", JSON.stringify(gClaim.data).slice(0, 200));
   check("the Google path created nothing either", usersWithEmail(readDb(), "gina@fixtures.dev").length === 1);
   const gClaim2 = await client()("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email: "gina@fixtures.dev", password: "gina-pass-123",
-    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, googleLinkToken: gToken,
+    handle: "ginafixture", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true, googleLinkToken: gToken,
   });
   check("googleLinkToken + the account password links the side (and the identity)", (gClaim2.status === 201 || gClaim2.status === 200) && gClaim2.data.user.role === "creator" && !!gClaim2.data.user.linkedSide, JSON.stringify(gClaim2.data).slice(0, 200));
   const gRec = usersWithEmail(readDb(), "gina@fixtures.dev").find((u) => u.role === "creator");

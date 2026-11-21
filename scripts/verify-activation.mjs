@@ -113,7 +113,7 @@ async function seedBusiness(admin, overrides) {
     city: "Norfolk",
     category: "Salon & Barbershop",
     planId: "growth",
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
     ...overrides,
   });
   if (reg.status !== 201) throw new Error("business seed failed: " + JSON.stringify(reg.data));

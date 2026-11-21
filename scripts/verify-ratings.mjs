@@ -139,7 +139,7 @@ async function makeBusiness(businessName, email) {
     city: "Norfolk",
     category: "Restaurant",
     planId: "growth",
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   if (reg.status !== 201) throw new Error(`business ${businessName} registration failed: ${JSON.stringify(reg.data)}`);
   const id = reg.data.user.id;

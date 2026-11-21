@@ -98,7 +98,7 @@ async function makeBusiness({ businessName, email, market, city, category, planI
   const reg = await b("POST", "/api/auth/register", {
     role: "business", name: "Owner " + businessName, businessName, email,
     password: "business-pass-123", market, city, category, planId,
-    neighborhood: "", about: "", agreedTerms: true,
+    neighborhood: "", about: "", agreedTerms: true, agreedPostCompliance: true,
   });
   if (reg.status !== 201) throw new Error(`business ${businessName} failed: ${JSON.stringify(reg.data)}`);
   return { client: b, id: reg.data.user.id };

@@ -103,7 +103,7 @@ async function registerCreator(email, name, handle, market, city, extra = {}) {
   const reg = await client.req("POST", "/api/auth/register", {
     role: "creator", name, email, password: "fixture-pass-102x",
     market, city, handle, followerCount: 6400, localAudiencePct: 64,
-    categories: ["Food & Drink"], agreedTerms: true, ...extra,
+    categories: ["Food & Drink"], agreedTerms: true, agreedPostCompliance: true, ...extra,
   });
   if (!((reg.status === 200 || reg.status === 201) && reg.data.user)) throw new Error(`register ${handle} failed: ${reg.status} ${JSON.stringify(reg.data).slice(0, 200)}`);
   await admin.req("POST", "/api/admin/review", { userId: reg.data.user.id, decision: "approve" });

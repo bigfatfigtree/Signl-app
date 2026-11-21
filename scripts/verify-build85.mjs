@@ -115,7 +115,7 @@ async function claimRegister(email, handle, extra = {}) {
   const c = new Client(BASE);
   const r = await c.req("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, email, password: "<redacted>", market: "Nashville",
-    handle, primaryPlatform: "instagram", agreedTerms: true, audienceStack: { instagram: 1500 }, followerCount: 1500, localAudiencePct: 45, ...extra,
+    handle, primaryPlatform: "instagram", agreedTerms: true, agreedPostCompliance: true, audienceStack: { instagram: 1500 }, followerCount: 1500, localAudiencePct: 45, ...extra,
   });
   return { c, r };
 }

@@ -210,7 +210,7 @@ try {
     const client = makeClient();
     const r = await client("POST", "/api/auth/register", {
       role: "business", name: "Biz Owner", email: `biz-${uniq()}@fixtures.dev`, password: "<MASKED_SECRET_002>",
-      market: "Hampton Roads", city: "Norfolk", businessName, category: "Restaurant", planId: "growth", agreedTerms: true,
+      market: "Hampton Roads", city: "Norfolk", businessName, category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
     });
     if (!((r.status === 200 || r.status === 201) && r.data.user)) throw new Error(`business register failed: ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
     await admin("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });

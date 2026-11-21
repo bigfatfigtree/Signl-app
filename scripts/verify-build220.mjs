@@ -120,14 +120,14 @@ try {
   const biz = client();
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Chelsea Fixture", email: EMAIL, password: PW,
-    businessName: BIZ_NAME, category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
+    businessName: BIZ_NAME, category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers (pending)", bizReg.status === 201 && bizReg.data.user.role === "business", JSON.stringify(bizReg.data).slice(0, 200));
   const bizId = bizReg.data.user.id;
   const appr = await admin("POST", "/api/admin/review", { userId: bizId, decision: "approve" });
   check("business approved through the normal review", appr.status === 200 && appr.data.user.status === "approved", JSON.stringify(appr.data).slice(0, 160));
 
-  const sideBase = { role: "creator", quickClaim: true, handle: "fixturefriday220", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true };
+  const sideBase = { role: "creator", quickClaim: true, handle: "fixturefriday220", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true };
 
   const noFacts = await biz("POST", "/api/auth/add-side", { ...sideBase });
   check("add-side WITHOUT the count -> 400 follower count required", noFacts.status === 400 && /follower count is required/i.test(JSON.stringify(noFacts.data)), JSON.stringify(noFacts.data).slice(0, 200));

@@ -266,7 +266,7 @@ async function main() {
   const dualCr = client();
   const dualReg = await dualCr("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "dual187@fixtures.dev", password: "fixture-pass-187", handle: "dual187", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true });
   check("dual fixture: creator side registers pending", !!dualReg.data.user && dualReg.data.user.status === "pending", JSON.stringify(dualReg.data).slice(0, 160));
-  const dualSide = await dualCr("POST", "/api/auth/add-side", { role: "business", name: "Dual Owner", businessName: "Dual Fixture Bakery", category: "Bakery", market: "Nashville", agreedTerms: true });
+  const dualSide = await dualCr("POST", "/api/auth/add-side", { role: "business", name: "Dual Owner", businessName: "Dual Fixture Bakery", category: "Bakery", market: "Nashville", agreedTerms: true, agreedPostCompliance: true });
   check("dual fixture: business side added pending, linked back", !!dualSide.data.user && dualSide.data.user.role === "business" && dualSide.data.user.status === "pending" && !!dualSide.data.user.linkedAccountId, JSON.stringify(dualSide.data).slice(0, 200));
   const adm = client();
   const admLogin = await adm("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });

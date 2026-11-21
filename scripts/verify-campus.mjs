@@ -197,7 +197,7 @@ try {
     city: "Norfolk",
     category: "Restaurant",
     planId: "growth",
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   const businessId = bizReg.data.user.id;
   await admin("POST", "/api/admin/review", { userId: businessId, decision: "approve" });

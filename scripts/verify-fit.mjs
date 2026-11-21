@@ -188,7 +188,7 @@ try {
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", businessName: "Fit Test Bistro", email: "bistro@fixtures.dev",
     password: PW, market: "Richmond", city: "Richmond", category: "Restaurant",
-    neighborhood: "Carytown", about: "Counter service.", planId: "growth", agreedTerms: true,
+    neighborhood: "Carytown", about: "Counter service.", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers (201, pending, founding)", bizReg.status === 201 && bizReg.data.user.business.accessState === "founding", JSON.stringify(bizReg.data).slice(0, 160));
   const bizId = bizReg.data.user.id;
@@ -197,7 +197,7 @@ try {
   const foundingBiz = client();
   const fbReg = await foundingBiz("POST", "/api/auth/register", {
     role: "business", name: "Second Owner", businessName: "Founding Only Foods", email: "foundingonly@fixtures.dev",
-    password: PW, market: "Richmond", city: "Richmond", category: "Restaurant", planId: "growth", agreedTerms: true,
+    password: PW, market: "Richmond", city: "Richmond", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   await admin("POST", "/api/admin/review", { userId: fbReg.data.user.id, decision: "approve" });
   const fbDiscover = await foundingBiz("GET", "/api/discover");

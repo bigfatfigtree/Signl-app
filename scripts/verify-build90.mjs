@@ -176,7 +176,7 @@ try {
   const biz = new Client(BASE);
   const bizReg = await biz.req("POST", "/api/auth/register", {
     role: "business", name: "Nash Owner", businessName: "B90 Tacos", email: "b90biz@fixtures.dev",
-    password: "Verify90Biz!1", market: "Nashville", city: "Nashville", category: "Restaurant", planId: "growth", agreedTerms: true,
+    password: "Verify90Biz!1", market: "Nashville", city: "Nashville", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers", bizReg.status === 201, `status=${bizReg.status}`);
   const bizId = bizReg.data.user.id;

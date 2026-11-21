@@ -108,7 +108,7 @@ async function makeBusiness(admin, { name, businessName, email }) {
   const c = client();
   const reg = await c("POST", "/api/auth/register", {
     role: "business", name, businessName, email, password: "business-pass-123", market: "Richmond", city: "Richmond",
-    category: "Restaurant", planId: "growth", agreedTerms: true,
+    category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   if (reg.status !== 201) throw new Error(`business ${businessName} failed: ${JSON.stringify(reg.data)}`);
   await admin("POST", "/api/admin/review", { userId: reg.data.user.id, decision: "approve" });
@@ -284,7 +284,7 @@ try {
     ["client: the comp nudge scales with the value", appSrc.includes("a paid booking usually lands better") && appSrc.includes("compNudgeUpdate")],
     ["client: audience offers prompt with good ideas and channel taps", appSrc.includes("Give their audience a reason to come in") && appSrc.includes("AUD_PERK_IDEAS") && appSrc.includes("Delivery") && appSrc.includes("Pickup")],
     ["client: the code card asset + copy line ship for creators", appSrc.includes("audDownloadCard") && appSrc.includes("audCopyLine") && appSrc.includes("Use my code")],
-    ["client: the disclosure line is done for the creator, one tap to copy", appSrc.includes("disclosureLine") && appSrc.includes("#ad — comped by") && appSrc.includes("Copy the line")],
+    ["client: the disclosure line is done for the creator, one tap to copy", appSrc.includes("disclosureLine") && appSrc.includes("#ad, comped by") && appSrc.includes("Copy the line")],
     ["client: the Real People line shows only where checked", appSrc.includes("Checked by a person") && appSrc.includes("Real posts, real local life.") && appSrc.includes("p.realPeopleChecked")],
     ["client: the Swap Bench ships on cancelled visits", appSrc.includes("The Swap Bench") && appSrc.includes("Find a swap") && appSrc.includes("swapSend")],
   ];

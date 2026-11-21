@@ -163,7 +163,7 @@ try {
   const bizEmail = `biz-${uniq()}@fixtures.dev`;
   const reg = await bizClient("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", email: bizEmail, password: "password123",
-    market: "Hampton Roads", city: "Norfolk", businessName: "Handle Kitchen", category: "Restaurant", planId: "growth", agreedTerms: true,
+    market: "Hampton Roads", city: "Norfolk", businessName: "Handle Kitchen", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   if (reg.status !== 201) throw new Error(`business register failed: ${reg.status} ${JSON.stringify(reg.data)}`);
   const keysBefore = dbKeys().sort();

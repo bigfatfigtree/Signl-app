@@ -263,7 +263,7 @@ console.log("== H: payments off ==");
   const biz = makeClient();
   const reg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Fixture Owner", email: `biz-${uniq()}@fixtures.dev`, password: PW, market: "Nashville",
-    businessName: "Fixture Foods", category: "Restaurant", planId: "growth", city: "Nashville", agreedTerms: true,
+    businessName: "Fixture Foods", category: "Restaurant", planId: "growth", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   const checkout = await biz("POST", "/api/billing/checkout", { planId: "growth" });
   check("payments stay OFF: checkout refuses (503)", checkout.status === 503, `got ${checkout.status} (register ${reg.status})`);

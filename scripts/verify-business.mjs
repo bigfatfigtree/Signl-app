@@ -110,7 +110,7 @@ try {
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", businessName: "Stackhouse", email: "stackhouse@fixtures.dev",
     password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Restaurant", planId: "growth",
-    neighborhood: "Carytown", about: "Counter service, loud room.", agreedTerms: true,
+    neighborhood: "Carytown", about: "Counter service, loud room.", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers as a real account (201, pending)", bizReg.status === 201 && bizReg.data.user.status === "pending", JSON.stringify(bizReg.data).slice(0, 160));
   check("registration lands in founding state with plan interest recorded and NO payment link", bizReg.data.user.business.accessState === "founding" && bizReg.data.user.business.plan === "growth" && !("paymentLink" in bizReg.data.user.business), JSON.stringify(bizReg.data.user.business));
@@ -171,7 +171,7 @@ try {
   const bizTwo = client();
   const bizTwoReg = await bizTwo("POST", "/api/auth/register", {
     role: "business", name: "Second Owner", businessName: "Second Stack", email: "secondstack@fixtures.dev",
-    password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Restaurant", planId: "self-service", agreedTerms: true,
+    password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Restaurant", planId: "self-service", agreedTerms: true, agreedPostCompliance: true,
   });
   await admin("POST", "/api/admin/review", { userId: bizTwoReg.data.user.id, decision: "approve" });
   const marketsBeforeToggle = await admin("GET", "/api/admin/markets");

@@ -234,7 +234,7 @@ try {
     city: "Austin",
     category: "Restaurant",
     planId: "growth",
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   const bizId = bizReg.data.user.id;
   await admin("POST", "/api/admin/review", { userId: bizId, decision: "approve" });

@@ -174,7 +174,7 @@ try {
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Reset Owner", businessName: "Reset Tacos", email: "pwreset-biz@fixtures.dev",
     password: "bizoriginal1", market: "Hampton Roads", city: "Norfolk", category: "Restaurants, Cafes & Food Trucks",
-    planId: "launch", agreedTerms: true,
+    planId: "launch", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers for the reset flow", bizReg.status === 200 || bizReg.status === 201, JSON.stringify(bizReg.json));
   const bizForgot = await anon("POST", "/api/auth/forgot", { email: "pwreset-biz@fixtures.dev" });

@@ -153,7 +153,7 @@ try {
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Attr Owner", businessName: "Attr Bakery", email: "attrbiz@fixtures.dev",
     password: "<MASKED_SECRET_002>", market: "Richmond", city: "Richmond", category: "Bakery", planId: "growth",
-    neighborhood: "Carytown", about: "Bread.", agreedTerms: true,
+    neighborhood: "Carytown", about: "Bread.", agreedTerms: true, agreedPostCompliance: true,
     utmSource: "google", referrerHost: "google.com",
   });
   check("business join returns 201", bizReg.status === 201, JSON.stringify(bizReg.data).slice(0, 200));

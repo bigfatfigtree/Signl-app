@@ -212,7 +212,7 @@ async function registerBusiness(email, businessName, market, planId, category = 
   const c = new Client(BASE);
   const r = await c.req("POST", "/api/auth/register", {
     role: "business", name: "Owner", businessName, email, password: "fixture-password-68",
-    market, category, planId, neighborhood: "East Nashville", about: "Fixture business.", agreedTerms: true,
+    market, category, planId, neighborhood: "East Nashville", about: "Fixture business.", agreedTerms: true, agreedPostCompliance: true,
   });
   return { c, r };
 }

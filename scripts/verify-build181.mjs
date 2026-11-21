@@ -102,7 +102,7 @@ try {
     role: "business", scope: "national", name: CONTACT_NAME, email: BRAND_EMAIL, password: "oasis-pass-123",
     businessName: OPERATOR_NAME, brandName: BRAND_NAME, website: "https://tropicaloasis.example.com",
     category: "Retail", about: "Liquid vitamins and collagen, shipped nationwide.",
-    focusMarkets: ["Nashville", "Miami", "National", "Atlantis"], agreedTerms: true,
+    focusMarkets: ["Nashville", "Miami", "National", "Atlantis"], agreedTerms: true, agreedPostCompliance: true,
   });
   check("self-serve national signup -> 201 pending", reg.status === 201 && reg.data.user.status === "pending", JSON.stringify(reg.data).slice(0, 240));
   const brandId = reg.data.user.id;
@@ -115,7 +115,7 @@ try {
 
   const badSite = await client()("POST", "/api/auth/register", {
     role: "business", scope: "national", name: "Bad Site", email: "badsite@fixtures.dev", password: "badsite-pass-1",
-    businessName: "Bad Site Brand Co", website: "not a website", agreedTerms: true,
+    businessName: "Bad Site Brand Co", website: "not a website", agreedTerms: true, agreedPostCompliance: true,
   });
   check("national signup with a junk website -> 400", badSite.status === 400, String(badSite.status));
 

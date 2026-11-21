@@ -70,7 +70,7 @@ const biz = client();
 const reg = await biz("POST", "/api/auth/register", {
   role: "business", name: "Owner Bowl Bistro", businessName: "Bowl Bistro", email: "bowl@fixtures.dev",
   password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Restaurant", planId: "growth",
-  neighborhood: "Downtown", about: "", agreedTerms: true,
+  neighborhood: "Downtown", about: "", agreedTerms: true, agreedPostCompliance: true,
 });
 await biz("PATCH", "/api/me/profile", { zip: "23219" });
 

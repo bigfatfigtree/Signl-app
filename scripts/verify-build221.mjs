@@ -174,13 +174,13 @@ try {
   const biz = client();
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Fixture Chelsea", email: CHELSEA_EMAIL, password: CHELSEA_PW,
-    businessName: "Fixture Friday Furniture 221", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true,
+    businessName: "Fixture Friday Furniture 221", category: "Retail", market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers (pending)", bizReg.status === 201 && bizReg.data.user.role === "business", JSON.stringify(bizReg.data).slice(0, 200));
   const bizId = bizReg.data.user.id;
   const bizAppr = await admin("POST", "/api/admin/review", { userId: bizId, decision: "approve" });
   check("business approved", bizAppr.status === 200 && bizAppr.data.user.status === "approved", JSON.stringify(bizAppr.data).slice(0, 160));
-  const side = await biz("POST", "/api/auth/add-side", { role: "creator", quickClaim: true, handle: "fixturefriday221", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, followerCount: 12345, localAudiencePct: 65 });
+  const side = await biz("POST", "/api/auth/add-side", { role: "creator", quickClaim: true, handle: "fixturefriday221", primaryPlatform: "instagram", market: "Nashville", agreedTerms: true, agreedPostCompliance: true, followerCount: 12345, localAudiencePct: 65 });
   check("creator side created WITH facts (-220 form)", (side.status === 200 || side.status === 201) && side.data.user.role === "creator", JSON.stringify(side.data).slice(0, 200));
   fixtureCreatorId = side.data.user.id;
   const sideAppr = await admin("POST", "/api/admin/review", { userId: fixtureCreatorId, decision: "approve" });

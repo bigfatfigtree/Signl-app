@@ -107,7 +107,7 @@ try {
   const biz = client();
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", businessName: "Threadless Kitchen", email: "biz@fixtures.dev", password: "business-pass-123",
-    market: "Nashville", city: "Nashville", category: "Restaurant", planId: "growth", neighborhood: "East Nashville", agreedTerms: true,
+    market: "Nashville", city: "Nashville", category: "Restaurant", planId: "growth", neighborhood: "East Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   if (bizReg.status !== 201) throw new Error(`business failed: ${JSON.stringify(bizReg.data)}`);
   await admin("POST", "/api/admin/review", { userId: bizReg.data.user.id, decision: "approve" });

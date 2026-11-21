@@ -132,7 +132,7 @@ try {
     email: "casey78@fixtures.dev", password: "fixture-pass-1", name: "Casey Rivers", role: "creator",
     handle: "casey78", followerCount: 3000, localAudiencePct: 80, categories: ["Food & Drink"],
     city: "Nashville", market: "Nashville",
-    agreedAge18: true, agreedTerms: true, agreedPromoUse: true, agreedNoGuarantee: true, agreedContentRights: true,
+    agreedAge18: true, agreedTerms: true, agreedPostCompliance: true, agreedPromoUse: true, agreedNoGuarantee: true, agreedContentRights: true,
   });
   check("real creator registers", cr.status === 201, `status=${cr.status} ${JSON.stringify(cr.data).slice(0, 140)}`);
   await admin.req("POST", "/api/admin/review", { userId: cr.data.user.id, decision: "approve" });

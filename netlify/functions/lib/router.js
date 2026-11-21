@@ -2668,6 +2668,7 @@ const bizdev = require("./bizdev");
 const national = require("./national");
 const pilots = require("./pilots");
 const notifyLib = require("./notify");
+const pushLib = require("./push");
 const ZIP_CENTROIDS = require("./zip-centroids.json");
 // Build -138 (Admin expansion): the permission layer, the
 // automation catalogue, the Template Studio override store, and
@@ -4654,6 +4655,12 @@ async function allApplications() {
 async function notifyUser(userId, kind, text, data = {}) {
   const rec = { id: crypto.randomUUID(), userId, kind, text, data, createdAt: nowIso(), readAt: null };
   await store.set(`note:${userId}:${rec.id}`, rec);
+  // Build -230: the same event also pushes to the user's
+  // registered devices. Fire-and-forget by design (lib/push.js):
+  // never awaited, never serial per recipient on the request
+  // path, and a recorded no-op until the Firebase service
+  // account credential lands in env.
+  try { pushLib.dispatchPush(userId, rec); } catch (e) { /* push is best-effort */ }
   // Build -87: the clock kinds also ride the transactional rail
   // (SMS + transactional email, per-type prefs, tester-fenced).
   // Best-effort: the in-app note above is the guaranteed record.
@@ -11235,7 +11242,8 @@ async function discoverCards(query, viewer, opts) {
   } else if (query.sort === "fit") {
     out.sort((a, b) => ((b.fit ? b.fit.score : -1) - (a.fit ? a.fit.score : -1)) || (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
   } else if (query.sort === "people") {
-    // Build -175: "Most people here" — the absolute local-audience
+    // Build -175 (renamed in plain words, Build -230): "Most local
+    // followers" — the absolute local-audience
     // count leads, biggest first, so a huge-but-diffuse audience
     // (1.2M followers at 20% local = 240,000 people here) is no
     // longer buried under a tiny-but-dense one. A creator with no
@@ -13986,10 +13994,33 @@ async function refundPaidEscrow(booking, reason, summary) {
   if (summary) summary.escrowRefunded += 1;
 }
 
+// ---------- Dispute cases (Build -230) ----------
+// "Report a problem" on a booking creates ONE case record
+// (case:{id}) carrying the full booking context. While a case is
+// open on a booking, every automatic strike or pause consequence
+// FROM THAT BOOKING is held: the compliance sweep skips the
+// booking's clock entirely, the expiry loop skips its strike, and
+// the post-submission enforcement below checks before it bans or
+// pauses. An admin resolves the case with an outcome note; both
+// sides are notified in-app (and by push, via notifyUser).
+const DISPUTE_REASONS_230 = ["visit_problem", "post_problem", "payment_problem", "business_unreachable", "creator_unreachable", "other"];
+async function openCaseBookingIds230() {
+  const rows = await store.list("case:");
+  const ids = new Set();
+  for (const r of rows) { const c = r.value; if (c && c.status === "open" && c.bookingId) ids.add(c.bookingId); }
+  return ids;
+}
+async function bookingHasOpenCase230(bookingId) {
+  if (!bookingId) return false;
+  const ids = await openCaseBookingIds230();
+  return ids.has(bookingId);
+}
+
 async function runComplianceSweep() {
   const summary = { checked: 0, reminder1: 0, reminder2: 0, reminder3: 0, lateMarked: 0, paused: 0, banned: 0, performance: 0, performanceUpdates: 0, expired: 0, escrowReleased: 0, escrowRefunded: 0 };
   const bookings = await allBookings();
   const posts = await allPosts();
+  const openCases230 = await openCaseBookingIds230();
   const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
   const now = Date.now();
   for (const booking of bookings) {
@@ -13997,6 +14028,10 @@ async function runComplianceSweep() {
     // the business did not hold up its end, so no reminder, pause,
     // or ban can ever come out of this booking.
     if (booking.honorReportedAt) continue;
+    // Build -230: an open dispute case holds this booking's whole
+    // compliance clock. No reminders, no strike, no pause, no ban
+    // from this booking until an admin resolves the case.
+    if (openCases230.has(booking.id)) { summary.disputeHeld = (summary.disputeHeld || 0) + 1; continue; }
     if (!booking.redeemedAt || booking.status === "completed") continue;
     if (postByBooking.has(booking.id)) continue;
     summary.checked += 1;
@@ -14187,7 +14222,7 @@ async function runComplianceSweep() {
     // strike source stamped on the standing record so no proof
     // submission can lift it (unpauseIfClear checks the source).
     const strikeCreator = await store.get(`user:${booking.creatorId}`);
-    if (strikeCreator && strikeCreator.role === "creator" && !booking.compliance.noShowStrikeWaived) {
+    if (strikeCreator && strikeCreator.role === "creator" && !booking.compliance.noShowStrikeWaived && !openCases230.has(booking.id)) {
       const strikes = noShowStrikesOf(strikeCreator) + 1;
       strikeCreator.noShowStrikes = strikes;
       strikeCreator.updatedAt = nowIso();
@@ -15538,7 +15573,7 @@ function crossoverEmail(recipient) {
     "",
     `Here is what that layer looks like in ${market}. Local businesses comp you a meal, a service, or an experience, and you post honestly about it within 48 hours. No script, no required praise, full disclosure. Every visit is tracked, and your delivered posts build a public track record that businesses near you can see.`,
     "",
-    "There is local money in it too, two ways. First, you can set a paid rate on your Magpie profile for direct local bookings: you keep 97 percent of your rate, the business covers another 3 percent on their side, and Magpie holds the payment and releases it when your post is live. Second, creators with 15k+ followers are first in line for paid cash campaigns when local businesses run them.",
+    "There is local money in it too, two ways. First, you can set a paid rate on your Magpie profile for direct local bookings: you keep 97 percent of your rate, the business covers another 3 percent on their side, and Magpie holds the payment. You are paid after your post is live and verified, within 48 hours, once your payout details are set up. Second, creators with 15k+ followers are first in line for paid cash campaigns when local businesses run them.",
     "",
     "Why local pays differently: the followers who live near you are the customers local businesses actually want, and a national platform cannot tell a business what share of a creator's audience lives in its market. Magpie leads with exactly that number.",
     "",
@@ -18623,6 +18658,15 @@ async function handleRegister(event, linkCtx) {
   // 2026-10-31): the Terms, on every creator path. The three visit
   // rules are confirmed as one combined attestation at the
   // creator's first offer acceptance (see visitRulesGate).
+  // Build -230 (signup compliance): a creator registration must
+  // carry the post-compliance agreement (agreedPostCompliance).
+  // The signup forms show it as its own unchecked checkbox in
+  // plain words; the refusal itself sits just below the
+  // duplicate-email checks (so a repeat signup still gets the
+  // standing 409), before any record is created. Existing
+  // accounts are untouched: nothing in this build re-checks the
+  // flag on sign-in or on any later call, so nobody is locked
+  // out retroactively.
   const quickClaim = role === "creator" && b.quickClaim === true;
   const claimHandle = quickClaim ? normalizeHandle(b.handle) : "";
   // The claim's handle belongs to the creator's PRIMARY platform
@@ -18760,6 +18804,14 @@ async function handleRegister(event, linkCtx) {
     }
   }
 
+  // Build -230 (signup compliance): the post-compliance refusal,
+  // placed after the duplicate-email checks above so a repeat
+  // signup still gets the standing 409, and before any record
+  // exists. See the note at the top of this handler.
+  if (role === "creator" && b.agreedPostCompliance !== true) {
+    return err(400, "Please agree to the post agreement: when a business comps your visit, you post honestly and disclose the comp, within 48 hours of the visit.");
+  }
+
   const { salt, hash } = linkPrimary
     ? { salt: linkPrimary.passwordSalt, hash: linkPrimary.passwordHash }
     : auth.hashPassword(b.password);
@@ -18786,6 +18838,7 @@ async function handleRegister(event, linkCtx) {
     reviewedBy: null,
     termsVersion: TERMS_VERSION,
     termsAcceptedAt: ts,
+    postComplianceAcceptedAt: role === "creator" ? ts : null,
     marketingEmailConsent: true,
     marketingConsentAt: ts,
     creator: null,
@@ -30334,6 +30387,35 @@ async function route(event) {
     // convert / campaign moderation / attributed results + the
     // national roll-up. The module enforces the record rules; the
     // permission gate above has already run for scoped admins.
+    // Dispute cases (Build -230): the Admin list and resolve path
+    // for "Report a problem" cases. Resolving takes an outcome
+    // note and notifies both sides in-app (push rides notifyUser).
+    if (seg[1] === "cases" && seg.length === 2 && method === "GET") {
+      const rows = (await store.list("case:")).map((r) => r.value).filter(Boolean)
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      return json(200, { cases: rows });
+    }
+    if (seg[1] === "cases" && seg.length === 4 && seg[3] === "resolve" && method === "POST") {
+      const rec = await store.get(`case:${seg[2]}`);
+      if (!rec) return err(404, "Case not found");
+      if (rec.status !== "open") return err(409, "This case is already resolved");
+      const b = parseBody(event);
+      const outcome = typeof (b && b.note) === "string" ? b.note.trim().slice(0, 1000) : "";
+      if (!outcome) return err(400, "Add an outcome note, so both sides know what was decided.");
+      rec.status = "resolved";
+      rec.resolutionNote = outcome;
+      rec.resolvedBy = user.id;
+      rec.resolvedAt = nowIso();
+      rec.updatedAt = rec.resolvedAt;
+      await store.set(`case:${rec.id}`, rec);
+      await logEvent({ type: "dispute_case_resolved", actorId: user.id, actorRole: "admin", subjectId: rec.bookingId, market: (rec.context && rec.context.market) || null, data: { caseId: rec.id } });
+      const line = `Your case on "${(rec.context && rec.context.title) || "a booking"}" was resolved: ${outcome}`;
+      const lineEs = `Tu caso sobre "${(rec.context && rec.context.title) || "una reserva"}" se resolvió: ${outcome}`;
+      await notifyBilingual226(rec.creatorId, "dispute_resolved", line, lineEs, { bookingId: rec.bookingId, caseId: rec.id });
+      await notifyBilingual226(rec.businessId, "dispute_resolved", line, lineEs, { bookingId: rec.bookingId, caseId: rec.id });
+      return json(200, { ok: true, case: rec });
+    }
+
     if (seg[1] === "national") {
       return national.handleAdminNationalApi({
         user, seg, method, event, query,
@@ -37385,6 +37467,50 @@ async function route(event) {
   }
 
   // ---------- bookings and counter ----------
+  // Report a problem (Build -230): either side of a booking files
+  // a case with a reason and one note. The case carries the full
+  // booking context into Admin. One open case per booking per
+  // reporter; filing again while one is open answers with the
+  // existing case instead of stacking duplicates.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "report-problem") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.id !== booking.creatorId && user.id !== booking.businessId) return err(403, "This booking is not yours");
+    const b = parseBody(event);
+    const reason = DISPUTE_REASONS_230.includes(b && b.reason) ? b.reason : "other";
+    const note = typeof (b && b.note) === "string" ? b.note.trim().slice(0, 1000) : "";
+    if (!note) return err(400, "Add one note about what went wrong, so the team can help.");
+    const existing = (await store.list("case:")).map((r) => r.value).find((c) => c && c.bookingId === booking.id && c.reporterId === user.id && c.status === "open");
+    if (existing) return json(200, { ok: true, case: existing, alreadyOpen: true });
+    const ts = nowIso();
+    const rec = {
+      id: crypto.randomUUID(), bookingId: booking.id, status: "open",
+      reason, note, reporterId: user.id, reporterRole: user.role,
+      creatorId: booking.creatorId, businessId: booking.businessId,
+      context: {
+        title: booking.title || null, businessName: booking.businessName || null, creatorName: booking.creatorName || null,
+        market: booking.market || null, kind: booking.kind || null, status: booking.status || null,
+        redeemedAt: booking.redeemedAt || null, postDeadline: booking.postDeadline || null, createdAt: booking.createdAt || null,
+      },
+      createdAt: ts, updatedAt: ts, resolvedAt: null, resolutionNote: null, resolvedBy: null,
+    };
+    await store.set(`case:${rec.id}`, rec);
+    await logEvent({ type: "dispute_case_opened", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market || null, data: { caseId: rec.id, reason } });
+    const otherId = user.id === booking.creatorId ? booking.businessId : booking.creatorId;
+    await notifyBilingual226(otherId, "dispute_opened",
+      `A problem was reported on "${booking.title || "a booking"}". The Magpie team is looking at it. Nothing about your account changes while the case is open.`,
+      `Se reportó un problema en "${booking.title || "una reserva"}". El equipo de Magpie lo está revisando. Nada en tu cuenta cambia mientras el caso esté abierto.`,
+      { bookingId: booking.id, caseId: rec.id });
+    return json(201, { ok: true, case: rec });
+  }
+  if (method === "GET" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "report-problem") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.id !== booking.creatorId && user.id !== booking.businessId) return err(403, "This booking is not yours");
+    const mine = (await store.list("case:")).map((r) => r.value).filter((c) => c && c.bookingId === booking.id && c.reporterId === user.id);
+    return json(200, { cases: mine });
+  }
+
   if (seg[0] === "bookings" && method === "GET" && seg.length === 1) {
     let bookings = await allBookings();
     if (user.role === "creator") bookings = bookings.filter((b) => b.creatorId === user.id);
@@ -37982,7 +38108,7 @@ async function route(event) {
       // lands here instead, and only an admin can reinstate.
       booking.compliance.proofAfterBanAt = ts;
       await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinFuse: false, extremelyLate } });
-      if (!wasBanned) {
+      if (!wasBanned && !(await bookingHasOpenCase230(booking.id))) {
         if (!booking.compliance.bannedAt) booking.compliance.bannedAt = ts;
         const comped = isCompedLane(booking);
         user.standing = { state: "banned", source: comped ? "consumed_comp" : "paid_terms", reason: comped ? consumedCompReason() : bannedNoticeReason(), at: ts, bookingId: booking.id };
@@ -38009,7 +38135,7 @@ async function route(event) {
         for (const p of mine) run = p.onTime ? 0 : run + 1;
         user.lateStreakCount = run;
         if (run < LATE_STREAK_LIMIT && user.lateStreakPauseUntil) user.lateStreakPauseUntil = null;
-        if (!onTime && run >= LATE_STREAK_LIMIT && !lateStreakPaused(user)) {
+        if (!onTime && run >= LATE_STREAK_LIMIT && !lateStreakPaused(user) && !(await bookingHasOpenCase230(booking.id))) {
           user.lateStreakPauseUntil = new Date(Date.parse(ts) + LATE_STREAK_PAUSE_DAYS * DAY_MS).toISOString();
           user.updatedAt = ts;
           await store.set(`user:${user.id}`, user);

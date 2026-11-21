@@ -113,7 +113,7 @@ async function makeBusiness(admin, { businessName, email, category, planId, appr
   const reg = await b("POST", "/api/auth/register", {
     role: "business", name: "Owner " + businessName, businessName, email,
     password: "business-pass-123", market: "Richmond", city: "Richmond", category, planId,
-    neighborhood: "Downtown", about: "", agreedTerms: true,
+    neighborhood: "Downtown", about: "", agreedTerms: true, agreedPostCompliance: true,
   });
   if (reg.status !== 201) throw new Error(`business ${businessName} failed: ${JSON.stringify(reg.data)}`);
   if (approve) await admin("POST", "/api/admin/review", { userId: reg.data.user.id, decision: "approve" });

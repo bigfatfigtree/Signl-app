@@ -124,7 +124,7 @@ async function registerBusiness(email, businessName, market, planId) {
   const c = new Client(BASE);
   const r = await c.req("POST", "/api/auth/register", {
     role: "business", name: "Owner", businessName, email, password: "fixture-password-91",
-    market, category: "Restaurant", planId, neighborhood: "East Nashville", about: "Fixture business.", agreedTerms: true,
+    market, category: "Restaurant", planId, neighborhood: "East Nashville", about: "Fixture business.", agreedTerms: true, agreedPostCompliance: true,
   });
   if (r.status !== 201) throw new Error(`business ${businessName} failed: ${JSON.stringify(r.data)}`);
   await admin.req("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });
@@ -187,7 +187,7 @@ let claimerId = null;
 {
   const r = await claimer.req("POST", "/api/auth/register", {
     role: "creator", quickClaim: true, followerCount: 1200, localAudiencePct: 45, email: "wish91@fixtures.dev", password: "fixture-password-91",
-    market: "Nashville", handle: "wishlistcreator91", primaryPlatform: "instagram", agreedTerms: true,
+    market: "Nashville", handle: "wishlistcreator91", primaryPlatform: "instagram", agreedTerms: true, agreedPostCompliance: true,
   });
   check("wishlist creator claims (quick claim, unfinished)", r.status === 201 && r.data.user.creator.profileComplete === false, `status=${r.status}`);
   claimerId = r.data.user.id;

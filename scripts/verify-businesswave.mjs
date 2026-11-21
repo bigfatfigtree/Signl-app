@@ -154,7 +154,7 @@ try {
   const reg = await bizClient("POST", "/api/auth/register", {
     role: "business", name: "Wave Owner", businessName: "Wave Test Cafe", email: "wavebiz@fixtures.dev",
     password: "<MASKED_SECRET_002>", market: "Virginia Beach", city: "Virginia Beach", category: "Coffee & Bakery",
-    planId: "self-service", agreedTerms: true, signupSource: "business-wave",
+    planId: "self-service", agreedTerms: true, agreedPostCompliance: true, signupSource: "business-wave",
   });
   check("business-wave registration stores the source", (reg.status === 200 || reg.status === 201) && reg.data.user.signupSource === "business-wave", JSON.stringify(reg.data).slice(0, 250));
   check("business-wave registration stays founding-gated", reg.data.user.business.accessState === "founding", JSON.stringify(reg.data.user.business));

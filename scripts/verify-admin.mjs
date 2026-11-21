@@ -154,7 +154,7 @@ try {
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", businessName: "Adm Testaurant", email: "admbiz@fixtures.dev",
     password: "<MASKED_SECRET_003>", market: "Hampton Roads", city: "Virginia Beach", category: "Restaurant", planId: "growth",
-    agreedTerms: true,
+    agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers (201)", bizReg.status === 201, JSON.stringify(bizReg.data).slice(0, 160));
   await approve(bizReg.data.user.id);

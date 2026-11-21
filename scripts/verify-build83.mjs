@@ -74,7 +74,7 @@ async function registerBusiness(businessName, planId, market) {
   const client = makeClient();
   const r = await client("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", email: `biz-${uniq()}@fixtures.dev`, password: "password123",
-    market: market || "Hampton Roads", city: market === "Nashville" ? "Nashville" : "Norfolk", businessName, category: "Restaurant", planId: planId || "growth", agreedTerms: true,
+    market: market || "Hampton Roads", city: market === "Nashville" ? "Nashville" : "Norfolk", businessName, category: "Restaurant", planId: planId || "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   if (r.status !== 201 || !r.data.user) throw new Error(`business register failed: ${r.status} ${JSON.stringify(r.data)}`);
   return { client, user: r.data.user };

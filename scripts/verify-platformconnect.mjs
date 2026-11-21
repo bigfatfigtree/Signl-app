@@ -236,7 +236,7 @@ try {
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", businessName: "Connect Kitchen", email: "connectbiz@fixtures.dev",
     password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Restaurant", planId: "growth",
-    neighborhood: "Carytown", about: "Counter service.", agreedTerms: true,
+    neighborhood: "Carytown", about: "Counter service.", agreedTerms: true, agreedPostCompliance: true,
   });
   await admin("POST", "/api/admin/review", { userId: bizReg.data.user.id, decision: "approve" });
   await admin("POST", "/api/admin/businesses/activate", { userId: bizReg.data.user.id });

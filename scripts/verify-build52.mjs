@@ -247,7 +247,7 @@ try {
   const biz = client();
   const bizReg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", businessName: "Murfreesboro Eats", email: "murfreesborobiz@fixtures.dev", password: PW,
-    market: UNLISTED_NAME, customCity: "Murfreesboro", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true,
+    market: UNLISTED_NAME, customCity: "Murfreesboro", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registration typing Murfreesboro files under Nashville at sign-up",
     bizReg.status === 201 && !!bizReg.data.user && bizReg.data.user.market === "Nashville" && bizReg.data.user.city === "Murfreesboro" && bizReg.data.user.marketResolvedFrom === "typed_city",
@@ -268,7 +268,7 @@ try {
   const tulsaBiz = client();
   const tulsaBizReg = await tulsaBiz("POST", "/api/auth/register", {
     role: "business", name: "Tulsa Biz Owner", businessName: "Tulsa Tacos", email: "tulsabiz@fixtures.dev", password: PW,
-    market: UNLISTED_NAME, customCity: "Tulsa", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true,
+    market: UNLISTED_NAME, customCity: "Tulsa", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registration typing Tulsa stays Not listed yet (base record for the legacy clones)",
     tulsaBizReg.status === 201 && !!tulsaBizReg.data.user && tulsaBizReg.data.user.market === UNLISTED_NAME,

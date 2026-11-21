@@ -135,7 +135,7 @@ try {
   const biz = makeClient();
   const reg = await biz("POST", "/api/auth/register", {
     role: "business", name: "Build46 Owner", businessName: "Build46 Bistro", email: "build46biz@fixtures.dev",
-    password: "<MASKED_SECRET_005>", planId: "self-service", market: "Nashville", city: "Nashville", agreedTerms: true,
+    password: "<MASKED_SECRET_005>", planId: "self-service", market: "Nashville", city: "Nashville", agreedTerms: true, agreedPostCompliance: true,
   });
   check("business registers (founding)", (reg.status === 200 || reg.status === 201) && reg.data.user.business.accessState === "founding", JSON.stringify(reg.data).slice(0, 250));
   const bizId = reg.data.user.id;
