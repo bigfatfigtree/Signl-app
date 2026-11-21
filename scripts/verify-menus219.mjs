@@ -54,20 +54,20 @@ MARKERS.forEach(([key, marker], i) => {
 const SPEC = {
   creator: {
     groups: ["Your work", "Money & page", "Standing", "Account"],
-    tabs: ["Dashboard", "Find Offers", "Offers", "My Visits", "Messages", "Earnings", "Profile", "Sig", "Numbers", "Momentum", "Bench", "Status", "Settings", "Help"],
-    labels: ["Home", "Find offers", "My offers", "Visits", "Messages", "Wallet", "My profile", "Maggie", "Stats", "Momentum", "Bench", "Founding status", "Biz Dev home", "Settings", "Help", "Talk to support", "Sign out"],
+    tabs: ["Dashboard", "Offers", "My Visits", "Messages", "Earnings", "Profile", "Sig", "Numbers", "Momentum", "Bench", "Status", "Settings", "Help"],
+    labels: ["Home", "My offers", "Visits", "Messages", "Wallet", "My profile", "Maggie", "Stats", "Momentum", "Bench", "Founding status", "Biz Dev home", "Settings", "Help", "Talk to support", "Sign out"],
     words: ["Your market", "Guides", "Founding only", "Seat holders", "Email", "bdGoShell()", "mailto:hello@magpielocal.com", "signOut()"],
   },
   business: {
     groups: ["Sell", "Run", "Account"],
-    tabs: ["Home", "Sig", "Discover", "Block", "Campaign Setup", "My Offers", "Requests", "Favorites", "Visits & Posts", "Counter", "Regulars", "Content", "Messages", "Profile", "Plan", "Analytics", "Settings", "Help"],
-    labels: ["Home", "Maggie", "Find creators", "Book the Block", "Start a new campaign", "Your campaigns", "Applicants", "Saved creators", "Visits & Posts", "Counter", "My Regulars", "Posts & licenses", "Messages", "Business profile", "Wallet", "Stats", "Settings", "Help", "Sign out"],
+    tabs: ["Home", "Sig", "Discover", "Block", "My Offers", "Requests", "Favorites", "Visits & Posts", "Counter", "Regulars", "Content", "Messages", "Profile", "Plan", "Analytics", "Settings", "Help"],
+    labels: ["Home", "Maggie", "Find creators", "Book the Block", "Your campaigns", "Applicants", "Saved creators", "Visits & Posts", "Counter", "My Regulars", "Posts & licenses", "Messages", "Business profile", "Wallet", "Stats", "Settings", "Help", "Sign out"],
     words: ["Near your door", "Redeem", "In Your campaigns", "Seat holders", "goApplicants()", "bdGoShell()", "signOut()"],
   },
   national: {
     groups: ["Start", "Campaigns", "Account"],
-    tabs: ["Home", "Sig", "NatCampaigns", "NatNew", "NatDiscover", "NatReports", "NatBrand", "Messages", "Settings", "Help"],
-    labels: ["Home", "Maggie", "Campaigns", "Start a new campaign", "Find creators", "Reports", "Brand profile", "Messages", "Settings", "Help", "Sign out"],
+    tabs: ["Home", "Sig", "NatCampaigns", "NatDiscover", "NatReports", "NatBrand", "Messages", "Settings", "Help"],
+    labels: ["Home", "Maggie", "Campaigns", "Find creators", "Reports", "Brand profile", "Messages", "Settings", "Help", "Sign out"],
     words: ["signOut()"],
     absent: ["Plan", "Counter", "Regulars", "Favorites"],
   },
@@ -124,22 +124,32 @@ console.log("unified hamburger: Biz Dev (Rep Home drawer)");
   check("bizdev: seat-gone collapse kept", bd.includes("state.bdNoSeat"));
   const bdi = fnWindow("bdIdentity193");
   check("bizdev: identity line carries the rep code", bdi.includes("repCode") && bdi.includes("Biz Dev") && bdi.includes("Sell mode (your HQ seat)"));
+  check("bizdev (-227): identity block carries no duplicated pill actions", !bdi.includes("menu-idcard187-acts") && !bdi.includes("btn ghost small-btn"));
 }
 
 console.log("unified hamburger: cross-shell wiring");
 {
   const open = fnWindow("openHamburger137");
-  check("openHamburger delegates the Biz Dev shell to its drawer", open.includes("if (bdShellActive()) return bdOpenDrawer168();"));
+  check("openHamburger delegates the Biz Dev shell to its drawer", open.includes("if (bdMenuDrawerApplies()) return bdOpenDrawer168();"));
   check("hamburger still ends with the pinned identity card", open.includes("${menuIdentityCard187(u, name)}"));
   const top = fnWindow("renderTopBar2");
   check("top-bar menu button opens the unified hamburger for every shell",
-    top.includes('onclick="return openHamburger137()"') && top.includes('onclick="return bdOpenDrawer168()"'));
+    top.includes('onclick="return openHamburger137()"') && top.includes('onclick="return bdOpenDrawer168()"') && top.includes("bdMenuDrawerApplies()"));
   check("top-bar menu button no longer opens the Everything panel", !top.includes("openEverything125"));
+  const gate = fnWindow("bdMenuDrawerApplies");
+  check("menu gate (-227): an admin gets the rep drawer only in Sell mode",
+    gate.includes('u.role === "admin"') && gate.includes('state.shell === "bizdev"') && gate.includes("bdShellActive()"));
+  check("admin menu (-227): the Sell shell switch row rides the admin branch",
+    (blocks.admin || "").includes("bdGoShell()") && (blocks.admin || "").includes('"Biz Dev home"'));
+  check("admin rail (-227): Deleted rides the desktop rail too",
+    app.includes('add("c", "users", "Deleted", "return go(\'dashboard\',\'Deleted\')"'));
+  check("icons (-227): bnIcon has a real book glyph for Contacts (no home fallback)",
+    fnWindow("bnIcon").includes("book: `<"));
   const idc = fnWindow("menuIdentityCard187");
-  check("identity action: admin goes to Account, never Settings",
-    idc.includes('"Account"') && !idc.includes('? "Settings"') && idc.includes('"Your account"'));
-  check("identity action: partner reads Account, creator/business read Profile and account",
-    idc.includes('"Profile and account"') && idc.includes('? "Account"'));
+  check("identity card (-227): no account/profile button duplicating the group rows",
+    !idc.includes("profTab") && !idc.includes("Profile and account") && !idc.includes("go('dashboard','${"));
+  check("identity card (-227): the dual-role side switch stays",
+    idc.includes("switchSide180()") && idc.includes("Switch to your"));
   const isl = fnWindow("menuIdentityStateLine187");
   check("identity lines: pilot is Impact Portal, recruiter is Recruiter, business founding names the place",
     isl.includes('"Impact Portal"') && isl.includes('"Recruiter"') && isl.includes("foundingBizPlace(u)"));
@@ -150,6 +160,10 @@ console.log("unified hamburger: cross-shell wiring");
   const mp = fnWindow("menuPrimary193");
   check("primary pills unchanged: creator Find offers, business Start a new campaign, none for admin/partner/pilot/recruiter",
     mp.includes("go('dashboard','Find Offers')") && mp.includes("Start a new campaign") && mp.includes('return "";'));
+  check("no duplicate rows (-227): the pill's destination has no group row twin",
+    !(blocks.creator || "").includes('"Find Offers"') && !(blocks.creator || "").includes('"Find offers"')
+    && !(blocks.business || "").includes('"Campaign Setup"') && !(blocks.business || "").includes('"Start a new campaign"')
+    && !(blocks.national || "").includes('"NatNew"') && !(blocks.national || "").includes('"Start a new campaign"'));
   check("Everything panel left functional", app.includes("function everythingGroups125()") && app.includes("function openEverything125()"));
   const prim = (app.match(/const PRIMARY_TABS_125 = \{([\s\S]*?)\n\};/) || [])[1] || "";
   check("bottom bars untouched (daily jobs only)",

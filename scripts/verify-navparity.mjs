@@ -151,8 +151,14 @@ for (const role of roles) {
   // holders) plus Sig as a row for every role - those menu-only
   // tabs are allowed on the hamburger side of the comparison.
   const MENU_ONLY_219 = { creator: ["Find Offers", "BD Home"], business: ["Counter", "Requests", "BD Home"], partner: [] };
+  // Build -227: the menu's primary pill is part of the menu
+  // panel, and it is the SINGLE carrier of its destination
+  // (the -219b group-row twins were removed on Jeff's order:
+  // each destination exactly once per menu). Coverage counts
+  // the pill's destination as carried by the menu.
+  const MENU_PILL_227 = { creator: ["Find Offers"], business: ["Campaign Setup", "NatNew"], partner: [] };
   const hamBlock = roleBlock(hamSrc, role, [...roles, "admin", "recruiter", "pilot_partner"]);
-  const hamSet = new Set(rTabsOf(hamBlock));
+  const hamSet = new Set([...rTabsOf(hamBlock), ...(MENU_PILL_227[role] || [])]);
   const sigExcept = role === "partner" ? [] : ["Sig"];
   check(`${role}: hamburger carries the full rail set`,
     [...railSet].every((t) => hamSet.has(t) || sigExcept.includes(t)) && [...hamSet].every((t) => railSet.has(t) || (MENU_ONLY_219[role] || []).includes(t)),
@@ -191,23 +197,30 @@ check("partner mobile bar stays as held (Home · Business · Sig · Stats · Men
 
 check("hamburger source found", hamSrc.length > 500, "");
 const hamAdmin = new Set(rTabsOf(roleBlock(hamSrc, "admin", ["admin", "creator", "business", "partner"])));
+// Build -227: BD Home joins Account as a sanctioned menu-only
+// tab on the admin side — the seat holder's door into the Sell
+// shell, the same door MENU_ONLY_219 sanctions for creator and
+// business. (This check failed at -225 because Deleted sat in
+// the hamburger but not the rail; -227 puts Deleted on the
+// rail too, so the sets now meet.)
 check("admin hamburger carries the full rail set (+ Account)",
-  railLabels.every((l) => hamAdmin.has(l)) && [...hamAdmin].every((t) => railLabels.includes(t) || t === "Account"),
+  railLabels.every((l) => hamAdmin.has(l)) && [...hamAdmin].every((t) => railLabels.includes(t) || t === "Account" || t === "BD Home"),
   [...hamAdmin].join(","));
 
 // Build -202: no duplicate Find offers destination on the RAIL.
 // The creator rail's primary pill (railPrimary187 / plus187) and
 // the menu pill (menuPrimary193) carry Find Offers, and the
 // tabItemsFor creator lead must not ALSO carry it as a rail row.
-// Build -219b supersedes the menu half of that rule: the
-// checkpoint v2 menu spec puts a Find offers ROW in the creator
-// hamburger's Your work group, repeating the pill by design.
+// Build -219b briefly superseded the menu half of that rule
+// (a Find offers ROW repeating the pill); Build -227 (Jeff,
+// 2026-11-21) restores the -202 rule in full: one destination,
+// one carrier per menu — the pill carries it, the row is gone.
 const tabBarSrc202 = fnWindow("tabBarHtml");
 check("Build -202: creator primary pill exists (rail + menu)", tabBarSrc202.includes("railPrimary187") && app.includes("menuPrimary193"), "");
 const creatorTabBlock202 = roleBlock(tabItems, "creator", ["business", "creator", "partner", "recruiter", "pilot_partner"]);
 check("Build -202: tabItemsFor creator lead has no duplicate Find Offers row", !creatorTabBlock202.includes('tab: "Find Offers"'), creatorTabBlock202.slice(0, 200));
 const creatorHamBlock202 = roleBlock(hamSrc, "creator", ["admin", "creator", "business", "partner", "recruiter", "pilot_partner"]);
-check("Build -219b: hamburger creator groups carry the Find Offers row (checkpoint v2 spec; the pill repeats it by design)", creatorHamBlock202.includes('"Find Offers"'), "");
+check("Build -227: hamburger creator groups carry NO Find Offers row (the pill is its only carrier)", !creatorHamBlock202.includes('"Find Offers"') && fnWindow("menuPrimary193").includes("go('dashboard','Find Offers')"), "");
 
 console.log(`\nverify-navparity: ${passed} passed, ${failed} failed`);
 if (failed) { console.log("failures:", failures.join(" | ")); process.exit(1); }

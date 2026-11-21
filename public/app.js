@@ -2292,6 +2292,7 @@ function bnIcon(name) {
     heart: `<path d="M12 20.5C7 16.5 3.5 13.2 3.5 9.3A4.6 4.6 0 0 1 8.1 4.7c1.6 0 3 .8 3.9 2 .9-1.2 2.3-2 3.9-2a4.6 4.6 0 0 1 4.6 4.6c0 3.9-3.5 7.2-8.5 11.2z"/>`,
     stats: `<path d="M3.5 20.5h17"/><path d="M6.5 20.5v-7M12 20.5V4.5M17.5 20.5v-10"/>`,
     users: `<circle cx="9" cy="8.2" r="3.4"/><path d="M3.2 20c.7-3.1 2.9-4.7 5.8-4.7s5.1 1.6 5.8 4.7"/><path d="M16.2 5.4a3.4 3.4 0 0 1 0 5.9"/><path d="M18 15.6c1.6.6 2.6 2 3 4.4"/>`,
+    book: `<rect x="4.5" y="3" width="13" height="18" rx="1.6"/><path d="M17.5 7h2M17.5 10.5h2M17.5 14h2"/><circle cx="11" cy="9.3" r="2.1"/><path d="M7.7 16.4c.8-1.6 1.9-2.3 3.3-2.3s2.5.7 3.3 2.3"/>`,
     image: `<rect x="3.5" y="5" width="17" height="14.5" rx="2.5"/><circle cx="9" cy="10" r="1.7"/><path d="m5 19 5.2-5.2 3 3L17 13l3 3.4"/>`,
     chat: `<path d="M20.5 12a8 8 0 0 1-8 8c-1.4 0-2.7-.3-3.9-.9L3.5 20.5l1.4-4.9A8 8 0 1 1 20.5 12Z"/>`,
     wallet: `<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/><path d="M16.5 15.2h.9"/>`,
@@ -2956,6 +2957,7 @@ function everythingGroups125() {
       { title: "Run the platform", rows: [
         R("notice", "Marketing", "Campaign email to your own lists", "Marketing"),
         R("star", "Learn", "Write and publish Learn articles", "Learn"),
+        R("search", "SEO / AI search", "Every page built for the search climb", "SEO / AI search"),
         R("play", "Social", "What Magpie posted, and what it did", "Social"),
         R("bolt", "Automations", "Every automatic email and text, and its switch", "Automations"),
         R("deck", "Templates", "The wording behind emails, posts and messages", "Templates"),
@@ -2963,6 +2965,7 @@ function everythingGroups125() {
       ] },
       { title: "System", rows: [
         R("sig", "Maggie", "Your attention list", "Sig"),
+        R("users", "Deleted accounts", "Deleted accounts an admin can restore", "Deleted"),
         { icon: "building", label: "Preview as business", sub: "Walk the app as a business", act: "return enterPreview()" },
         { icon: "building", label: "Business dashboard", sub: "The founding business view", act: "return enterPreviewDashboard()" },
       ] },
@@ -3041,6 +3044,7 @@ function everythingGroups125() {
         R("sig", "Maggie", "Your pilot's numbers, in plain sentences", "Sig"),
         ...(u.teamAdmin || (u.partner && u.partner.teamAdmin) ? [R("users", "Team", "Your pilot team's seats", "Team")] : []),
         R("help", "Help", "How the pilot works, in plain words", "Help"),
+        R("profile", "Your account", "Your sign-in, email and password", "Account"),
         ...(u.role === "partner" ? [{ icon: "home", label: "Partner view", sub: "Back to your partner console", tab: "__partner_scope_exit" }] : []),
       ] },
     ];
@@ -3050,6 +3054,7 @@ function everythingGroups125() {
       { title: "Your console", rows: [
         R("sig", "Maggie", "Ask anything about your queue and your market", "Sig"),
         R("help", "Help", "Your launch guide and scripts, in plain words", "Help"),
+        R("profile", "Your account", "Your sign-in, email and password", "Account"),
       ] },
     ];
   }
@@ -3130,7 +3135,6 @@ function hamburgerGroups137() {
     return [
       { title: "Your work", rows: [
         R("home", "Home", "Maggie, your highlights, your next steps", "Dashboard"),
-        R("deck", "Find offers", "Open offers near you", "Find Offers"),
         R("deck", "My offers", "Invites and deals you are working on", "Offers", { badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) }),
         R("calendar", "Visits", "Your visits and post deadlines", "My Visits", { badge: wc.crVisits || 0 }),
         R("bubble", "Messages", "Talk to a business about a visit or an offer", "Messages", { badge: b.messages || 0 }),
@@ -3158,8 +3162,8 @@ function hamburgerGroups137() {
   if (u.role === "business" && u.business && u.business.scope === "national") {
     // Build -189 (PL-08): the national menu is the national set,
     // same destinations and labels as the national rail.
-    // Build -219b: the campaign row and the top pill now share
-    // one wording, "Start a new campaign".
+    // Build -227: the new-campaign destination rides the top
+    // pill only (the -219b group row duplicated it).
     return [
       { title: "Start", rows: [
         R("home", "Home", "Maggie, your highlights, your next steps", "Home"),
@@ -3167,7 +3171,6 @@ function hamburgerGroups137() {
       ] },
       { title: "Campaigns", rows: [
         R("deck", "Campaigns", "Your campaigns and the hands they raised", "NatCampaigns", { badge: wc.bizApps || 0 }),
-        R("notice", "Start a new campaign", "Write a new campaign", "NatNew"),
         R("users", "Find creators", "Every approved creator, by market", "NatDiscover"),
         R("bars", "Reports", "What your campaigns did", "NatReports"),
       ] },
@@ -3187,7 +3190,6 @@ function hamburgerGroups137() {
         R("sig", "Maggie", "Your attention list", "Sig"),
         R("deck", "Find creators", "Shop local creators near you", "Discover"),
         R("pin", "Book the Block", "The creators closest to your door, booked together", "Block", { status: "Near your door" }),
-        R("notice", "Start a new campaign", "Build a new campaign, step by step or with Maggie", "Campaign Setup"),
         R("bars", "Your campaigns", "Current and past campaigns, who applied, and what they did", "My Offers", { badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) }),
         Object.assign(R("requests", "Applicants", "Creators who applied to your campaigns", "Requests"), { act: "return goApplicants()", tag: "In Your campaigns" }),
         R("heart", "Saved creators", "Your shortlist", "Favorites", { badge: wc.bizSaved || 0 }),
@@ -3302,6 +3304,7 @@ function hamburgerGroups137() {
         R("building", "Partners", "Media partners and their deals", "Partners"),
         R("building", "National", "National brand accounts, verification and campaigns", "National"),
         R("building", "Biz Dev", "Reps, lead books and founding claims", "Biz Dev", { badge: wc.bizdevWaiting || 0 }),
+        ...(u.bizdevSeat && u.bizdevSeat.active ? [Object.assign(R("building", "Biz Dev home", "Your seller dashboard", "BD Home"), { act: "return bdGoShell()", tag: "Seat holders" })] : []),
         R("users", "Campaign", "The current campaign", "Campaign"),
       ] },
       { title: "Watch", rows: [
@@ -3357,7 +3360,9 @@ function openHamburger137() {
   // Build -219b: inside the Biz Dev shell, the shared menu is
   // the rep drawer (the same unified groups, with the seat
   // identity block) - open that instead of the generic panel.
-  if (bdShellActive()) return bdOpenDrawer168();
+  // Build -227: gated on bdMenuDrawerApplies() — being in the
+  // Sell shell, not merely holding a seat (see there).
+  if (bdMenuDrawerApplies()) return bdOpenDrawer168();
   // Build -168: kill any outgoing panel on the spot (see
   // openEverything125); the animated dismiss is only for
   // closes the person asked for.
@@ -3410,24 +3415,19 @@ function menuIdentityStateLine187(u) {
 }
 function menuIdentityCard187(u, name) {
   const other = u.linkedSide ? (u.role === "creator" ? "business" : "creator") : null;
-  // Build -219b: the identity action matches each shell's own
-  // account surface (checkpoint v2 spec). Admin goes to the
-  // Account tab: there is no admin Settings tab, and the old
-  // card sent admin there (the inconsistency the route
-  // inventory flags). Partner reads "Account"; pilot and
-  // recruiter read "Your account".
-  const inPilot219 = u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId);
-  const profTab = (u.role === "admin" || u.role === "partner" || u.role === "recruiter" || inPilot219) ? "Account" : "Profile";
-  const profLabel219 = (u.role === "admin" || u.role === "recruiter" || inPilot219) ? "Your account" : u.role === "partner" ? "Account" : "Profile and account";
+  // Build -227 (Jeff, 2026-11-21): the identity card no longer
+  // carries its own account button. Every shell's groups carry
+  // that destination as a row (My profile / Business profile /
+  // Account / Your account), so the card's button rendered the
+  // same destination twice in one menu. The card is identity
+  // only now: avatar, name, one state line, and the side switch
+  // for dual-role accounts (which no group row carries).
   const photo189 = selfAvatarUrl122(u);
   const initial189 = String(name || u.name || "").trim().charAt(0).toUpperCase() || "S";
   return `<div class="menu-idcard187">
     <span class="mi-ava189" aria-hidden="true">${photo189 ? `<img src="${esc(photo189)}" alt="" onerror="this.remove()">` : ""}${esc(initial189)}</span>
     <div class="menu-idcard187-who"><span class="menu-idcard187-name">${esc(name || "")}</span><span class="menu-idcard187-state">${esc(menuIdentityStateLine187(u))}</span></div>
-    <div class="menu-idcard187-acts">
-    ${other ? `<button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return switchSide180()">Switch to your ${other} side</button>` : ""}
-    <button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return go('dashboard','${profTab}')">${profLabel219}</button>
-    </div>
+    ${other ? `<div class="menu-idcard187-acts"><button type="button" class="btn ghost small-btn" onclick="closeHamburger137(); return switchSide180()">Switch to your ${other} side</button></div>` : ""}
   </div>`;
 }
 // Build -193 (PL-39): the menu's one primary action — a
@@ -3457,10 +3457,11 @@ function menuPrimary193(closeFn) {
   return "";
 }
 // Build -193: the Biz Dev drawer's bottom identity block —
-// avatar, name, one seat line, and the account controls
-// (your account, the side switch, sign out) pinned at the
-// bottom of the menu like every other shell. With the seat
-// gone there is no primary pill either: no honest action.
+// avatar, name, one seat line, pinned at the bottom of the
+// menu like every other shell. (Build -227: the account
+// controls that used to ride here as pills moved out; the
+// "Your seat" rows carry them, once.) With the seat gone
+// there is no primary pill either: no honest action.
 function bdMenuPrimary193() {
   if (state.bdNoSeat) return "";
   return `<button type="button" class="menu-primary193" onclick="closeBdDrawer168(); return go('dashboard','BD Leads')">Add a lead</button>`;
@@ -3472,16 +3473,14 @@ function bdIdentity193(u) {
   const stateLine = state.bdNoSeat
     ? "Your seat has ended"
     : (u.role === "admin" ? `Sell mode (your HQ seat)${seat.repCode ? ` · ${seat.repCode}` : ""}` : `Biz Dev${seat.repCode ? ` · ${esc(seat.repCode)}` : ""}${bdMktName() ? ` · ${esc(bdMktName())}` : ""}`);
+  // Build -227 (Jeff, 2026-11-21): identity only. The pill row
+  // that used to sit here (Your account / Manage or My creator
+  // side / Sign out) duplicated the "Your seat" rows above it
+  // one-for-one; the rows are the canonical set and the block
+  // keeps just the avatar, the name and the seat line.
   return `<div class="menu-idcard187">
     <span class="mi-ava189" aria-hidden="true">${photo ? `<img src="${esc(photo)}" alt="" onerror="this.remove()">` : ""}${esc(initial)}</span>
     <div class="menu-idcard187-who"><span class="menu-idcard187-name">${esc(u.name || "")}</span><span class="menu-idcard187-state">${esc(stateLine)}</span></div>
-    <div class="menu-idcard187-acts">
-    <button type="button" class="btn ghost small-btn" onclick="closeBdDrawer168(); return go('dashboard','Account')">Your account</button>
-    ${u.role === "admin"
-      ? `<button type="button" class="btn ghost small-btn" onclick="closeBdDrawer168(); return bdGoManage161()">Manage</button>`
-      : `<button type="button" class="btn ghost small-btn" onclick="closeBdDrawer168(); return bdGoCreator()">My creator side</button>`}
-    <button type="button" class="btn ghost small-btn" onclick="signOut()">Sign out</button>
-    </div>
   </div>`;
 }
 function closeHamburger137() {
@@ -3572,9 +3571,10 @@ function bdOpenDrawer168() {
     ] }]),
     // Build -219b: the seat group follows the checkpoint v2
     // spec. The BD Menu page is named for what a rep looks
-    // for first (the claim link), and Your account, the shell
-    // exit and Sign out ride as rows here as well as in the
-    // bottom identity block (bdIdentity193).
+    // for first (the claim link). Build -227: Your account,
+    // the shell exit and Sign out ride as rows here ONLY —
+    // the bottom identity block (bdIdentity193) is identity
+    // only, so each appears exactly once.
     { title: "Your seat", rows: [
       dest("menu", "Claim link, city & PIN", "Your claim link, your city, your Show Mode PIN", "BD Menu"),
       dest("profile", "Your account", "Your sign-in, email and password", "Account"),
@@ -4169,7 +4169,7 @@ function renderTopBar2(full) {
     <span class="tb2-brand mbrand"><span class="brand-lockup tb2-lockup"><img src="/assets/logo.png" alt="Magpie"></span></span>
     <span class="tb2-actions">
       ${full && (live || u.role === "creator") ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Messages')" aria-label="Messages">${bnIcon("bubble")}${b.messages ? `<span class="tab-badge">${b.messages > 99 ? "99+" : b.messages}</span>` : ""}</button>` : ""}
-      ${bdShellActive() ? `<button type="button" class="tb2-btn tb2-burger137" onclick="return bdOpenDrawer168()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>` : `<button type="button" class="tb2-btn tb2-burger137" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>`}
+      ${bdMenuDrawerApplies() ? `<button type="button" class="tb2-btn tb2-burger137" onclick="return bdOpenDrawer168()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>` : `<button type="button" class="tb2-btn tb2-burger137" onclick="return openHamburger137()" aria-label="Menu — all sections" title="Menu">${bnIcon("menu")}</button>`}
     </span>
   </div>`;
 }
@@ -4672,6 +4672,10 @@ function railItems() {
     add("b", "deck", "Templates", "return go('dashboard','Templates')", t === "Templates");
     add("b", "stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
     add("c", "users", "Team", "return go('dashboard','Team')", t === "Team");
+    // Build -227: Deleted (the soft-delete restore view,
+    // Build -219c) was reachable only from the hamburger;
+    // the rail carries it too, with the rest of the system set.
+    add("c", "users", "Deleted", "return go('dashboard','Deleted')", t === "Deleted");
     add("c", "sig", "Maggie", "return go('dashboard','Sig')", t === "Sig");
     // Build -138: a teammate's rail carries only their rooms —
     // the same rule the server enforces on every route.
@@ -36445,6 +36449,23 @@ const bd = {
 function bdShellActive() {
   const u = state.user;
   return !!(u && u.bizdevSeat && u.bizdevSeat.active && state.shell !== "creator" && state.view !== "staff");
+}
+// Build -227 (Jeff, 2026-11-21): which menu the menu button
+// opens follows the shell the person is IN, not just the seat
+// they hold. bdShellActive() stays true for an admin in every
+// shell (it drives BD data and chrome), and the -219b routing
+// keyed the menu on it alone — so Jeff, an admin holding the
+// HQ seat, got the Sell drawer on every screen, including
+// Admin Home, and the full admin menu never rendered for him.
+// Now: an admin gets the rep drawer only in Sell mode (the
+// shell he explicitly entered via bdGoShell); everywhere else
+// his menu is the admin hamburger. A non-admin seat holder's
+// home IS the rep shell, so their routing is unchanged.
+function bdMenuDrawerApplies() {
+  if (!bdShellActive()) return false;
+  const u = state.user;
+  if (u && u.role === "admin") return state.shell === "bizdev";
+  return true;
 }
 // Build -188 (PL-05): the desync state — the account still
 // carries an active seat stamp, but the server has no seat
