@@ -2644,7 +2644,7 @@ const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES, brandedEma
 const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
 const connect = require("./connect");
-const { runMetricsSync } = require("./metrics-sync");
+const { runMetricsSync, applyCreatorMetrics: applyCreatorMetrics226 } = require("./metrics-sync");
 const platformConnect = require("./platform-connect");
 const googleAuth = require("./google-auth");
 const square = require("./square");
@@ -3001,6 +3001,27 @@ function photoKey(userId, idx) {
 }
 function photoUrlsFor(u) {
   const n = photoCountOf(u && u.creator);
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(i === 0 ? `/api/users/${u.id}/photo` : `/api/users/${u.id}/photo/${i}`);
+  return out;
+}
+
+// Business photo gallery (Build -226 update pass, Jeff,
+// 2026-11-21): businesses mirror the creator gallery exactly.
+// Same cap, same storage (photo:{userId} is slot 0, the cover;
+// photo:{userId}:<n> the rest), same URL shape, count tracked
+// as business.photoCount. Records written before the gallery
+// (the Build -136 single offer photo, photoCount 1) migrate in
+// place: that photo IS slot 0 of the new gallery. Serving keeps
+// the business rule: signed-in users only, never public.
+const MAX_BUSINESS_PHOTOS = MAX_CREATOR_PHOTOS;
+function businessPhotoCountOf(business) {
+  const b = business || {};
+  if (Number.isInteger(b.photoCount) && b.photoCount >= 0) return Math.min(b.photoCount, MAX_BUSINESS_PHOTOS);
+  return b.hasPhoto ? 1 : 0;
+}
+function businessPhotoUrlsFor(u) {
+  const n = businessPhotoCountOf(u && u.business);
   const out = [];
   for (let i = 0; i < n; i++) out.push(i === 0 ? `/api/users/${u.id}/photo` : `/api/users/${u.id}/photo/${i}`);
   return out;
@@ -3839,13 +3860,25 @@ async function expireDealIfDue(deal) {
 // booking (codeSafety): discount expiry (default 30 days after
 // the post), revoke/regenerate, redemption caps.
 const CODE_DISCOUNT_DEFAULT_EXPIRY_DAYS = 30;
-function audienceCodeLine(booking) {
+function audienceCodeLine(booking, langUser) {
   if (!booking || !booking.creatorCode) return "";
   const pct = Number(booking.discountPct || 0);
   const biz = booking.businessName || "the business";
+  // Build -226 micro-fix: no em dash in this user-facing line, and
+  // the code TOKEN stays byte-identical in every version (the
+  // post-submission check tests only for the token's presence).
+  // With no langUser the line is the canonical English the client
+  // re-localizes from its parts (mentionCodeLine226 parses this
+  // exact English shape); a caller serving ONE user directly (the
+  // post-submission codeWarning) passes that user and msg226
+  // answers in their language, using the client's own ES strings.
   return pct > 0
-    ? `Use code ${booking.creatorCode} at ${biz} for ${pct}% off — it counts for both of us.`
-    : `Mention code ${booking.creatorCode} at ${biz} so this visit counts.`;
+    ? msg226(langUser,
+      `Use code ${booking.creatorCode} at ${biz} for ${pct}% off. It counts for both of us.`,
+      `Usa el código ${booking.creatorCode} en ${biz} para un ${pct}% de descuento. Cuenta para los dos.`)
+    : msg226(langUser,
+      `Mention code ${booking.creatorCode} at ${biz} so this visit counts.`,
+      `Menciona el código ${booking.creatorCode} en ${biz} para que esta visita cuente.`);
 }
 function codeSafetyOf(booking) {
   const s = booking && booking.codeSafety && typeof booking.codeSafety === "object" ? booking.codeSafety : {};
@@ -6632,7 +6665,7 @@ function publicUser(u) {
     rest.google = { email: rest.google.email || null, linkedAt: rest.google.linkedAt || null };
   }
   if (rest.role === "business" && rest.business) {
-    rest.business = { ...rest.business, accessState: businessAccessState(rest) };
+    rest.business = { ...rest.business, accessState: businessAccessState(rest), channels: channelsForBusiness226(rest), photos: businessPhotoUrlsFor(rest) };
     delete rest.business.paymentLink;
     // Stripe Connect (2026-10-26): the raw billing record carries
     // Stripe ids (customer, payment method). Client payloads get
@@ -6934,6 +6967,12 @@ const MOMENTUM_POINTS = {
   streakEvery: 5,
   adUse: 25,
   performanceReport: 5,
+  // Build -226: the interim manual-reporting award. A day-7
+  // numbers report (or a later refresh report) earns +10, the
+  // review scale, once per report window. The award is computed
+  // from the post's performanceMomentumAwards stamps like every
+  // other point, never stored as a balance.
+  performanceReportWindow: 10,
   latePenalty: -10,
   noShowPenalty: -25,
   neverPostedPenalty: -50,
@@ -7238,7 +7277,7 @@ function createMomentum(data) {
       // case), or a set visit date has passed with no redemption.
       // Bookings with neither cannot be judged and are never
       // penalized.
-      const expiredUnused = b.status === "expired" || (b.compliance && b.compliance.expiredAt);
+      const expiredUnused = (b.status === "expired" || (b.compliance && b.compliance.expiredAt)) && !(b.compliance && b.compliance.noShowStrikeWaived);
       if (!b.redeemedAt && !postByBooking.has(b.id) && (expiredUnused || (b.visitDate && Date.parse(b.visitDate) < Date.now()))) {
         push("no_show", `No-show: accepted a visit at ${b.businessName || "a business"} and never showed`, MOMENTUM_POINTS.noShowPenalty, (b.compliance && b.compliance.expiredAt) || b.visitDate || b.updatedAt);
       }
@@ -7270,6 +7309,12 @@ function createMomentum(data) {
       }
       if (p.reportedAt) {
         push("performance_report", "Reported post performance (views and likes)", MOMENTUM_POINTS.performanceReport, p.reportedAt);
+      }
+      // Build -226: +10 per distinct report window (day-7, then
+      // each refresh window), stamped on the post at report time
+      // so a resubmit inside the same window can never re-earn.
+      for (const a of (Array.isArray(p.performanceMomentumAwards) ? p.performanceMomentumAwards : [])) {
+        if (a && a.window) push("performance_report_window", `Reported post numbers (${a.window} report)`, MOMENTUM_POINTS.performanceReportWindow, a.at || p.lastSnapshotAt || p.reportedAt);
       }
     }
 
@@ -10285,7 +10330,12 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     // clock and every later surface read the exact terms the
     // creator accepted.
     deliverables: deliverablesOf(offer),
+    // Build -226: the deal's platform, snapshotted from the offer:
+    // the business's named platform when it set one, else the
+    // platform that resolves for this creator at booking time.
+    platformRequired: platformRequiredOf226(offer),
   };
+  booking.resolvedPlatformName = resolvePlatform226(booking, creator, null).name;
   if (kind === "coupon") {
     // Coupon deal (Build -84): no cash, no escrow, no split.
     // The coupon snapshot rides the booking, so the visit card,
@@ -10378,7 +10428,7 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
 function filledCountFor(offerId, bookings) {
   // Build -42: a collab companion (+1) is a guest on a booked
   // visit, never a spot of its own, so it never fills one.
-  return bookings.filter((bk) => bk.offerId === offerId && bk.collabRole !== "plusone" && bk.status !== "expired" && bk.status !== "cancelled").length;
+  return bookings.filter((bk) => bk.offerId === offerId && bk.collabRole !== "plusone" && bk.status !== "expired" && bk.status !== "cancelled" && bk.status !== "cancelled_by_business").length;
 }
 
 // The applicant stack ranking (design note: local fit, Impact,
@@ -10631,10 +10681,25 @@ async function allBizReviews() {
   return rows.map((r) => r.value);
 }
 
+// Build -226: review chips, short preset-style tags a reviewer
+// picks alongside stars and a note. Normalized in one place so
+// both review routes store the same shape: short strings, a
+// small cap, duplicates out.
+function normalizeChips226(input) {
+  if (!Array.isArray(input)) return [];
+  const out = [];
+  for (const raw of input) {
+    const s = String(raw == null ? "" : raw).trim().slice(0, 40);
+    if (s && !out.includes(s)) out.push(s);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
 function reviewDisplay(r) {
   return {
     stars: r.stars,
     comment: r.comment || "",
+    chips: normalizeChips226(r.chips),
     businessName: r.businessName || "A Magpie business",
     createdAt: r.createdAt,
   };
@@ -11024,10 +11089,17 @@ async function discoverCards(query, viewer, opts) {
   // track bonus bands on. One pass over bookings + posts, only
   // when a brief resolved; the no-brief path pays nothing.
   const matchBrief = await resolveMatchBrief(query, viewer, marketName, catSet, opts);
+  // Build -226 update pass: the per-creator match inputs are
+  // also computed for a plain business viewer (no brief), so
+  // every card can carry the match explainer object against the
+  // viewer's own business (see the default-brief branch in the
+  // card loop). The briefed path is unchanged: matchScore and
+  // the ranking still come only from a resolved brief.
+  const matchStatsMarket = matchBrief ? matchBrief.market : marketName;
   let matchStats = null;
-  if (matchBrief) {
+  if (matchBrief || (viewer && viewer.role === "business")) {
     matchStats = new Map();
-    const briefKey = normalizeMarketName(matchBrief.market || "");
+    const briefKey = normalizeMarketName(matchStatsMarket || "");
     const firstPostByBooking = new Map();
     for (const p of posts) {
       if (p.bookingId && !firstPostByBooking.has(p.bookingId)) firstPostByBooking.set(p.bookingId, p);
@@ -11105,7 +11177,38 @@ async function discoverCards(query, viewer, opts) {
       // (matchScore + matchReasons on the creator-search payload),
       // so it stays put even though match.reasons mirrors it.
       card.matchReasons = m.reasons;
-      card.match = { score: m.score, parts: m.parts, reasons: m.reasons };
+      card.match = matchView226(m);
+    }
+    // Build -226 update pass: with NO brief resolved, a business
+    // viewer still gets the explainer object on every card: the
+    // same engine, the same inputs, scored against the viewer's
+    // own business category in the browsed market (kind comp, no
+    // budget, so budget takes the stated neutral). It carries
+    // defaultBrief: true and deliberately does NOT set
+    // matchScore / matchReasons: those stay the briefed ranking
+    // contract, and no sort reads this object.
+    if (!matchBrief && matchStats && viewer && viewer.role === "business") {
+      const st = matchStats.get(c.id) || { redeemed: 0, onTime: 0, late: 0, trackPosts: 0, trackRedemptions: 0 };
+      const share = audienceShareInMarket(c, matchStatsMarket);
+      const perPostReach = share !== null && share !== undefined ? Math.round(((card.totalAudience || 0) * Number(share)) / 100) : 0;
+      const m = computeMatchScore({
+        market: matchStatsMarket,
+        category: viewer.business ? viewer.business.category || null : null,
+        categoryKind: "business",
+        kind: "comp",
+        budget: null,
+      }, {
+        categories: ((c.creator && c.creator.categories) || []).map((x) => canonicalFromList(x, CREATOR_CATEGORIES) || x),
+        compCategories: (c.creator && c.creator.compCategories) || [],
+        paidRate: card.profile && typeof card.profile.paidRate === "number" ? card.profile.paidRate : null,
+        localPctInMarket: share === undefined ? null : share,
+        momentumPoints: card.pointsTotal || 0,
+        redeemed: st.redeemed,
+        postsOnTime: st.onTime,
+        postsLate: st.late,
+        track: { reach: perPostReach * st.trackPosts, posts: st.trackPosts, redemptions: st.trackRedemptions },
+      });
+      card.match = matchView226(m, { defaultBrief: true });
     }
     // At their weekly visit cap: still visible, NOT greyed (that is
     // the paused treatment), flagged "Booked up this week".
@@ -11251,6 +11354,8 @@ async function publicCreator(u, viewer, foundingPriority, marketContext) {
     marketContext: inOtherMarket ? { market: normalizeMarketName(marketContext), pct: shareHere, homeMarket: normalizeMarketName(u.market) } : null,
     totalAudience: audienceTotalOf(u.creator || {}),
     audienceStack: audienceView(u.creator || {}).platforms,
+    channels: channelsFor226(u.creator || {}),
+    showcase: showcaseView226(u.creator || {}),
     visitIncludes: STANDARD_VISIT.summary,
     bestWork: bestWorkCards(u.creator || {}),
     trackRecord,
@@ -11262,6 +11367,9 @@ async function publicCreator(u, viewer, foundingPriority, marketContext) {
     scoreComponents: impact ? impact.components : null,
     history,
     isFavorite,
+    // Build -226 update pass: the Saved-area name for the same
+    // flag (the bookmark state on feed cards and profiles).
+    viewerSaved: isFavorite,
     // Build -154: Have them back — business viewers only, and
     // only when this pair has a completed, posted visit (the
     // Book again gate). Null everywhere else.
@@ -11546,6 +11654,8 @@ async function publicProfilePayload(u) {
     followerCount: c.followerCount || 0,
     totalAudience: audience.total,
     audienceStack: audience.platforms,
+    channels: channelsFor226(c),
+    showcase: showcaseView226(c),
     categories: c.categories || [],
     // Spanish content attribute (Jeff, 2026-10-28): a simple
     // yes/no the creator sets on their profile. Optional, never
@@ -11714,6 +11824,8 @@ async function bookMePayload(u, viewer) {
     audienceBreakdown: full.audienceBreakdown,
     rateCard: full.rateCard,
     pastWork: full.bestWork,
+    channels: full.channels,
+    showcase: full.showcase,
     foundingBand: full.foundingBand,
     visitIncludes: full.visitIncludes,
     bio: c.bio || "",
@@ -11783,6 +11895,18 @@ async function bookMePayload(u, viewer) {
     payload.ratingAvg = full.ratingAvg;
     payload.ratingCount = full.ratingCount;
   }
+  // Build -226 update pass: the profile hero carries the match
+  // badge + explainer for a signed-in business viewer (the
+  // default brief against their own business; null for everyone
+  // else, public viewers included), and the viewer's saved
+  // state for the bookmark.
+  if (viewer && viewer.role === "business") {
+    payload.viewerSaved = !!(await store.get(`favorite:${viewer.id}:${u.id}`));
+    payload.match = await defaultMatch226(u, viewer);
+  } else {
+    payload.viewerSaved = false;
+    payload.match = null;
+  }
   return payload;
 }
 
@@ -11826,6 +11950,7 @@ function performanceSummary(post) {
     snapshots: snaps.length,
     viewsGrowthPct,
     source: latest ? latest.source || null : null,
+    metricSources: engagementFor226(post).metricSources,
   };
 }
 
@@ -11834,13 +11959,833 @@ function postWithPerformance(post) {
   return { ...post, performance: performanceSummary(post) };
 }
 
+
+// ---------- Build -226: offer-journey plumbing (Jeff, 2026-11-21) ----------
+// One terms object for every booking and offer the journey reads,
+// computed here from the booking/offer/creator records only (the
+// one source). Stored deal fields stay exactly as they are; terms
+// is a read-time view, so the offer, the booking, the visit card,
+// the post step and the results all state the same terms because
+// they all read this function.
+//
+// Platform rule: a business may name the platform when creating
+// an offer (offer.platformRequired, also accepted as
+// offer.platform on legacy input). Otherwise the booking's
+// platform resolves to the creator platform (among the platforms
+// in her audience stack) with the largest LOCAL audience, which is
+// followers times that platform's local %. The creator may switch
+// at post time only when the business did not specify; the switch
+// is stored on the booking (platformSelected) and the post route
+// refuses a switch on a business-specified deal.
+//
+// License states: a paid booking includes the standard license
+// ("included", ends 90 days after the post date); a comped deal
+// starts at native sharing only ("share_only" before a post,
+// "ask" once a post exists and no license is granted yet, priced
+// at the creator's listed licensing fee); a granted license
+// request flips it to "agreed" with its end date, and the ask
+// disappears everywhere because every surface reads this object.
+const PLATFORM_ID_BY_LABEL_226 = {};
+for (const [id, label] of Object.entries(PLATFORM_LABELS || {})) PLATFORM_ID_BY_LABEL_226[String(label).toLowerCase()] = id;
+
+function normalizePlatformId226(raw) {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === "object") return normalizePlatformId226(raw.name || raw.id || raw.platform || "");
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
+  if ((PLATFORM_LABELS || {})[s]) return s;
+  if (PLATFORM_ID_BY_LABEL_226[s]) return PLATFORM_ID_BY_LABEL_226[s];
+  return null;
+}
+function platformLabel226(id) {
+  return (PLATFORM_LABELS || {})[id] || primaryPlatformLabel(id) || id;
+}
+// The creator platform with the largest local audience:
+// followers (audience stack) times local % (that platform's own
+// rate when she supplied one, else her overall local %).
+function largestLocalPlatform226(creatorRec) {
+  const c = (creatorRec && creatorRec.creator) || creatorRec || {};
+  const stack = audienceStackOf(c);
+  const rates = normalizePlatformLocalPct(c.platformLocalPct) || {};
+  let best = null;
+  for (const [id, followers] of Object.entries(stack)) {
+    const pct = rates[id] !== undefined ? Number(rates[id]) : Number(c.localAudiencePct);
+    const local = Number(followers) * (Number.isFinite(pct) ? pct : 0);
+    if (!best || local > best.local || (local === best.local && Number(followers) > best.followers)) best = { id, followers: Number(followers), local };
+  }
+  if (best) return best.id;
+  return primaryPlatformOf(c);
+}
+function platformRequiredOf226(record) {
+  if (!record) return null;
+  return normalizePlatformId226(record.platformRequired || record.platform || null);
+}
+function resolvePlatform226(record, creatorRec, post) {
+  const required = platformRequiredOf226(record);
+  if (required) return { name: required, label: platformLabel226(required), source: "business" };
+  const selected = record && (record.platformSelected || record.resolvedPlatformName);
+  if (selected) {
+    const id = normalizePlatformId226(selected);
+    if (id) {
+      const src = record.platformSelectedSource || (record.platformSelectedByCreator ? "creator_choice" : null);
+      return { name: id, label: platformLabel226(id), source: src === "creator_choice" ? "creator_choice" : "largest_local" };
+    }
+  }
+  if (post && post.platform) {
+    const id = normalizePlatformId226(post.platform);
+    if (id) {
+      const largest = creatorRec ? largestLocalPlatform226(creatorRec) : null;
+      return { name: id, label: platformLabel226(id), source: largest && id !== largest ? "creator_choice" : "largest_local" };
+    }
+  }
+  if (creatorRec) { const id = largestLocalPlatform226(creatorRec); return { name: id, label: platformLabel226(id), source: "largest_local" }; }
+  return { name: null, label: null, source: "largest_local" };
+}
+function visitCostDollars226(record) {
+  if (!record) return null;
+  if (record.compCostEntry && Number.isFinite(Number(record.compCostEntry.amount))) return Number(record.compCostEntry.amount);
+  if (isPaidBooking(record)) {
+    if (record.paidLane && Number.isFinite(Number(record.paidLane.businessTotal))) return Number(record.paidLane.businessTotal);
+    if (Number.isFinite(Number(record.compCostActual))) return Number(record.compCostActual);
+    if (Number.isFinite(Number(record.cashRate))) return Number(record.cashRate);
+    return Number.isFinite(Number(record.dollarCap)) ? Number(record.dollarCap) : null;
+  }
+  if (Number.isFinite(Number(record.compCostActual))) return Number(record.compCostActual);
+  if (Number.isFinite(Number(record.dollarCap))) return Number(record.dollarCap);
+  if (Number.isFinite(Number(record.cashRate))) return Number(record.cashRate);
+  return null;
+}
+function cents226(dollars) {
+  return dollars === null || dollars === undefined || !Number.isFinite(Number(dollars)) ? null : Math.round(Number(dollars) * 100);
+}
+function termsFor226(record, opts) {
+  const o = opts || {};
+  const creatorRec = o.creator || null;
+  const post = o.post || null;
+  const kind = kindOf(record || {});
+  const deliverables = deliverablesOf(record || {});
+  const deliverablesText = deliverableLineFor(deliverables, kind);
+  let postDeadlineAt = (record && record.postDeadline) || null;
+  if (!postDeadlineAt && record && record.redeemedAt) {
+    postDeadlineAt = isPaidBooking(record) ? postingDeadlineFor(record) : new Date(Date.parse(record.redeemedAt) + postWindowHours(record) * 3600 * 1000).toISOString();
+  }
+  const keepUpDays = record && Number.isFinite(Number(record.keepUpDays)) && Number(record.keepUpDays) > 0 ? Math.floor(Number(record.keepUpDays)) : STANDARD_VISIT.postStaysLiveDays;
+  const keepUpUntil = post && post.submittedAt ? new Date(Date.parse(post.submittedAt) + keepUpDays * DAY_MS).toISOString() : null;
+  const platform = resolvePlatform226(record || {}, creatorRec, post);
+  // License: paid includes it; a granted request on the post (the
+  // grant routes stamp post.license) agrees it; otherwise a comped
+  // deal is share only, with the ask priced at the listed fee.
+  const feeRaw = creatorRec && creatorRec.creator ? Number(creatorRec.creator.licensingFee) : (o.licensingFee !== undefined ? Number(o.licensingFee) : NaN);
+  const listedFeeCents = Number.isFinite(feeRaw) && feeRaw > 0 ? cents226(feeRaw) : null;
+  let license;
+  if (isPaidBooking(record) || kind === "paid") {
+    let endsAt = null;
+    if (post && post.standardLicence && post.standardLicence.windowEndsAt) endsAt = post.standardLicence.windowEndsAt;
+    else if (post) endsAt = adUseWindowEnd(post).toISOString();
+    license = { state: "included", priceCents: null, endsAt };
+  } else if (post && post.license && post.license.status === "granted") {
+    license = { state: "agreed", priceCents: cents226(post.license.fee), endsAt: post.license.windowEndsAt || null };
+  } else if (post) {
+    license = { state: "ask", priceCents: listedFeeCents, endsAt: null };
+  } else {
+    license = { state: "share_only", priceCents: listedFeeCents, endsAt: null };
+  }
+  const costDollars = visitCostDollars226(record);
+  return {
+    deliverablesText,
+    deliverables,
+    postWindowHours: postWindowHours(record || {}),
+    postDeadlineAt: postDeadlineAt || null,
+    keepUpDays,
+    keepUpUntil,
+    platform,
+    license,
+    visitCostCents: cents226(costDollars),
+  };
+}
+// The creator's post nudge for one booking in the post-due state:
+// redeemed, no post link yet, and at least the day-2 reminder
+// point reached. Stage day2 covers days 2 to 4, day5 from day 5.
+function postNudgeFor226(booking, post, nowMs) {
+  if (!booking || !booking.redeemedAt || post) return null;
+  if (["completed", "cancelled", "expired"].includes(booking.status)) return null;
+  const now = nowMs || Date.now();
+  const ageDays = (now - Date.parse(booking.redeemedAt)) / DAY_MS;
+  if (!Number.isFinite(ageDays) || ageDays < 2) return null;
+  const stage = ageDays >= 5 ? "day5" : "day2";
+  const dueText = booking.postDeadline && Date.parse(booking.postDeadline) >= now
+    ? `Your post for ${booking.businessName || "this visit"} is due ${milestoneDeadlineText(booking.postDeadline)}. Paste the post link in the app to finish the visit.`
+    : `Your post for ${booking.businessName || "this visit"} is past its due time. Paste the post link in the app as soon as you can. A post inside the week still counts, as a late delivery.`;
+  return { bookingId: booking.id, stage, dueText };
+}
+function postNudgesFor226(creatorId, bookings, posts, nowMs) {
+  const byBooking = new Map();
+  for (const p of posts || []) if (p && p.bookingId && !byBooking.has(p.bookingId)) byBooking.set(p.bookingId, p);
+  const out = [];
+  for (const b of bookings || []) {
+    if (!b || b.creatorId !== creatorId) continue;
+    const n = postNudgeFor226(b, byBooking.get(b.id) || null, nowMs);
+    if (n) out.push(n);
+  }
+  out.sort((a, b) => (a.stage === b.stage ? 0 : a.stage === "day5" ? -1 : 1));
+  return out;
+}
+// Interim manual reporting windows (Build -226): the day-7 ask
+// opens the first window, the day-14 and day-30 refresh asks
+// open theirs, and each later 30-day block is its own window.
+// A report before day 7 is in no award window yet.
+function performanceReportWindow226(post, atMs) {
+  if (!post || !post.submittedAt) return null;
+  const days = Math.floor(((atMs || Date.now()) - Date.parse(post.submittedAt)) / DAY_MS);
+  if (!Number.isFinite(days) || days < 7) return null;
+  if (days < 14) return "day7";
+  if (days < 30) return "day14";
+  return `day${Math.floor(days / 30) * 30}`;
+}
+// Post metrics with their labels (Build -226 labeling law): the
+// flat post fields carry the current values; metricSources says
+// per metric whether the number was reported by the creator
+// ("creator") or pulled from the platform ("platform"). Legacy
+// posts with reported numbers and no source map read as creator.
+function engagementFor226(post) {
+  const empty = { views: null, likes: null, comments: null, shares: null, saves: null, reportedByCreator: false, source: null, metricSources: {} };
+  if (!post) return empty;
+  const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const sources = {};
+  const stored = post.metricSources && typeof post.metricSources === "object" ? post.metricSources : {};
+  for (const k of ["views", "likes", "comments", "shares", "saves"]) {
+    if (num(post[k]) === null) continue;
+    sources[k] = stored[k] === "platform" ? "platform" : "creator";
+  }
+  const vals = Object.values(sources);
+  return {
+    views: num(post.views), likes: num(post.likes), comments: num(post.comments), shares: num(post.shares), saves: num(post.saves),
+    reportedByCreator: vals.includes("creator"),
+    source: vals.length && vals.every((s) => s === "platform") ? "platform" : vals.includes("creator") ? "creator" : null,
+    metricSources: sources,
+  };
+}
+// The per-booking results report (Build -226): counted customers
+// and register spend come ONLY from the register record (the
+// redemption events, or the business's reported register tally as
+// its labeled fallback, through bookingMoneyFrom). Modeled
+// estimates (code-use estimates, media value, the ROAS model)
+// never enter these figures. ROI here is the plain contract
+// ratio: register spend divided by what the visit cost.
+function postReportFor226(booking, post, redevents) {
+  const money = bookingMoneyFrom(booking, redevents || []);
+  const registerSpend = money.source === "events" ? roasRound2(money.spend + money.returnSpend) : money.spend;
+  const countedCustomers = money.customers + (money.source === "events" ? money.returns : 0);
+  const costDollars = visitCostDollars226(booking);
+  const roi = costDollars && costDollars > 0 ? Math.round((registerSpend / costDollars) * 10000) / 10000 : null;
+  const byDay = new Map();
+  for (const e of redevents || []) {
+    if (!e || e.bookingId !== booking.id || e.voided || e.pendingConfirm) continue;
+    const day = String(e.at || "").slice(0, 10);
+    if (!day) continue;
+    const row = byDay.get(day) || { date: day, customers: 0, registerSpendCents: 0 };
+    if (e.kind !== "return") row.customers += 1;
+    row.registerSpendCents += cents226(Number(e.amount) || 0) || 0;
+    byDay.set(day, row);
+  }
+  return {
+    bookingId: booking.id,
+    businessId: booking.businessId,
+    creatorId: booking.creatorId,
+    offerId: booking.offerId || null,
+    title: booking.title || "",
+    countedCustomers,
+    countedSource: money.source,
+    registerSpendCents: cents226(registerSpend),
+    registerSpend,
+    visitCostCents: cents226(costDollars),
+    visitCost: costDollars,
+    roi,
+    returnMultiple: roi,
+    engagement: engagementFor226(post),
+    countedByDay: [...byDay.values()].sort((a, b) => (a.date < b.date ? -1 : 1)),
+    post: post ? { id: post.id, url: post.url || null, platform: post.platform || null, submittedAt: post.submittedAt || null, postFile: post.postFile || null } : null,
+  };
+}
+function emptyAgg226() {
+  return { bookings: 0, countedCustomers: 0, registerSpendCents: 0, visitCostCents: 0, engagement: { views: 0, likes: 0, comments: 0, shares: 0, saves: 0, total: 0 } };
+}
+function addToAgg226(agg, report) {
+  agg.bookings += 1;
+  agg.countedCustomers += report.countedCustomers || 0;
+  agg.registerSpendCents += report.registerSpendCents || 0;
+  agg.visitCostCents += report.visitCostCents || 0;
+  for (const k of ["views", "likes", "comments", "shares", "saves"]) agg.engagement[k] += report.engagement[k] || 0;
+  agg.engagement.total = agg.engagement.views + agg.engagement.likes + agg.engagement.comments + agg.engagement.shares + agg.engagement.saves;
+  return agg;
+}
+function finishAgg226(agg) {
+  const spend = agg.visitCostCents;
+  return { ...agg, registerSpend: agg.registerSpendCents / 100, visitCost: spend / 100, roi: spend > 0 ? Math.round(((agg.registerSpendCents / spend)) * 10000) / 10000 : null, returnMultiple: spend > 0 ? Math.round(((agg.registerSpendCents / spend)) * 10000) / 10000 : null };
+}
+
+
+
+// ---------- Build -226: post file pipe ----------
+// Storage follows the profile-photo pattern exactly: the bytes
+// live in their own store record (postfile:{postId}) as base64
+// with a content type, and the post record carries only the
+// metadata (postFile { name, type, size, storageRef }). The file
+// record is written on its own; nothing here is awaited inside
+// any other request's work, and no prefix is scanned to find it:
+// the booking's post is resolved from the post list the caller
+// already loads, and the file itself is one point get by key.
+const POST_FILE_MAX_BYTES_226 = 50 * 1024 * 1024;
+function parsePostFile226(b) {
+  if (!b || typeof b !== "object") return { error: "Send the file with its name and data." };
+  let dataBase64 = null; let contentType = null;
+  if (typeof b.dataUrl === "string") {
+    const m = b.dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+    if (!m) return { error: "That file data could not be read. Send it as a data URL." };
+    contentType = m[1] || b.type || "application/octet-stream";
+    dataBase64 = m[2] ? m[3] : Buffer.from(decodeURIComponent(m[3]), "utf8").toString("base64");
+  } else if (typeof b.dataBase64 === "string") {
+    dataBase64 = b.dataBase64;
+    contentType = b.type || b.contentType || "application/octet-stream";
+  }
+  if (!dataBase64) return { error: "Attach the post file: send dataUrl or dataBase64 with the file name and type." };
+  const bytes = Math.floor((dataBase64.length * 3) / 4);
+  if (bytes > POST_FILE_MAX_BYTES_226) return { error: "That file is too large. Please use one under 50 MB." };
+  const name = String(b.name || b.fileName || "post-file").trim().slice(0, 200) || "post-file";
+  const type = String(contentType || "application/octet-stream").slice(0, 120);
+  return { meta: { name, type, size: bytes }, record: { contentType: type, dataBase64, bytes } };
+}
+async function attachPostFile226(post, parsed, actorId) {
+  const storageRef = `postfile:${post.id}`;
+  await store.set(storageRef, { ...parsed.record, postId: post.id, bookingId: post.bookingId, uploadedAt: nowIso(), uploadedBy: actorId });
+  post.postFile = { name: parsed.meta.name, type: parsed.meta.type, size: parsed.meta.size, storageRef };
+  post.updatedAt = nowIso();
+  await store.set(`post:${post.id}`, post);
+  return post.postFile;
+}
+// The download gate, read from the same terms object every other
+// surface reads: only "included" (paid) or "agreed" (a granted
+// license on a comped post) opens the file.
+function licenseAllowsDownload226(booking, creatorRec, post) {
+  const terms = termsFor226(booking, { creator: creatorRec, post });
+  return terms.license.state === "included" || terms.license.state === "agreed";
+}
+
+// ---------- Build -226 items 13+14: cancel / move-a-visit layer,
+// post-confirmation closure, stall watching, review backstop,
+// Spanish parity ----------
+// Spanish parity (14d): the server's existing i18n pattern records
+// a language preference on the user record (user.lang === "es", or
+// business.preferredLanguage) and answers that person in Spanish.
+// Every user-facing string this bundle adds ships both versions
+// here: notifications carry textEn/textEs on the note record (the
+// stored text is in the recipient's language), and route errors
+// pick by the signed-in user's preference.
+function langOf226(u) {
+  return u && (u.lang === "es" || (u.business && u.business.preferredLanguage === "es")) ? "es" : "en";
+}
+function msg226(u, en, es) { return langOf226(u) === "es" && es ? es : en; }
+async function notifyBilingual226(userId, kind, en, es, data = {}) {
+  let u = null;
+  try { u = await store.get(`user:${userId}`); } catch (e) { /* note still lands */ }
+  const rec = await notifyUser(userId, kind, msg226(u, en, es), data);
+  try {
+    rec.textEn = en;
+    rec.textEs = es || null;
+    await store.set(`note:${userId}:${rec.id}`, rec);
+  } catch (e) { /* the note itself already landed */ }
+  return rec;
+}
+
+// Which lane a booking came from, read off the record itself.
+// Maggie-arranged bookings materialize through these same offer
+// and deal paths, so the universal cancel below covers them too.
+function bookingLane226(booking, offer) {
+  if (!booking) return "unknown";
+  if (booking.applicationId) return "application";
+  if (booking.dealId || (offer && offer.dealId)) return "deal";
+  if (!booking.offerId) return booking.paidLane ? "direct_paid" : "direct";
+  if (offer && offer.swapFromBookingId) return "swap";
+  if (offer && (offer.rebookOfDealId || offer.rebookOfBookingId)) return "book_again";
+  return laneOf(offer || booking) === "open" ? "open_offer" : "direct";
+}
+
+// The ONE cancel path for a booked, unredeemed visit (item 13a/b),
+// mirroring the application-lane decline semantics exactly: status
+// and codeStatus flip together, the paid escrow refunds through
+// refundPaidEscrow (a held authorization is cancelled, never
+// captured), a +1 companion booking cancels with its primary, the
+// cancellation is logged, and the freed spot backfills through
+// maybeBackfill (filledCountFor excludes cancelled bookings, so
+// the slot is free the moment this saves). Business cancels land
+// in the distinct cancelled_by_business state, which also opens
+// the Swap Bench (its gate accepts both cancelled states).
+async function cancelBooking226(booking, { byRole, actor, reason = "", status }) {
+  const offer = booking.offerId ? await store.get(`offer:${booking.offerId}`) : null;
+  const lane = bookingLane226(booking, offer);
+  booking.status = status;
+  booking.codeStatus = "cancelled";
+  booking.cancelledAt = nowIso();
+  booking.cancelledByRole = byRole;
+  booking.cancelReason = String(reason || "").slice(0, 300);
+  booking.cancelLane = lane;
+  booking.visitLostReason = byRole === "business" ? "business_cancelled" : "creator_cancelled";
+  if (status === "cancelled_by_business") booking.swapEligible = true;
+  booking.updatedAt = nowIso();
+  await store.set(`booking:${booking.id}`, booking);
+  await refundPaidEscrow(booking, byRole === "business" ? "business_cancelled" : "creator_declined", { escrowRefunded: 0 });
+  await logEvent({ type: "booking_cancelled", actorId: actor ? actor.id : null, actorRole: byRole, subjectId: booking.id, market: booking.market, data: { offerId: booking.offerId || null, businessId: booking.businessId, creatorId: booking.creatorId, lane, reason: booking.cancelReason, byRole, status } });
+  await cancelCompanionForPrimary(booking);
+  if (booking.applicationId) {
+    const app = await store.get(`application:${booking.applicationId}`);
+    if (app && (app.status === "selected" || app.status === "backfill_accepted")) {
+      app.status = "released";
+      app.releaseReason = byRole === "business" ? "business_cancelled" : "creator_declined";
+      app.decidedAt = nowIso();
+      app.updatedAt = nowIso();
+      await store.set(`application:${app.id}`, app);
+      await logEvent({ type: "application_released", actorId: actor ? actor.id : null, actorRole: byRole, subjectId: app.id, market: app.market, data: { offerId: app.offerId, creatorId: app.creatorId, businessId: app.businessId, reason: app.releaseReason, via: "booking_cancel_226" } });
+    }
+  }
+  if (offer) {
+    const all = await allBookings();
+    await maybeBackfill(offer, all);
+  }
+  return { lane, offer };
+}
+
+// Reschedule validation (13c): the proposed moment must be a real
+// future time, no more than 30 days out. The booking's own window
+// family (timingWindow / visitDate) decides how the accepted time
+// lands: a day visit moves its visitDate, and redeemBy re-derives
+// through the same timingRedeemBy137 the booking was created
+// with, so the post clock (which starts at redemption, off the
+// visit) follows the new time automatically.
+function rescheduleError226(booking, iso) {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return "Pick a new visit time.";
+  if (t <= Date.now()) return "The new visit time has to be in the future.";
+  if (t > Date.now() + 30 * DAY_MS) return "The new visit time has to be within 30 days.";
+  return null;
+}
+function applyReschedule226(booking, proposal) {
+  const t = new Date(proposal.newVisitAt);
+  booking.rescheduleHistory = Array.isArray(booking.rescheduleHistory) ? booking.rescheduleHistory : [];
+  booking.rescheduleHistory.push({ fromRedeemBy: booking.redeemBy || null, toVisitAt: proposal.newVisitAt, byRole: proposal.byRole, proposedAt: proposal.proposedAt, acceptedAt: nowIso() });
+  if (booking.timingWindow === "day" || booking.visitDate) {
+    booking.visitDate = proposal.newVisitAt.slice(0, 10);
+    booking.redeemBy = timingRedeemBy137("day", booking.visitDate, new Date());
+  } else {
+    // The proposed moment is the new visit; the redemption window
+    // closes at the end of that day, the same end-of-day shape a
+    // day booking uses.
+    booking.redeemBy = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), 23, 59, 59, 999)).toISOString();
+  }
+  booking.rescheduledAt = nowIso();
+  booking.updatedAt = nowIso();
+}
+
+// Fair strike check (13d): did the creator message this booking's
+// business (or the Magpie platform thread) after the booking was
+// made and before the redemption window ran out? Same message
+// records creatorCommunicatedFor reads for the silent strike,
+// with the window anchored on createdAt..redeemBy instead of
+// redeemedAt (there is no redemption in the expiry case).
+function creatorMessagedBeforeExpiry226(booking, messages) {
+  if (!booking) return false;
+  const from = Date.parse(booking.createdAt || "") || 0;
+  const until = Date.parse(booking.redeemBy || "") || Infinity;
+  for (const m of messages || []) {
+    if (!m || m.fromId !== booking.creatorId) continue;
+    if (m.toId !== booking.businessId && m.toId !== PLATFORM_PEER_ID) continue;
+    const at = Date.parse(m.createdAt || "");
+    if (Number.isFinite(at) && at >= from && at <= until) return true;
+  }
+  return false;
+}
+
+// ---------- Item 14 helpers ----------
+// The confirmation window (14a) is the escrow rule's own 48
+// hours: a paid booking's money releases on proof + 48h, so a
+// business that has not confirmed by then has had the full window
+// the money already assumes.
+const POST_CONFIRM_WINDOW_HOURS_226 = 48;
+function businessDaysBetween226(fromMs, toMs) {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs) return 0;
+  const d = new Date(fromMs); d.setUTCHours(0, 0, 0, 0);
+  const end = new Date(toMs); end.setUTCHours(0, 0, 0, 0);
+  let count = 0;
+  while (d < end) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) count += 1;
+  }
+  return count;
+}
+// The review promise (14c): an application pending past two
+// business days is overdue. Computed from the record, so the flag
+// clears by itself the moment the application is decided.
+function reviewOverdue226(u, nowMs) {
+  if (!u || u.status !== "pending" || !u.createdAt) return false;
+  return businessDaysBetween226(Date.parse(u.createdAt), nowMs || Date.now()) > 2;
+}
+function reviewStatusLine226(u) {
+  return msg226(u,
+    "We are still on your application. Reviews usually take up to two business days, and yours needs a little more time. We will email you the moment it is decided.",
+    "Seguimos trabajando en tu solicitud. Las revisiones suelen tardar hasta dos días hábiles, y la tuya necesita un poco más de tiempo. Te escribiremos por correo en cuanto se decida.");
+}
+
+// Post-confirmation closure + link re-check + review promise
+// (14a/14c). Runs ONLY from the admin/sweep trigger and the
+// scheduled function, never on the request path (LOADER RULE):
+// the link re-check fetches external URLs, which is exactly the
+// work the *-background / scheduled pattern exists for. A rotted
+// link is FLAGGED for follow-up (post.linkFlaggedAt plus a
+// followUpFlag on the booking that Admin surfaces read); a post
+// is never un-verified silently.
+async function runPostFollowupSweep226(opts = {}) {
+  const now = opts.now ? Date.parse(opts.now) : Date.now();
+  const nowStr = new Date(now).toISOString();
+  const summary = { autoConfirmed: 0, linksChecked: 0, linksFlagged: 0, reviewFlagged: 0, reviewNotes: 0 };
+  const posts = await allPosts();
+  const bookings = await allBookings();
+  const bkById = new Map(bookings.map((b) => [b.id, b]));
+  const mockGone = new Set(Array.isArray(opts.mockGoneUrls) ? opts.mockGoneUrls : []);
+  const fetchImpl = opts.fetchImpl || (typeof fetch !== "undefined" ? fetch : null);
+  for (const post of posts) {
+    const bk = bkById.get(post.bookingId);
+    if (!post.verifiedAt && post.submittedAt && now >= Date.parse(post.submittedAt) + POST_CONFIRM_WINDOW_HOURS_226 * 3600 * 1000) {
+      post.verifiedAt = nowStr;
+      post.verifiedBy = "auto_window";
+      post.autoConfirmedAt = nowStr;
+      await store.set(`post:${post.id}`, post);
+      if (bk) {
+        bk.postConfirmedAt = nowStr;
+        bk.confirmationAutoClosedAt = nowStr;
+        if (bk.status !== "completed" && bk.status !== "cancelled" && bk.status !== "cancelled_by_business") bk.status = "completed";
+        bk.updatedAt = nowStr;
+        await store.set(`booking:${bk.id}`, bk);
+      }
+      await logEvent({ type: "post_auto_confirmed", actorId: null, actorRole: "system", subjectId: post.id, market: post.market || (bk && bk.market) || null, data: { bookingId: post.bookingId, creatorId: post.creatorId, businessId: post.businessId, windowHours: POST_CONFIRM_WINDOW_HOURS_226 } });
+      await notifyBilingual226(post.creatorId, "post_auto_confirmed",
+        "Good news: the business did not confirm your post inside the 48 hour window, so Magpie closed the loop for you. Your visit counts as complete.",
+        "Buenas noticias: el negocio no confirmó tu publicación dentro del plazo de 48 horas, así que Magpie cerró el proceso por ti. Tu visita cuenta como completada.",
+        { bookingId: post.bookingId, postId: post.id });
+      summary.autoConfirmed += 1;
+    }
+    if (post.url && !post.linkFlaggedAt) {
+      summary.linksChecked += 1;
+      let gone = false;
+      let status = null;
+      if (mockGone.has(post.url)) { gone = true; status = 404; }
+      else if (fetchImpl) {
+        try {
+          const r = await fetchImpl(post.url, { method: "GET", redirect: "follow" });
+          status = r && r.status;
+          gone = status === 404 || status === 410;
+        } catch (e) { /* a network error is not proof a link died */ }
+      }
+      if (gone) {
+        post.linkFlaggedAt = nowStr;
+        post.linkFlagReason = `gone_${status}`;
+        await store.set(`post:${post.id}`, post);
+        if (bk) {
+          bk.followUpFlag = { kind: "post_link_gone", at: nowStr, postId: post.id, url: post.url, httpStatus: status };
+          bk.updatedAt = nowStr;
+          await store.set(`booking:${bk.id}`, bk);
+        }
+        await logEvent({ type: "post_link_flagged", actorId: null, actorRole: "system", subjectId: post.id, market: post.market || (bk && bk.market) || null, data: { bookingId: post.bookingId, url: post.url, httpStatus: status } });
+        summary.linksFlagged += 1;
+      }
+    }
+  }
+  const users = await allUsers();
+  for (const u of users) {
+    if (u.role !== "creator" && u.role !== "business") continue;
+    if (!reviewOverdue226(u, now)) continue;
+    summary.reviewFlagged += 1;
+    if (!u.reviewPromiseNoteSentAt) {
+      u.reviewPromiseNoteSentAt = nowStr;
+      u.reviewOverdueFlaggedAt = nowStr;
+      u.updatedAt = nowStr;
+      await store.set(`user:${u.id}`, u);
+      await notifyBilingual226(u.id, "review_still_on_it", reviewStatusLine226({ ...u, lang: "en" }), reviewStatusLine226({ ...u, lang: "es" }), {});
+      await logEvent({ type: "review_promise_note_sent", actorId: null, actorRole: "system", subjectId: u.id, market: u.market || null, data: { applicantRole: u.role, businessDays: businessDaysBetween226(Date.parse(u.createdAt), now) } });
+      summary.reviewNotes += 1;
+    }
+  }
+  return summary;
+}
+
+// ---------- Build -226 profile data: all-channels payload +
+// Top 3 showcase ----------
+// channelsFor226: EVERY social account collected for a creator,
+// one row per channel: { platform, label, handle, url, followers,
+// localPct }. Sources are the record's own channel data, read
+// through the existing builders (never a hard-coded primary):
+// the audience stack (followers per platform), the per-platform
+// local % map, and platformLinksOf (the effective links: legacy
+// per-platform fields merged with the stored platformLinks map,
+// which is where channels beyond the count platforms, like
+// Snapchat and a website, live). A channel with a link but no
+// count still appears (followers null); a count without a link
+// appears too (handle/url null). New channels join automatically
+// when they land in any of those sources.
+function channelsFor226(creatorRec) {
+  const c = (creatorRec && creatorRec.creator) || creatorRec || {};
+  const view = audienceView(c);
+  const byId = new Map();
+  for (const p of view.platforms || []) {
+    byId.set(p.platform, { platform: p.platform, label: p.label, handle: p.handle || null, url: p.url || null, followers: p.count, localPct: p.localPct != null ? p.localPct : null });
+  }
+  const links = platformLinksOf(c);
+  const rates = normalizePlatformLocalPct(c.platformLocalPct) || {};
+  const primaryId = primaryPlatformOf(c);
+  for (const [id, l] of Object.entries(links)) {
+    const existing = byId.get(id);
+    const localPct = rates[id] !== undefined ? rates[id] : (id === primaryId && typeof c.localAudiencePct === "number" ? c.localAudiencePct : null);
+    if (existing) {
+      if (!existing.handle && l.handle) existing.handle = l.handle;
+      if (!existing.url && l.url) existing.url = l.url;
+      if (existing.localPct == null && localPct != null) existing.localPct = localPct;
+    } else {
+      byId.set(id, { platform: id, label: (PLATFORM_LABELS || {})[id] || id, handle: l.handle || null, url: l.url || null, followers: null, localPct });
+    }
+  }
+  return [...byId.values()].sort((a, b) => (b.followers || 0) - (a.followers || 0) || String(a.label).localeCompare(String(b.label)));
+}
+// Businesses collect channels too (their own links on the
+// business record); the same row shape serves them, with
+// followers/localPct null (those are creator audience numbers).
+function channelsForBusiness226(userRec) {
+  const b = (userRec && userRec.business) || {};
+  const out = [];
+  const push = (id, handle, url) => {
+    const h = String(handle || "").trim();
+    const u = String(url || "").trim();
+    if (!h && !u) return;
+    if (out.some((x) => x.platform === id)) return;
+    out.push({ platform: id, label: (PLATFORM_LABELS || {})[id] || id, handle: h || null, url: u || null, followers: null, localPct: null });
+  };
+  const links = normalizePlatformLinks(b.platformLinks || b.socialLinks || b.socials);
+  for (const [k, v] of Object.entries(links || {})) push(k, v.handle, v.url);
+  push("instagram", b.instagramHandle, b.instagramUrl);
+  push("tiktok", b.tiktokHandle, b.tiktokUrl);
+  push("youtube", b.youtubeHandle, b.youtubeUrl);
+  push("facebook", b.facebookHandle, b.facebookUrl);
+  push("x", b.xHandle, b.xUrl);
+  push("linkedin", b.linkedinHandle, b.linkedinUrl);
+  if (b.website) push("website", "", b.website);
+  return out;
+}
+// Top 3 showcase (storage): creator.showcase is an ordered list
+// of { url, platform, addedAt }, max 3, her order. Validation
+// reuses the best-work platform check (a plausible platform post
+// URL on a known host); the served shape adds the shared
+// video-embed descriptor from lib/video-embed.js, the same embed
+// path bestWorkCards uses. No second embed path exists.
+const SHOWCASE_MAX_226 = 3;
+function showcasePlatform226(url) {
+  const emb = videoEmbedFor(url);
+  if (emb && emb.platform) return String(emb.platform).toLowerCase();
+  return normalizePlatformId226(bestWorkPlatform(url));
+}
+function normalizeShowcase226(input) {
+  const raw = Array.isArray(input) ? input : [];
+  const urls = raw.map((x) => (typeof x === "string" ? x : (x && typeof x.url === "string" ? x.url : ""))).map((s) => s.trim()).filter(Boolean);
+  if (urls.length > SHOWCASE_MAX_226) return { error: `Pick up to ${SHOWCASE_MAX_226} posts for your showcase. Remove one before adding another.` };
+  const out = [];
+  for (const url of urls) {
+    if (url.length > 300 || !bestWorkPlatform(url)) return { error: `That link is not a post link from a platform we can show: ${url.slice(0, 80)}` };
+    if (out.some((x) => x.url === url)) continue;
+    out.push({ url, platform: showcasePlatform226(url), addedAt: nowIso() });
+  }
+  return { showcase: out };
+}
+function showcaseView226(creatorRec) {
+  const c = (creatorRec && creatorRec.creator) || creatorRec || {};
+  const stored = Array.isArray(c.showcase) ? c.showcase : [];
+  const out = [];
+  for (const entry of stored) {
+    const url = entry && typeof entry.url === "string" ? entry.url : "";
+    if (!url || !bestWorkPlatform(url)) continue;
+    out.push({ url, platform: entry.platform || showcasePlatform226(url), addedAt: entry.addedAt || null, embed: videoEmbedFor(url) });
+    if (out.length >= SHOWCASE_MAX_226) break;
+  }
+  return out;
+}
+
+// ---------- Build -226 update pass: favorites, business
+// profile payload, match explainer ----------
+// Favorites storage (the codebase's existing per-pair pattern,
+// extended to both directions): a user-to-user save is one
+// record favorite:{viewerId}:{targetUserId} = { createdAt }.
+// Business saving a creator is the original Build shape; a
+// creator saving a business uses the same shape with the roles
+// reversed (the viewer's own role says which side the targets
+// are). An offer save cannot be a user pair, so it gets its own
+// prefix in the same shape: favorite-offer:{viewerId}:{offerId}
+// = { createdAt }. Reads are bounded prefix lists plus one
+// getMany join, never a serial per-key scan (LOADER RULE).
+async function savedSets226(userId) {
+  const [pairRows, offerRows] = await Promise.all([
+    store.list(`favorite:${userId}:`),
+    store.list(`favorite-offer:${userId}:`),
+  ]);
+  const targetIds = pairRows.map((r) => String(r.key).split(":")[2]).filter(Boolean);
+  const recs = targetIds.length ? await store.getMany(targetIds.map((id) => `user:${id}`)) : [];
+  const byId = new Map(recs.map((r) => [r.value && r.value.id, r.value]));
+  const creators = [];
+  const businesses = [];
+  for (const id of targetIds) {
+    const t = byId.get(id);
+    if (!t || isAccountDeleted(t)) continue;
+    if (t.role === "creator") creators.push(id);
+    else if (t.role === "business") businesses.push(id);
+  }
+  return {
+    creators,
+    businesses,
+    offers: offerRows.map((r) => String(r.key).split(":")[2]).filter(Boolean),
+    byId,
+  };
+}
+// The business card a creator sees (Saved area, business
+// profile): the same photos shape the creator payload serves
+// (photos array, first is the cover, photoUrl mirrors it).
+function businessCard226(bizUser, opts) {
+  const b = (bizUser && bizUser.business) || {};
+  const photos = businessPhotoUrlsFor(bizUser);
+  return {
+    userId: bizUser.id,
+    businessId: bizUser.id,
+    name: b.businessName || bizUser.name || "",
+    businessName: b.businessName || bizUser.name || "",
+    category: b.category || "",
+    market: normalizeMarketName(bizUser.market),
+    city: bizUser.city || "",
+    neighborhood: b.neighborhood || "",
+    about: b.about || "",
+    photoUrl: photos.length ? photos[0] : null,
+    photos,
+    channels: channelsForBusiness226(bizUser),
+    viewerSaved: !!(opts && opts.viewerSaved),
+  };
+}
+// The offer card a creator sees in the Saved area: enough to
+// render the card and open the full offer, with the business
+// gallery riding in the same shape as everywhere else.
+function savedOfferCard226(offer, bizUser, viewer) {
+  const photos = bizUser ? businessPhotoUrlsFor(bizUser) : [];
+  const logo = bizUser && bizUser.business && bizUser.business.assetPacket ? bizUser.business.assetPacket.logoUrl : null;
+  return {
+    id: offer.id,
+    offerId: offer.id,
+    title: offer.title || "",
+    businessId: offer.businessId,
+    businessName: displayBusinessName(offer, bizUser),
+    businessCity: bizUser ? (bizUser.city || "") : "",
+    businessNeighborhood: bizUser && bizUser.business ? (bizUser.business.neighborhood || "") : "",
+    market: offer.market,
+    category: offer.category || "",
+    kind: kindOf(offer),
+    lane: laneOf(offer),
+    status: offer.status,
+    whatComped: offer.whatComped || "",
+    dollarCap: offer.dollarCap !== undefined ? offer.dollarCap : null,
+    cashRate: offer.cashRate !== undefined ? offer.cashRate : null,
+    spots: offer.spots !== undefined ? offer.spots : null,
+    createdAt: offer.createdAt,
+    businessImageUrl: photos.length ? photos[0] : (logo || null),
+    businessPhotos: photos,
+    photos,
+    terms: termsFor226(offer, { creator: viewer && viewer.role === "creator" ? viewer : null }),
+    viewerSaved: true,
+  };
+}
+// Match explainer inputs (design 29): the five inputs the sheet
+// names, in sheet order, each value the component score the one
+// engine computed (0 to 100; Momentum is the capped component,
+// min(100, total points), exactly as the engine weights it).
+// The track bonus rides separately, as the sheet's extra line.
+function matchInputs226(m) {
+  const p = (m && m.parts) || {};
+  return [
+    { key: "local", label: "Local audience", value: p.localPct !== undefined ? p.localPct : null },
+    { key: "category", label: "Category fit", value: typeof p.category === "number" ? p.category : null },
+    { key: "budget", label: "Rate fit", value: typeof p.budget === "number" ? p.budget : null },
+    { key: "reliability", label: "On-time record", value: typeof p.reliability === "number" ? p.reliability : null },
+    { key: "momentum", label: "Momentum", value: typeof p.momentum === "number" ? Math.min(100, p.momentum) : null },
+  ];
+}
+function matchView226(m, extra) {
+  if (!m) return null;
+  return { score: m.score, reasons: m.reasons || [], parts: m.parts, inputs: matchInputs226(m), ...(extra || {}) };
+}
+// The default-brief match for profile surfaces (the /c page and
+// the business profile hero): computed ONLY for a signed-in
+// business viewer, against that business's own category in the
+// creator's home market, kind comp (no budget, so the budget
+// component takes the engine's stated neutral). One engine, the
+// same input derivations the discovery briefed path uses. No
+// business viewer means no match object at all: a public page
+// has no brief to score against, and the payload says so by
+// omission rather than inventing a score.
+async function defaultMatch226(creatorUser, viewer) {
+  if (!viewer || viewer.role !== "business" || !creatorUser || creatorUser.role !== "creator") return null;
+  const market = normalizeMarketName(creatorUser.market);
+  const [bookings, posts] = await Promise.all([allBookings(), allPosts()]);
+  const firstPostByBooking = new Map();
+  for (const p of posts) if (p && p.bookingId && !firstPostByBooking.has(p.bookingId)) firstPostByBooking.set(p.bookingId, p);
+  const briefKey = normalizeMarketName(market || "");
+  let redeemed = 0, onTime = 0, late = 0, trackPosts = 0, trackRedemptions = 0;
+  for (const bk of bookings) {
+    if (!bk || bk.creatorId !== creatorUser.id) continue;
+    if (bk.redeemedAt) redeemed += 1;
+    const post = firstPostByBooking.get(bk.id);
+    if (post) {
+      if (post.onTime) onTime += 1; else late += 1;
+      if (briefKey && normalizeMarketName(bk.market || "") === briefKey) trackPosts += 1;
+    }
+    if (bk.redeemedAt && briefKey && normalizeMarketName(bk.market || "") === briefKey) {
+      trackRedemptions += bk.redemptions && Number(bk.redemptions.count) > 0 ? Math.floor(Number(bk.redemptions.count)) : 0;
+    }
+  }
+  const share = audienceShareInMarket(creatorUser, market);
+  const totalAudience = audienceTotalOf(creatorUser.creator || {});
+  const perPostReach = share !== null && share !== undefined ? Math.round((totalAudience * Number(share)) / 100) : 0;
+  let pointsTotal = 0;
+  try { pointsTotal = totalPointsFor(creatorUser, await pointsContext()).total || 0; } catch (e) { pointsTotal = 0; }
+  const c = creatorUser.creator || {};
+  const m = computeMatchScore({
+    market,
+    category: viewer.business ? viewer.business.category || null : null,
+    categoryKind: "business",
+    kind: "comp",
+    budget: null,
+  }, {
+    categories: (c.categories || []).map((x) => canonicalFromList(x, CREATOR_CATEGORIES) || x),
+    compCategories: c.compCategories || [],
+    paidRate: typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null,
+    localPctInMarket: share === undefined ? null : share,
+    momentumPoints: pointsTotal,
+    redeemed,
+    postsOnTime: onTime,
+    postsLate: late,
+    track: { reach: perPostReach * trackPosts, posts: trackPosts, redemptions: trackRedemptions },
+  });
+  return matchView226(m, { defaultBrief: true });
+}
+
 async function withPostState(booking, pre202) {
   const posts = pre202 && pre202.posts ? pre202.posts : await allPosts();
   const post = pre202 && pre202.postByBooking ? (pre202.postByBooking.get(booking.id) || null) : posts.find((p) => p.bookingId === booking.id) || null;
   let creatorStanding = "good";
   let creatorLicensingFee = null;
+  let creatorRec226 = null;
   if (booking.creatorId) {
     const creator = await store.get(`user:${booking.creatorId}`);
+    creatorRec226 = creator || null;
     if (creator) {
       creatorStanding = standingState(creator);
       // Licensing (Jeff, 2026-10-26): the visit card prices the
@@ -11867,14 +12812,14 @@ async function withPostState(booking, pre202) {
   }
   let businessReview = null;
   const myBizReview = pre202 && pre202.bizReviewByBooking ? pre202.bizReviewByBooking.get(booking.id) : (await allBizReviews()).find((r) => r.bookingId === booking.id);
-  if (myBizReview) businessReview = { stars: myBizReview.stars, text: myBizReview.text || "", createdAt: myBizReview.createdAt };
+  if (myBizReview) businessReview = { stars: myBizReview.stars, text: myBizReview.text || "", chips: normalizeChips226(myBizReview.chips), createdAt: myBizReview.createdAt };
   // The mirror: the business's own rating OF this creator on this
   // booking, when one exists, so the business visit card shows the
   // rating it left instead of the rating form (and the creator's
   // card shows what the business said).
   let creatorReview = null;
   const myCreatorReview = pre202 && pre202.reviewByBooking ? pre202.reviewByBooking.get(booking.id) : (await allReviews()).find((r) => r.bookingId === booking.id);
-  if (myCreatorReview) creatorReview = { stars: myCreatorReview.stars, comment: myCreatorReview.comment || "", createdAt: myCreatorReview.createdAt };
+  if (myCreatorReview) creatorReview = { stars: myCreatorReview.stars, comment: myCreatorReview.comment || "", chips: normalizeChips226(myCreatorReview.chips), createdAt: myCreatorReview.createdAt };
   // Magpie ROAS (Jeff, 2026-10-19): every booking payload carries
   // its own score, computed by the one helper from the stored
   // facts (redemption tally, reported cost, the post's reported
@@ -11938,7 +12883,8 @@ async function withPostState(booking, pre202) {
     postPayload.intentRatePer1k = pi.intentRatePer1k;
     postPayload.returnScore = intentLib.returnScoreFor({ views: pi.views, likes: pi.likes, shares: pi.shares, saves: pi.saves, countedCustomers: booking.redemptions ? Math.max(0, Math.floor(Number(booking.redemptions.count) || 0)) : 0 });
   }
-  return { ...booking, post: postPayload, creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName, adDisclosure: booking.adDisclosure || adDisclosureForMarket(booking.market), deliveryBlockers: deliveryBlockersFor(booking, post), postingTermsLine: booking.postingTermsLine || (isPaidBooking(booking) ? postingTermsLine(booking.postingTerms) : null), storyState, audienceCode, timeline, couponSpend };
+  const terms226 = termsFor226(booking, { creator: creatorRec226, post, licensingFee: creatorLicensingFee });
+  return { ...booking, terms: terms226, post: postPayload, creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName, adDisclosure: booking.adDisclosure || adDisclosureForMarket(booking.market), deliveryBlockers: deliveryBlockersFor(booking, post), postingTermsLine: booking.postingTermsLine || (isPaidBooking(booking) ? postingTermsLine(booking.postingTerms) : null), storyState, audienceCode, timeline, couponSpend };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -13120,6 +14066,13 @@ async function runComplianceSweep() {
         dirty = true;
         await logEvent({ type: "visit_late", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, postDeadline: booking.postDeadline } });
         summary.lateMarked += 1;
+        // Build -226 (13e): the business hears a post went late
+        // the moment it is first marked, not days later. The
+        // visitLateAt stamp makes this fire exactly once.
+        await notifyBilingual226(booking.businessId, "post_late",
+          `The post from ${booking.creatorName || "your creator"}'s visit is late. It was due ${milestoneDeadlineText(booking.postDeadline)}. We are already chasing it on our side.`,
+          `La publicación de la visita de ${booking.creatorName || "tu creadora"} va tarde. Vencía el ${milestoneDeadlineText(booking.postDeadline)}. Ya la estamos siguiendo de nuestro lado.`,
+          { bookingId: booking.id });
       }
       await sendStage(1);
     }
@@ -13192,6 +14145,11 @@ async function runComplianceSweep() {
   // offer that is never redeemed inside its window expires. That is
   // the accept-then-vanish case: Momentum treats it as a no-show
   // (computed from this stored marker), and the code dies with it.
+  // Build -226 (13d): the fair-strike message check reads the
+  // message store ONCE for this pass and joins in memory; a
+  // per-booking list would multiply production per-get latency
+  // by the number of expiring bookings.
+  const expiryMessages226 = (await store.list("message:")).map((r) => r.value);
   for (const booking of bookings) {
     if (booking.redeemedAt || booking.status !== "booked" || booking.honorReportedAt) continue;
     if (!booking.redeemBy || now <= Date.parse(booking.redeemBy)) continue;
@@ -13199,10 +14157,25 @@ async function runComplianceSweep() {
     booking.codeStatus = "expired";
     booking.compliance = booking.compliance || {};
     booking.compliance.expiredAt = nowIso();
+    // Fair strike rule (13d): a creator who messaged the business
+    // (or Magpie) before the window ran out is protected; the
+    // branch that fired is stamped and logged either way.
+    const messaged226 = creatorMessagedBeforeExpiry226(booking, expiryMessages226);
+    if (messaged226) booking.compliance.noShowStrikeWaived = "creator_messaged_business";
     booking.updatedAt = nowIso();
     await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "offer_expired", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemBy: booking.redeemBy } });
     summary.expired += 1;
+    // Build -226 (13e): the business hears the visit expired the
+    // moment it happens. The status flip makes this exactly once.
+    await notifyBilingual226(booking.businessId, "visit_expired",
+      `A booked visit at ${booking.businessName || "your business"} expired unused: ${booking.creatorName || "the creator"} did not come inside the visit window. The spot is free again.`,
+      `Una visita reservada en ${booking.businessName || "tu negocio"} venció sin usarse: ${booking.creatorName || "la creadora"} no vino dentro del plazo de la visita. El lugar quedó libre de nuevo.`,
+      { bookingId: booking.id });
+    if (messaged226) {
+      await logEvent({ type: "no_show_strike_waived", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, reason: "creator_messaged_business" } });
+      summary.strikesWaived = (summary.strikesWaived || 0) + 1;
+    }
     // Strike rule (refinement bundle, 2026-10-20): an expired
     // redemption window is a strike on the creator. The loop above
     // already skips honor-voided bookings, and business-cancelled
@@ -13214,7 +14187,7 @@ async function runComplianceSweep() {
     // strike source stamped on the standing record so no proof
     // submission can lift it (unpauseIfClear checks the source).
     const strikeCreator = await store.get(`user:${booking.creatorId}`);
-    if (strikeCreator && strikeCreator.role === "creator") {
+    if (strikeCreator && strikeCreator.role === "creator" && !booking.compliance.noShowStrikeWaived) {
       const strikes = noShowStrikesOf(strikeCreator) + 1;
       strikeCreator.noShowStrikes = strikes;
       strikeCreator.updatedAt = nowIso();
@@ -13367,7 +14340,7 @@ async function runOfferSweep() {
   // expired = the no-show case, or the creator cancelled).
   for (const booking of bookings) {
     if (!booking.applicationId || booking.backfillHandled) continue;
-    if (booking.status !== "expired" && booking.status !== "cancelled") continue;
+    if (booking.status !== "expired" && booking.status !== "cancelled" && booking.status !== "cancelled_by_business") continue;
     booking.backfillHandled = true;
     booking.updatedAt = nowIso();
     await store.set(`booking:${booking.id}`, booking);
@@ -13405,6 +14378,15 @@ async function runOfferSweep() {
       await store.set(`offer:${offer.id}`, offer);
       summary.offersExpired += 1;
       await logEvent({ type: "offer_expired_window", actorId: null, actorRole: "system", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId } });
+      // Build -226 (13e): if the window closed with no live
+      // booking filling a spot, the business hears it the moment
+      // it happens. The status flip makes this fire exactly once.
+      if (filledCountFor(offer.id, bookings) === 0) {
+        await notifyBilingual226(offer.businessId, "offer_window_unfilled",
+          `Your offer "${offer.title}" reached the end of its window unfilled. Reposting with a wider window or a higher value usually fills it.`,
+          `Tu oferta "${offer.title}" llegó al final de su plazo sin cubrirse. Volver a publicarla con un plazo más amplio o un valor mayor suele funcionar.`,
+          { offerId: offer.id });
+      }
       for (const app of mine.filter((a) => a.status === "applied" || a.status === "backfill_offered")) {
         await releaseApplication(app, "offer_expired");
       }
@@ -18301,6 +19283,20 @@ async function handleRegister(event, linkCtx) {
   }
 
   await store.set(`user:${id}`, user);
+  // Build -226 (14b): link the front-door start record, if the
+  // person began this signup through the early capture. One point
+  // get by the exact key; a miss costs nothing and changes
+  // nothing.
+  try {
+    const startKey226 = `signupstart:${role}:${String(user.email || "").trim().toLowerCase()}`;
+    const startRec226 = await store.get(startKey226);
+    if (startRec226 && startRec226.status !== "finished") {
+      startRec226.status = "finished";
+      startRec226.userId = id;
+      startRec226.finishedAt = nowIso();
+      await store.set(startKey226, startRec226);
+    }
+  } catch (e) { /* stall watching never blocks a signup */ }
   if (linkPrimary) {
     // Dual-role (Build -180): the email index keeps pointing at
     // the first side; the mutual link is what ties the two records
@@ -26179,6 +27175,30 @@ async function route(event) {
 
   // Founding business application safety net: public, cross-origin
   // from magpielocal.com (see handleFoundingApplication above).
+  // Build -226 (14b): front-door stall watching. The client
+  // sends ONE early, explicit capture when a person starts a
+  // claim or business form (email + flow + step, shown to the
+  // person on the form itself; nothing is captured silently).
+  // The record lives under signupstart:{flow}:{email} so a repeat
+  // capture updates the same record, and handleRegister links it
+  // (status finished, userId set) when the real signup lands.
+  if (method === "POST" && seg[0] === "signup-started" && seg.length === 1) {
+    const cors = foundingApplicationCors(event);
+    const b = parseBody(event);
+    const email = typeof b.email === "string" ? b.email.trim().toLowerCase().slice(0, 200) : "";
+    const flow = b.flow === "business" ? "business" : (b.flow === "creator" ? "creator" : "");
+    if (!isEmail(email) || !flow) return json(400, { error: "A valid email and a flow (creator or business) are required." }, cors);
+    const key = `signupstart:${flow}:${email}`;
+    const existing = await store.get(key);
+    const ts = nowIso();
+    const rec = existing || { id: crypto.randomUUID(), email, flow, startedAt: ts, status: "started", userId: null, finishedAt: null };
+    rec.lastStep = typeof b.lastStep === "string" ? b.lastStep.slice(0, 60) : (rec.lastStep || "start");
+    rec.lastSeenAt = ts;
+    if (b.lang === "es") rec.lang = "es";
+    await store.set(key, rec);
+    return json(200, { ok: true, started: { flow: rec.flow, status: rec.status } }, cors);
+  }
+
   if (seg[0] === "founding-application" && seg.length === 1) {
     if (method === "OPTIONS") {
       return { statusCode: 204, headers: foundingApplicationCors(event), body: "" };
@@ -26591,15 +27611,17 @@ async function route(event) {
     // Soft delete (Build -219c): a deleted account's photo is
     // not served to anyone, owner included (they are signed out).
     if (!target || isAccountDeleted(target)) return err(404, "Photo not found");
-    // Build -136: a business's offer photo (slot 0 only) serves
-    // to any signed-in user — it is marketing imagery the
-    // business chose to lead its offers with, shown on offer
-    // cards inside the app. Never public, never a gallery.
+    // Build -136: a business's photo serves to any signed-in
+    // user — it is marketing imagery the business chose to lead
+    // its offers with, shown on offer cards inside the app.
+    // Never public. Build -226 update pass: the full gallery
+    // serves now (slot 0 is the cover, slots 1 and up the rest,
+    // the creator gallery's shape), still signed-in only.
     if (target.role === "business") {
       const bIdx = seg.length === 4 ? parseInt(seg[3], 10) : 0;
-      if (bIdx !== 0 || !(target.business && target.business.hasPhoto)) return err(404, "Photo not found");
+      if (!Number.isInteger(bIdx) || bIdx < 0 || bIdx >= businessPhotoCountOf(target.business)) return err(404, "Photo not found");
       if (!user) return err(401, "Sign in required");
-      const bPhoto = await store.get(photoKey(target.id, 0));
+      const bPhoto = await store.get(photoKey(target.id, bIdx));
       if (!bPhoto) return err(404, "Photo not found");
       return {
         statusCode: 200,
@@ -26674,6 +27696,34 @@ async function route(event) {
     }
     const meUser = await withFounding(user);
     await withLinkedSide(meUser, user);
+    // Build -226 update pass: the viewer's saved ids ride the
+    // me payload (savedIds: { creators, businesses, offers }),
+    // so feed cards and profiles render the bookmark filled
+    // without extra calls. One bounded prefix list per kind
+    // plus one getMany join.
+    if (user.role === "creator" || user.role === "business") {
+      try {
+        const sets226 = await savedSets226(user.id);
+        meUser.savedIds = { creators: sets226.creators, businesses: sets226.businesses, offers: sets226.offers };
+      } catch (e) { meUser.savedIds = { creators: [], businesses: [], offers: [] }; }
+    }
+    // Build -226: the creator home payload carries the post
+    // nudge for a redeemed booking with no post link yet (day-2
+    // and day-5 stages). Computed from the memoized booking and
+    // post lists (bounded list reads, no per-key scans).
+    // Build -226 (14c): a pending applicant past the two
+    // business day promise sees the plain status line in app.
+    if ((user.role === "creator" || user.role === "business") && reviewOverdue226(user)) {
+      meUser.reviewOverdue = true;
+      meUser.reviewStatusLine = reviewStatusLine226(user);
+    }
+    if (user.role === "creator") {
+      try {
+        const nudges226 = postNudgesFor226(user.id, await allBookings(), await allPosts());
+        meUser.postNudge = nudges226.length ? nudges226[0] : null;
+        meUser.postNudges = nudges226;
+      } catch (e) { meUser.postNudge = null; meUser.postNudges = []; }
+    }
     // View-as decoration (Build -67): the client shows the
     // persistent read-only banner from this marker. It carries
     // only what the banner prints (whose account, that it is
@@ -28757,23 +29807,34 @@ async function route(event) {
   // creators' photos are on their public profile; everyone else's
   // stay locked down).
   if (method === "POST" && seg[0] === "me" && seg[1] === "photo" && seg.length === 2) {
-    // Build -136: businesses get ONE photo — the offer photo
-    // that leads their offers. Same bytes-in-own-record storage,
-    // slot 0 only, flagged on the business record.
+    // Build -136: businesses got ONE photo, the offer photo.
+    // Build -226 update pass: the full gallery, mirroring the
+    // creator side below exactly (slots 0 to 5, in-order fill,
+    // slot 0 is the cover and still leads every offer). A call
+    // with no slot keeps the old behavior: it writes slot 0.
     if (user.role === "business" && user.business) {
       const bb = parseBody(event);
       const bm = typeof bb.dataUrl === "string" && bb.dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
       if (!bm) return err(400, "Send the photo as a PNG, JPEG, or WebP data URL");
       const bBytes = Math.floor((bm[2].length * 3) / 4);
       if (bBytes > MAX_PHOTO_BYTES) return err(413, "That photo is too large. Please use one under 2.5 MB.");
+      const bCount = businessPhotoCountOf(user.business);
+      let bSlot = 0;
+      if (bb.slot !== undefined && bb.slot !== null) {
+        bSlot = parseInt(bb.slot, 10);
+        if (!Number.isInteger(bSlot) || bSlot < 0 || bSlot >= MAX_BUSINESS_PHOTOS) return err(400, "That photo slot is not available");
+        if (bSlot > bCount) return err(400, "Add photos in order: fill the earlier slots first");
+        if (bSlot === bCount && bCount >= MAX_BUSINESS_PHOTOS) return err(400, `A gallery holds up to ${MAX_BUSINESS_PHOTOS} photos`);
+      }
       const bts = nowIso();
-      await store.set(photoKey(user.id, 0), { contentType: bm[1], dataBase64: bm[2], bytes: bBytes, uploadedAt: bts });
+      await store.set(photoKey(user.id, bSlot), { contentType: bm[1], dataBase64: bm[2], bytes: bBytes, uploadedAt: bts });
+      const bNewCount = Math.max(bCount, bSlot + 1);
       user.business.hasPhoto = true;
-      user.business.photoCount = 1;
+      user.business.photoCount = bNewCount;
       user.updatedAt = bts;
       await store.set(`user:${user.id}`, user);
-      await logEvent({ type: "business_photo_uploaded", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { contentType: bm[1], bytes: bBytes } });
-      return json(200, { ok: true, photoUrl: `/api/users/${user.id}/photo`, photos: [`/api/users/${user.id}/photo`] });
+      await logEvent({ type: "business_photo_uploaded", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { contentType: bm[1], bytes: bBytes, slot: bSlot, photoCount: bNewCount } });
+      return json(200, { ok: true, photoUrl: bSlot === 0 ? `/api/users/${user.id}/photo` : `/api/users/${user.id}/photo/${bSlot}`, photoCount: bNewCount, photos: businessPhotoUrlsFor(user) });
     }
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
     const b = parseBody(event);
@@ -28804,6 +29865,27 @@ async function route(event) {
   // Make one gallery photo the cover: the byte records rotate so
   // the chosen slot becomes slot 0 (the cover every card reads).
   if (method === "POST" && seg[0] === "me" && seg[1] === "photo" && seg[2] === "cover") {
+    // Build -226 update pass: businesses make cover the same
+    // way creators do (the byte records rotate, slot 0 leads).
+    if (user.role === "business" && user.business) {
+      const bb = parseBody(event);
+      const bCount = businessPhotoCountOf(user.business);
+      const bSlot = parseInt(bb.slot, 10);
+      if (!Number.isInteger(bSlot) || bSlot < 0 || bSlot >= bCount) return err(400, "Pick one of your photos to make the cover");
+      if (bSlot > 0) {
+        const recs = [];
+        for (let i = 0; i < bCount; i++) recs.push(await store.get(photoKey(user.id, i)));
+        const order = [bSlot, ...recs.map((_, i) => i).filter((i) => i !== bSlot)];
+        for (let pos = 0; pos < bCount; pos++) {
+          const rec = recs[order[pos]];
+          if (rec) await store.set(photoKey(user.id, pos), rec);
+        }
+      }
+      user.updatedAt = nowIso();
+      await store.set(`user:${user.id}`, user);
+      await logEvent({ type: "business_photo_cover", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { slot: bSlot, photoCount: bCount } });
+      return json(200, { ok: true, photoCount: bCount, photos: businessPhotoUrlsFor(user) });
+    }
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
     const b = parseBody(event);
     const count = photoCountOf(user.creator);
@@ -28828,6 +29910,25 @@ async function route(event) {
   // Remove one gallery photo: later slots shift down to fill the
   // gap, so the gallery is always a dense ordered list.
   if (method === "DELETE" && seg[0] === "me" && seg[1] === "photo" && seg.length === 3) {
+    // Build -226 update pass: business gallery remove, same
+    // shift-down rule as the creator side below.
+    if (user.role === "business" && user.business) {
+      const bCount = businessPhotoCountOf(user.business);
+      const bSlot = parseInt(seg[2], 10);
+      if (!Number.isInteger(bSlot) || bSlot < 0 || bSlot >= bCount) return err(404, "Photo not found");
+      for (let i = bSlot; i < bCount - 1; i++) {
+        const next = await store.get(photoKey(user.id, i + 1));
+        if (next) await store.set(photoKey(user.id, i), next);
+      }
+      await store.del(photoKey(user.id, bCount - 1));
+      const bNewCount = bCount - 1;
+      user.business.photoCount = bNewCount;
+      user.business.hasPhoto = bNewCount > 0;
+      user.updatedAt = nowIso();
+      await store.set(`user:${user.id}`, user);
+      await logEvent({ type: "business_photo_removed", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { slot: bSlot, photoCount: bNewCount } });
+      return json(200, { ok: true, photoCount: bNewCount, photos: businessPhotoUrlsFor(user) });
+    }
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
     const count = photoCountOf(user.creator);
     const slot = parseInt(seg[2], 10);
@@ -29112,6 +30213,40 @@ async function route(event) {
     return json(200, { ok: true, providers: notifyLib.providerStatus(), outbox });
   }
 
+  if (method === "GET" && seg[0] === "admin" && seg[1] === "signup-starts") {
+    if (!user || user.role !== "admin") return err(403, "Admin only");
+    // One bounded list of the lightweight start records (they are
+    // small by design); counts and the list derive from the same
+    // single read.
+    const rows = (await store.list("signupstart:")).map((r) => r.value).filter(Boolean);
+    const counts = { creator: { started: 0, finished: 0 }, business: { started: 0, finished: 0 } };
+    for (const r of rows) {
+      if (!counts[r.flow]) continue;
+      if (r.status === "finished") counts[r.flow].finished += 1; else counts[r.flow].started += 1;
+    }
+    const starts = rows.sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || ""))).slice(0, 200)
+      .map((r) => ({ id: r.id, email: r.email, flow: r.flow, status: r.status, startedAt: r.startedAt, lastStep: r.lastStep || null, lastSeenAt: r.lastSeenAt || null, finishedAt: r.finishedAt || null, userId: r.userId || null }));
+    return json(200, { counts, starts });
+  }
+  // Build -226 (14a/14c): post-confirmation closure, link
+  // re-check, and the review-promise backstop. Same trigger
+  // discipline as the other sweeps (scheduled token or admin
+  // session); a `now` and mockGoneUrls are honored ONLY in
+  // TEST_MODE so the verify suites can time-travel and mock a
+  // rotted link without any network fetch.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "post-followup" && seg[2] === "sweep") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    const fOpts = {};
+    if (TEST_MODE) {
+      if (b.now) { const d = new Date(b.now); if (!Number.isNaN(d.getTime())) fOpts.now = d.toISOString(); }
+      if (Array.isArray(b.mockGoneUrls)) fOpts.mockGoneUrls = b.mockGoneUrls.map(String);
+    }
+    const followup = await runPostFollowupSweep226(fOpts);
+    return json(200, { ok: true, followup });
+  }
   if (method === "POST" && seg[0] === "admin" && seg[1] === "compliance" && seg[2] === "sweep") {
     const token = process.env.SIGNL_SWEEP_TOKEN;
     const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
@@ -29143,7 +30278,17 @@ async function route(event) {
     // Build -185: the dormant win-back rides the same clock.
     const winback = await runWinbackSweep(remOpts);
     await store.set("config:winbackSweep", { lastRunAt: nowIso() });
-    return json(200, { ok: true, sweep: summary, offerSweep, profileReminders, finishEngine, rosterDigest, winback });
+    // Build -226 (14a/14c): post-confirmation closure, link
+    // re-check and the review promise ride the same scheduled
+    // clock. TEST_MODE now/mock hooks pass through like the other
+    // suites' time travel.
+    const fOpts226 = {};
+    if (TEST_MODE) {
+      if (b.now) { const d = new Date(b.now); if (!Number.isNaN(d.getTime())) fOpts226.now = d.toISOString(); }
+      if (Array.isArray(b.mockGoneUrls)) fOpts226.mockGoneUrls = b.mockGoneUrls.map(String);
+    }
+    const postFollowup = await runPostFollowupSweep226(fOpts226);
+    return json(200, { ok: true, sweep: summary, offerSweep, profileReminders, finishEngine, rosterDigest, winback, postFollowup });
   }
   // Offer lifecycle sweep: same trigger discipline as compliance
   // (scheduled token or admin session). Drives the selection SLA,
@@ -31381,6 +32526,10 @@ async function route(event) {
         // (publicUser strips them from every client payload; this
         // endpoint is behind admin auth).
         if (u.approvedBy) pub.approvedBy = u.approvedBy;
+        // Build -226 (14c): the two-business-day review promise,
+        // flagged on the queue row. Computed from the record, so
+        // it clears itself the moment the application is decided.
+        if (reviewOverdue226(u)) { pub.reviewOverdue = true; pub.reviewPromiseNoteSentAt = u.reviewPromiseNoteSentAt || null; }
         if (u.decisionReason) pub.decisionReason = u.decisionReason;
         if (u.decisionNote) pub.decisionNote = u.decisionNote;
         if (u.rejectionReason) pub.rejectionReason = u.rejectionReason;
@@ -34135,41 +35284,153 @@ async function route(event) {
     return err(405, "Method not allowed");
   }
 
-  // ---------- favorites ----------
-  if (seg[0] === "favorites") {
-    if (user.role !== "business") return err(403, "Businesses only");
-    if (method === "GET") {
-      const rows = await store.list(`favorite:${user.id}:`);
-      const out = [];
-      for (const r of rows) {
-        const creatorId = r.key.split(":")[2];
-        const c = await store.get(`user:${creatorId}`);
-        if (c && profileCompleteOf(c)) out.push(await publicCreator(c, user));
-      }
-      return json(200, { favorites: out });
+  // ---------- business profile (Build -226 update pass) ----------
+  // GET /api/businesses/:id : the business profile payload a
+  // signed-in user (in practice a creator) reads: the business
+  // card (photos in the creator gallery's shape, channels,
+  // about, location), its track record, its open offers as
+  // cards, the viewer's saved state for both the business and
+  // each offer, and, for a creator viewer, the fit object from
+  // lib/fit.js (the creator-side fit engine; the match engine
+  // in lib/match.js scores creators for businesses, never the
+  // reverse, so a business profile carries fit, not match).
+  if (method === "GET" && seg[0] === "businesses" && seg.length === 2) {
+    const bizTarget = await store.get(`user:${seg[1]}`);
+    if (!bizTarget || bizTarget.role !== "business" || !bizTarget.business || isAccountDeleted(bizTarget)) return err(404, "Business not found");
+    const viewerSavedBiz = !!(await store.get(`favorite:${user.id}:${bizTarget.id}`));
+    const card = businessCard226(bizTarget, { viewerSaved: viewerSavedBiz });
+    const [bookingsAll, postsAll] = await Promise.all([allBookings(), allPosts()]);
+    card.businessTrackRecord = businessTrackRecordFor(bizTarget.id, bookingsAll, postsAll);
+    card.availability = standingAvailabilitySummary(bizTarget.business.standingAvailability);
+    const savedOfferIds = new Set((await store.list(`favorite-offer:${user.id}:`)).map((r) => String(r.key).split(":")[2]));
+    const openOffers = (await allOffers())
+      .filter((o) => o.businessId === bizTarget.id && laneOf(o) === "open" && o.status === "open")
+      .map((o) => ({ ...savedOfferCard226(o, bizTarget, user), viewerSaved: savedOfferIds.has(o.id) }));
+    let fit = null;
+    if (user.role === "creator") {
+      const fitBusiness = {
+        category: bizTarget.business.category || "",
+        market: bizTarget.market || "",
+        city: bizTarget.city || "",
+        neighborhood: bizTarget.business.neighborhood || "",
+      };
+      const f = computeFit(fitBusiness, creatorFitInputOf(user));
+      fit = { score: f.score, reasons: f.reasons };
     }
-    if (method === "POST") {
-      const b = parseBody(event);
-      const creator = await store.get(`user:${b.creatorId}`);
-      if (!creator || creator.role !== "creator") return err(404, "Creator not found");
-      const key = `favorite:${user.id}:${creator.id}`;
-      const existing = await store.get(key);
-      // Adding a favorite needs a roster creator; removing one is
-      // always allowed, even if the creator later unfinished their
-      // profile (their card simply stops rendering above).
-      // Demo showcase fence (Build -67): for a business that is
-      // not on the showcase allowlist, a demo creator does not
-      // exist, favorites included.
-      if (!existing && isDemoShowcaseCreator(creator) && !demoShowcaseVisibleTo(user)) return err(404, "Creator not found");
-      if (!existing && !profileCompleteOf(creator)) return err(404, "Creator not found");
-      if (existing) {
-        await store.del(key);
-        await logEvent({ type: "favorite_removed", actorId: user.id, actorRole: "business", subjectId: creator.id, market: creator.market, data: {} });
-        return json(200, { isFavorite: false });
+    return json(200, { business: { ...card, fit, openOffers } });
+  }
+
+  // ---------- favorites ----------
+  // Build -226 update pass: favorites run both ways now.
+  // Businesses save creators (the original shape, unchanged:
+  // POST { creatorId } toggles, GET answers the creator cards
+  // under `favorites`). Creators save businesses and offers.
+  // The general shapes: POST { kind: "creator" | "business" |
+  // "offer", id } toggles (or sets, with saved: true / false),
+  // POST /favorites/remove { kind, id } and DELETE /favorites
+  // { kind, id } unsave explicitly. GET answers savedIds plus
+  // the card data for every kind, joined in memory from bounded
+  // lists, so the Saved area renders without extra calls.
+  if (seg[0] === "favorites") {
+    if (method === "GET") {
+      if (user.role !== "business" && user.role !== "creator") return err(403, "Creators and businesses only");
+      const sets = await savedSets226(user.id);
+      const creatorsOut = [];
+      for (const id of sets.creators) {
+        const c = sets.byId.get(id);
+        if (c && profileCompleteOf(c)) creatorsOut.push(await publicCreator(c, user));
       }
-      await store.set(key, { createdAt: nowIso() });
-      await logEvent({ type: "favorite_added", actorId: user.id, actorRole: "business", subjectId: creator.id, market: creator.market, data: {} });
-      return json(200, { isFavorite: true });
+      const businessesOut = [];
+      for (const id of sets.businesses) {
+        const bz = sets.byId.get(id);
+        if (bz && bz.business) businessesOut.push(businessCard226(bz, { viewerSaved: true }));
+      }
+      let offersOut = [];
+      if (sets.offers.length) {
+        const orecs = await store.getMany(sets.offers.map((id) => `offer:${id}`));
+        const omap = new Map(orecs.map((r) => [r.value && r.value.id, r.value]));
+        const bizIds = [...new Set([...omap.values()].filter(Boolean).map((o) => o.businessId).filter(Boolean))];
+        const brecs = bizIds.length ? await store.getMany(bizIds.map((id) => `user:${id}`)) : [];
+        const bmap = new Map(brecs.map((r) => [r.value && r.value.id, r.value]));
+        offersOut = sets.offers.map((id) => omap.get(id)).filter(Boolean).map((o) => savedOfferCard226(o, bmap.get(o.businessId) || null, user));
+      }
+      return json(200, {
+        favorites: creatorsOut,
+        creators: creatorsOut,
+        businesses: businessesOut,
+        offers: offersOut,
+        savedIds: { creators: sets.creators, businesses: sets.businesses, offers: sets.offers },
+      });
+    }
+    if (method === "POST" || method === "DELETE") {
+      const b = parseBody(event) || {};
+      const forceRemove = method === "DELETE" || (seg.length === 2 && seg[1] === "remove");
+      const kind = b.kind === "creator" || b.kind === "business" || b.kind === "offer"
+        ? b.kind
+        : (b.creatorId ? "creator" : (b.businessId ? "business" : (b.offerId ? "offer" : null)));
+      const targetId = typeof (b.id || b.creatorId || b.businessId || b.offerId) === "string" ? (b.id || b.creatorId || b.businessId || b.offerId) : null;
+      if (!kind || !targetId) return err(400, "Say what to save: a kind (creator, business, or offer) and its id.");
+      if (kind === "creator") {
+        if (user.role !== "business") return err(403, "Businesses only");
+        const creator = await store.get(`user:${targetId}`);
+        if (!creator || creator.role !== "creator" || isAccountDeleted(creator)) return err(404, "Creator not found");
+        const key = `favorite:${user.id}:${creator.id}`;
+        const existing = await store.get(key);
+        // Adding a favorite needs a roster creator; removing one is
+        // always allowed, even if the creator later unfinished their
+        // profile (their card simply stops rendering above).
+        // Demo showcase fence (Build -67): for a business that is
+        // not on the showcase allowlist, a demo creator does not
+        // exist, favorites included.
+        const wantSave = forceRemove ? false : (typeof b.saved === "boolean" ? b.saved : !existing);
+        if (wantSave && !existing) {
+          if (isDemoShowcaseCreator(creator) && !demoShowcaseVisibleTo(user)) return err(404, "Creator not found");
+          if (!profileCompleteOf(creator)) return err(404, "Creator not found");
+          await store.set(key, { createdAt: nowIso() });
+          await logEvent({ type: "favorite_added", actorId: user.id, actorRole: user.role, subjectId: creator.id, market: creator.market, data: { kind } });
+        }
+        if (!wantSave && existing) {
+          await store.del(key);
+          await logEvent({ type: "favorite_removed", actorId: user.id, actorRole: user.role, subjectId: creator.id, market: creator.market, data: { kind } });
+        }
+        const sets = await savedSets226(user.id);
+        return json(200, { isFavorite: wantSave, saved: wantSave, kind, id: creator.id, savedIds: { creators: sets.creators, businesses: sets.businesses, offers: sets.offers } });
+      }
+      if (kind === "business") {
+        if (user.role !== "creator") return err(403, "Creators only");
+        const bizTarget = await store.get(`user:${targetId}`);
+        if (!bizTarget || bizTarget.role !== "business" || !bizTarget.business || isAccountDeleted(bizTarget)) return err(404, "Business not found");
+        const key = `favorite:${user.id}:${bizTarget.id}`;
+        const existing = await store.get(key);
+        const wantSave = forceRemove ? false : (typeof b.saved === "boolean" ? b.saved : !existing);
+        if (wantSave && !existing) {
+          await store.set(key, { createdAt: nowIso() });
+          await logEvent({ type: "favorite_added", actorId: user.id, actorRole: user.role, subjectId: bizTarget.id, market: bizTarget.market, data: { kind } });
+        }
+        if (!wantSave && existing) {
+          await store.del(key);
+          await logEvent({ type: "favorite_removed", actorId: user.id, actorRole: user.role, subjectId: bizTarget.id, market: bizTarget.market, data: { kind } });
+        }
+        const sets = await savedSets226(user.id);
+        return json(200, { saved: wantSave, kind, id: bizTarget.id, savedIds: { creators: sets.creators, businesses: sets.businesses, offers: sets.offers } });
+      }
+      // kind === "offer"
+      if (user.role !== "creator") return err(403, "Creators only");
+      const offer = await store.get(`offer:${targetId}`);
+      if (!offer) return err(404, "Offer not found");
+      const key = `favorite-offer:${user.id}:${offer.id}`;
+      const existing = await store.get(key);
+      const wantSave = forceRemove ? false : (typeof b.saved === "boolean" ? b.saved : !existing);
+      if (wantSave && !existing) {
+        await store.set(key, { createdAt: nowIso() });
+        await logEvent({ type: "favorite_added", actorId: user.id, actorRole: user.role, subjectId: offer.id, market: offer.market, data: { kind } });
+      }
+      if (!wantSave && existing) {
+        await store.del(key);
+        await logEvent({ type: "favorite_removed", actorId: user.id, actorRole: user.role, subjectId: offer.id, market: offer.market, data: { kind } });
+      }
+      const sets = await savedSets226(user.id);
+      return json(200, { saved: wantSave, kind, id: offer.id, savedIds: { creators: sets.creators, businesses: sets.businesses, offers: sets.offers } });
     }
   }
 
@@ -34418,6 +35679,12 @@ async function route(event) {
       if (offer.timingWindow && !offer.visitWindow) offer.visitWindow = timingWindowLabel137(offer.timingWindow, offer.visitDate);
       offer.assetPacketAttached = b.assetPacketAttached !== undefined ? b.assetPacketAttached === true : kind === "paid";
       offer.brief = normalizeBriefInput(b.brief, kind, briefSeedFromFields(offer));
+      // Build -226: a business may name the platform for this
+      // offer. Anything else the creator posts on resolves at
+      // booking time to her largest local audience platform.
+      const platformRequired226 = normalizePlatformId226(b.platformRequired || b.platform || (b.terms && b.terms.platform ? (b.terms.platform.name || b.terms.platform) : null));
+      if ((b.platformRequired || b.platform) && !platformRequired226) return err(400, "That platform is not one Magpie tracks. Name one of the platforms on the creator's profile.");
+      if (platformRequired226) offer.platformRequired = platformRequired226;
       // Outcome linkage (see normalizeSourceBrief): a create that
       // arrives from a briefed context stores the brief it came
       // from; a create without one stores nothing extra.
@@ -34496,7 +35763,7 @@ async function route(event) {
       // "open" pushes to eligible creators (and matching saved
       // alerts) — the board is no longer pull-only.
       if (!targetCreator && laneOf(offer) === "open" && offer.status === "open") { try { await fanoutOpenOffer(offer); } catch (e) { /* fan-out never blocks a create */ } }
-      return json(201, { offer });
+      return json(201, { offer: { ...offer, terms: termsFor226(offer, { creator: targetCreator }) } });
     }
 
     if (method === "GET" && seg.length === 1) {
@@ -34593,6 +35860,18 @@ async function route(event) {
           assetPackets[id] = biz && biz.business ? assetPacketView(biz.business) : null;
         }
         out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null, businessReferralProgram: referralPrograms[o.businessId] || null, businessMusicOpen: musicOpen[o.businessId] || null, businessStudentOpen: studentOpen[o.businessId] || null, businessAssetPacket: offerAssetPacketAttached(o) ? (assetPackets[o.businessId] || null) : null }));
+      }
+      // Build -226: every offer in the journey carries its terms.
+      // Direct offers resolve their platform against the target
+      // creator; those creators are fetched once here with the
+      // store's bounded getMany (never a serial per-offer get).
+      {
+        const cids226 = [...new Set(out.map((o) => o.creatorId).filter(Boolean))];
+        const cmap226 = new Map();
+        if (cids226.length) {
+          try { for (const r of await store.getMany(cids226.map((id) => `user:${id}`))) cmap226.set(r.value.id, r.value); } catch (e) { /* terms degrade to the offer's own fields */ }
+        }
+        out = out.map((o) => ({ ...o, terms: termsFor226(o, { creator: cmap226.get(o.creatorId) || null }) }));
       }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out, ...(feedEarlyAccessOpensAtMs ? { earlyAccess: { active: true, opensAt: new Date(feedEarlyAccessOpensAtMs).toISOString() } } : {}) });
@@ -35103,6 +36382,30 @@ async function route(event) {
   // Offer Card (deals), story capture, the coupon spend half,
   // audience-code safety + assets, and the counter name lookup.
   // =====================================================================
+  // Build -226: the Top 3 showcase. PUT /api/me/showcase
+  // replaces the creator's picks (her own record only): up to 3
+  // post links, stored in her order as
+  // creator.showcase = [{ url, platform, addedAt }]. A 4th pick
+  // and a link that is not a plausible platform post URL are
+  // refused in plain words; nothing partial is saved.
+  if (seg[0] === "me" && seg[1] === "showcase" && seg.length === 2) {
+    if (user.role !== "creator") return err(403, "Creators only");
+    if (method === "GET") return json(200, { showcase: showcaseView226(user.creator || {}) });
+    if (method === "PUT" || method === "POST") {
+      const b = parseBody(event);
+      const input = b.urls !== undefined ? b.urls : (b.showcase !== undefined ? b.showcase : b.picks);
+      const norm = normalizeShowcase226(input);
+      if (norm.error) return err(400, msg226(user, norm.error, "Elige hasta 3 publicaciones para tu vitrina y usa enlaces de publicaciones válidos de una plataforma compatible."));
+      user.creator = user.creator || {};
+      user.creator.showcase = norm.showcase;
+      user.updatedAt = nowIso();
+      await store.set(`user:${user.id}`, user);
+      await logEvent({ type: "showcase_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { count: norm.showcase.length } });
+      return json(200, { showcase: showcaseView226(user.creator) });
+    }
+    return err(405, "Method not allowed");
+  }
+
   if (seg[0] === "me" && seg[1] === "negotiation") {
     if (user.role !== "creator") return err(403, "Creators only");
     if (method === "GET" && seg.length === 2) {
@@ -35492,6 +36795,12 @@ async function route(event) {
     const apps = await allApplications();
     const bookings = await allBookings();
     const posts = await allPosts();
+    // Build -226 update pass: the viewer's saved sets, loaded
+    // once as bounded prefix lists, so every card carries its
+    // bookmark state (viewerSaved for the offer itself,
+    // businessViewerSaved for the business behind it).
+    const savedOfferIds226 = new Set((await store.list(`favorite-offer:${user.id}:`)).map((r) => String(r.key).split(":")[2]));
+    const savedBizIds226 = new Set((await store.list(`favorite:${user.id}:`)).map((r) => String(r.key).split(":")[2]));
     const bizTrackCache = {};
     const tier = normalizeTierBand(user.creator ? user.creator.tierBand : "");
     const now = Date.now();
@@ -35576,6 +36885,12 @@ async function route(event) {
         // packet logo, else nothing (the card falls back to the
         // initial tile, never a broken box).
         businessImageUrl: biz && biz.business ? (biz.business.hasPhoto ? `/api/users/${biz.id}/photo` : (biz.business.assetPacket && biz.business.assetPacket.logoUrl) || null) : null,
+        // Build -226 update pass: the business gallery in the
+        // creator gallery's shape (first is the cover), plus
+        // the viewer's saved state for this offer and business.
+        businessPhotos: biz ? businessPhotoUrlsFor(biz) : [],
+        viewerSaved: savedOfferIds226.has(o.id),
+        businessViewerSaved: biz ? savedBizIds226.has(biz.id) : false,
         // Batch fix (Jeff, 2026-11-06): the card needs to know
         // whether that image is a cover PHOTO (object-fit cover)
         // or the business's LOGO (contained, centered — a logo
@@ -36083,6 +37398,13 @@ async function route(event) {
     for (const [k, v] of redemptionByBooking202) redemptionByBooking202.set(k, Math.round(v * 100) / 100);
     const pre202 = { posts: posts202, postByBooking: idx202(posts202, (x) => x.bookingId), bizReviewByBooking: idx202(bizReviews202, (x) => x.bookingId), reviewByBooking: idx202(reviews202, (x) => x.bookingId), redemptionByBooking: redemptionByBooking202 };
     const out = await mapBounded202(bookings, 12, async (b) => withPostState(b, pre202));
+    // Build -226: the creator's journey payload carries the same
+    // post nudge as the home payload, from the lists already
+    // loaded for this request (no extra reads).
+    if (user.role === "creator") {
+      const nudges226 = postNudgesFor226(user.id, bookings, posts202);
+      return json(200, { bookings: out, postNudge: nudges226.length ? nudges226[0] : null, postNudges: nudges226 });
+    }
     return json(200, { bookings: out });
   }
 
@@ -36237,6 +37559,140 @@ async function route(event) {
     return json(201, { booking: await withPostState(booking) });
   }
 
+  // Build -226 item 13: the universal cancel for a booked visit.
+  // POST /api/bookings/:id/cancel works for BOTH sides and for
+  // every lane (application, direct, direct paid, deal, swap,
+  // book-again, open offer): cancelBooking226 mirrors the
+  // application-lane decline semantics (escrow refund, companion
+  // cancel, slot frees, backfill). A business cancel lands in
+  // cancelled_by_business and opens the Swap Bench.
+  if (seg[0] === "bookings" && seg.length === 3 && seg[2] === "cancel" && method === "POST") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    const b = parseBody(event);
+    const reason = typeof b.reason === "string" ? b.reason.slice(0, 300) : "";
+    if (user.role === "business") {
+      if (booking.businessId !== user.id) return err(404, "Booking not found");
+      if (booking.redeemedAt) return err(409, msg226(user, "This visit already happened, so it cannot be cancelled.", "Esta visita ya ocurrió, así que no se puede cancelar."));
+      if (booking.status !== "booked") return err(409, msg226(user, "This visit is not in a state that can be cancelled.", "Esta visita no está en un estado que se pueda cancelar."));
+      await cancelBooking226(booking, { byRole: "business", actor: user, reason, status: "cancelled_by_business" });
+      await notifyBilingual226(booking.creatorId, "visit_cancelled_by_business",
+        `${booking.businessName || "The business"} cancelled your booked visit "${booking.title || "your visit"}". No strike comes with a business cancel, and the time is yours again.`,
+        `${booking.businessName || "El negocio"} canceló tu visita reservada "${booking.title || "tu visita"}". Una cancelación del negocio no trae ninguna falta, y el tiempo vuelve a ser tuyo.`,
+        { bookingId: booking.id });
+      return json(200, { booking: await withPostState(booking), swapOpen: true });
+    }
+    if (user.role === "creator") {
+      if (booking.creatorId !== user.id) return err(404, "Booking not found");
+      if (booking.redeemedAt) return err(409, msg226(user, "This visit already happened, so it cannot be cancelled. If something went wrong, message the business or Magpie.", "Esta visita ya ocurrió, así que no se puede cancelar. Si algo salió mal, escribe al negocio o a Magpie."));
+      if (booking.status !== "booked") return err(409, msg226(user, "This visit is not in a state that can be cancelled.", "Esta visita no está en un estado que se pueda cancelar."));
+      await cancelBooking226(booking, { byRole: "creator", actor: user, reason, status: "cancelled" });
+      await notifyBilingual226(booking.businessId, "creator_declined",
+        `${user.name} gave back the booked visit "${booking.title || "the visit"}". The spot is free again, and any waiting applicant backfills automatically.`,
+        `${user.name} devolvió la visita reservada "${booking.title || "la visita"}". El lugar quedó libre de nuevo, y cualquier solicitante en espera lo cubre automáticamente.`,
+        { bookingId: booking.id, offerId: booking.offerId || null });
+      return json(200, { booking: await withPostState(booking) });
+    }
+    return err(403, "Only the two sides of this booking can cancel it.");
+  }
+
+  // Build -226 item 13c: reschedule propose / respond / withdraw.
+  // The proposal lives on the booking record (one open at a time);
+  // accepting moves the visit time and re-derives redeemBy through
+  // the booking's own timing rules, so the post clock that starts
+  // at redemption follows the new time. Declining or withdrawing
+  // changes nothing but the proposal itself.
+  if (seg[0] === "bookings" && seg.length === 3 && seg[2] === "reschedule" && method === "POST") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || (booking.businessId !== user.id && booking.creatorId !== user.id)) return err(404, "Booking not found");
+    if (booking.redeemedAt || booking.status !== "booked") return err(409, msg226(user, "Only a booked visit that has not happened yet can be moved.", "Solo se puede mover una visita reservada que aún no ha ocurrido."));
+    if (booking.rescheduleProposal && booking.rescheduleProposal.status === "open") return err(409, msg226(user, "A move is already waiting for an answer on this visit. Withdraw it before proposing another.", "Ya hay una propuesta de cambio esperando respuesta en esta visita. Retírala antes de proponer otra."));
+    const b = parseBody(event);
+    const newVisitAt = typeof b.newVisitAt === "string" ? b.newVisitAt : (typeof b.visitAt === "string" ? b.visitAt : "");
+    const bad = rescheduleError226(booking, newVisitAt);
+    if (bad) return err(400, msg226(user, bad, "Elige una hora nueva válida para la visita: tiene que ser en el futuro y dentro de los próximos 30 días."));
+    booking.rescheduleProposal = { by: user.id, byRole: user.role, newVisitAt: new Date(newVisitAt).toISOString(), proposedAt: nowIso(), status: "open" };
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "reschedule_proposed", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { newVisitAt: booking.rescheduleProposal.newVisitAt, businessId: booking.businessId, creatorId: booking.creatorId } });
+    const otherId = user.role === "business" ? booking.creatorId : booking.businessId;
+    await notifyBilingual226(otherId, "reschedule_proposed",
+      `${user.name} proposed moving the visit "${booking.title || "your visit"}" to ${milestoneDeadlineText(booking.rescheduleProposal.newVisitAt)}. Accept or decline it from the visit.`,
+      `${user.name} propuso mover la visita "${booking.title || "tu visita"}" al ${milestoneDeadlineText(booking.rescheduleProposal.newVisitAt)}. Acéptalo o recházalo desde la visita.`,
+      { bookingId: booking.id });
+    return json(200, { booking: await withPostState(booking), proposal: booking.rescheduleProposal });
+  }
+  if (seg[0] === "bookings" && seg.length === 4 && seg[2] === "reschedule" && seg[3] === "respond" && method === "POST") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || (booking.businessId !== user.id && booking.creatorId !== user.id)) return err(404, "Booking not found");
+    const proposal = booking.rescheduleProposal;
+    if (!proposal || proposal.status !== "open") return err(409, msg226(user, "There is no open move proposal on this visit.", "No hay ninguna propuesta de cambio abierta en esta visita."));
+    if (proposal.by === user.id) return err(409, msg226(user, "You proposed this move, so the other side answers it. You can withdraw it instead.", "Tú propusiste este cambio, así que responde la otra parte. Puedes retirarlo si quieres."));
+    const b = parseBody(event);
+    const accept = b.accept === true || b.decision === "accept";
+    proposal.status = accept ? "accepted" : "declined";
+    proposal.respondedAt = nowIso();
+    proposal.respondedBy = user.id;
+    if (accept) {
+      applyReschedule226(booking, proposal);
+      await logEvent({ type: "reschedule_accepted", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { newVisitAt: proposal.newVisitAt, newRedeemBy: booking.redeemBy, businessId: booking.businessId, creatorId: booking.creatorId } });
+      // 13e: the creator always hears when a visit moves.
+      await notifyBilingual226(booking.creatorId, "visit_moved",
+        `Your visit "${booking.title || "your visit"}" moved to ${milestoneDeadlineText(proposal.newVisitAt)}. Your code and the visit terms stay the same.`,
+        `Tu visita "${booking.title || "tu visita"}" se movió al ${milestoneDeadlineText(proposal.newVisitAt)}. Tu código y los términos de la visita quedan igual.`,
+        { bookingId: booking.id });
+      if (user.role === "creator") {
+        await notifyBilingual226(booking.businessId, "reschedule_accepted",
+          `${user.name} accepted the new time for "${booking.title || "the visit"}": ${milestoneDeadlineText(proposal.newVisitAt)}.`,
+          `${user.name} aceptó la nueva hora para "${booking.title || "la visita"}": ${milestoneDeadlineText(proposal.newVisitAt)}.`,
+          { bookingId: booking.id });
+      }
+    } else {
+      await logEvent({ type: "reschedule_declined", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { newVisitAt: proposal.newVisitAt, businessId: booking.businessId, creatorId: booking.creatorId } });
+      await notifyBilingual226(proposal.by, "reschedule_declined",
+        `The proposed new time for "${booking.title || "the visit"}" was declined. The original time stands.`,
+        `La nueva hora propuesta para "${booking.title || "la visita"}" fue rechazada. La hora original se mantiene.`,
+        { bookingId: booking.id });
+    }
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    return json(200, { booking: await withPostState(booking), proposal });
+  }
+  if (seg[0] === "bookings" && seg.length === 4 && seg[2] === "reschedule" && seg[3] === "withdraw" && method === "POST") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || (booking.businessId !== user.id && booking.creatorId !== user.id)) return err(404, "Booking not found");
+    const proposal = booking.rescheduleProposal;
+    if (!proposal || proposal.status !== "open") return err(409, msg226(user, "There is no open move proposal on this visit.", "No hay ninguna propuesta de cambio abierta en esta visita."));
+    if (proposal.by !== user.id) return err(409, msg226(user, "Only the side that proposed the move can withdraw it.", "Solo la parte que propuso el cambio puede retirarlo."));
+    proposal.status = "withdrawn";
+    proposal.respondedAt = nowIso();
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "reschedule_withdrawn", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId, creatorId: booking.creatorId } });
+    return json(200, { booking: await withPostState(booking), proposal });
+  }
+
+  // Build -226: the licensed download. GET
+  // /api/bookings/:id/post-file serves the creator's post file
+  // ONLY to the business that owns the booking, and ONLY when
+  // the booking's license state is included (paid) or agreed (a
+  // granted license on a comped post). Before agreement there is
+  // no file: a plain 403, and the route reveals nothing about
+  // whether a file exists.
+  if (seg[0] === "bookings" && seg.length === 3 && seg[2] === "post-file" && method === "GET") {
+    if (user.role !== "business") return err(403, "Only the business on this booking can download the post file.");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.businessId !== user.id) return err(404, "Booking not found");
+    const post = (await allPosts()).find((x) => x.bookingId === booking.id) || null;
+    if (!post || !post.postFile) return err(404, "No post file is attached to this booking yet.");
+    const creatorRec226 = booking.creatorId ? await store.get(`user:${booking.creatorId}`) : null;
+    if (!licenseAllowsDownload226(booking, creatorRec226, post)) return err(403, "This post is not licensed for download yet. The license has to be agreed with the creator first, at the price on the deal.");
+    const fileRec = await store.get(post.postFile.storageRef || `postfile:${post.id}`);
+    if (!fileRec || !fileRec.dataBase64) return err(404, "No post file is attached to this booking yet.");
+    const safeName = String(post.postFile.name || "post-file").replace(/["\r\n]/g, "");
+    return { statusCode: 200, headers: { "Content-Type": fileRec.contentType || post.postFile.type || "application/octet-stream", "Content-Disposition": `attachment; filename="${safeName}"`, "Cache-Control": "private, no-store" }, body: fileRec.dataBase64, isBase64Encoded: true };
+  }
+
   if (seg[0] === "bookings" && seg.length === 2 && method === "GET") {
     const booking = await store.get(`booking:${seg[1]}`);
     if (!booking) return err(404, "Booking not found");
@@ -36359,6 +37815,29 @@ async function route(event) {
   }
 
   // ---------- posts ----------
+  // Build -226: attach (or replace) the creator's post file for a
+  // booking. POST /api/posts/file { bookingId, postId?, file:
+  // { name, type, dataUrl } } (the file may also ride the top
+  // level as postFile or as name/type/dataUrl fields). Creator
+  // only, her own post only. The bytes land in postfile:{postId};
+  // the post record keeps only postFile metadata.
+  if (seg[0] === "posts" && seg.length === 2 && seg[1] === "file" && method === "POST") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const b = parseBody(event);
+    const booking = await store.get(`booking:${b.bookingId || ""}`);
+    if (!booking || booking.creatorId !== user.id) return err(404, "Booking not found");
+    let post = null;
+    if (b.postId) { post = await store.get(`post:${b.postId}`); if (post && post.bookingId !== booking.id) post = null; }
+    if (!post) post = (await allPosts()).find((x) => x.bookingId === booking.id) || null;
+    if (!post) return err(400, "Add your post link first, then attach the file to that post.");
+    if (post.creatorId !== user.id) return err(404, "Post not found");
+    const parsed = parsePostFile226(b.file || b.postFile || b);
+    if (parsed.error) return err(400, parsed.error);
+    const postFile = await attachPostFile226(post, parsed, user.id);
+    await logEvent({ type: "post_file_attached", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, name: postFile.name, size: postFile.size } });
+    return json(200, { post: postWithPerformance(post), postFile });
+  }
+
   if (seg[0] === "posts" && method === "POST" && seg.length === 1) {
     if (user.role !== "creator") return err(403, "Creators only");
     const b = parseBody(event);
@@ -36366,6 +37845,11 @@ async function route(event) {
     if (!booking || booking.creatorId !== user.id) return err(404, "Booking not found");
     if (!booking.redeemedAt) return err(409, "The visit has not been redeemed yet. The 48 hour clock starts at redemption.");
     if (booking.status === "completed") return err(409, "A post was already submitted for this visit");
+    // Build -226: an optional file can ride the link paste (the
+    // creator's own post file, for a licensed business to
+    // download later). Validated here, stored after the post.
+    let parsedFile226 = null;
+    if (b.postFile) { parsedFile226 = parsePostFile226(b.postFile); if (parsedFile226.error) return err(400, parsedFile226.error); }
     const url = (b.url || "").trim();
     // The pasted link IS the check-off (Jeff, 2026-10-19): proof of
     // the post, not a bare checkbox. Build -37: the link must be a
@@ -36373,8 +37857,29 @@ async function route(event) {
     // the default), host-validated the same way best-work links
     // are, so the business can open exactly what was delivered.
     const proofPlatform = bestWorkPlatform(url);
-    const myPlatformLabel = primaryPlatformLabel(primaryPlatformOf(user.creator));
-    if (proofPlatform !== myPlatformLabel) return err(400, `Paste the full link to your ${myPlatformLabel} post. That link is your proof of delivery.`);
+    // Build -226 platform rule: a business-specified platform is
+    // fixed for this deal; otherwise the post defaults to the
+    // creator platform with the largest local audience, and the
+    // creator may switch at post time to another platform she
+    // actually has (her stack, or her primary platform). The
+    // pasted link is still the proof, and its platform must match
+    // any platform named in the request.
+    const proofPlatformId226 = normalizePlatformId226(proofPlatform);
+    const required226 = platformRequiredOf226(booking);
+    const requested226 = normalizePlatformId226(b.platform || null);
+    if (requested226 && proofPlatformId226 && requested226 !== proofPlatformId226) return err(400, "The platform you picked does not match the post link. Paste the link for the platform you picked, or pick the platform the link is on.");
+    if (required226) {
+      if (requested226 && requested226 !== required226) return err(400, `This business named ${platformLabel226(required226)} for this visit, so the post has to be on ${platformLabel226(required226)}. The platform cannot be switched on this deal.`);
+      if (proofPlatformId226 !== required226) return err(400, `Paste the full link to your ${platformLabel226(required226)} post. This business named that platform for this visit, and the link is your proof of delivery.`);
+    } else {
+      const stackIds226 = Object.keys(audienceStackOf(user.creator || {}));
+      const allowed226 = new Set([...stackIds226, primaryPlatformOf(user.creator)]);
+      if (!proofPlatformId226 || !allowed226.has(proofPlatformId226)) {
+        const def226 = largestLocalPlatform226(user);
+        return err(400, `Paste the full link to your ${platformLabel226(def226)} post. That link is your proof of delivery.`);
+      }
+    }
+    const myPlatformLabel = proofPlatform;
     const ts = nowIso();
     const onTime = Date.parse(ts) <= Date.parse(booking.postDeadline);
     // Build -89: the post's caption is stored with the proof.
@@ -36413,6 +37918,16 @@ async function route(event) {
       try { await store.set(`stdlicence:${stdLic.id}`, stdLic); } catch (e) { /* the post record still carries the dates */ }
     }
     await store.set(`post:${post.id}`, post);
+    // Build -226: the platform the post actually landed on rides
+    // the booking, so every later terms read resolves the same
+    // way (business-specified, the largest-local default, or the
+    // creator's switch at post time).
+    if (proofPlatformId226) {
+      booking.platformSelected = proofPlatformId226;
+      booking.platformSelectedSource = required226 ? "business" : (requested226 || proofPlatformId226 !== largestLocalPlatform226(user) ? "creator_choice" : "largest_local");
+      booking.resolvedPlatformName = proofPlatformId226;
+    }
+    if (parsedFile226) { try { await attachPostFile226(post, parsedFile226, user.id); } catch (e) { /* the link is the proof; a file storage hiccup never voids it */ } }
     // Build -132: the story that shares the post can be confirmed
     // right here on the submit (same record as /bookings/:id/story),
     // and the audience code's discount window starts at the post:
@@ -36509,6 +38024,14 @@ async function route(event) {
       } catch (e) { /* the streak is bookkeeping; the proof itself already landed */ }
     }
     await store.set(`booking:${booking.id}`, booking);
+    // Build -226 (14a): the confirmation ask. The business has
+    // 48 hours to confirm the proof; after that the follow-up
+    // sweep closes the loop for the creator automatically (the
+    // same 48 hours the escrow release already assumes).
+    await notifyBilingual226(booking.businessId, "post_confirmation_needed",
+      `${user.name} submitted the post for "${booking.title}". Please confirm it is live within 48 hours. If we do not hear from you, Magpie closes the visit as complete on its own.`,
+      `${user.name} envió la publicación de "${booking.title}". Confirma que está en vivo dentro de 48 horas, por favor. Si no sabemos de ti, Magpie cerrará la visita como completada por su cuenta.`,
+      { bookingId: booking.id, postId: post.id });
     await notifyMilestone(booking.businessId, "proof_submitted",
       `${user.name} posted for "${booking.title}"${post.onTime ? " (on time)" : " (late)"}. Open the link, confirm it is live under Posts, then report register tallies as they come in.`,
       `${user.name} posted for your Magpie visit`,
@@ -36523,8 +38046,11 @@ async function route(event) {
     // audience code line, the post still lands (the link is the
     // proof) and the response carries the warning + the exact
     // line to add, so the creator fixes the caption in place.
+    const codeLine226 = audienceCodeLine(booking, user);
     const codeWarning = booking.creatorCode && caption && !caption.includes(booking.creatorCode)
-      ? { line: audienceCodeLine(booking), message: `Your caption is missing your audience code line. Add it so this visit counts for both of you: "${audienceCodeLine(booking)}"` }
+      ? { line: codeLine226, message: msg226(user,
+        `Your caption is missing your audience code line. Add it so this visit counts for both of you: "${codeLine226}"`,
+        `A tu texto le falta la línea de tu código de audiencia. Agrégala para que esta visita cuente para los dos: "${codeLine226}"`) }
       : null;
     return json(201, { post, booking: await withPostState(booking), codeWarning });
   }
@@ -36883,6 +38409,85 @@ async function route(event) {
     return json(200, { posts: posts.map((p) => postWithPerformance(p)) });
   }
 
+  // ---------- Build -226: business results reporting ----------
+  // GET /api/business/post-report?bookingId= : one booking's
+  // counted results. Counted customers and register spend come
+  // only from the register record (redemption events, or the
+  // reported register tally as its labeled fallback); modeled
+  // estimates never enter. ROI is register spend divided by what
+  // the visit cost. Reads are one bounded list per prefix
+  // (post:, redevent:), never a per-key serial scan: at
+  // production per-get latency a list is the bounded pattern the
+  // store adapter fetches with limited concurrency.
+  if (method === "GET" && seg[0] === "business" && seg[1] === "post-report" && seg.length === 2) {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const booking = await store.get(`booking:${query.bookingId || ""}`);
+    if (!booking || booking.businessId !== user.id) return err(404, "Booking not found");
+    const post = (await allPosts()).find((x) => x.bookingId === booking.id) || null;
+    const redevents = (await store.list("redevent:")).map((r) => r.value).filter((e) => e && e.bookingId === booking.id);
+    const creatorRec226 = booking.creatorId ? await store.get(`user:${booking.creatorId}`) : null;
+    const report = postReportFor226(booking, post, redevents);
+    report.terms = termsFor226(booking, { creator: creatorRec226, post });
+    return json(200, { report });
+  }
+
+  // GET /api/business/stats?from&to : the roll-up. Totals plus
+  // per-campaign (per offer) and per-creator rows, every row in
+  // the same aggregate shape as the post report. The date range
+  // filters on the visit's activity date (redeemedAt, else the
+  // booking's creation). Same bounded-list read pattern as the
+  // post report: bookings, posts and register events are each
+  // listed once and joined in memory.
+  if (method === "GET" && seg[0] === "business" && seg[1] === "stats" && seg.length === 2) {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const fromMs = query.from ? Date.parse(query.from) : null;
+    // Reviewer fix (Build -226 update pass): a date-only `to`
+    // (2026-11-21) parses to that day's midnight, so a plain
+    // at > toMs cut dropped everything that happened ON the to
+    // day, including "today" in the default 30-day view. A
+    // date-only to means the whole day: end of day inclusive.
+    // A full timestamp keeps its exact instant.
+    const toMs = query.to ? (Date.parse(query.to) + (/^\d{4}-\d{2}-\d{2}$/.test(String(query.to).trim()) ? 24 * 3600 * 1000 - 1 : 0)) : null;
+    if (query.from && !Number.isFinite(fromMs)) return err(400, "The from date could not be read. Use an ISO date like 2026-11-01.");
+    if (query.to && !Number.isFinite(toMs)) return err(400, "The to date could not be read. Use an ISO date like 2026-11-30.");
+    const myBookings = (await allBookings()).filter((b) => b.businessId === user.id).filter((b) => {
+      const at = Date.parse(b.redeemedAt || b.createdAt || "");
+      if (Number.isFinite(fromMs) && (!Number.isFinite(at) || at < fromMs)) return false;
+      if (Number.isFinite(toMs) && (!Number.isFinite(at) || at > toMs)) return false;
+      return true;
+    });
+    const postByBooking226 = new Map();
+    for (const x of await allPosts()) if (x && x.bookingId && !postByBooking226.has(x.bookingId)) postByBooking226.set(x.bookingId, x);
+    const eventsByBooking226 = new Map();
+    for (const r of await store.list("redevent:")) { const e = r.value; if (e && e.bookingId) { if (!eventsByBooking226.has(e.bookingId)) eventsByBooking226.set(e.bookingId, []); eventsByBooking226.get(e.bookingId).push(e); } }
+    const totals226 = emptyAgg226();
+    const campMap226 = new Map();
+    const creatorMap226 = new Map();
+    for (const b of myBookings) {
+      const report = postReportFor226(b, postByBooking226.get(b.id) || null, eventsByBooking226.get(b.id) || []);
+      addToAgg226(totals226, report);
+      const ck = b.offerId || "direct";
+      if (!campMap226.has(ck)) campMap226.set(ck, { offerId: b.offerId || null, title: b.title || "", agg: emptyAgg226() });
+      addToAgg226(campMap226.get(ck).agg, report);
+      const rk = b.creatorId || "unknown";
+      if (!creatorMap226.has(rk)) creatorMap226.set(rk, { creatorId: b.creatorId || null, creatorName: b.creatorName || "", creatorHandle: b.creatorHandle || "", agg: emptyAgg226() });
+      addToAgg226(creatorMap226.get(rk).agg, report);
+    }
+    const rowOut226 = (head, agg) => ({ ...head, ...finishAgg226(agg) });
+    return json(200, {
+      from: query.from || null,
+      to: query.to || null,
+      totals: finishAgg226(totals226),
+      spend: totals226.visitCostCents / 100,
+      counted: totals226.countedCustomers,
+      registerBack: totals226.registerSpendCents / 100,
+      engagements: totals226.engagement,
+      overallReturnMultiple: totals226.visitCostCents > 0 ? Math.round(((totals226.registerSpendCents / totals226.visitCostCents)) * 10000) / 10000 : null,
+      campaigns: [...campMap226.values()].map((r) => rowOut226({ offerId: r.offerId, title: r.title }, r.agg)),
+      creators: [...creatorMap226.values()].map((r) => rowOut226({ creatorId: r.creatorId, creatorName: r.creatorName, creatorHandle: r.creatorHandle }, r.agg)),
+    });
+  }
+
   // ---------- business ratings of creators (post-visit) ----------
   // The business-to-creator RATING (Jeff, 2026-10-19 plumbing;
   // surfaced as a first-class score 2026-10-20 late): a business
@@ -36909,7 +38514,7 @@ async function route(event) {
     if (existing) return err(409, "This visit already has a review");
     const stars = Number(b.stars);
     if (!Number.isInteger(stars) || stars < 1 || stars > 5) return err(400, "Stars must be a whole number from 1 to 5");
-    const comment = String(b.comment == null ? "" : b.comment).trim().slice(0, 280);
+    const comment = String(b.comment == null ? (b.note == null ? "" : b.note) : b.comment).trim().slice(0, 280);
     const review = {
       id: crypto.randomUUID(),
       bookingId: booking.id,
@@ -36918,6 +38523,7 @@ async function route(event) {
       businessName: (user.business && user.business.businessName) || booking.businessName || "A Magpie business",
       stars,
       comment,
+      chips: normalizeChips226(b.chips),
       createdAt: nowIso(),
     };
     await store.set(`review:${review.id}`, review);
@@ -36949,7 +38555,7 @@ async function route(event) {
     if (existing) return err(409, "You already reviewed this visit");
     const stars = Number(b.stars);
     if (!Number.isInteger(stars) || stars < 1 || stars > 5) return err(400, "Stars must be a whole number from 1 to 5");
-    const text = String(b.text == null ? "" : b.text).trim().slice(0, 500);
+    const text = String(b.text == null ? (b.note == null ? "" : b.note) : b.text).trim().slice(0, 500);
     const review = {
       id: crypto.randomUUID(),
       bookingId: booking.id,
@@ -36958,11 +38564,12 @@ async function route(event) {
       businessName: booking.businessName || "A Magpie business",
       stars,
       text,
+      chips: normalizeChips226(b.chips),
       createdAt: nowIso(),
     };
     await store.set(`bizreview:${review.id}`, review);
     await logEvent({ type: "creator_reviewed_business", actorId: user.id, actorRole: "creator", subjectId: booking.businessId, market: booking.market, data: { bookingId: booking.id, stars, hasText: !!text } });
-    return json(201, { review: { stars: review.stars, text: review.text, businessName: review.businessName, createdAt: review.createdAt } });
+    return json(201, { review: { stars: review.stars, text: review.text, chips: review.chips, businessName: review.businessName, createdAt: review.createdAt } });
   }
 
   // Post-performance report (Jeff, 2026-10-19 round 2; time series
@@ -37013,6 +38620,23 @@ async function route(event) {
     };
     if (!Array.isArray(post.snapshots)) post.snapshots = [];
     post.snapshots.push(snapshot);
+    // Build -226 labeling: the metrics this report provided are
+    // creator-reported; metrics it did not touch keep their label.
+    applyCreatorMetrics226(post, { views, likes, comments, shares, saves });
+    // Build -226 interim award: +10 once per report window. The
+    // stamp lives on the post record (momentumAwardedForWindow is
+    // the latest window; performanceMomentumAwards is the full
+    // set), and Momentum computes the points from those stamps.
+    const window226 = performanceReportWindow226(post, Date.parse(snapshot.at));
+    let momentumAward226 = { points: 0, window: window226 };
+    if (window226) {
+      if (!Array.isArray(post.performanceMomentumAwards)) post.performanceMomentumAwards = [];
+      if (!post.performanceMomentumAwards.some((a) => a && a.window === window226)) {
+        post.performanceMomentumAwards.push({ window: window226, points: MOMENTUM_POINTS.performanceReportWindow, at: snapshot.at });
+        post.momentumAwardedForWindow = window226;
+        momentumAward226 = { points: MOMENTUM_POINTS.performanceReportWindow, window: window226 };
+      }
+    }
     post.views = snapshot.views;
     post.likes = snapshot.likes;
     post.comments = snapshot.comments;
@@ -37036,7 +38660,7 @@ async function route(event) {
         `${user.name} updated their post numbers for "${booking.title}" (${post.views == null ? "no views figure" : `${post.views} views`} now). Your results on this booking are updated.`,
         { bookingId: booking.id, postId: post.id });
     }
-    return json(200, { post: postWithPerformance(post) });
+    return json(200, { post: postWithPerformance(post), momentumAward: momentumAward226 });
   }
 
   // Code-use logging (UX redesign section 4, 2026-10-24): the
@@ -37708,7 +39332,7 @@ async function route(event) {
   if (seg[0] === "bookings" && seg.length === 3 && seg[2] === "swap" && (method === "GET" || method === "POST")) {
     const booking = await store.get(`booking:${seg[1]}`);
     if (!booking || booking.businessId !== user.id) return err(404, "Booking not found");
-    if (booking.status !== "cancelled") return err(400, "Swaps open when a visit is cancelled");
+    if (booking.status !== "cancelled" && booking.status !== "cancelled_by_business") return err(400, "Swaps open when a visit is cancelled");
     const orig = await store.get(`user:${booking.creatorId}`);
     const origCats = orig && orig.creator && Array.isArray(orig.creator.categories) ? orig.creator.categories : [];
     const origLocal = orig && orig.creator && typeof orig.creator.localAudiencePct === "number" ? orig.creator.localAudiencePct : null;
@@ -38091,4 +39715,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226 };

@@ -880,6 +880,8 @@ async function renderPublicProfile() {
   <div class="public-profile bookme theme-${esc(p.pageTheme || "ink")}" style="max-width:720px;margin:20px auto">
     <div class="bookme-cover${p.photoUrl ? " has-photo" : " no-photo"}">
       ${p.photoUrl ? `<img class="bookme-banner" src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono bookme-mono"><span>${initial}</span></div>`}
+      ${matchBadge226Html(p)}
+      ${state.user && state.user.role === "business" && p.creatorUserId ? favBtn226Html("creator", p.creatorUserId, p.isFavorite) : ""}
       <div class="bookme-cover-id">
         <div class="bookme-id-row">
           <div class="bookme-id-main">
@@ -893,7 +895,7 @@ async function renderPublicProfile() {
       </div>
     </div>
     ${p.realPeopleChecked ? `<p class="small" style="margin:10px 0 0"><span class="badge ok">Checked by a person</span> Real posts, real local life.</p>` : ""}
-    ${galleryRowHtml(p.photos)}
+    ${photos226Html(p.photos, { public: true })}
     <section class="panel bookme-body">
       <div class="cc-chips">
         <span class="cc-chip market">${place}</span>
@@ -905,13 +907,12 @@ async function renderPublicProfile() {
         ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
         ${(p.listedMarkets || []).filter((m) => m.market !== view.market).map((m) => { const cnt = followersForPct(m.pct, total); return `<span class="cc-chip">Also listed in ${esc(m.market)} &middot; ${m.pct}%${cnt ? ` &middot; ${cnt} followers` : " of followers"}</span>`; }).join("")}
       </div>
+      ${openTo226Html(p)}
       ${p.pitchLine ? `<p class="bookme-pitch" style="font-size:1.05rem;margin:10px 0 0"><em>${esc(p.pitchLine)}</em></p>` : ""}
       ${p.bio ? `<p class="bookme-bio">${esc(p.bio)}</p>` : ""}
-      <div class="cc-local">
-        ${view.pct === null || view.pct === undefined
-          ? `<div class="lbl">Local audience not reported yet</div>`
-          : `<div class="big">${view.pct}%</div><div class="lbl">of their audience is local to ${esc(view.market)}</div>${followersForPct(view.pct, total) ? `<div style="font-weight:800;margin-top:2px">${followersForPct(view.pct, total)} followers</div>` : ""}${total > 0 ? `<div class="cc-neighbors">That&rsquo;s about ${fmtFull(Math.round((view.pct / 100) * total))} neighbors who could actually walk through your door.</div>` : ""}<div class="src">${bd && bd.segments && bd.segments.some((s) => s.market === view.market && s.verified) ? `<span class="badge ok">Verified from Instagram</span>` : (p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
-      </div>
+      ${view.pct === null || view.pct === undefined
+        ? `<div class="cc-local"><div class="lbl">${J226("Local audience not reported yet", "Audiencia local aún no reportada")}</div></div>`
+        : `${statsRow226Html([{ value: followersForPct(view.pct, total) || String(view.pct) + "%", label: J226("Local followers", "Seguidores locales"), grad: true }, ...(total > 0 ? [{ value: compact226(total), label: J226("Followers in all", "Seguidores en total") }] : [])])}<p class="small muted" style="margin:6px 0 0">${view.pct}% ${J226("of their audience is local to", "de su audiencia es local en")} ${esc(view.market)}. ${bd && bd.segments && bd.segments.some((s) => s.market === view.market && s.verified) ? `<span class="badge ok">Verified from Instagram</span>` : (p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</p>`}
       ${breakdownHtml}
       ${p.proof && (p.proof.visitsCompleted > 0 || regularsTotalOf(p.proof) > 0) ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on Magpie</span></p>${p.proof.visitsCompleted > 0 ? `<p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p>` : ""}${regularsTotalOf(p.proof) > 0 ? `<p style="margin:8px 0 0"><strong>${fmtNum(regularsTotalOf(p.proof))} Regulars brought in</strong> — real customers counted at the register through this creator's code.</p>` : ""}<p class="small muted" style="margin:6px 0 0">From this creator's real Magpie visits, counted by Magpie, not claimed by the creator.</p></div>` : ""}
       ${p.engagement && p.engagement.postsWithMetrics >= 3 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Post engagement</span></p><p style="margin:8px 0 0"><strong>${Number(p.engagement.totals.views || 0).toLocaleString("en-US")} views &middot; ${Number(p.engagement.totals.likes || 0).toLocaleString("en-US")} likes &middot; ${Number(p.engagement.totals.shares || 0).toLocaleString("en-US")} shares &middot; ${Number(p.engagement.totals.saves || 0).toLocaleString("en-US")} saves</strong></p><p class="small muted" style="margin:4px 0 0">Per post on average: ${Number(p.engagement.averages.views || 0).toLocaleString("en-US")} views, ${Number(p.engagement.averages.likes || 0).toLocaleString("en-US")} likes, ${Number(p.engagement.averages.shares || 0).toLocaleString("en-US")} shares, ${Number(p.engagement.averages.saves || 0).toLocaleString("en-US")} saves. From ${p.engagement.postsWithMetrics} Magpie posts with reported numbers. Recorded: the creator's own reported figures.</p></div>` : ""}
@@ -922,6 +923,8 @@ async function renderPublicProfile() {
       ${workGridHtml(p)}
       ${rateBlock}
       ${socialsBlock}
+      ${accounts226Html(p, { public: true })}
+      ${showcase226Html(p, { public: true })}
       ${visitIncludesHtml(p.visitIncludes)}
       ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${esc(p.brokerage)}</p>` : ""}
       ${p.viewerIsOwner ? `<p class="small muted">This is your book-me page, exactly as visitors see it. Edit it any time under Profile.</p><p class="small">${shareBlockHtml(p.handle, p.market || "", "Share your invite")}</p>` : ""}
@@ -1661,6 +1664,7 @@ function renderStack(wrap) {
   // Position prints only when the full set is big enough that a
   // position is not a roster-size leak (Build -47, audit B3).
   const posOk = (s.src || []).length >= 10;
+  wrap.classList.toggle("stk-at-first", s.idx === 0);
   if (s.idx >= total) {
     if (s.onRoundEnd && s.onRoundEnd(wrap)) return;
     wrap.innerHTML = s.endHtml(s.passed, total);
@@ -3137,6 +3141,7 @@ function hamburgerGroups137() {
         R("home", "Home", "Maggie, your highlights, your next steps", "Dashboard"),
         R("deck", "My offers", "Invites and deals you are working on", "Offers", { badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) }),
         R("calendar", "Visits", "Your visits and post deadlines", "My Visits", { badge: wc.crVisits || 0 }),
+        Object.assign(R("heart", "Saved", "Your saved businesses and offers", "Favorites"), { act: "return openSaved226()" }),
         R("bubble", "Messages", "Talk to a business about a visit or an offer", "Messages", { badge: b.messages || 0 }),
       ] },
       { title: "Money & page", rows: [
@@ -3193,6 +3198,7 @@ function hamburgerGroups137() {
         R("bars", "Your campaigns", "Current and past campaigns, who applied, and what they did", "My Offers", { badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) }),
         Object.assign(R("requests", "Applicants", "Creators who applied to your campaigns", "Requests"), { act: "return goApplicants()", tag: "In Your campaigns" }),
         R("heart", "Saved creators", "Your shortlist", "Favorites", { badge: wc.bizSaved || 0 }),
+        Object.assign(R("heart", "Saved", "Saved businesses and offers too", "Favorites"), { act: "return openSaved226()" }),
       ] },
       { title: "Run", rows: [
         R("calendar", "Visits & Posts", "Visits and posts. The counter is inside.", "Visits & Posts", { badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) }),
@@ -3407,7 +3413,7 @@ function menuIdentityStateLine187(u) {
   }
   if (u.role === "business" && isFoundingBusiness(u)) return `On the founding list — ${foundingBizPlace(u)} has not opened yet`;
   if (u.role === "business") return `Active in ${u.market || "your market"}`;
-  if (u.role === "creator") return (u.founding && u.founding.marketLive) ? `Creator in ${u.market || "your market"} — your market is open` : `Founding creator in ${u.market || "your market"}`;
+  if (u.role === "creator") return (u.founding && u.founding.marketLive) ? T(`Creator in ${u.market || "your market"}. Your market is open`, `Creador en ${u.market || "your market"}. Tu mercado está abierto`) : T(`Founding creator in ${u.market || "your market"}`, `Creador fundador en ${u.market || "your market"}`);
   if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) return "Impact Portal";
   if (u.role === "partner") return "Partner";
   if (u.role === "recruiter") return "Recruiter";
@@ -3724,12 +3730,14 @@ function identityMenuRows126() {
   }
   if (u.role === "creator") return [
     ...(u.bizdevSeat && u.bizdevSeat.active ? [{ icon: "building", label: "Biz Dev home", sub: "Your seller dashboard", act: "return bdGoShell()" }] : []),
+    { icon: "heart", label: "Saved", sub: "Your saved businesses and offers", act: "return openSaved226()" },
     dest("profile", "My profile", "Your public creator profile", "Profile"),
     dest("sliders", "Settings", "Notifications, connected accounts, password", "Settings"),
     ...sideRows180,
     signout,
   ];
   if (u.role === "business") return [
+    { icon: "heart", label: "Saved", sub: "Your saved creators, businesses and offers", act: "return openSaved226()" },
     dest("building", "Business profile", "Your business's public profile", "Profile"),
     dest("sliders", "Settings", "Notifications, plan and password", "Settings"),
     ...sideRows180,
@@ -6528,6 +6536,7 @@ async function renderCreatorNumbers() {
     </div>`;
     if (!bookings.length && !delivered.length && !(m.points > 0)) {
       el.innerHTML = `${head}
+      ${crRange226Html(bookings)}
       <div id="cr-stats"></div>
       ${reachCard}
       <div class="empty-card"><div class="ec-t">Your numbers</div><div class="ec-s">This fills in once your visits and posts land. When businesses book you and your posts go live, you will see your posts, your on-time record, and your Momentum here.</div></div>`;
@@ -6572,6 +6581,7 @@ async function renderCreatorNumbers() {
       ${reportedPosts.map((b) => { const pf = b.post.performance; const inten = (pf.shares || 0) + (pf.saves || 0); return `<div class="lb-row"><div class="lb-main"><div class="lb-name">${esc(b.title || "Post")}</div><div class="lb-meta">${esc(b.businessName || "")}</div></div><span class="lb-num" style="font-size:.95rem">${pf.views != null ? fmtNum(pf.views) + " views" : "views not reported"} · ${pf.shares != null ? fmtNum(pf.shares) + " shares" : "shares not reported"} · ${pf.saves != null ? fmtNum(pf.saves) + " saves" : "saves not reported"} · ${fmtNum(inten)} intent</span></div>`; }).join("")}
     </div>` : "";
     el.innerHTML = `${head}
+    ${crRange226Html(bookings)}
     <div id="cr-stats"></div>
     ${reachCard}
     <div class="kpi-grid c3">
@@ -7881,6 +7891,1861 @@ function bizActivityFeedHtml(h) {
   return `<div class="feed-chips"><button type="button" class="chip on" data-fcbtn onclick="return feedChip(this,'all')">All</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'posts')">Posts</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'licenses')">Licenses</button></div>${cards.join("")}`;
 }
 
+/* BUILD226-START */
+/* Build -226 (offer-journey plumbing, client): the journey surfaces
+   from the reference screens (offer detail, visit-complete doorway,
+   3-step post walkthrough, post tracked, business completion,
+   reviews, post report, business stats) rendered from the booking
+   or offer record's terms. All term copy (deliverables, post
+   window, keep-up days, platform, license) renders from terms;
+   nothing about a deal is hard-coded here. Metric source labels
+   follow the server-provided source flag, so they flip on their
+   own when platform pulling turns on. */
+function termsOf226(x) {
+  x = x || {};
+  const t = (x.terms && typeof x.terms === "object") ? x.terms : {};
+  const tl = (t.license && typeof t.license === "object") ? t.license : {};
+  const tp = (t.platform && typeof t.platform === "object") ? t.platform : {};
+  let delivText = t.deliverablesText || "";
+  if (!delivText && typeof deliverablesOfClient === "function" && typeof deliverablePhraseClient === "function") {
+    try { delivText = deliverablePhraseClient(x); } catch (e) { delivText = ""; }
+  }
+  if (!delivText) delivText = "1 post + 1 story";
+  const winHours = t.postWindowHours != null ? Number(t.postWindowHours) : (typeof deliverablesOfClient === "function" ? deliverablesOfClient(x).windowHours : 48);
+  const deadlineAt = t.postDeadlineAt || x.postDeadline || (x.compliance && x.compliance.deadline) || "";
+  const keepDays = t.keepUpDays != null ? Number(t.keepUpDays) : 30;
+  const postAt = x.post && (x.post.submittedAt || x.post.firstAt || x.post.createdAt);
+  const keepUntil = t.keepUpUntil || (postAt && keepDays ? new Date(Date.parse(postAt) + keepDays * 86400000).toISOString() : "");
+  let licPrice = null;
+  if (tl.priceCents != null && Number.isFinite(Number(tl.priceCents))) licPrice = Number(tl.priceCents) / 100;
+  else if (x.creatorLicensingFee != null && Number.isFinite(Number(x.creatorLicensingFee))) licPrice = Number(x.creatorLicensingFee);
+  let licState = tl.state || "";
+  if (!["included", "share_only", "ask", "agreed"].includes(licState)) {
+    if (x.kind === "paid" || x.paidLane) licState = "included";
+    else if (x.post && x.post.license && x.post.license.status === "granted") licState = "agreed";
+    else licState = licPrice != null ? "ask" : "share_only";
+  }
+  const platFallback = (typeof primaryLabelClient === "function")
+    ? (x.platform || x.creatorPrimaryPlatform
+      ? primaryLabelClient(x.platform || x.creatorPrimaryPlatform)
+      : primaryLabelClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram"))
+    : "Instagram";
+  const platName = tp.label || (tp.name ? (typeof primaryLabelClient === "function" ? primaryLabelClient(tp.name) : tp.name) : platFallback);
+  const platSource = tp.source || (x.platformNamedByBusiness ? "business" : "largest_local");
+  const visitCost = t.visitCostCents != null && Number.isFinite(Number(t.visitCostCents)) ? Number(t.visitCostCents) / 100
+    : (typeof x.compCostActual === "number" ? x.compCostActual : (x.dollarCap != null ? Number(x.dollarCap) : null));
+  return {
+    deliverablesText: delivText,
+    postWindowHours: winHours,
+    postDeadlineAt: deadlineAt,
+    keepUpDays: keepDays,
+    keepUpUntil: keepUntil,
+    platformName: platName,
+    platformSource: platSource,
+    licenseState: licState,
+    licensePrice: licPrice,
+    licenseEndsAt: tl.endsAt || (x.post && x.post.license && x.post.license.windowEndsAt) || "",
+    visitCost: visitCost,
+  };
+}
+function platId226(name) {
+  const n = String(name || "").trim().toLowerCase();
+  const map = { instagram: "instagram", tiktok: "tiktok", youtube: "youtube", facebook: "facebook", x: "x", linkedin: "linkedin" };
+  if (map[n]) return map[n];
+  if (typeof PRIMARY_PLATFORMS_CLIENT !== "undefined") {
+    const hit = PRIMARY_PLATFORMS_CLIENT.find((p) => p.label.toLowerCase() === n || p.id === n);
+    if (hit) return hit.id;
+  }
+  return "instagram";
+}
+function platHost226(name) {
+  if (typeof primaryMetaClient === "function") return primaryMetaClient(platId226(name)).host;
+  return "instagram.com/";
+}
+function dateFull226(iso) {
+  if (!iso) return "";
+  if (typeof fmtDayFull === "function") { const s = fmtDayFull(iso); if (s) return s; }
+  if (typeof fmtDay === "function") return fmtDay(iso);
+  return String(iso).slice(0, 10);
+}
+function money226(n) {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "";
+  return "$" + fmtPrice(Number(n));
+}
+function windowWords226(hours) {
+  const h = Number(hours) || 48;
+  if (h === 48) return "two days";
+  if (h === 24) return "one day";
+  if (h % 24 === 0) return (h / 24) + " days";
+  return h + " hours";
+}
+/* Metric source: pulled when the server marks the numbers pulled
+   (meta_sync and friends), creator-reported otherwise. One helper
+   owns the wording so every surface flips together. */
+function metricSource226(post) {
+  const perf = (post && post.performance) || {};
+  const src = String((post && (post.metricsSource || post.source)) || perf.source || perf.metricsSource || "").toLowerCase();
+  const msVals = perf.metricSources && typeof perf.metricSources === "object" ? Object.values(perf.metricSources).map((v) => String(v).toLowerCase()) : [];
+  const pulled = ["meta_sync", "pulled", "platform_pull", "platform", "api_sync", "synced", "meta"].includes(src) || msVals.includes("platform");
+  const plat = (post && (post.platformName || post.platform)) || perf.platform || "the platform";
+  const platLabel = typeof plat === "string" && plat.length < 24 ? plat.charAt(0).toUpperCase() + plat.slice(1) : "Instagram";
+  return {
+    pulled,
+    short: pulled ? "Pulled from " + platLabel : "Creator-reported",
+    sentence: function (creatorName) {
+      return pulled
+        ? "Engagement numbers are pulled from " + platLabel + "."
+        : "Engagement numbers are reported by " + (creatorName || "the creator") + ".";
+    },
+  };
+}
+function firstName226(full) { return String(full || "").trim().split(" ")[0] || ""; }
+function bizHandle226(b) {
+  const h = String((b && (b.businessHandle || b.handle)) || "").replace(/^@/, "");
+  if (h) return "@" + h;
+  return "@" + String((b && b.businessName) || "the business").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+function postNums226(b) {
+  const p = (b && b.post) || {};
+  const perf = p.performance || {};
+  const pick = (k) => (perf[k] != null ? perf[k] : (p[k] != null ? p[k] : null));
+  return { views: pick("views"), likes: pick("likes"), comments: pick("comments"), shares: pick("shares"), saves: pick("saves") };
+}
+function countedOf226(b) {
+  const evCounted = b && typeof b.countedCustomers === "number" ? b.countedCustomers : null;
+  if (evCounted != null) return evCounted;
+  const tally = b && b.redemptions ? Number(b.redemptions.count) || 0 : 0;
+  const mentions = b && typeof b.mentionCount === "number" ? b.mentionCount : 0;
+  const uses = b && typeof b.codeUseCount === "number" ? b.codeUseCount : 0;
+  return Math.max(tally, uses) + mentions;
+}
+function registerSpend226(b) {
+  if (b && typeof b.registerSpend === "number") return b.registerSpend;
+  if (b && b.redemptions && typeof b.redemptions.basketTotal === "number") return b.redemptions.basketTotal;
+  return 0;
+}
+/* The pinned visit: a redeemed visit with no post yet stays on
+   the creator home until the link is in (reference 07). */
+function pinnedBooking226(bookings) {
+  return (bookings || []).find((b) => b.redeemedAt && !b.post && b.status !== "cancelled" && b.status !== "expired") || null;
+}
+/* Reviewer fix (Build -226 update): the platform reason line
+   follows terms.platform.source. When the business named the
+   platform, the line says the business asked for it; only when
+   the platform came from the creator's largest local audience
+   (or her own choice) does the biggest-local-audience line run. */
+function platformReason226(b, t) {
+  const plat = (t && t.platformName) || "Instagram";
+  const biz = (b && b.businessName) || "The business";
+  if (t && t.platformSource === "business") {
+    return J226(biz + " asked for this one on " + plat + ".", biz + " pidió esta en " + plat + ".");
+  }
+  return J226(plat + " is your biggest local audience.", plat + " es tu audiencia local más grande.");
+}
+function pinnedVisit226Html(bookings) {
+  const b = pinnedBooking226(bookings);
+  if (!b) return "";
+  const t = termsOf226(b);
+  return `<section class="j226-card j226-pin" data-j226="pinned">
+    <p class="j226-kicker">${J226("Your visit is done. Now post about it.", "Tu visita terminó. Ahora publica sobre ella.")}</p>
+    <h3 class="j226-h">${esc(b.title || "Your visit")} at ${esc(b.businessName || "")}</h3>
+    <p class="small muted" style="margin:4px 0 0">${J226("The post is the other half of the deal, and it only takes a minute.", "La publicación es la otra mitad del trato, y solo toma un minuto.")}${t.postDeadlineAt ? ` ${J226("On time until", "A tiempo hasta el")} ${esc(dateFull226(t.postDeadlineAt))}.` : ""}</p>
+    <div class="j226-steps">
+      <div class="j226-step"><span class="j226-stepn">1</span><span>${J226("Post it on", "Publícalo en")} ${esc(t.platformName)}. ${esc(platformReason226(b, t))} ${J226("Tag", "Etiqueta a")} ${esc(bizHandle226(b))} ${J226("and start the caption with #ad.", "y empieza el texto con #ad.")}</span></div>
+      <div class="j226-step"><span class="j226-stepn">2</span><span>${J226("Paste the link here. It takes ten seconds.", "Pega el enlace aquí. Toma diez segundos.")}</span></div>
+      <div class="j226-step"><span class="j226-stepn">3</span><span>${J226("We track it from there.", "Lo seguimos desde ahí.")} ${esc(b.businessName || "The business")} ${J226("sees it live and customers who mention it get counted.", "lo ve en vivo y los clientes que lo mencionan se cuentan.")}</span></div>
+    </div>
+    <div class="j226-cta"><button class="btn" type="button" onclick="return openPostWalk226('${b.id}')">${J226("Post about my visit", "Publica sobre mi visita")}</button>
+    <button class="btn ghost" type="button" onclick="return openVisitDone226('${b.id}')">${J226("See the steps", "Ver los pasos")}</button></div>
+    <p class="small muted" style="margin:10px 0 0">${J226("This visit stays on your home screen until your link is in.", "Esta visita se queda en tu pantalla de inicio hasta que pongas tu enlace.")}</p>
+  </section>`;
+}
+/* Gentle nudge card from the home payload's postNudge (day 2 and
+   day 5, no link yet): ahead of any penalty language, always. */
+function postNudge226Html(nudge) {
+  if (!nudge || !nudge.bookingId) return "";
+  return `<section class="j226-card j226-nudge" data-j226="post-nudge">
+    <p class="j226-kicker">${J226("A friendly nudge", "Un recordatorio amable")}</p>
+    <p style="margin:4px 0 0">Your post is still to come${nudge.dueText ? `: ${esc(nudge.dueText)}` : ""}. Posting now keeps this visit on time, and it only takes a minute.</p>
+    <div class="j226-cta"><button class="btn" type="button" onclick="return openPostWalk226('${esc(nudge.bookingId)}')">${J226("Post about my visit", "Publica sobre mi visita")}</button></div>
+  </section>`;
+}
+/* Push reminder cards (item 8): shown only while notifications
+   are off, dismissible, quiet once on or dismissed. */
+function pushDismissed226(role, context) {
+  try { return !!localStorage.getItem("j226push:" + role + ":" + context); } catch (e) { return false; }
+}
+function pushReminder226Html(role, context) {
+  if (pushDismissed226(role, context)) return "";
+  const L = (role === "business" && typeof ST === "function") ? ST : T;
+  const title = role === "business"
+    ? L("Get pinged the moment it happens", "Recibe un aviso en el momento en que pasa")
+    : L("Turn on notifications", "Activa las notificaciones");
+  const body = role === "business"
+    ? L("Get pinged the moment a creator claims or checks in, so you never miss a visit.", "Recibe un aviso en el momento en que un creador reclama o se registra, para que nunca te pierdas una visita.")
+    : L("Track your visit, get a check-in reminder, and get pinged when you are paid.", "Sigue tu visita, recibe un recordatorio de registro y un aviso cuando te paguen.");
+  setTimeout(() => { refreshPushCards226(); }, 40);
+  return `<section class="j226-card j226-push" data-push226="${esc(role)}:${esc(context)}">
+    <div class="j226-push-main"><p class="j226-kicker">${esc(title)}</p>
+    <p class="small muted" style="margin:4px 0 0">${esc(body)}</p></div>
+    <div class="j226-cta"><button class="btn small-btn" type="button" onclick="return enablePush226(this)">Turn on notifications</button>
+    <button class="btn small-btn ghost" type="button" onclick="return dismissPush226(this, '${esc(role)}', '${esc(context)}')">Not now</button></div>
+  </section>`;
+}
+function refreshPushCards226() {
+  const cards = document.querySelectorAll("[data-push226]");
+  if (!cards.length) return;
+  const done = (perm) => { if (perm === "granted") cards.forEach((c) => { c.style.display = "none"; }); };
+  try {
+    if (window.MagpieNative && window.MagpieNative.isNative && typeof window.MagpieNative.getPushPermission === "function") {
+      window.MagpieNative.getPushPermission().then(done).catch(() => {});
+      return;
+    }
+    const capPush = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+    if (window.MagpieNative && window.MagpieNative.isNative && capPush && typeof capPush.checkPermissions === "function") {
+      capPush.checkPermissions().then((res) => done(res && res.receive === "granted" ? "granted" : "denied")).catch(() => {});
+      return;
+    }
+  } catch (e) { /* fall through to the web permission */ }
+  try { if (typeof Notification !== "undefined") done(Notification.permission); } catch (e) { /* no permission API */ }
+}
+function dismissPush226(btn, role, context) {
+  try { localStorage.setItem("j226push:" + role + ":" + context, "1"); } catch (e) { /* private mode */ }
+  const card = btn && btn.closest ? btn.closest("[data-push226]") : null;
+  if (card) card.style.display = "none";
+  return false;
+}
+function enablePush226(btn) {
+  const finish = () => { refreshPushCards226(); const card = btn && btn.closest ? btn.closest("[data-push226]") : null; setTimeout(() => { try { if (typeof Notification !== "undefined" && Notification.permission === "granted" && card) card.style.display = "none"; } catch (e) {} }, 600); };
+  try {
+    if (window.MagpieNative && typeof window.MagpieNative.requestPush === "function") { window.MagpieNative.requestPush(); finish(); return false; }
+    if (window.MagpieNative && typeof window.MagpieNative.initPush === "function") { window.MagpieNative.initPush(); finish(); return false; }
+  } catch (e) { /* fall through to the web prompt */ }
+  try {
+    if (typeof Notification !== "undefined" && Notification.requestPermission) {
+      const p = Notification.requestPermission();
+      if (p && p.then) p.then(finish).catch(() => {}); else finish();
+      return false;
+    }
+  } catch (e) { /* nothing to request on this surface */ }
+  if (btn) btn.textContent = "Notifications are on in the app";
+  return false;
+}
+/* Reviews (references 18 and 19): stars, chips, optional note,
+   Skip. One per side per booking; a skip is remembered on this
+   device and the server record rules after that. */
+const REVIEW_CHIPS_226 = {
+  creator: ["Easy to work with", "Food was great", "Staff knew the deal", "Welcoming", "Slow to seat us", "Hard to schedule"],
+  business: ["Posted on time", "Great content", "Easy at the counter", "Followed the brief", "Friendly with staff"],
+};
+function reviewSkipped226(bookingId, side) {
+  try { return !!localStorage.getItem("j226revskip:" + side + ":" + bookingId); } catch (e) { return false; }
+}
+function reviewState226(bookingId, side) {
+  state.j226rev = state.j226rev || {};
+  const k = side + ":" + bookingId;
+  if (!state.j226rev[k]) state.j226rev[k] = { stars: 0, chips: [], bookAgain: "" };
+  return state.j226rev[k];
+}
+function reviewPrompt226Html(b, side) {
+  if (!b || !b.id) return "";
+  const existing = side === "creator" ? b.businessReview : b.creatorReview;
+  if (existing) return "";
+  if (reviewSkipped226(b.id, side)) return "";
+  const rs = reviewState226(b.id, side);
+  if (rs.sent) return "";
+  const isCreator = side === "creator";
+  const title = isCreator ? "How was " + (b.businessName || "the business") + "?" : "How was " + (firstName226(b.creatorName) || "the creator") + "?";
+  const sub = isCreator
+    ? "Your honest stars. They show on " + (b.businessName || "the business") + "'s page, with reviews from other creators."
+    : "She posted about her visit. Your review sits on her page, where other businesses see it.";
+  const chips = REVIEW_CHIPS_226[side] || [];
+  return `<section class="j226-card" data-j226="review-${esc(side)}">
+    <p class="j226-kicker">${isCreator ? esc(b.businessName || "") : J226("Rate this creator", "Califica a esta creadora")}</p>
+    <h3 class="j226-h">${esc(title)}</h3>
+    <p class="small muted" style="margin:4px 0 0">${esc(sub)}</p>
+    <div class="j226-stars" role="radiogroup" aria-label="Your rating">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="j226-star${rs.stars >= n ? " on" : ""}" data-star="${n}" onclick="return reviewSetStars226('${b.id}', '${side}', ${n}, this)" aria-label="${n} star${n === 1 ? "" : "s"}">&#9733;</button>`).join("")}</div>
+    <p class="small muted" style="margin:2px 0 0">${J226("Tap a star to rate", "Toca una estrella para calificar")}</p>
+    <p class="small" style="margin:14px 0 6px"><strong>${J226("What stood out?", "¿Qué destacó?")}</strong> <span class="muted">${J226("Tap any that fit. Skip the rest.", "Toca las que apliquen. Salta el resto.")}</span></p>
+    <div class="j226-chips">${chips.map((c) => `<button type="button" class="j226-chip${rs.chips.includes(c) ? " on" : ""}" onclick="return reviewToggleChip226('${b.id}', '${side}', '${esc(c)}', this)">${esc(J226(c, REVIEW_CHIP_ES_226[c] || c))}</button>`).join("")}</div>
+    ${!isCreator ? `<p class="small" style="margin:14px 0 6px"><strong>${J226("Would you book", "¿Reservarías a")} ${esc(firstName226(b.creatorName) || "them")} ${J226("again?", "otra vez?")}</strong></p>
+    <div class="j226-chips"><button type="button" class="j226-chip${rs.bookAgain === "yes" ? " on" : ""}" onclick="return reviewBookAgain226('${b.id}', 'yes', this)">${J226("Yes", "Sí")}</button><button type="button" class="j226-chip${rs.bookAgain === "not_yet" ? " on" : ""}" onclick="return reviewBookAgain226('${b.id}', 'not_yet', this)">${J226("Not yet", "Todavía no")}</button></div>` : ""}
+    <div class="field" style="margin-top:14px"><label>${J226(isCreator ? "Anything they should know?" : "Anything she should know?", isCreator ? "¿Algo que deberían saber?" : "¿Algo que debería saber?")} <span class="muted">${J226(isCreator ? "Optional. They read every word." : "Optional. She reads every word.", isCreator ? "Opcional. Leen cada palabra." : "Opcional. Lee cada palabra.")}</span></label><input id="j226rev-note-${esc(side)}-${b.id}" maxlength="500" placeholder="Optional"></div>
+    <div class="j226-cta"><button class="btn" type="button" onclick="return submitReview226('${b.id}', '${side}')">${J226(isCreator ? "Send my rating" : "Send my review", isCreator ? "Enviar mi calificación" : "Enviar mi reseña")}</button>
+    <button class="btn ghost" type="button" onclick="return skipReview226('${b.id}', '${side}')">${J226("Skip for now", "Saltar por ahora")}</button></div>
+    <p class="small" id="j226rev-msg-${esc(side)}-${b.id}" style="margin:8px 0 0"></p>
+  </section>`;
+}
+function reviewSetStars226(bookingId, side, n, btn) {
+  const rs = reviewState226(bookingId, side);
+  rs.stars = n;
+  const wrap = btn && btn.closest ? btn.closest(".j226-stars") : null;
+  if (wrap) wrap.querySelectorAll(".j226-star").forEach((s) => s.classList.toggle("on", Number(s.getAttribute("data-star")) <= n));
+  return false;
+}
+function reviewToggleChip226(bookingId, side, chip, btn) {
+  const rs = reviewState226(bookingId, side);
+  const i = rs.chips.indexOf(chip);
+  if (i >= 0) rs.chips.splice(i, 1); else rs.chips.push(chip);
+  if (btn) btn.classList.toggle("on", i < 0);
+  return false;
+}
+function reviewBookAgain226(bookingId, val, btn) {
+  const rs = reviewState226(bookingId, "business");
+  rs.bookAgain = rs.bookAgain === val ? "" : val;
+  const wrap = btn && btn.closest ? btn.closest(".j226-chips") : null;
+  if (wrap) wrap.querySelectorAll(".j226-chip").forEach((c) => c.classList.toggle("on", c.textContent.trim() === (rs.bookAgain === "yes" ? J226("Yes", "Sí") : rs.bookAgain === "not_yet" ? J226("Not yet", "Todavía no") : "")));
+  return false;
+}
+function skipReview226(bookingId, side) {
+  try { localStorage.setItem("j226revskip:" + side + ":" + bookingId, "1"); } catch (e) { /* private mode */ }
+  if (state.view && state.view.indexOf("j226-") === 0) renderJourney226();
+  else if (state.user && state.user.role === "business") loadMyVisits("business");
+  else loadMyVisits("creator");
+  return false;
+}
+async function submitReview226(bookingId, side) {
+  const rs = reviewState226(bookingId, side);
+  const msg = document.getElementById("j226rev-msg-" + side + "-" + bookingId);
+  if (!rs.stars) { if (msg) msg.textContent = J226("Tap a star first, then send.", "Toca una estrella primero, luego envía."); return false; }
+  const noteEl = document.getElementById("j226rev-note-" + side + "-" + bookingId);
+  const note = noteEl ? noteEl.value.trim() : "";
+  const body = { stars: rs.stars, chips: rs.chips.slice(), note };
+  if (side === "business" && rs.bookAgain) body.bookAgain = rs.bookAgain === "yes";
+  body.text = note; body.comment = note;
+  try {
+    await api("POST", side === "creator" ? "/bookings/" + bookingId + "/review-business" : "/bookings/" + bookingId + "/review", body);
+    rs.sent = true;
+    if (msg) msg.textContent = J226("Thank you. Your review is in.", "Gracias. Tu reseña quedó registrada.");
+    setTimeout(() => {
+      if (state.view && state.view.indexOf("j226-") === 0) renderJourney226();
+      else if (state.user && state.user.role === "business") loadMyVisits("business");
+      else loadMyVisits("creator");
+    }, 700);
+  } catch (err) { if (msg) msg.textContent = err.message; }
+  return false;
+}
+/* Offer detail (reference 11): gradient hero, then the rows. */
+function offerDetail226Html(o) {
+  const t = termsOf226(o);
+  const biz = o.businessName || "";
+  const what = o.kind === "paid" ? "Paid booking at " + money226(o.cashRate) + "."
+    : o.kind === "coupon" ? (o.couponSummary || couponSummaryClient(o.coupon, biz))
+    : (o.whatComped || o.title || "") + (o.dollarCap != null ? ", worth " + money226(o.dollarCap) + ". You pay nothing." : ". You pay nothing.");
+  const where = [o.businessAddress, o.address, [o.businessNeighborhood, o.businessCity].filter(Boolean).join(", ")].filter(Boolean)[0] || o.visitWindow || "";
+  const when = o.windowStartAt ? fmtDay(o.windowStartAt) + " to " + fmtDay(o.windowEndAt) : (o.visitWindow || "Flexible window");
+  const platLine = t.platformSource === "business"
+    ? "On " + t.platformName + ", the platform " + biz + " picked for this visit."
+    : "On " + t.platformName + ", where your local audience is biggest.";
+  return `<div class="j226-hero">
+      <p class="j226-hero-k">${o.businessId ? `<a href="#" onclick="return openBusiness226('${esc(o.businessId)}')">${esc(biz)}</a>` : esc(biz)}</p>
+      <h2 class="j226-hero-h">${esc(o.title || "Visit")}</h2>
+      <p class="j226-hero-sub">${esc(o.experience || o.includes || o.category || "")}</p>
+    </div>
+    <section class="j226-card">
+      <p class="j226-kicker">${J226("The offer", "La oferta")}</p>
+      <p style="margin:4px 0 0">${esc(what)}</p>
+      <div class="j226-rows">
+        <div class="j226-row"><span class="j226-rk">Where</span><span class="j226-rv">${esc(where)}${o.distanceBand ? " · " + esc(o.distanceBand) + " away" : ""}${where ? ` <a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(where + " " + biz)}" target="_blank" rel="noopener">${J226("Get directions", "Cómo llegar")}</a>` : ""}</span></div>
+        <div class="j226-row"><span class="j226-rk">When</span><span class="j226-rv">${esc(when)}</span></div>
+        <div class="j226-row"><span class="j226-rk">What to post</span><span class="j226-rv">${esc(t.deliverablesText)} within ${esc(windowWords226(t.postWindowHours))} of your visit. ${esc(platLine)} Tag ${esc(bizHandle226(o))} in both. Keep the post up for at least ${esc(String(t.keepUpDays))} days.</span></div>
+        <div class="j226-row"><span class="j226-rk">Using the post</span><span class="j226-rv">${t.licenseState === "included" ? "The standard license is included with this booking: repost and ad use, from the terms on the deal." : "Share only, with you tagged. Downloading or ad use takes your license, at your listed fee" + (t.licensePrice != null ? " of " + money226(t.licensePrice) : "") + ", and only with your yes."}</span></div>
+      </div>
+      ${o.myApplication ? `<p style="margin:14px 0 0"><span class="badge ok">Applied</span> <span class="small muted">Your application is in. The business picks from the stack.</span></p>`
+        : `<div class="j226-cta"><button class="btn" type="button" onclick="return claimOffer226('${o.id}')">${J226("Claim this visit", "Reclamar esta visita")}</button></div>
+      <p class="small muted" style="margin:10px 0 0">${J226("Claiming holds this visit for you. No one else can take it.", "Reclamar aparta esta visita para ti. Nadie más puede tomarla.")}</p>`}
+    </section>`;
+}
+async function claimOffer226(offerId) {
+  try { await applyToOffer(offerId); } catch (e) { alert(e.message); return false; }
+  return go("dashboard", "My Visits");
+}
+/* Visit-complete doorway (reference 07). */
+function visitDone226Html(b) {
+  const t = termsOf226(b);
+  const got = b.kind === "coupon" ? (b.couponSummary || couponSummaryClient(b.coupon, b.businessName))
+    : (b.whatComped || b.title || "") + (b.dollarCap != null ? J226(", covered by ", ", cubierto por ") + (b.businessName || J226("the business", "el negocio")) + J226(". Worth ", ". Vale ") + money226(b.dollarCap) + J226(". You paid nothing.", ". No pagaste nada.") : ".");
+  return `<section class="j226-card">
+    <p class="j226-kicker">${esc(b.businessName || "")} ${J226("covered your visit", "cubrió tu visita")}${state.user && state.user.name ? ", " + esc(firstName226(state.user.name)) : ""}</p>
+    <h2 class="j226-h" style="font-size:1.7rem">${J226("Your visit is done. Now post about it.", "Tu visita terminó. Ahora publica sobre ella.")}</h2>
+    <p class="muted" style="margin:6px 0 0">${J226("The post is the other half of the deal, and it only takes a minute.", "La publicación es la otra mitad del trato, y solo toma un minuto.")}</p>
+    <div class="j226-rows">
+      <div class="j226-row"><span class="j226-rk">${J226("What you got", "Lo que recibiste")}</span><span class="j226-rv">${esc(got)}</span></div>
+    </div>
+    <p class="small" style="margin:16px 0 6px"><strong>${J226("Three quick steps", "Tres pasos rápidos")}</strong></p>
+    <div class="j226-steps">
+      <div class="j226-step"><span class="j226-stepn">1</span><span><strong>${J226("Post it on", "Publícalo en")} ${esc(t.platformName)}.</strong> ${esc(platformReason226(b, t))} ${J226("Your honest take, in your words. Tag", "Tu opinión honesta, en tus palabras. Etiqueta a")} ${esc(bizHandle226(b))} ${J226("and start the caption with #ad.", "y empieza el texto con #ad.")}</span></div>
+      <div class="j226-step"><span class="j226-stepn">2</span><span><strong>${J226("Paste the link here.", "Pega el enlace aquí.")}</strong> ${J226("Copy the link from your post and drop it in. It takes ten seconds.", "Copia el enlace de tu publicación y pégalo aquí. Toma diez segundos.")}</span></div>
+      <div class="j226-step"><span class="j226-stepn">3</span><span><strong>${J226("We track it from there.", "Lo seguimos desde ahí.")}</strong> ${esc(b.businessName || "The business")} ${J226("sees it live, customers who mention it get counted, and it lands on your record.", "lo ve en vivo, los clientes que lo mencionan se cuentan, y queda en tu registro.")}</span></div>
+    </div>
+    ${t.postDeadlineAt ? `<p class="small" style="margin:12px 0 0">${J226("On time until", "A tiempo hasta el")} ${esc(dateFull226(t.postDeadlineAt))}</p>` : ""}
+    <div class="j226-cta"><button class="btn" type="button" onclick="return openPostWalk226('${b.id}')">${J226("Post about my visit", "Publica sobre mi visita")}</button>
+    <button class="btn ghost" type="button" onclick="return go('dashboard','My Visits')">${J226("I will post later", "Publico más tarde")}</button></div>
+    <p class="small muted" style="margin:10px 0 0">${J226("This visit stays on your home screen until your link is in.", "Esta visita se queda en tu pantalla de inicio hasta que pongas tu enlace.")}</p>
+  </section>`;
+}
+/* The audience code line, built in the viewer's language. The
+   server line rides the booking in English; the code token and
+   the business name are on the booking too, so the sentence is
+   rebuilt through J226 from its parts. The post check only looks
+   for the code token, so the localized line still counts. */
+function mentionCodeLine226(b) {
+  if (!b) return "";
+  const raw = (b.audienceCode && b.audienceCode.line) || "";
+  let code = (b.audienceCode && b.audienceCode.code) || b.creatorCode || "";
+  let biz = b.businessName || "";
+  let pct = null;
+  const useM = raw.match(/^Use code (\S+) at (.+?) for (\d+)% off/);
+  const menM = raw.match(/^Mention code (\S+) at (.+?) so this visit counts\.?$/);
+  if (useM) { code = code || useM[1]; biz = biz || useM[2]; pct = useM[3]; }
+  else if (menM) { code = code || menM[1]; biz = biz || menM[2]; }
+  if (!code) return raw;
+  if (pct != null) return J226(`Use code ${code} at ${biz} for ${pct}% off. It counts for both of us.`, `Usa el código ${code} en ${biz} para un ${pct}% de descuento. Cuenta para los dos.`);
+  return J226(`Mention code ${code} at ${biz} so this visit counts.`, `Menciona el código ${code} en ${biz} para que esta visita cuente.`);
+}
+/* Post walkthrough (reference 15): three steps in one surface. */
+function walkthrough226Html(b) {
+  const t = termsOf226(b);
+  const plat = state.j226platform && state.j226id === b.id ? state.j226platform : t.platformName;
+  const canSwitch = t.platformSource !== "business";
+  const codeLine = mentionCodeLine226(b);
+  const disc = typeof disclosureLine === "function" ? disclosureLine(b) : "#ad";
+  const story = typeof deliverablesOfClient === "function" ? deliverablesOfClient(b).story : true;
+  return `<section class="j226-card">
+    <p class="j226-kicker">${J226("Post about your visit", "Publica sobre tu visita")}</p>
+    <h2 class="j226-h">${esc(b.businessName || "")} · ${esc(b.title || "")}</h2>
+    <p class="small muted" style="margin:4px 0 0">${J226("The same three steps, every visit.", "Los mismos tres pasos, en cada visita.")}${t.postDeadlineAt ? ` ${J226("On time until", "A tiempo hasta el")} ${esc(dateFull226(t.postDeadlineAt))}.` : ""}</p>
+    <div class="j226-wstep">
+      <p class="j226-wt">${J226("Step 1", "Paso 1")} · ${J226("Post it on", "Publícalo en")} ${esc(plat)}</p>
+      <p class="small muted" style="margin:4px 0 0">${J226("Your honest take, in your words. Nobody approves it first. Three things go in:", "Tu opinión honesta, en tus palabras. Nadie la aprueba antes. Van tres cosas:")}</p>
+      <div class="j226-steps">
+        <div class="j226-step"><span class="j226-stepn">·</span><span>${J226("Tag", "Etiqueta a")} ${esc(bizHandle226(b))}</span></div>
+        <div class="j226-step"><span class="j226-stepn">·</span><span>${J226("Start the caption with #ad, so the free visit is disclosed, the way the rules require.", "Empieza el texto con #ad, para que la visita gratis quede declarada, como piden las reglas.")}</span></div>
+        <div class="j226-step"><span class="j226-stepn">·</span><span>${J226("Keep your Magpie code line in the caption", "Deja tu línea de código de Magpie en el texto")}${codeLine ? `: <strong>${esc(codeLine)}</strong>` : ` ${J226("(the line on your visit card)", "(la línea en tu tarjeta de visita)")}`}${codeLine ? "" : "."} ${J226("It is how this visit counts for both of you.", "Así es como esta visita cuenta para los dos.")}</span></div>
+      </div>
+      <div class="j226-cta"><a class="btn" href="https://${esc(platHost226(plat))}" target="_blank" rel="noopener">${J226("Open", "Abrir")} ${esc(plat)}</a></div>
+      <p class="small muted" style="margin:8px 0 0">${esc(platformReason226(b, { platformName: plat, platformSource: t.platformSource }))}${canSwitch ? ` ${J226("Post somewhere else instead?", "¿Publicar en otro lugar?")} <a href="#" onclick="return walk226ToggleSwitch('${b.id}')">${J226("Use a different platform", "Usar otra plataforma")}</a>` : ""}</p>
+      <div id="j226-platswitch-${b.id}" style="display:none;margin-top:8px"><div class="field"><label>${J226("Post on", "Publicar en")}</label><select id="j226-plat-${b.id}" onchange="walk226SetPlatform('${b.id}')">${(typeof PRIMARY_PLATFORMS_CLIENT !== "undefined" ? PRIMARY_PLATFORMS_CLIENT : [{ id: "instagram", label: "Instagram" }]).map((p) => `<option value="${esc(p.label)}"${p.label === plat ? " selected" : ""}>${esc(p.label)}</option>`).join("")}</select></div></div>
+    </div>
+    <form onsubmit="return submitPost226(event, '${b.id}')">
+    <div class="j226-wstep">
+      <p class="j226-wt">${J226("Step 2 · Paste the link here", "Paso 2 · Pega el enlace aquí")}</p>
+      <p class="small muted" style="margin:4px 0 0">${J226("On your post, tap the share arrow, then Copy link. Come back and paste it here.", "En tu publicación, toca la flecha de compartir y luego Copiar enlace. Vuelve y pégalo aquí.")}</p>
+      <div class="field" style="margin-top:10px"><label>${J226("Link to your post", "Enlace a tu publicación")}</label><input id="j226-url-${b.id}" type="url" placeholder="https://${esc(platHost226(plat))}..." required></div>
+      <div class="field"><label>${J226("Your post caption (started for you, keep the code line in)", "El texto de tu publicación (empezado por ti, deja la línea de código)")}</label><textarea id="j226-caption-${b.id}" rows="2">${esc(disc)} ${esc(codeLine)}</textarea></div>
+      <label class="ckrow"><input type="checkbox" class="ckbox" id="j226-disc-${b.id}"><span>${J226("My post clearly discloses the comp (for example #ad), as the FTC requires.", "Mi publicación declara claramente la cortesía (por ejemplo #ad), como pide la FTC.")}</span></label>
+      ${story ? `<label class="ckrow"><input type="checkbox" class="ckbox" id="j226-story-${b.id}"><span>${J226("I posted the story that shares this post too.", "También publiqué la historia que comparte esta publicación.")}</span></label>` : ""}
+      <div class="field" style="margin-top:10px"><label>${J226("Add the video file too (optional)", "Agrega también el archivo de video (opcional)")}</label><input id="j226-file-${b.id}" type="file" accept="video/*,image/*">
+      <p class="small muted" style="margin:4px 0 0">${J226("Only needed if", "Solo hace falta si")} ${esc(b.businessName || "the business")} ${J226("licenses your post. It is the file they would download.", "licencia tu publicación. Es el archivo que descargarían.")}</p></div>
+      <div class="j226-cta"><button class="btn" type="submit">${J226("Start tracking", "Empezar el seguimiento")}</button></div>
+      <p class="small" id="j226-post-msg-${b.id}" style="margin:8px 0 0"></p>
+    </div>
+    </form>
+    <div class="j226-wstep">
+      <p class="j226-wt">${J226("Step 3 · We track it", "Paso 3 · Lo seguimos")}</p>
+      <p class="small muted" style="margin:4px 0 0">${esc(b.businessName || "The business")} ${J226("sees your post live. When customers mention it at the counter, they count for the business, and the visit counts on your record.", "ve tu publicación en vivo. Cuando los clientes la mencionan en el mostrador, cuentan para el negocio, y la visita queda en tu registro.")}</p>
+    </div>
+  </section>`;
+}
+function walk226ToggleSwitch(bookingId) {
+  const el = document.getElementById("j226-platswitch-" + bookingId);
+  if (el) el.style.display = el.style.display === "none" ? "" : "none";
+  return false;
+}
+function walk226SetPlatform(bookingId) {
+  const sel = document.getElementById("j226-plat-" + bookingId);
+  if (sel) { state.j226platform = sel.value; state.j226id = bookingId; renderJourney226(); }
+  return false;
+}
+async function submitPost226(e, bookingId) {
+  e.preventDefault();
+  const msg = document.getElementById("j226-post-msg-" + bookingId);
+  const disc = document.getElementById("j226-disc-" + bookingId);
+  if (disc && !disc.checked) { alert("Confirm the disclosure first. Every Magpie post must disclose the comp."); return false; }
+  const b = state.j226booking && state.j226booking.id === bookingId ? state.j226booking : null;
+  const t = termsOf226(b || {});
+  const platSel = document.getElementById("j226-plat-" + bookingId);
+  const platform = (platSel && platSel.value) || state.j226platform || t.platformName;
+  try {
+    if (msg) msg.textContent = "Saving your post...";
+    const capEl = document.getElementById("j226-caption-" + bookingId);
+    const storyEl = document.getElementById("j226-story-" + bookingId);
+    const d = await api("POST", "/posts", {
+      bookingId,
+      url: document.getElementById("j226-url-" + bookingId).value,
+      platform,
+      includesDisclosure: true,
+      caption: capEl ? capEl.value : undefined,
+      storyAttested: storyEl ? !!storyEl.checked : undefined,
+    });
+    const fileEl = document.getElementById("j226-file-" + bookingId);
+    if (fileEl && fileEl.files && fileEl.files[0]) {
+      try {
+        const fd = new FormData();
+        fd.append("file", fileEl.files[0]);
+        fd.append("bookingId", bookingId);
+        if (d && d.post && d.post.id) fd.append("postId", d.post.id);
+        if (d && d.id) fd.append("postId", d.id);
+        const res = await fetch("/api/posts/file", { method: "POST", body: fd, credentials: "same-origin" });
+        if (!res.ok) throw new Error("file-attach-failed");
+      } catch (fileErr) {
+        state.postFileNote = "Your post is saved. The video file did not attach, so send it to the business another way if they ask.";
+      }
+    }
+    state.postFlash = true;
+    if (d && d.codeWarning) state.postCodeWarning = d.codeWarning;
+    return openTracked226(bookingId);
+  } catch (err) { if (msg) msg.textContent = err.message; else alert(err.message); }
+  return false;
+}
+/* Post tracked (reference 16). */
+function tracked226Html(b) {
+  const t = termsOf226(b);
+  const p = b.post || {};
+  const src = metricSource226(p);
+  return `<section class="j226-card">
+    ${successCheckHtml()}
+    <h2 class="j226-h" style="text-align:center">${J226("Your post is live.", "Tu publicación está en vivo.")}</h2>
+    <p class="muted" style="text-align:center;margin:4px 0 0">${J226("We are tracking this link now. Nothing else you need to do tonight.", "Ya estamos siguiendo este enlace. No tienes que hacer nada más esta noche.")}</p>
+    ${p.caption ? `<div class="j226-postbox">${esc(p.caption)}</div>` : ""}
+    <p class="small muted" style="margin:10px 0 0">${p.submittedAt || p.firstAt ? "Posted " + esc(fmtDate(p.submittedAt || p.firstAt)) + " · " : ""}${esc(t.platformName)}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener">View post</a>` : ""}</p>
+    <p class="small" style="margin:16px 0 6px"><strong>${J226("What happens from here", "Qué pasa desde aquí")}</strong></p>
+    <div class="j226-steps">
+      <div class="j226-step"><span class="j226-stepn">·</span><span><strong>${esc(b.businessName || "The business")} can see it live.</strong> They can share it from your page, with you tagged.</span></div>
+      <div class="j226-step"><span class="j226-stepn">·</span><span><strong>Mentions get counted.</strong> Customers who mention your post at the counter count for ${esc(b.businessName || "the business")}, and this visit counts on your record.</span></div>
+      <div class="j226-step"><span class="j226-stepn">·</span><span><strong>${J226("Your numbers", "Tus números")} will grow here.</strong> In a few days we will ask for your views and likes. It takes ten seconds and builds your track record.</span></div>
+    </div>
+    <p class="j226-incentive">Report your numbers, earn Momentum.</p>
+    <p class="small muted" style="margin:6px 0 0">${esc(src.short)} numbers ride on this post as they come in.</p>
+    <div class="j226-note"><strong>${J226("One thing to remember", "Una cosa para recordar")}</strong><br>Keep the post up for at least ${esc(String(t.keepUpDays))} days${t.keepUpUntil ? " (until " + esc(dateFull226(t.keepUpUntil)) + ")" : ""}. That is part of the deal with ${esc(b.businessName || "the business")}.</div>
+    <div class="j226-cta"><button class="btn" type="button" onclick="return go('dashboard','My Visits')">Done</button>
+    ${p.url ? `<a class="btn ghost" href="${esc(p.url)}" target="_blank" rel="noopener">${J226("Open the post", "Abrir la publicación")}</a>` : ""}</div>
+  </section>
+  ${visitCompleteLine226Html(b, "creator")}
+  <div data-j226="review-slot">${reviewPrompt226Html(b, "creator")}</div>`;
+}
+/* Business completion (reference 17, both license states). */
+function bizComplete226Html(b) {
+  const t = termsOf226(b);
+  const p = b.post || {};
+  const creator = firstName226(b.creatorName) || b.creatorName || "The creator";
+  const licensed = t.licenseState === "included" || t.licenseState === "agreed";
+  const licBlock = licensed
+    ? `<div class="j226-rows"><div class="j226-row"><span class="j226-rk">Included with this visit</span><span class="j226-rv">${J226("Share her post", "Comparte su publicación")} from her page, with her tagged. That comes with every comped visit.</span></div>
+       <div class="j226-row"><span class="j226-rk">${J226("Licensed to you", "Con licencia para ti")}</span><span class="j226-rv">${esc(creator)} agreed. You can download the file, repost it, and run it as an ad${t.licenseEndsAt ? " until " + esc(dateFull226(t.licenseEndsAt)) : ""}.</span></div></div>
+       <div class="j226-cta"><a class="btn" href="/api/bookings/${b.id}/post-file">${J226("Download the post", "Descargar la publicación")}</a></div>`
+    : `<div class="j226-rows"><div class="j226-row"><span class="j226-rk">Included with this visit</span><span class="j226-rv">${J226("Share her post", "Comparte su publicación")} from her page, with her tagged. That comes with every comped visit.</span></div>
+       <div class="j226-row"><span class="j226-rk">Downloading and ads need her license</span><span class="j226-rv">Downloading the file, reposting it as your own, or running it as an ad takes her license${t.licensePrice != null ? ": " + esc(money226(t.licensePrice)) + ", her listed fee" : ""}. She says yes or no, and there is no download button until she does.</span></div></div>
+       ${t.licensePrice != null ? `<div class="j226-cta"><button class="btn" type="button" onclick="return bizCompleteAsk226('${b.id}')">${J226("Ask for the license", "Pedir la licencia")} · ${esc(money226(t.licensePrice))}</button></div><p class="small" id="j226-lic-msg-${b.id}" style="margin:8px 0 0"></p>` : ""}`;
+  return `<section class="j226-card">
+    <p class="j226-kicker">New · ${esc(b.businessName || "")}</p>
+    <h2 class="j226-h">${esc(creator)}'s post is live.</h2>
+    <p class="muted" style="margin:4px 0 0">Her ${esc(b.title || "visit")} is complete. Here is the finished post.</p>
+    ${p.caption ? `<div class="j226-postbox">${esc(p.caption)}</div>` : ""}
+    <p class="small muted" style="margin:10px 0 0">${esc(b.creatorName || "")} · ${esc(t.platformName)}${p.submittedAt || p.firstAt ? " · Posted " + esc(fmtDate(p.submittedAt || p.firstAt)) : ""}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener">${J226("View it live", "Verla en vivo")}</a>` : ""}</p>
+    <p class="small" style="margin:16px 0 6px"><strong>${J226("Share her post", "Comparte su publicación")}</strong></p>
+    <p class="small muted" style="margin:0">Sharing sends people to her post on ${esc(t.platformName)}, with her tagged.</p>
+    <p class="small" style="margin:16px 0 6px"><strong>${J226("Using this post", "Uso de esta publicación")}</strong></p>
+    ${licBlock}
+    <div class="j226-note"><strong>${J226("Tracking just started", "El seguimiento acaba de empezar")}</strong><br>When a customer mentions her post at the counter, tap "Someone mentioned the post" on the visit and it lands on your receipt. Her post numbers show in the report as they come in.</div>
+    <div class="j226-cta"><button class="btn ghost" type="button" onclick="return openPostReport226('${b.id}')">${J226("See the post report", "Ver el reporte de la publicación")}</button>
+    <button class="btn ghost" type="button" onclick="return go('dashboard','Visits &amp; Posts')">Back to visits</button></div>
+  </section>
+  ${visitCompleteLine226Html(b, "business")}
+  <div data-j226="review-slot">${reviewPrompt226Html(b, "business")}</div>`;
+}
+async function bizCompleteAsk226(bookingId) {
+  const b = state.j226booking && state.j226booking.id === bookingId ? state.j226booking : null;
+  const msg = document.getElementById("j226-lic-msg-" + bookingId);
+  if (!b || !b.post) { if (msg) msg.textContent = "This post is not on record yet."; return false; }
+  try {
+    if (typeof requestLicense === "function") {
+      /* Reviewer fix (Build -226 update): requestLicense owns its
+         confirm() dialog and swallows a cancel (no request is
+         created, verified), so this wrapper used to print the
+         Asked line either way. The wrapper now watches the one
+         confirm() call that happens inside its own invocation
+         (pass-through, restored right after) and leaves the ask
+         state untouched when the business cancels. Other callers
+         of requestLicense are not affected. */
+      const g = typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : null);
+      const origConfirm = g && typeof g.confirm === "function" ? g.confirm : null;
+      let confirmAnswer = null;
+      if (g && origConfirm) {
+        g.confirm = function (message) { confirmAnswer = origConfirm.call(g, message); return confirmAnswer; };
+      }
+      try { await requestLicense(b.post.id, termsOf226(b).licensePrice || 0); }
+      finally { if (g && origConfirm) g.confirm = origConfirm; }
+      if (confirmAnswer === false) return false;
+      if (msg) msg.textContent = "Asked. She says yes or no, and the download button appears here if she agrees.";
+    }
+    else { await api("POST", "/posts/" + b.post.id + "/license-request", {}); if (msg) msg.textContent = "Asked."; }
+  } catch (err) { if (msg) msg.textContent = err.message; }
+  return false;
+}
+/* ${J226("Post report", "Reporte de la publicación")} (reference 20): counted, spend, big ROI hero,
+   engagement with its source label, counted-by-day chart. */
+function reportRange226() {
+  state.j226range = state.j226range || { key: "30", from: "", to: "" };
+  return state.j226range;
+}
+function rangeBounds226(r) {
+  const now = Date.now();
+  if (r.key === "custom" && r.from) return { from: Date.parse(r.from + "T00:00:00"), to: r.to ? Date.parse(r.to + "T23:59:59") : now, label: (r.from || "") + " to " + (r.to || "today") };
+  if (r.key === "all") return { from: 0, to: now, label: "All time" };
+  const days = r.key === "7" ? 7 : 30;
+  return { from: now - days * 86400000, to: now, label: "Last " + days + " days" };
+}
+function dateChips226Html(kind, current, extra) {
+  const chips = [["7", J226("7 days", "7 días")], ["30", J226("30 days", "30 días")], ["90", J226("90 days", "90 días")], ["all", J226("All time", "Todo el tiempo")]];
+  const fn = kind === "report" ? "reportSetRange226" : kind === "bizstats" ? "bizStatsSet226" : "crRangeSet226";
+  return `<div class="j226-chips" role="group" aria-label="Date range">${chips.map(([k, l]) => `<button type="button" class="j226-chip${current === k ? " on" : ""}" onclick="return ${fn}('${k}')">${l}</button>`).join("")}<span class="j226-pick">${J226("Pick dates", "Elegir fechas")} <input type="date" id="j226-${kind}-from" value="${esc(extra && extra.from || "")}"> to <input type="date" id="j226-${kind}-to" value="${esc(extra && extra.to || "")}"> <button type="button" class="j226-chip" onclick="return ${fn}('custom')">Apply</button></span></div>`;
+}
+function postReport226Html(b, events) {
+  const t = termsOf226(b);
+  const p = b.post || {};
+  const r = reportRange226();
+  const bounds = rangeBounds226(r.key === "90" ? { key: "custom", from: new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10), to: "" } : r);
+  const evs = (events || []).filter((e) => !e.voided && Date.parse(e.at || "") >= bounds.from && Date.parse(e.at || "") <= bounds.to);
+  const hasEvents = (events || []).length > 0;
+  const counted = hasEvents ? evs.length : countedOf226(b);
+  const spend = hasEvents ? evs.reduce((s, e) => s + (Number(e.amount) || 0), 0) : registerSpend226(b);
+  const cost = t.visitCost;
+  const roi = cost && cost > 0 && spend > 0 ? spend / cost : null;
+  const nums = postNums226(b);
+  const engTotal = ["likes", "comments", "shares", "saves"].reduce((s, k) => s + (Number(nums[k]) || 0), 0);
+  const src = metricSource226(p);
+  const creator = firstName226(b.creatorName) || b.creatorName || "the creator";
+  const byDay = {};
+  for (const e of evs) { const d = String(e.at || "").slice(0, 10); if (d) byDay[d] = (byDay[d] || 0) + 1; }
+  const dayKeys = Object.keys(byDay).sort();
+  const maxDay = Math.max(1, ...dayKeys.map((d) => byDay[d]));
+  const chart = dayKeys.length ? `<div class="j226-bars">${dayKeys.map((d) => `<div class="j226-bar"><span class="j226-bar-n">${byDay[d]}</span><span class="j226-bar-col" style="height:${Math.max(8, Math.round((byDay[d] / maxDay) * 72))}px"></span><span class="j226-bar-d">${esc(fmtDay(d + "T12:00:00"))}</span></div>`).join("")}</div>` : `<p class="small muted">No counted customers in this range yet. The chart fills in as customers mention the post or use her code at your counter.</p>`;
+  return `<section class="j226-card">
+    <p class="j226-kicker">${J226("Post report", "Reporte de la publicación")}</p>
+    <h2 class="j226-h">${esc(creator)}'s ${esc(b.title || "post")}</h2>
+    <p class="small muted" style="margin:4px 0 0">${p.submittedAt || p.firstAt ? "Live since " + esc(fmtDay(p.submittedAt || p.firstAt)) + " · " : ""}${esc(t.platformName)}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener">${J226("View it live", "Verla en vivo")}</a>` : ""}</p>
+    <div style="margin-top:12px">${dateChips226Html("report", r.key, r)}</div>
+    <div class="j226-tiles">
+      <div class="j226-tile"><div class="j226-tnum">${fmtNum(counted)}</div><div class="j226-tlbl">${J226("Customers counted so far", "Clientes contados hasta ahora")}</div><div class="j226-tsub">All from this one post</div></div>
+      <div class="j226-tile"><div class="j226-tnum">${money226(spend)}</div><div class="j226-tlbl">${J226("Register spend", "Gasto en caja")}</div><div class="j226-tsub">Those customers rang up</div></div>
+      <div class="j226-tile"><div class="j226-tnum">${nums.views != null ? fmtNum(nums.views) : "Not yet"}</div><div class="j226-tlbl">${J226("People saw the post", "Personas vieron la publicación")}</div><div class="j226-tsub">${esc(src.short)}</div></div>
+    </div>
+    <div class="j226-roi"><div class="j226-roi-num">${roi != null ? roi.toFixed(1) + "×" : "Forming"}</div>
+    <div class="j226-roi-lbl">${roi != null ? `back at the register on ${cost != null ? "a " + money226(cost) + " visit" : "this visit"}` : "Your return forms once counted spend lands"}</div>
+    ${roi != null && cost != null ? `<p class="j226-roi-line">${money226(spend)} came back at the register. The visit cost you the ${money226(cost)}.</p>` : ""}</div>
+    <p class="small" style="margin:16px 0 6px"><strong>Engagement</strong></p>
+    ${engTotal > 0 ? `<div class="j226-rows">
+      ${[["Likes", nums.likes], ["Comments", nums.comments], ["Shares", nums.shares], ["Saves", nums.saves]].map(([k, v]) => `<div class="j226-row"><span class="j226-rk">${k}</span><span class="j226-rv">${v != null ? fmtNum(v) : "Not reported"}</span></div>`).join("")}
+      <div class="j226-row"><span class="j226-rk">In all</span><span class="j226-rv">${fmtNum(engTotal)} engagements${spend > 0 && engTotal > 0 ? "" : ""}</span></div></div>
+    <p class="small muted" style="margin:8px 0 0">${esc(src.sentence(creator))}</p>` : `<p class="small muted">No engagement numbers yet. ${esc(src.sentence(creator))}</p>`}
+    <p class="small" style="margin:16px 0 6px"><strong>${J226("Counted customers, day by day", "Clientes contados, día por día")}</strong></p>
+    ${chart}
+    <p class="small muted" style="margin:8px 0 0">Counted means a customer mentioned her post or used her code at your counter. ${J226("Register spend", "Gasto en caja")} is what those visits rang up. Both come from this post only.</p>
+    <div class="j226-note"><strong>${J226("How we get this number", "Cómo obtenemos este número")}</strong><br>${J226("Counted customers", "Clientes contados")} are people who mentioned her post or used her code at your counter, and register spend is what those visits rang up. The return is that spend divided by what the visit cost you. ${esc(src.sentence(creator))}</div>
+    <div class="j226-cta"><button class="btn ghost" type="button" onclick="return openBizComplete226('${b.id}')">${J226("Back to the post", "Volver a la publicación")}</button></div>
+  </section>`;
+}
+function reportSetRange226(key) {
+  const r = reportRange226();
+  if (key === "custom") {
+    const f = document.getElementById("j226-report-from");
+    const tEl = document.getElementById("j226-report-to");
+    r.from = f ? f.value : ""; r.to = tEl ? tEl.value : "";
+    if (!r.from) return false;
+    r.key = "custom";
+  } else r.key = key;
+  renderJourney226();
+  return false;
+}
+/* Business stats roll-up (reference 21) on GET /business/stats,
+   with an honest fallback built from this business's bookings
+   when the endpoint is not there yet. */
+function bizRange226() {
+  state.j226biz = state.j226biz || { key: "30", from: "", to: "" };
+  return state.j226biz;
+}
+function bizStatsFallback226(bookings) {
+  const rows = (bookings || []).filter((b) => b.post);
+  const campaigns = rows.map((b) => {
+    const nums = postNums226(b);
+    const eng = ["likes", "comments", "shares", "saves"].reduce((s, k) => s + (Number(nums[k]) || 0), 0);
+    const spendBack = registerSpend226(b);
+    const cost = termsOf226(b).visitCost || 0;
+    return { bookingId: b.id, title: b.title || "Visit", counted: countedOf226(b), back: spendBack, engagements: eng, spent: cost, multiple: cost > 0 && spendBack > 0 ? spendBack / cost : null };
+  });
+  const byCreator = {};
+  for (const b of rows) {
+    const k = b.creatorId || b.creatorName || "creator";
+    byCreator[k] = byCreator[k] || { creatorId: b.creatorId || "", name: b.creatorName || "Creator", visits: 0, counted: 0, engagements: 0 };
+    const nums = postNums226(b);
+    byCreator[k].visits += 1;
+    byCreator[k].counted += countedOf226(b);
+    byCreator[k].engagements += ["likes", "comments", "shares", "saves"].reduce((s, kk) => s + (Number(nums[kk]) || 0), 0);
+  }
+  const tot = campaigns.reduce((a, c) => ({ spent: a.spent + (c.spent || 0), counted: a.counted + c.counted, back: a.back + c.back, engagements: a.engagements + c.engagements }), { spent: 0, counted: 0, back: 0, engagements: 0 });
+  return { totals: tot, campaigns, creators: Object.values(byCreator), derived: true };
+}
+function bizStatsNorm226(d) {
+  if (!d || typeof d !== "object") return null;
+  const t = d.totals || d.stats || d;
+  const cents = (v) => (v != null && Number.isFinite(Number(v)) ? Number(v) / 100 : null);
+  /* Reviewer fix (Build -226 update): the stats API's contract
+     fields are visitCostCents for spent and roi for the return
+     (finishAgg226 on the server), with registerSpendCents for
+     back, countedCustomers, and engagement as an object with a
+     total. Read those first; the older spentCents / spent /
+     engagements-number shapes stay as fallbacks only. */
+  const engOf = (x) => {
+    const e = x && (x.engagement != null ? x.engagement : x.engagements);
+    if (e == null) return 0;
+    if (typeof e === "number") return e;
+    if (typeof e === "object") return Number(e.total != null ? e.total : ["views", "likes", "comments", "shares", "saves"].reduce((s, k) => s + (Number(e[k]) || 0), 0)) || 0;
+    return Number(e) || 0;
+  };
+  const spentOf = (x) => (x.visitCostCents != null ? cents(x.visitCostCents) : (x.spentCents != null ? cents(x.spentCents) : (x.visitCost != null ? Number(x.visitCost) : (x.spent != null ? Number(x.spent) : 0))));
+  const backOf = (x) => (x.registerSpendCents != null ? cents(x.registerSpendCents) : (x.registerSpend != null ? Number(x.registerSpend) : (x.back || 0)));
+  const roiOf = (x) => (x.roi != null && Number.isFinite(Number(x.roi)) ? Number(x.roi) : (x.returnMultiple != null && Number.isFinite(Number(x.returnMultiple)) ? Number(x.returnMultiple) : (x.multiple != null && Number.isFinite(Number(x.multiple)) ? Number(x.multiple) : null)));
+  const tot = {
+    spent: spentOf(t),
+    counted: t.countedCustomers != null ? Number(t.countedCustomers) : (t.counted != null ? Number(t.counted) : (d.counted || 0)),
+    back: backOf(t) || (d.registerBack || 0),
+    engagements: engOf(t),
+    roi: roiOf(t) != null ? roiOf(t) : roiOf(d),
+  };
+  if (!tot.spent && d.spend) tot.spent = Number(d.spend) || 0;
+  const campaigns = (d.campaigns || d.byCampaign || []).map((c) => ({
+    bookingId: c.bookingId || c.id || "", offerId: c.offerId || "",
+    title: c.title || "Campaign",
+    counted: c.countedCustomers != null ? Number(c.countedCustomers) : (c.counted || 0),
+    back: backOf(c),
+    engagements: engOf(c),
+    spent: spentOf(c),
+    multiple: roiOf(c),
+  }));
+  const creators = (d.creators || d.byCreator || []).map((c) => ({
+    creatorId: c.creatorId || c.id || "", name: c.name || c.creatorName || "Creator",
+    visits: c.bookings != null ? Number(c.bookings) : (c.visits || 0), counted: c.countedCustomers != null ? Number(c.countedCustomers) : (c.counted || 0), engagements: engOf(c),
+  }));
+  return { totals: tot, campaigns, creators, derived: false };
+}
+function bizStats226Html(d) {
+  const r = bizRange226();
+  const tot = d.totals || { spent: 0, counted: 0, back: 0, engagements: 0 };
+  const overall = tot.roi != null && Number.isFinite(Number(tot.roi)) ? Number(tot.roi) : (tot.spent > 0 && tot.back > 0 ? tot.back / tot.spent : null);
+  const srcNote = "Engagement is reported by creators, or pulled from the platform when the server marks it pulled.";
+  return `<div class="panel" data-j226="biz-stats">
+    <div class="flex-between" style="flex-wrap:wrap;gap:10px"><h3 style="margin:0">${J226("Your numbers", "Tus números")}</h3></div>
+    <div style="margin-top:10px">${dateChips226Html("bizstats", r.key, r)}</div>
+    <div class="j226-tiles">
+      <div class="j226-tile"><div class="j226-tnum">${money226(tot.spent) || "$0"}</div><div class="j226-tlbl">${J226("Spent on visits", "Gastado en visitas")}</div></div>
+      <div class="j226-tile"><div class="j226-tnum">${fmtNum(tot.counted || 0)}</div><div class="j226-tlbl">${J226("Counted customers", "Clientes contados")}</div></div>
+      <div class="j226-tile"><div class="j226-tnum">${money226(tot.back) || "$0"}</div><div class="j226-tlbl">${J226("Back at the register", "De vuelta en caja")}</div></div>
+      <div class="j226-tile"><div class="j226-tnum">${fmtNum(tot.engagements || 0)}</div><div class="j226-tlbl">Engagements</div><div class="j226-tsub">${esc(srcNote)}</div></div>
+    </div>
+    ${overall != null ? `<p class="j226-overall">${overall.toFixed(1)} times back at the register for every dollar you put into visits</p>` : `<p class="small muted" style="margin:10px 0 0">Your overall return forms once counted register spend lands.</p>`}
+    <p class="small" style="margin:16px 0 6px"><strong>${J226("By campaign", "Por campaña")}</strong> <span class="muted">Tap one to see its full report.</span></p>
+    ${(d.campaigns || []).length ? (d.campaigns || []).map((c) => `<button type="button" class="j226-rowbtn" ${c.bookingId ? `onclick="return openPostReport226('${esc(c.bookingId)}')"` : ""}><span class="j226-rowbtn-main"><span class="j226-rowbtn-t">${esc(c.title)}</span><span class="j226-rowbtn-s">${fmtNum(c.counted)} counted customers · ${money226(c.back)} back · ${fmtNum(c.engagements)} engagements</span></span><span class="j226-rowbtn-v">${money226(c.spent)} spent${c.multiple != null ? `<br><strong>${Number(c.multiple).toFixed(1)}x back</strong>` : ""}</span></button>`).join("") : `<p class="small muted">No campaigns with posts in this range yet.</p>`}
+    <p class="small" style="margin:16px 0 6px"><strong>${J226("By creator", "Por creador")}</strong> <span class="muted">Tap one to see their visits with you.</span></p>
+    ${(d.creators || []).length ? (d.creators || []).map((c) => `<button type="button" class="j226-rowbtn" onclick="return go('dashboard','Visits &amp; Posts')"><span class="j226-rowbtn-main"><span class="j226-rowbtn-t">${esc(c.name)}</span><span class="j226-rowbtn-s">${c.visits} visit${c.visits === 1 ? "" : "s"} · ${fmtNum(c.counted)} counted customers · ${fmtNum(c.engagements)} engagements</span></span></button>`).join("") : `<p class="small muted">No creator visits in this range yet.</p>`}
+    ${d.derived ? `<p class="small muted" style="margin:10px 0 0">Built from your visit records while the full stats roll-up finishes wiring up.</p>` : ""}
+  </div>`;
+}
+async function loadBizStats226() {
+  const host = document.getElementById("biz-stats226");
+  if (!host) return;
+  const r = bizRange226();
+  const b = rangeBounds226(r.key === "90" ? { key: "custom", from: new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10), to: "" } : r);
+  const from = b.from ? new Date(b.from).toISOString().slice(0, 10) : "";
+  const to = new Date(b.to).toISOString().slice(0, 10);
+  try {
+    const d = await api("GET", "/business/stats?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to));
+    const norm = bizStatsNorm226(d);
+    if (!document.getElementById("biz-stats226")) return;
+    if (norm) { host.innerHTML = bizStats226Html(norm); return; }
+    throw new Error("empty");
+  } catch (e) {
+    try {
+      const bk = await api("GET", "/bookings");
+      if (!document.getElementById("biz-stats226")) return;
+      host.innerHTML = bizStats226Html(bizStatsFallback226(bk.bookings || []));
+    } catch (e2) { if (document.getElementById("biz-stats226")) host.innerHTML = ""; }
+  }
+}
+function bizStatsSet226(key) {
+  const r = bizRange226();
+  if (key === "custom") {
+    const f = document.getElementById("j226-bizstats-from");
+    const tEl = document.getElementById("j226-bizstats-to");
+    r.from = f ? f.value : ""; r.to = tEl ? tEl.value : "";
+    if (!r.from) return false;
+    r.key = "custom";
+  } else r.key = key;
+  loadBizStats226();
+  return false;
+}
+/* Creator numbers: the same date-range treatment (reference 14).
+   Chips plus pick-your-own dates over the creator's own records. */
+function crRange226() {
+  state.j226cr = state.j226cr || { key: "30", from: "", to: "" };
+  return state.j226cr;
+}
+function crRange226Html(bookings) {
+  const r = crRange226();
+  const b = rangeBounds226(r.key === "90" ? { key: "custom", from: new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10), to: "" } : r);
+  const inR = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) && t >= b.from && t <= b.to; };
+  const list = bookings || [];
+  const visits = list.filter((x) => x.redeemedAt && inR(x.redeemedAt)).length;
+  const posts = list.filter((x) => x.post && inR(x.post.firstAt || x.post.submittedAt || x.post.createdAt)).length;
+  const counted = list.reduce((s, x) => s + countedOf226(x), 0);
+  return `<div class="wcard" data-j226="cr-range">
+    <h3 style="margin-top:0">${J226("Your numbers by date", "Tus números por fecha")}</h3>
+    <div>${dateChips226Html("crrange", r.key, r)}</div>
+    <div class="j226-tiles">
+      <div class="j226-tile"><div class="j226-tnum">${fmtNum(visits)}</div><div class="j226-tlbl">${J226("Visits done in range", "Visitas hechas en el rango")}</div></div>
+      <div class="j226-tile"><div class="j226-tnum">${fmtNum(posts)}</div><div class="j226-tlbl">${J226("Posts live in range", "Publicaciones en vivo en el rango")}</div></div>
+      <div class="j226-tile"><div class="j226-tnum">${fmtNum(counted)}</div><div class="j226-tlbl">Customers counted, all time</div><div class="j226-tsub">Through your code, at the counter</div></div>
+    </div>
+    <p class="small muted" style="margin:8px 0 0">${esc(b.label)}. Pick your own dates any time; the cards below keep their own period.</p>
+  </div>`;
+}
+function crRangeSet226(key) {
+  const r = crRange226();
+  if (key === "custom") {
+    const f = document.getElementById("j226-crrange-from");
+    const tEl = document.getElementById("j226-crrange-to");
+    r.from = f ? f.value : ""; r.to = tEl ? tEl.value : "";
+    if (!r.from) return false;
+    r.key = "custom";
+  } else r.key = key;
+  renderCreatorNumbers();
+  return false;
+}
+/* Journey router: state.view values j226-offer, j226-business,
+   j226-visitdone, j226-post, j226-tracked, j226-bizcomplete,
+   j226-report. */
+function j226Go(view, id) {
+  state.j226id = id || state.j226id || "";
+  if (state.j226booking && state.j226booking.id !== state.j226id) state.j226booking = null;
+  return go(view);
+}
+function openOffer226(id) { return j226Go("j226-offer", id); }
+function openBusiness226(id) { return j226Go("j226-business", id); }
+function openVisitDone226(id) { return j226Go("j226-visitdone", id); }
+function openPostWalk226(id) { return j226Go("j226-post", id); }
+function openTracked226(id) { return j226Go("j226-tracked", id); }
+function openBizComplete226(id) { return j226Go("j226-bizcomplete", id); }
+function openPostReport226(id) { return j226Go("j226-report", id); }
+async function j226FetchBooking(id) {
+  if (state.j226booking && state.j226booking.id === id) return state.j226booking;
+  const d = await api("GET", "/bookings");
+  const b = (d.bookings || []).find((x) => x.id === id) || null;
+  if (b) state.j226booking = b;
+  return b;
+}
+async function j226FetchOffer(id) {
+  const pools = [];
+  try { const d = await api("GET", "/open-offers"); pools.push(...(d.offers || [])); } catch (e) { /* try the next pool */ }
+  try { const d = await api("GET", "/offers"); pools.push(...(d.offers || [])); } catch (e) { /* fall through */ }
+  try { const d = await api("GET", "/bookings"); const bk = (d.bookings || []).find((x) => x.id === id || x.offerId === id); if (bk) return bk; } catch (e) { /* fall through */ }
+  return pools.find((x) => x.id === id) || null;
+}
+async function renderJourney226() {
+  const view = state.view;
+  const id = state.j226id || "";
+  const backTab = state.user && state.user.role === "business" ? "Visits & Posts" : "My Visits";
+  app.innerHTML = `<div class="wrap"><div id="j226-body">${skelHtml("Loading...", 2)}</div></div>`;
+  const body = document.getElementById("j226-body");
+  if (!body) return;
+  try {
+    if (view === "j226-business") {
+      const biz = await fetchBusiness226(id);
+      if (!document.getElementById("j226-body")) return;
+      body.innerHTML = biz ? `<p style="margin:0 0 12px"><a href="#" onclick="return go('dashboard','Find Offers')">&lsaquo; ${J226("All offers", "Todas las ofertas")}</a></p>${businessProfile226Html(biz)}` : `<div class="error-box">${J226("That business is not on record anymore.", "Ese negocio ya no está en el registro.")}</div>`;
+      return;
+    }
+    if (view === "j226-offer") {
+      const o = await j226FetchOffer(id);
+      if (!document.getElementById("j226-body")) return;
+      body.innerHTML = o ? `<p style="margin:0 0 12px"><a href="#" onclick="return go('dashboard','Find Offers')">&lsaquo; All visits</a></p>${offerDetail226Html(o)}` : `<div class="error-box">That offer is not on record anymore.</div>`;
+      return;
+    }
+    const b = await j226FetchBooking(id);
+    if (!document.getElementById("j226-body")) return;
+    if (!b) { body.innerHTML = `<div class="error-box">That visit is not on record anymore.</div>`; return; }
+    if (view === "j226-visitdone") body.innerHTML = visitDone226Html(b);
+    else if (view === "j226-post") body.innerHTML = b.post ? tracked226Html(b) : walkthrough226Html(b);
+    else if (view === "j226-tracked") body.innerHTML = tracked226Html(b);
+    else if (view === "j226-bizcomplete") body.innerHTML = bizComplete226Html(b);
+    else if (view === "j226-report") {
+      let events = [];
+      try {
+        const r = await api("GET", "/business/post-report?bookingId=" + encodeURIComponent(b.id));
+        if (r) {
+          const counted = r.counted != null ? r.counted : (r.countedCustomers != null ? r.countedCustomers : (r.totals ? r.totals.counted : null));
+          const spendD = r.registerSpend != null ? Number(r.registerSpend) : (r.registerSpendCents != null ? Number(r.registerSpendCents) / 100 : (r.totals && r.totals.registerSpend != null ? Number(r.totals.registerSpend) : null));
+          if (counted != null) b.countedCustomers = counted;
+          if (spendD != null) b.registerSpend = spendD;
+          const eng = r.engagement || r.metrics || null;
+          if (eng) b.post = Object.assign({}, b.post || {}, { performance: Object.assign({}, (b.post || {}).performance || {}, eng) });
+          const days = r.countedByDay || r.daily || r.byDay || [];
+          events = [];
+          for (const row of days) {
+            const n = Number(row.counted || row.count || 0);
+            const amt = n > 0 ? (Number(row.spend != null ? row.spend : (row.spendCents != null ? row.spendCents / 100 : 0)) || 0) / n : 0;
+            for (let i = 0; i < n; i++) events.push({ at: (row.day || row.date || "") + "T12:00:00", amount: amt });
+          }
+        }
+      } catch (e) { /* fall through to the events feed */ }
+      if (!events.length) { try { const d = await api("GET", "/bookings/" + b.id + "/events"); events = d.events || []; } catch (e) { events = []; } }
+      if (!document.getElementById("j226-body")) return;
+      body.innerHTML = postReport226Html(b, events);
+    } else body.innerHTML = `<div class="error-box">That page is not on record anymore.</div>`;
+  } catch (err) {
+    if (document.getElementById("j226-body")) body.innerHTML = `<div class="error-box">${esc(err.message)}</div><p><button class="btn ghost" type="button" onclick="return go('dashboard','${backTab}')">Back</button></p>`;
+  }
+}
+/* Item 13: cancel and move-a-visit layer. Calm sheets, plain
+   words, no dead ends. Works on every booking lane because it
+   keys off the booking record alone. */
+function visitBooked226(b) {
+  return !!b && !b.post && !b.redeemedAt && b.status !== "cancelled" && b.status !== "completed" && b.status !== "expired";
+}
+function visitActions226Html(b, role) {
+  if (!b || !b.id) return "";
+  const other = role === "creator" ? (b.businessName || "the business") : (b.creatorName || "the creator");
+  if (b.status === "cancelled") {
+    const who = b.cancelledBy === role ? J226("You cancelled this visit", "Cancelaste esta visita") : other + J226(" cancelled this visit", " canceló esta visita");
+    return `<div class="j226-note" data-j226="cancelled-state"><strong>${esc(who)}${b.cancelledAt ? " on " + esc(fmtDay(b.cancelledAt)) : ""}.</strong><br>${J226("The slot is free again and nothing is owed on this visit.", "El lugar está libre de nuevo y no se debe nada por esta visita.")}${role === "creator" ? ` <button type="button" class="btn small-btn" style="margin-top:8px" onclick="return go('dashboard','Find Offers')">${J226("Find offers", "Buscar ofertas")}</button>` : J226(" A replacement can be found from the Swap Bench on your visits page.", " Se puede encontrar un reemplazo en el Banco de Cambios en tu página de visitas.")}</div>`;
+  }
+  const prop = b.rescheduleProposal && b.rescheduleProposal.status === "pending" ? b.rescheduleProposal : null;
+  let propHtml = "";
+  if (prop) {
+    const when = dateFull226(prop.newVisitAt || prop.proposedTime) || esc(prop.newVisitAt || prop.proposedTime || "");
+    if (prop.byRole === role || prop.by === role || (role === "creator" && prop.by === b.creatorId) || (role === "business" && prop.by === b.businessId)) {
+      propHtml = `<div class="j226-note" data-j226="move-waiting"><strong>${J226("Move proposed, waiting on", "Cambio propuesto, en espera de")} ${esc(other)}.</strong><br>${J226("You suggested", "Sugeriste")} ${when}. ${J226("This visit keeps its original time until", "Esta visita mantiene su horario original hasta que")} ${esc(other)} ${J226("answers.", "responda.")}<br><button type="button" class="btn small-btn ghost" style="margin-top:8px" onclick="return withdrawMove226('${b.id}')">${J226("Withdraw the proposal", "Retirar la propuesta")}</button><span class="small" id="j226-move-msg-${b.id}"></span></div>`;
+    } else {
+      propHtml = `<div class="j226-note" data-j226="move-proposal"><strong>${esc(other)} ${J226("would like to move this visit to", "quiere mover esta visita a")} ${when}.</strong><br>
+      <span style="display:inline-flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button type="button" class="btn small-btn" onclick="return respondMove226('${b.id}', true)">${J226("Accept the new time", "Aceptar el nuevo horario")}</button><button type="button" class="btn small-btn ghost" onclick="return respondMove226('${b.id}', false)">${J226("Keep original time", "Mantener el horario original")}</button></span>
+      <span class="small" id="j226-move-msg-${b.id}"></span></div>`;
+    }
+  } else if (b.movedAt || b.rescheduleNote) {
+    propHtml = `<div class="j226-note" data-j226="moved-line"><strong>${J226("This visit moved.", "Esta visita se movió.")}</strong> ${esc(b.rescheduleNote || (J226("The new time is ", "El nuevo horario es ") + (dateFull226(b.visitDate) || "on the card above") + "."))}</div>`;
+  }
+  if (!visitBooked226(b)) return propHtml;
+  return `${propHtml}<div class="j226-cta" data-j226="visit-actions" style="justify-content:flex-start">
+    <button type="button" class="btn small-btn ghost" onclick="return openMove226('${b.id}', '${role}')">${J226("Move this visit", "Mover esta visita")}</button>
+    <button type="button" class="btn small-btn ghost" onclick="return openCancel226('${b.id}', '${role}')">${J226("Cancel this visit", "Cancelar esta visita")}</button>
+  </div>`;
+}
+function j226Sheet226(id, inner) {
+  closeSheet226();
+  const el = document.createElement("div");
+  el.id = id;
+  el.className = "sheet-overlay";
+  el.innerHTML = `<div class="sheet" role="dialog">${inner}</div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeSheet226(); });
+  document.body.appendChild(el);
+  return false;
+}
+function closeSheet226() {
+  for (const id of ["j226-cancel-sheet", "j226-move-sheet"]) { const el = document.getElementById(id); if (el) el.remove(); }
+  return false;
+}
+function openCancel226(bookingId, role) {
+  const b = (state.j226booking && state.j226booking.id === bookingId) ? state.j226booking : (state.nudgeBookings && state.nudgeBookings[bookingId]) || null;
+  const biz = b ? (b.businessName || "the business") : "the business";
+  const title = b ? (b.title || "this visit") : "this visit";
+  const otherLine = role === "creator"
+    ? biz + " is told right away, and the slot frees up for someone else. Nothing is owed on the visit, and cancelling early never counts against you the way a no-show does."
+    : "The creator is told right away. The slot frees up, and a replacement can be found from the Swap Bench on your visits page.";
+  j226Sheet226("j226-cancel-sheet", `
+    <h3 style="margin:0">${J226("Cancel this visit?", "¿Cancelar esta visita?")}</h3>
+    <p class="small muted" style="margin:8px 0 0">${esc(title)}${role === "creator" ? " at " + esc(biz) : ""}.</p>
+    <p class="small" style="margin:10px 0 0">${esc(otherLine)}</p>
+    <div class="field" style="margin-top:12px"><label>Reason (optional)</label><input id="j226-cancel-reason" maxlength="200" placeholder="Optional"></div>
+    <div class="j226-cta" style="justify-content:flex-start"><button type="button" class="btn" onclick="return confirmCancel226('${bookingId}', '${role}')">${J226("Yes, cancel the visit", "Sí, cancelar la visita")}</button>
+    <button type="button" class="btn ghost" onclick="return closeSheet226()">${J226("Keep the visit", "Mantener la visita")}</button></div>
+    <p class="small" id="j226-cancel-msg" style="margin:8px 0 0"></p>`);
+  return false;
+}
+async function confirmCancel226(bookingId, role) {
+  const msg = document.getElementById("j226-cancel-msg");
+  const reasonEl = document.getElementById("j226-cancel-reason");
+  try {
+    await api("POST", "/bookings/" + bookingId + "/cancel", { reason: reasonEl ? reasonEl.value.trim() || undefined : undefined });
+    closeSheet226();
+    if (state.j226booking && state.j226booking.id === bookingId) { state.j226booking.status = "cancelled"; state.j226booking.cancelledBy = role; state.j226booking.cancelledAt = new Date().toISOString(); }
+    if (state.view && state.view.indexOf("j226-") === 0) renderJourney226();
+    else loadMyVisits(role);
+  } catch (err) { if (msg) msg.textContent = err.message; }
+  return false;
+}
+function openMove226(bookingId, role) {
+  const b = (state.j226booking && state.j226booking.id === bookingId) ? state.j226booking : (state.nudgeBookings && state.nudgeBookings[bookingId]) || null;
+  const other = role === "creator" ? (b ? (b.businessName || "the business") : "the business") : (b ? (b.creatorName || "the creator") : "the creator");
+  const min = b && b.windowStartAt ? String(b.windowStartAt).slice(0, 16) : "";
+  const max = b && (b.windowEndAt || b.redeemBy) ? String(b.windowEndAt || b.redeemBy).slice(0, 16) : "";
+  j226Sheet226("j226-move-sheet", `
+    <h3 style="margin:0">${J226("Move this visit", "Mover esta visita")}</h3>
+    <p class="small" style="margin:8px 0 0">Pick a new time inside the visit window and send it to ${esc(other)}. The visit keeps its original time until they accept, so nothing changes unless they say yes.</p>
+    <div class="field" style="margin-top:12px"><label>New time</label><input id="j226-move-when" type="datetime-local" ${min ? `min="${esc(min)}"` : ""} ${max ? `max="${esc(max)}"` : ""}></div>
+    <div class="j226-cta" style="justify-content:flex-start"><button type="button" class="btn" onclick="return sendMove226('${bookingId}', '${role}')">${J226("Send the proposal", "Enviar la propuesta")}</button>
+    <button type="button" class="btn ghost" onclick="return closeSheet226()">${J226("Keep original time", "Mantener el horario original")}</button></div>
+    <p class="small" id="j226-move-send-msg" style="margin:8px 0 0"></p>`);
+  return false;
+}
+async function withdrawMove226(bookingId) {
+  const msg = document.getElementById("j226-move-msg-" + bookingId);
+  try {
+    await api("POST", "/bookings/" + bookingId + "/reschedule/withdraw", {});
+    if (state.j226booking && state.j226booking.id === bookingId) state.j226booking.rescheduleProposal = null;
+    if (msg) msg.textContent = J226("Proposal withdrawn. The visit keeps its original time.", "Propuesta retirada. La visita mantiene su horario original.");
+    setTimeout(() => { try { render(); } catch (e) {} }, 900);
+  } catch (err) { if (msg) msg.textContent = err.message; }
+  return false;
+}
+async function sendMove226(bookingId, role) {
+  const msg = document.getElementById("j226-move-send-msg");
+  const whenEl = document.getElementById("j226-move-when");
+  const when = whenEl ? whenEl.value : "";
+  if (!when) { if (msg) msg.textContent = J226("Pick the new time first.", "Elige primero el nuevo horario."); return false; }
+  try {
+    await api("POST", "/bookings/" + bookingId + "/reschedule", { proposedTime: new Date(when).toISOString(), newVisitAt: new Date(when).toISOString() });
+    closeSheet226();
+    if (state.j226booking && state.j226booking.id === bookingId) state.j226booking.rescheduleProposal = { by: role, byRole: role, newVisitAt: new Date(when).toISOString(), proposedTime: new Date(when).toISOString(), status: "pending" };
+    if (state.view && state.view.indexOf("j226-") === 0) renderJourney226();
+    else loadMyVisits(role);
+  } catch (err) { if (msg) msg.textContent = err.message; }
+  return false;
+}
+async function respondMove226(bookingId, accept) {
+  const msg = document.getElementById("j226-move-msg-" + bookingId);
+  try {
+    const d = await api("POST", "/bookings/" + bookingId + "/reschedule/respond", { accept: !!accept });
+    if (state.j226booking && state.j226booking.id === bookingId) {
+      state.j226booking.rescheduleProposal = null;
+      if (accept) { const nb = (d && (d.booking || d)) || {}; if (nb.visitDate) state.j226booking.visitDate = nb.visitDate; state.j226booking.movedAt = new Date().toISOString(); state.j226booking.rescheduleNote = "The new time is " + dateFull226(state.j226booking.visitDate) + "."; state.j226booking = null; }
+    }
+    if (state.view && state.view.indexOf("j226-") === 0) renderJourney226();
+    else loadMyVisits(state.user && state.user.role === "business" ? "business" : "creator");
+  } catch (err) { if (msg) msg.textContent = err.message; else alert(err.message); }
+  return false;
+}
+/* Updates feed (item 13): known visit events get plain copy and
+   a tap through to the screen that owns them. Unknown types keep
+   the server's own words, untappable, exactly as before. */
+function notif226(n) {
+  const type = String((n && (n.type || n.kind)) || "").toLowerCase();
+  const role = state.user ? state.user.role : "";
+  const biz = (n && (n.businessName || "")) || "The business";
+  const when = n && (n.newVisitAt || n.proposedTime) ? dateFull226(n.newVisitAt || n.proposedTime) : "";
+  const has = (...keys) => keys.some((k) => type.includes(k));
+  if (role === "business" && has("expired")) return { text: J226("A visit window ended and the visit did not happen. The slot is closed, and you can start a new offer any time.", "Una ventana de visita terminó y la visita no pasó. El lugar está cerrado, y puedes empezar una oferta nueva cuando quieras."), tab: "Visits & Posts" };
+  if (role === "business" && has("post_late", "post_overdue", "late_post")) return { text: J226("A post is late. It still counts when it lands, and the visit stays open until it does.", "Una publicación va tarde. Sigue contando cuando llega, y la visita se queda abierta hasta que llega."), tab: "Visits & Posts" };
+  if (role === "business" && has("unfilled", "window_ended", "offer_ended")) return { text: J226("An offer window ended with spots still open. You can run it again any time.", "Una ventana de oferta terminó con lugares aún abiertos. Puedes correrla de nuevo cuando quieras."), tab: "My Offers" };
+  if (has("reschedule_proposed")) {
+    if (role === "creator") return { text: J226(biz + " proposed a new time for your visit" + (when ? ", " + when : "") + ". Open the visit to accept it or keep the original time.", biz + " propuso un nuevo horario para tu visita" + (when ? ", " + when : "") + ". Abre la visita para aceptarlo o mantener el horario original."), tab: "My Visits" };
+    return { text: J226("A new time was proposed for a visit" + (when ? ", " + when : "") + ". Open the visit to answer.", "Se propuso un nuevo horario para una visita" + (when ? ", " + when : "") + ". Abre la visita para responder."), tab: "Visits & Posts" };
+  }
+  if (has("reschedule_declined")) return { text: J226("The proposed new time was not taken, so the visit keeps its original time.", "El nuevo horario propuesto no se tomó, así que la visita mantiene su horario original."), tab: role === "business" ? "Visits & Posts" : "My Visits" };
+  if (role === "creator" && has("post_auto_confirmed")) return { text: J226("Your post was confirmed automatically, so this visit is complete. Nothing is waiting on the business.", "Tu publicación se confirmó automáticamente, así que esta visita está completa. Nada está esperando al negocio."), tab: "My Visits" };
+  if (role === "business" && has("post_confirmation_needed")) return { text: J226("A post is in and waiting for your confirmation. Open the visit to see it.", "Una publicación llegó y espera tu confirmación. Abre la visita para verla."), tab: "Visits & Posts" };
+  if (role === "business" && has("creator_declined")) return { text: J226("A creator declined your offer. The spot is open again.", "Una creadora declinó tu oferta. El lugar está abierto de nuevo."), tab: "My Offers" };
+  if (has("review_still_on_it")) return { text: J226("We are still reviewing your application. Thanks for your patience, we email you the moment it is decided.", "Seguimos revisando tu solicitud. Gracias por tu paciencia, te escribimos en el momento en que se decida."), tab: "Home" };
+  if (role === "creator" && has("cancel")) return { text: J226(biz + " cancelled your visit. Nothing is owed on it, and new offers are waiting in Find offers.", biz + " canceló tu visita. No se debe nada por ella, y hay ofertas nuevas esperando en Buscar ofertas."), tab: "Find Offers" };
+  if (role === "creator" && has("moved", "reschedul", "move_accept")) return { text: J226(biz + " moved your visit" + (when ? " to " + when : "") + ". Your visit card shows the new time.", biz + " movió tu visita" + (when ? " a " + when : "") + ". Tu tarjeta de visita muestra el nuevo horario."), tab: "My Visits" };
+  if (role === "business" && has("cancel")) return { text: J226("A visit was cancelled. The slot is free again, and a replacement can be found from the Swap Bench.", "Una visita fue cancelada. El lugar está libre de nuevo, y se puede encontrar un reemplazo en el Banco de Cambios."), tab: "Visits & Posts" };
+  if (role === "business" && has("moved", "reschedul", "move_accept")) return { text: J226("A visit moved" + (when ? " to " + when : "") + ". The visit card shows the new time.", "Una visita se movió" + (when ? " a " + when : "") + ". La tarjeta de la visita muestra el nuevo horario."), tab: "Visits & Posts" };
+  return null;
+}
+function notifRow226(n) {
+  const mapped = notif226(n);
+  if (!mapped) return `<p class="small" style="margin:6px 0"><span class="muted">${esc(fmtDate(n.createdAt))}</span> ${esc(n.text)}</p>`;
+  return `<p class="small" style="margin:6px 0"><span class="muted">${esc(fmtDate(n.createdAt))}</span> <a href="#" onclick="return go('dashboard','${mapped.tab}')">${esc(mapped.text)}</a></p>`;
+}
+
+/* Item 14 helpers: language, completion state, applicant note,
+   started-signup capture. J226 is the bundle's twin helper: it
+   rides the same answer as the Sig operator (creator record
+   language, or the business preferred language), so every new
+   string in this bundle renders in Spanish in Spanish mode. */
+function J226(en, es) {
+  const lang = typeof sigLang === "function" ? sigLang() : (state.lang || "");
+  return lang === "es" && es ? es : en;
+}
+const REVIEW_CHIP_ES_226 = {
+  "Easy to work with": "Fácil trabajar con ellos",
+  "Food was great": "La comida estuvo genial",
+  "Staff knew the deal": "El personal conocía el trato",
+  "Welcoming": "Muy acogedor",
+  "Slow to seat us": "Tardaron en sentarnos",
+  "Hard to schedule": "Difícil de agendar",
+  "Posted on time": "Publicó a tiempo",
+  "Great content": "Gran contenido",
+  "Easy at the counter": "Fácil en el mostrador",
+  "Followed the brief": "Siguió las indicaciones",
+  "Friendly with staff": "Amable con el personal",
+};
+/* Item 14a: an auto-closed booking (post in, 48 hours, business
+   never confirmed) reads complete, never pending. Keyed first on
+   the booking status the server exposes, then on its auto-close
+   markers, so either shape lands the same. */
+function visitComplete226(b) {
+  if (!b) return false;
+  if (b.status === "completed") return true;
+  if (b.autoClosed === true) return true;
+  if (b.completionState === "auto_closed" || b.completionState === "completed") return true;
+  if (b.closedReason === "auto_unconfirmed") return true;
+  if (b.confirmationAutoClosedAt) return true;
+  if (b.post && b.autoCompletedAt) return true;
+  return false;
+}
+function visitCompleteLine226Html(b, role) {
+  if (!visitComplete226(b)) return "";
+  if (role === "creator") {
+    return `<div class="j226-note" data-j226="visit-complete"><strong>${J226("This visit is complete.", "Esta visita está completa.")}</strong><br>${J226("Your post is in and the visit counts on your record. Nothing is waiting on the business.", "Tu publicación está puesta y la visita cuenta en tu registro. Nada está esperando al negocio.")}</div>`;
+  }
+  return `<div class="j226-note" data-j226="visit-complete"><strong>${J226("This visit is complete.", "Esta visita está completa.")}</strong><br>${J226("It closed on its own: the post was in, and 48 hours passed without a confirmation tap. It counts as complete.", "Se cerró sola: la publicación estaba puesta y pasaron 48 horas sin un toque de confirmación. Cuenta como completa.")}</div>`;
+}
+/* Item 14c: the still-on-it note for an application older than
+   two business days. The server flag or note wins; the age of
+   the record is the fallback so the note shows either way. */
+function businessDays226(fromMs, toMs) {
+  let n = 0;
+  const d = new Date(fromMs);
+  d.setHours(0, 0, 0, 0);
+  const end = new Date(toMs);
+  end.setHours(0, 0, 0, 0);
+  while (d.getTime() < end.getTime()) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) n += 1;
+  }
+  return n;
+}
+function pendingNote226Html(u) {
+  if (!u) return "";
+  if (u.reviewStatusLine) return `<div class="j226-note" data-j226="pending-note" style="text-align:left;margin-top:14px"><strong>${esc(u.reviewStatusLine)}</strong></div>`;
+  if (u.reviewOverdue === true) return `<div class="j226-note" data-j226="pending-note" style="text-align:left;margin-top:14px"><strong>${J226("We are still on it.", "Seguimos en ello.")}</strong><br>${J226("Your application is taking a little longer than our usual two business days. Nothing is wrong and you do not need to do anything. We email you the moment it is decided.", "Tu solicitud está tardando un poco más que nuestros dos días hábiles usuales. No pasa nada y no necesitas hacer nada. Te escribimos en el momento en que se decida.")}</div>`;
+  const serverNote = u.pendingNote || u.applicationNote || "";
+  const flagged = u.stillOnIt === true || u.applicationStillOnIt === true || !!serverNote;
+  const at = Date.parse(u.createdAt || u.appliedAt || "");
+  const old = Number.isFinite(at) && businessDays226(at, Date.now()) > 2;
+  if (!flagged && !old) return "";
+  const text = serverNote || J226("We are still on it. Your application is taking a little longer than our usual two business days, and a person is reading it. We email you the moment there is a decision, and your place in line is held.", "Seguimos en ello. Tu solicitud está tomando un poco más que nuestros dos días laborables usuales, y una persona la está leyendo. Te escribimos en el momento en que haya una decisión, y tu lugar en la fila se mantiene.");
+  return `<div class="notice blue" style="text-align:left" data-j226="pending-note"><strong>${J226("Still in review", "Sigue en revisión")}</strong><br>${esc(text)}</div>`;
+}
+/* Item 14b: started-signup capture. Fire and forget: a failed
+   or skipped capture never slows or blocks the flow. */
+function startedSignup226(flow, email) {
+  const em = String(email || "").trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return;
+  try {
+    fetch("/api/signup-started", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ email: em, flow, lastStep: flow === "business_signup" ? "business_form" : "claim_facts" }) }).catch(() => {});
+  } catch (e) { /* capture is an enhancement only */ }
+}
+function stallCapture226Html(flow) {
+  return `<div class="j226-stall" data-j226="stall-capture">
+    <p class="small" style="margin:0 0 6px">${J226("Your email, so we can reach you if you get cut off. If this page closes before you finish, we can send you a link to pick up right where you left off. Nothing else, and never shared.", "Tu correo, para poder contactarte si se corta. Si esta página se cierra antes de que termines, podemos enviarte un enlace para seguir justo donde ibas. Nada más, y nunca compartido.")}</p>
+    <div class="field" style="margin-bottom:0"><label>${J226("Email (optional, you can skip this)", "Correo (opcional, puedes saltarlo)")}</label><input type="email" id="j226-stall-${esc(flow)}" placeholder="you@example.com" autocomplete="email" onchange="startedSignup226('${esc(flow)}', this.value)"></div>
+  </div>`;
+}
+
+
+/* Item 15 (Build -226): all social accounts on profiles + the top-3
+   posts showcase. Channels render from the profile payload's channels
+   array (server-exposed), falling back to the audience stack the app
+   already normalizes, so rows grow as channels are added and no
+   platform is hard-coded. Showcase picks are the creator's own links
+   (creator.showcase, max 3), played through the shared video-embed
+   parser where the platform allows and a link-out card where not. */
+const CHAN_MARK_226 = { instagram: ["IG", "#E1306C"], tiktok: ["TT", "#111111"], youtube: ["YT", "#FF0000"], x: ["X", "#111111"], twitter: ["X", "#111111"], facebook: ["FB", "#1877F2"], threads: ["TH", "#111111"], twitch: ["TW", "#9146FF"], snapchat: ["SC", "#B7950B"], website: ["Web", "#44536A"] };
+function channelsOf226(profile) {
+  if (!profile) return [];
+  const rec = profile.profile || profile.creator || profile.business || profile;
+  let list = [];
+  if (Array.isArray(rec.channels) && rec.channels.length) {
+    list = rec.channels.map((ch) => ({
+      platform: String(ch.platform || ch.name || "").toLowerCase(),
+      label: ch.label || ch.platformLabel || PLATFORM_LABELS_ALL[String(ch.platform || "").toLowerCase()] || ch.platform || "",
+      handle: ch.handle || "",
+      followers: ch.followers != null ? ch.followers : (ch.count != null ? ch.count : (ch.followersCount != null ? ch.followersCount : null)),
+      localPct: ch.localPct != null ? ch.localPct : (ch.local_pct != null ? ch.local_pct : null),
+      url: ch.url || ch.profileUrl || "",
+    }));
+  } else {
+    try { list = stackList(profile).map((e) => ({ platform: e.platform, label: e.label || e.platform, handle: e.handle || "", followers: e.count, localPct: e.localPct, url: e.url || "" })); } catch (err) { list = []; }
+    if (!list.length && Array.isArray(rec.socialLinks)) {
+      list = rec.socialLinks.map((s) => ({ platform: String(s.platform || s.label || "").toLowerCase(), label: s.label || s.platform || "", handle: s.handle || "", followers: s.followers != null ? s.followers : null, localPct: s.localPct != null ? s.localPct : null, url: s.url || "" }));
+    }
+  }
+  return list.filter((c) => c.label || c.platform).sort((a, b) => (Number(b.followers) || 0) - (Number(a.followers) || 0));
+}
+function channels226Html(profile, opts) {
+  opts = opts || {};
+  const list = channelsOf226(profile);
+  if (!list.length) return "";
+  const rows = list.map((c) => {
+    const mark = CHAN_MARK_226[c.platform] || [String(c.label || "?").slice(0, 2).toUpperCase(), "#0AA6C2"];
+    const handle = c.handle ? (String(c.handle).startsWith("@") || c.platform === "website" ? String(c.handle) : "@" + c.handle) : "";
+    const meta = [c.followers != null ? fmtNum(c.followers) + " " + J226("followers", "seguidores") : "", (!opts.business && c.localPct != null ? c.localPct + "% " + J226("local", "local") : "")].filter(Boolean).join(" · ");
+    const inner = `<span class="j226-chanmark" style="background:${mark[1]}">${esc(mark[0])}</span><span class="j226-chanmain"><span class="j226-chanplat">${esc(c.label)}</span>${handle ? `<span class="j226-chanhandle">${esc(handle)}</span>` : ""}</span>${meta ? `<span class="j226-chanmeta">${esc(meta)}</span>` : ""}`;
+    return c.url ? `<a class="j226-chanrow" href="${esc(c.url)}" target="_blank" rel="noopener">${inner}</a>` : `<div class="j226-chanrow">${inner}</div>`;
+  }).join("");
+  if (opts.public) return `<div style="margin-top:18px"><h3 class="bookme-h">${J226("Social accounts", "Cuentas sociales")}</h3><div class="j226-chans">${rows}</div></div>`;
+  if (opts.app) return `<div class="pdp-block"><h4>${J226("Social accounts", "Cuentas sociales")}</h4><div class="j226-chans">${rows}</div></div>`;
+  return `<section class="j226-card"><h3 class="j226-h2">${J226("Social accounts", "Cuentas sociales")}</h3><div class="j226-chans">${rows}</div></section>`;
+}
+function showcasePicks226(profile) {
+  if (!profile) return [];
+  const rec = profile.profile || profile.creator || profile;
+  const raw = Array.isArray(rec.showcase) ? rec.showcase : [];
+  return raw.slice(0, 3).map((x) => (typeof x === "string" ? { url: x } : x)).filter((x) => x && x.url);
+}
+function showcase226Html(profile, opts) {
+  opts = opts || {};
+  const picks = showcasePicks226(profile);
+  if (!picks.length) return "";
+  let seen = new Set();
+  try { if (typeof workItemsOf === "function") seen = new Set(workItemsOf(profile).map((it) => String(it.url || ""))); } catch (err) { /* no dedupe available */ }
+  const cells = picks.filter((pk) => !seen.has(String(pk.url))).map((pk) => {
+    const emb = pk.embed && (pk.embed.embedUrl || pk.embed.url) ? { embedUrl: pk.embed.embedUrl || pk.embed.url, aspect: pk.embed.aspect || "portrait", platform: pk.embed.platform || pk.platform || "" } : (pk.embedUrl ? { embedUrl: pk.embedUrl, aspect: pk.aspect || "portrait", platform: pk.platform || "" } : (typeof videoEmbedFor === "function" ? videoEmbedFor(pk.url) : null));
+    if (emb && emb.embedUrl) {
+      return `<div class="work-cell${emb.aspect === "wide" ? " wide" : ""}"><div class="work-ph"><span class="work-ph-mark">${esc(emb.platform || pk.platform || "Video")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${esc(emb.embedUrl)}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Showcase post" onload="this.parentNode.classList.add('on')"></iframe></div>`;
+    }
+    return `<a class="work-cell tile" href="${esc(pk.url)}" target="_blank" rel="noopener">${pk.thumbnailUrl ? `<img src="${esc(pk.thumbnailUrl)}" alt="" style="width:100%;height:100%;object-fit:cover">` : `<span class="work-ph-mark">${esc(pk.platform || "Post")}</span><span class="work-tile-label">${esc(pk.title || pk.url)}</span>`}<span class="work-go">${J226("View post", "Ver publicación")}</span></a>`;
+  }).join("");
+  if (!cells) return "";
+  if (opts.public) return `<h3 class="bookme-h">${J226("Top posts", "Publicaciones destacadas")}</h3><div class="work-grid">${cells}</div>`;
+  if (opts.app) return `<div class="pdp-block"><h4>${J226("Top posts", "Publicaciones destacadas")}</h4><div class="work-grid">${cells}</div></div>`;
+  return `<section class="j226-card"><h3 class="j226-h2">${J226("Top posts", "Publicaciones destacadas")}</h3><div class="work-grid">${cells}</div></section>`;
+}
+function showcaseEditor226Html(u) {
+  const picks = showcasePicks226(u);
+  const val = (i) => (picks[i] ? picks[i].url : "");
+  return `<section class="j226-card" data-j226="showcase-editor">
+    <h3 class="j226-h2">${J226("Showcase your top posts", "Muestra tus mejores publicaciones")}</h3>
+    <p class="small muted" style="margin:0 0 10px">${J226("Pick up to 3 posts that show your best work. Paste the link for each one. They play right on your public profile, and you can swap them any time.", "Elige hasta 3 publicaciones que muestren tu mejor trabajo. Pega el enlace de cada una. Se reproducen en tu perfil público, y puedes cambiarlas cuando quieras.")}</p>
+    ${[0, 1, 2].map((i) => `<div class="field"><label>${J226("Post", "Publicación")} ${i + 1}${i === 0 ? "" : " " + J226("(optional)", "(opcional)")}</label><input type="url" id="j226-show-${i}" placeholder="https://..." value="${esc(val(i))}"></div>`).join("")}
+    <div class="j226-cta"><button class="btn" type="button" onclick="return saveShowcase226()">${J226("Save my top posts", "Guardar mis publicaciones")}</button></div>
+    <p class="small" id="j226-show-msg" style="margin:8px 0 0"></p>
+  </section>`;
+}
+async function saveShowcase226() {
+  const links = [0, 1, 2].map((i) => { const el = document.getElementById("j226-show-" + i); return el ? el.value.trim() : ""; }).filter(Boolean).slice(0, 3);
+  const msg = document.getElementById("j226-show-msg");
+  try {
+    await api("PUT", "/me/showcase", { urls: links });
+    if (msg) msg.textContent = J226("Saved. Your public profile shows them now.", "Guardado. Tu perfil público ya las muestra.");
+  } catch (e) {
+    if (msg) msg.textContent = J226("Could not save yet. Check the links and try again.", "No se pudo guardar todavía. Revisa los enlaces e inténtalo de nuevo.");
+  }
+  return false;
+}
+
+
+/* Feed/profile lock (Build -226): the creator's at-a-glance open-to
+   strip. Comped visits and Coupons read the record's own open flags;
+   Paid posts shows the listed rate, greyed when none is listed. */
+function openTo226Html(profile) {
+  const p = (profile && (profile.profile || profile)) || {};
+  const sym = typeof currencySymbolForMarket === "function" ? currencySymbolForMarket(p.market) : "$";
+  const item = (on, label, sub) => `<span class="j226-openitem${on ? " on" : ""}"><span class="j226-opencheck">${on ? "&#10003;" : ""}</span><span class="j226-openmain"><span class="j226-openlabel">${label}</span>${sub ? `<span class="j226-opensub">${sub}</span>` : ""}</span></span>`;
+  return `<div class="j226-openstrip" data-j226="open-to"><span class="j226-openk">${J226("Open to", "Abierta a")}</span>${item(p.compOpen !== false, J226("Comped visits", "Visitas en cortesía"), "")}${item(p.couponOpen !== false, J226("Coupons", "Cupones"), "")}${item(!!p.paidRate, J226("Paid posts", "Publicaciones pagadas"), p.paidRate ? sym + fmtPrice(p.paidRate) : J226("No listed rate", "Sin tarifa publicada"))}</div>`;
+}
+
+
+/* Build -226 UPDATE PASS (Jeff, 2026-11-21): final feed cards,
+   match score badge + explainer, favorites on every card and
+   profile, final profile heroes with aligned stats and account
+   columns, Photos sections, and the CTA and label sweeps. Server
+   contract consumed here, as landed in router.js: creator cards
+   carry matchScore (number), matchReasons (array) and
+   match { score, parts, reasons, inputs } from lib/match.js
+   (parts keys: localPct, category, budget, reliability,
+   momentum, trackBonus, trackReach; inputs is the five explainer
+   rows { key, label, value } in sheet order). Favorites:
+   GET /favorites answers { favorites, creators, businesses,
+   offers, savedIds } for both roles; POST /favorites
+   { kind: "creator" | "business" | "offer", id } toggles and
+   answers { saved, isFavorite, kind, id, savedIds }; offer
+   payloads carry viewerSaved (the offer) and businessViewerSaved
+   (its business); business cards (businessCard226) carry
+   viewerSaved, photos and channels. A per-user local cache
+   sits underneath so saved state renders on revisit.
+   Business gallery rides the creator gallery contract:
+   POST /me/photo { dataUrl, slot }, POST /me/photo/cover
+   { slot }, DELETE /me/photo/:slot, photos listed on the
+   business payload as business.photos (photoUrlsFor shape). */
+const U226_MATCH = {};
+const U226_FAV_KEY = "u226favs";
+function compact226(n) {
+  const v = Number(n) || 0;
+  if (v >= 1000) { const k = Math.round(v / 100) / 10; return (Number.isInteger(k) ? String(k) : k.toFixed(1)) + "k"; }
+  return String(v);
+}
+function totalAudienceOf226(x) {
+  if (!x) return 0;
+  if (typeof totalAudienceOf === "function") { try { const v = totalAudienceOf(x); if (v) return Number(v) || 0; } catch (e) { /* fall through */ } }
+  if (x.totalAudience) return Number(x.totalAudience) || 0;
+  return channelsOf226(x).reduce((s, c) => s + (Number(c.followers) || 0), 0);
+}
+function localFollowers226(x) {
+  if (!x) return null;
+  const chans = channelsOf226(x);
+  let sum = 0, any = false;
+  for (const ch of chans) {
+    if (ch.followers != null && ch.localPct != null) { sum += (Number(ch.followers) * Number(ch.localPct)) / 100; any = true; }
+  }
+  if (any) return Math.round(sum);
+  const rec = x.profile || x;
+  const pct = rec.localAudiencePct != null ? Number(rec.localAudiencePct) : (x.localAudiencePct != null ? Number(x.localAudiencePct) : null);
+  const total = totalAudienceOf226(x);
+  if (pct != null && total > 0) return Math.round((total * pct) / 100);
+  return null;
+}
+function localPct226(x) {
+  if (!x) return null;
+  const rec = x.profile || x;
+  if (x.marketContext && typeof x.marketContext.pct === "number") return x.marketContext.pct;
+  return rec.localAudiencePct != null ? Number(rec.localAudiencePct) : null;
+}
+function ratingOf226(x) {
+  if (!x) return null;
+  const avg = x.ratingAvg !== undefined && x.ratingAvg !== null ? x.ratingAvg : (x.reviewSummary ? x.reviewSummary.average : (x.businessTrackRecord ? x.businessTrackRecord.ratingAvg : null));
+  return avg != null && Number.isFinite(Number(avg)) ? Number(avg) : null;
+}
+/* Match payload: match { score, reasons, parts } first, then the
+   flat matchScore + matchReasons fields the server also sends. */
+function matchOf226(x) {
+  if (!x) return null;
+  if (x.match && typeof x.match === "object" && x.match.score != null && Number.isFinite(Number(x.match.score))) {
+    return { score: Math.round(Number(x.match.score)), reasons: Array.isArray(x.match.reasons) ? x.match.reasons : (x.matchReasons || []), parts: x.match.parts || null, inputs: Array.isArray(x.match.inputs) && x.match.inputs.length ? x.match.inputs : null };
+  }
+  if (x.matchScore != null && Number.isFinite(Number(x.matchScore))) {
+    return { score: Math.round(Number(x.matchScore)), reasons: Array.isArray(x.matchReasons) ? x.matchReasons : [], parts: x.matchParts || null, inputs: null };
+  }
+  return null;
+}
+function matchKey226(x) {
+  if (!x) return "";
+  return String(x.userId || x.creatorId || x.businessId || x.id || x.name || "");
+}
+function matchBadge226Html(x, opts) {
+  const m = matchOf226(x);
+  if (!m) return "";
+  const key = matchKey226(x);
+  if (key) U226_MATCH[key] = { score: m.score, reasons: m.reasons, parts: m.parts, inputs: m.inputs, name: x.name || x.businessName || "" };
+  return `<button type="button" class="u226-matchbadge" data-u226="match-badge" onclick="return openMatchInfo226('${esc(key)}')" aria-label="${J226("Match score", "Puntaje de coincidencia")} ${m.score}. ${J226("What is this?", "¿Qué es esto?")}"><span class="u226-matchscore">${m.score}</span><span class="u226-matchlbl">${J226("MATCH", "MATCH")}</span><span class="u226-matchinfo" aria-hidden="true">i</span></button>`;
+}
+function matchSheet226Html(entry) {
+  const e = entry || {};
+  const first = firstName226(e.name || "");
+  const descs = [
+    J226("How much of their audience is local to you. This is the biggest part.", "Cuánto de su audiencia es local para ti. Es la parte más grande."),
+    J226("Whether they post your kind of thing.", "Si publican tu tipo de contenido."),
+    J226("Whether their rate fits your budget.", "Si su tarifa entra en tu presupuesto."),
+    J226("Whether they show up and post on time.", "Si llegan y publican a tiempo."),
+    J226("Their Momentum on Magpie.", "Su Momentum en Magpie."),
+  ];
+  /* The five inputs with this creator's own values when the
+     server sent them (match.inputs, or the raw parts); the plain
+     descriptions carry the sheet when no values ride along. */
+  const p = e.parts || {};
+  const derived = [
+    { label: J226("Local audience", "Audiencia local"), value: p.localPct != null ? p.localPct : null },
+    { label: J226("Category fit", "Tipo de contenido"), value: typeof p.category === "number" ? p.category : null },
+    { label: J226("Rate fit", "Tarifa"), value: typeof p.budget === "number" ? p.budget : null },
+    { label: J226("On-time record", "Puntualidad"), value: typeof p.reliability === "number" ? p.reliability : null },
+    { label: J226("Momentum", "Momentum"), value: typeof p.momentum === "number" ? Math.min(100, p.momentum) : null },
+  ];
+  const serverInputs = Array.isArray(e.inputs) && e.inputs.length ? e.inputs : null;
+  const inputRows = descs.map((d, i) => {
+    const src = serverInputs ? serverInputs[i] : derived[i];
+    const val = src && src.value != null && isFinite(Number(src.value)) ? Math.max(0, Math.min(100, Math.round(Number(src.value)))) : null;
+    /* Server input rows ride in this same fixed order, so the
+       label always comes from the translated list above. */
+    const lbl = derived[i] ? derived[i].label : "";
+    return `<div class="j226-step"><span class="j226-stepn">·</span><span style="flex:1"><strong>${esc(lbl)}</strong> ${esc(d)}${val != null ? `<span class="u226-inputbar"><span class="u226-inputfill" style="width:${val}%"></span></span>` : ""}</span>${val != null ? `<strong class="u226-inputval">${val}</strong>` : ""}</div>`;
+  }).join("");
+  return `<div data-u226="match-sheet">
+    <p class="j226-kicker">${J226("Match score", "Puntaje de coincidencia")}</p>
+    <h3 class="j226-h">${J226("What is a match score?", "¿Qué es un puntaje de coincidencia?")}</h3>
+    <p class="small" style="margin:6px 0 0">${J226("It is how well this creator fits your business, scored out of 100.", "Es qué tan bien encaja esta creadora con tu negocio, con un puntaje sobre 100.")}</p>
+    <div class="j226-steps" style="margin-top:12px">${inputRows}</div>
+    <p class="small muted" style="margin:10px 0 0">${J226("Creators who have already brought results in your market score a little higher.", "Las creadoras que ya trajeron resultados en tu mercado puntúan un poco más alto.")}</p>
+    ${e.score != null ? `<p class="small" style="margin:16px 0 6px"><strong>${J226("Why", "Por qué")} ${esc(first || e.name || "this creator")} ${J226("scores", "puntúa")} ${e.score}</strong></p>${(e.reasons && e.reasons.length ? `<div class="j226-steps">${e.reasons.map((r) => `<div class="j226-step"><span class="j226-stepn">·</span><span>${esc(r)}</span></div>`).join("")}</div>` : `<p class="small muted" style="margin:0">${J226("No single reason stands out yet. The score blends all five inputs above.", "Ninguna razón destaca todavía. El puntaje mezcla las cinco entradas de arriba.")}</p>`)}` : ""}
+    <p class="small muted" style="margin:14px 0 0">${J226("The star rating from past visits lives on their profile.", "La calificación con estrellas de visitas pasadas vive en su perfil.")}</p>
+    <div class="j226-cta"><button class="btn" type="button" onclick="return closeMatch226()">${J226("Got it", "Entendido")}</button></div>
+  </div>`;
+}
+function openMatchInfo226(key) {
+  const entry = U226_MATCH[key] || null;
+  if (typeof j226Sheet226 === "function") return j226Sheet226("j226-match-sheet", matchSheet226Html(entry || {}));
+  return false;
+}
+function closeMatch226() {
+  const el = typeof document !== "undefined" ? document.getElementById("j226-match-sheet") : null;
+  if (el) el.remove();
+  return false;
+}
+/* Favorites: server first for the landed creator shape, generic
+   target body for businesses and offers, per-user local cache
+   underneath so a saved state always renders on revisit. */
+function favCache226() {
+  try { return JSON.parse(localStorage.getItem(U226_FAV_KEY) || "{}") || {}; } catch (e) { return {}; }
+}
+function favCacheSet226(map) {
+  try { localStorage.setItem(U226_FAV_KEY, JSON.stringify(map || {})); } catch (e) { /* private mode */ }
+}
+function favId226(type, id) { return type + ":" + id; }
+function favIs226(type, id, fallback) {
+  if (fallback != null) return !!fallback;
+  const map = favCache226();
+  return !!map[favId226(type, id)];
+}
+function favBtn226Html(type, id, saved, opts) {
+  opts = opts || {};
+  const on = favIs226(type, id, saved);
+  const label = J226(on ? "Saved" : "Save", on ? "Guardado" : "Guardar");
+  return `<button type="button" class="u226-favbtn${on ? " on" : ""}" data-u226="fav-btn" data-fav-type="${esc(type)}" data-fav-id="${esc(id)}" aria-pressed="${on ? "true" : "false"}" aria-label="${esc(label)}" onclick="event.stopPropagation(); return toggleFav226('${esc(type)}', '${esc(id)}', this)"><svg class="u226-favic" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false"><path d="M7 4h10a1 1 0 0 1 1 1v14l-6-4-6 4V5a1 1 0 0 1 1-1z" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span class="u226-favlbl">${esc(label)}</span></button>`;
+}
+function seedFavCache226(savedIds) {
+  if (!savedIds) return;
+  const map = favCache226();
+  for (const t of ["creators", "businesses", "offers"]) {
+    const type = t === "creators" ? "creator" : t === "businesses" ? "business" : "offer";
+    for (const id of savedIds[t] || []) map[favId226(type, id)] = true;
+  }
+  favCacheSet226(map);
+}
+async function toggleFav226(type, id, btn) {
+  const key = favId226(type, id);
+  const map = favCache226();
+  const was = !!map[key];
+  map[key] = !was;
+  if (!map[key]) delete map[key];
+  favCacheSet226(map);
+  const paint = (on) => { if (btn) { btn.classList.toggle("on", on); btn.setAttribute("aria-pressed", String(on)); const lbl = btn.querySelector(".u226-favlbl"); if (lbl) lbl.textContent = on ? J226("Saved", "Guardado") : J226("Save", "Guardar"); } };
+  paint(!was);
+  let serverOn = null;
+  try {
+    /* Landed contract: POST /favorites { kind, id } toggles (or
+       honors an explicit saved flag) and answers
+       { saved, isFavorite, kind, id, savedIds }. */
+    const d = await api("POST", "/favorites", { kind: type, id });
+    if (d) {
+      if (typeof d.saved === "boolean") serverOn = d.saved;
+      else if (typeof d.isFavorite === "boolean") serverOn = d.isFavorite;
+      if (d.savedIds) seedFavCache226(d.savedIds);
+    }
+    if (serverOn != null) {
+      const m2 = favCache226();
+      if (serverOn) m2[key] = true; else delete m2[key];
+      favCacheSet226(m2);
+      paint(serverOn);
+    }
+    if (typeof showToast === "function") showToast((serverOn != null ? serverOn : !was) ? J226("Saved.", "Guardado.") : J226("Removed from Saved.", "Quitado de Guardados."));
+  } catch (e) {
+    /* The local cache keeps the toggle honest on this device when
+       the request cannot reach the server. */
+  }
+  const on = serverOn != null ? serverOn : !was;
+  const card = (state.discover || []).find((x) => x.userId === id) || ((state.sigOpData && state.sigOpData.cards) || []).find((x) => x.userId === id);
+  if (card && type === "creator") card.isFavorite = on;
+  const offer = (state.openOffers || []).find((x) => x.id === id);
+  if (offer && type === "offer") offer.viewerSaved = on;
+  if (offer && type === "business") offer.businessViewerSaved = on;
+  return false;
+}
+/* The accepts row: checks with no amount in the Paid check, the
+   same states as the profile accepts strip. */
+function checks226Html(items) {
+  return `<div class="u226-checks j226-chipstrip" data-u226="checks">${(items || []).map((it) => `<span class="u226-check${it.on ? " on" : ""}"><span class="u226-checkbox">${it.on ? "&#10003;" : ""}</span>${esc(it.label)}</span>`).join("")}</div>`;
+}
+function creatorChecks226(c) {
+  const p = (c && c.profile) || {};
+  return checks226Html([
+    { on: p.compOpen !== false, label: J226("Comped", "Cortesía") },
+    { on: p.couponOpen !== false, label: J226("Coupons", "Cupones") },
+    { on: !!p.paidRate, label: J226("Paid", "Pagado") },
+  ]);
+}
+function offerChecks226(o) {
+  if (!o) return checks226Html([]);
+  return checks226Html([
+    { on: o.kind === "comp" || o.compOpen === true, label: J226("Comped", "Cortesía") },
+    { on: o.kind === "coupon" || o.couponOpen === true, label: J226("Coupons", "Cupones") },
+    { on: o.kind === "paid" || o.paidOpen === true, label: J226("Paid", "Pagado") },
+  ]);
+}
+function placeParts226(city, neighborhood) {
+  return [neighborhood, city].filter(Boolean);
+}
+function feedCreatorCard226Html(c, opts) {
+  opts = opts || {};
+  const p = c.profile || {};
+  const first = firstName226(c.name || "") || "them";
+  const sym = typeof currencySymbolForMarket === "function" ? currencySymbolForMarket(c.market) : "$";
+  const pct = localPct226(c);
+  const localCount = localFollowers226(c);
+  const total = totalAudienceOf226(c);
+  const cats = (p.categories || []).slice(0, 2).join(" · ");
+  const place = placeParts226(c.city, c.neighborhood);
+  const placeTxt = place.length ? place.join(", ") : (c.market || "");
+  const priceLine = p.paidRate ? `${sym}${fmtPrice(p.paidRate)} · ${J226("paid visit rate", "tarifa por visita pagada")}` : (p.compOpen !== false ? J226("Comped visits open", "Visitas en cortesía abiertas") : J226("Paid bookings only", "Solo reservas pagadas"));
+  const initial = esc((c.name || "").trim().charAt(0).toUpperCase() || "S");
+  return `<article class="u226-card${opts.topMatch ? " top-match" : ""}" data-u226="creator-card">${opts.topMatch ? `<span class="top-match-tag">${J226("Top match", "Mejor coincidencia")}</span>` : ""}
+    <div class="u226-photo">${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="" loading="lazy">` : `<div class="u226-mono">${initial}</div>`}
+      ${matchBadge226Html(c)}
+      ${opts.preview ? "" : favBtn226Html("creator", c.userId, c.isFavorite)}
+    </div>
+    <div class="u226-straddle j226-heroid"><div class="u226-name">${esc(c.name || "")}</div><div class="u226-meta">${cats ? `${esc(cats)} · ` : ""}<span class="u226-citygrad">${esc(placeTxt)}</span></div></div>
+    <div class="u226-body">
+      <div class="u226-price">${esc(priceLine)}</div>
+      <div class="u226-chips j226-chipstrip">${pct != null ? `<span class="cc-chip">${pct}% ${J226("local", "local")}</span>` : ""}${localCount != null ? `<span class="cc-chip">${fmtFull(localCount)} ${J226("local followers", "seguidores locales")}</span>` : ""}${total > 0 ? `<span class="cc-chip">${compact226(total)} ${J226("total followers", "seguidores en total")}</span>` : ""}</div>
+      ${creatorChecks226(c)}
+      ${opts.preview ? "" : `<div class="u226-acts"><button type="button" class="btn u226-primary" onclick="startOffer('${c.userId}')">${J226("Book", "Reservar")} ${esc(first)}</button><button type="button" class="btn ghost u226-secondary" onclick="openCreatorProfile('${c.userId}')">${J226("See profile", "Ver perfil")}</button></div>`}
+    </div>
+  </article>`;
+}
+function feedOfferCard226Html(o, opts) {
+  opts = opts || {};
+  const preview = !!opts.preview;
+  const parked = !!opts.parked;
+  const price = typeof mirrorPriceLine === "function" ? mirrorPriceLine(o) : { main: "", sub: "" };
+  const place = [o.businessNeighborhood, o.businessCity].filter(Boolean).join(", ");
+  const rating = ratingOf226(o);
+  const spotsLeft = (Number(o.spots) || 0) - (Number(o.filledCount) || 0);
+  const initial = esc((String(o.businessName || o.businessCity || o.title || "Magpie")).trim().charAt(0).toUpperCase() || "S");
+  const tr = o.businessTrackRecord;
+  const trackCells = tr ? [
+    tr.visitsHosted > 0 ? `<span><strong>${tr.visitsHosted}</strong> creator visit${tr.visitsHosted === 1 ? "" : "s"} hosted here</span>` : "",
+    tr.creatorsReturned > 0 ? `<span><strong>${tr.creatorsReturned}</strong> creator${tr.creatorsReturned === 1 ? "" : "s"} came back for a second visit</span>` : "",
+    tr.onTimePct !== null && tr.onTimePct !== undefined ? `<span><strong>${tr.onTimePct}%</strong> of visits ended with the post up on time</span>` : "",
+  ].filter(Boolean).join("") : "";
+  return `<article class="u226-card" data-u226="offer-card">
+    <div class="u226-photo">${o.businessImageUrl ? `<img src="${esc(o.businessImageUrl)}" alt="" loading="lazy">` : `<div class="u226-mono">${initial}</div>`}
+      ${rating != null ? `<span class="j226-ratebadge">&#9733; ${rating.toFixed(1)}</span>` : ""}
+      ${preview ? "" : favBtn226Html("offer", o.id, o.viewerSaved != null ? o.viewerSaved : o.isFavorite)}
+    </div>
+    <div class="u226-straddle j226-heroid"><div class="u226-name">${!preview && o.businessId ? `<button type="button" class="u226-namelink" onclick="return openBusiness226('${esc(o.businessId)}')">${esc(o.businessName || "")}</button>` : esc(o.businessName || "")}</div><div class="u226-meta">${esc(o.category || "")}${place ? ` · <span class="u226-citygrad">${esc(place)}</span>` : ""}</div></div>
+    <div class="u226-body">
+      <div class="u226-price">${esc(price.main)}</div>
+      ${o.title ? `<div class="u226-title">${esc(o.title)}</div>` : ""}
+      ${o.distanceBand ? `<div class="u226-sub">${esc(o.distanceBand)} ${J226("away", "de distancia")}${spotsLeft > 0 && o.spots ? ` · ${spotsLeft} ${J226("of", "de")} ${o.spots} ${J226("spots left", "lugares libres")}` : ""}</div>` : ""}
+      ${offerChecks226(o)}
+      ${trackCells ? `<div class="mirror-track">${trackCells}</div>` : ""}
+      ${preview ? "" : o.myApplication ? `<div class="u226-acts"><span class="badge ok">${J226("Applied", "Aplicado")}</span><button type="button" class="btn ghost u226-secondary" onclick="state.crOffersSeg='applied'; return go('dashboard','Offers')">See it in My offers</button><button type="button" class="btn ghost u226-secondary" onclick="return openOffer226('${o.id}')">${J226("See full offer", "Ver oferta completa")}</button></div>` : `<div class="u226-acts"><button type="button" class="btn u226-primary" onclick="findOffersGrab('${o.id}')">${J226("Apply", "Aplicar")}</button><button type="button" class="btn ghost u226-secondary" onclick="return openOffer226('${o.id}')">${J226("See full offer", "Ver oferta completa")}</button></div>${parked ? `<div class="u226-quiet"><button type="button" class="u226-textbtn" onclick="findOffersUnlater('${o.id}')">${J226("Move back", "Volver a mover")}</button></div>` : `<div class="u226-quiet"><button type="button" class="u226-textbtn" onclick="findOffersLater('${o.id}')">${J226("Save for later", "Guardar para después")}</button><button type="button" class="u226-textbtn" onclick="findOffersHide('${o.id}')">${J226("Not for me", "No es para mí")}</button></div>`}`}
+    </div>
+  </article>`;
+}
+function feedBusinessCard226Html(b, opts) {
+  opts = opts || {};
+  const name = b.businessName || b.name || "";
+  const id = b.businessId || b.userId || b.id || "";
+  const place = [b.neighborhood, b.city].filter(Boolean).join(", ");
+  const rating = ratingOf226(b);
+  const initial = esc((String(name || "M")).trim().charAt(0).toUpperCase() || "M");
+  const img = b.businessImageUrl || b.photoUrl || (Array.isArray(b.photos) && b.photos[0]) || "";
+  return `<article class="u226-card" data-u226="business-card">
+    <div class="u226-photo">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : `<div class="u226-mono">${initial}</div>`}
+      ${rating != null ? `<span class="j226-ratebadge">&#9733; ${rating.toFixed(1)}</span>` : ""}
+      ${matchBadge226Html(b)}
+      ${opts.preview ? "" : favBtn226Html("business", id, b.viewerSaved != null ? b.viewerSaved : b.isFavorite)}
+    </div>
+    <div class="u226-straddle j226-heroid"><div class="u226-name">${esc(name)}</div><div class="u226-meta">${esc(b.category || "")}${place ? ` · <span class="u226-citygrad">${esc(place)}</span>` : ""}</div></div>
+    <div class="u226-body">
+      ${b.about ? `<div class="u226-sub">${esc(b.about)}</div>` : ""}
+      <div class="u226-acts"><button type="button" class="btn u226-primary" onclick="return openBusinessSaved226('${esc(id)}')">${J226("See open offers", "Ver ofertas abiertas")}</button></div>
+    </div>
+  </article>`;
+}
+function openBusinessSaved226(id) {
+  if (id) return openBusiness226(id);
+  if (state.user && state.user.role === "creator") { state.tab = "Find Offers"; if (typeof render === "function") render(); }
+  return false;
+}
+/* Business profile view (j226-business): the v8 hero, the Photos
+   section and the business's open offers, from
+   GET /api/businesses/:id. The payload's openOffers carry a
+   per-offer viewerSaved, so the offer cards below save and apply
+   exactly like the feed cards. */
+async function fetchBusiness226(id) {
+  if (!id) return null;
+  const d = await api("GET", "/businesses/" + encodeURIComponent(id));
+  return d && d.business ? d.business : null;
+}
+function scrollBizOffers226() {
+  const el = typeof document !== "undefined" ? document.getElementById("u226-biz-offers") : null;
+  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  return false;
+}
+function businessProfile226Html(b) {
+  if (!b) return "";
+  const heroBiz = { ...b };
+  if (heroBiz.visitsHosted == null && b.businessTrackRecord && b.businessTrackRecord.visitsHosted != null) heroBiz.visitsHosted = b.businessTrackRecord.visitsHosted;
+  const offers = Array.isArray(b.openOffers) ? b.openOffers : [];
+  const cards = offers.map((o) => feedOfferCard226Html({ ...o, businessCity: o.businessCity || b.city || "", businessNeighborhood: o.businessNeighborhood || b.neighborhood || "", businessImageUrl: o.businessImageUrl || (Array.isArray(b.photos) && b.photos[0]) || b.photoUrl || "" })).join("");
+  return `<div data-u226="business-profile">
+    ${heroBusiness226Html(heroBiz, { onProfile: true })}
+    ${photos226Html(b.photos, { app: true })}
+    <div class="pdp-block" id="u226-biz-offers"><h4>${J226("Open offers", "Ofertas abiertas")}</h4>
+    ${offers.length ? `<div class="u226-feedlist">${cards}</div>` : `<p class="small muted">${J226("No open offers right now. Save this business and its next offer will be easy to find.", "No hay ofertas abiertas ahora. Guarda este negocio y su próxima oferta será fácil de encontrar.")}</p>`}
+    </div></div>`;
+}
+/* Saved area: one list, same final cards, grouped by kind. */
+function savedNormalize226(data) {
+  const out = { creators: [], businesses: [], offers: [] };
+  if (!data) return out;
+  const push = (type, item) => { if (item) out[type].push(item); };
+  const list = Array.isArray(data) ? data : (data.favorites || data.saved || []);
+  for (const item of list) {
+    if (!item) continue;
+    const t = item.targetType || item.type || "";
+    if (t === "business") push("businesses", item.business || item);
+    else if (t === "offer") push("offers", item.offer || item);
+    else if (item.userId && (item.profile || item.creator)) push("creators", item.creator && item.userId === undefined ? item : item);
+    else if (item.businessName && !item.title) push("businesses", item);
+    else if (item.title && item.businessName) push("offers", item);
+    else if (item.userId) push("creators", item);
+  }
+  if (data.creators) out.creators.push(...data.creators);
+  if (data.businesses) out.businesses.push(...data.businesses);
+  if (data.offers) out.offers.push(...data.offers);
+  return out;
+}
+function savedEmpty226Html() {
+  return `<div class="empty-card" data-u226="saved-empty"><div class="ec-t">${J226("Nothing saved yet", "Nada guardado todavía")}</div><div class="ec-s">${J226("Tap the bookmark on any card or profile and it waits for you here.", "Toca el marcador en cualquier tarjeta o perfil y te espera aquí.")}</div></div>`;
+}
+function savedView226Html(data) {
+  const s = savedNormalize226(data);
+  const total = s.creators.length + s.businesses.length + s.offers.length;
+  if (!total) return savedEmpty226Html();
+  return `<div data-u226="saved-view">
+    ${s.creators.length ? `<h3 class="u226-savedh">${J226("Saved creators", "Creadoras guardadas")}</h3><div class="u226-feedlist">${s.creators.map((c) => feedCreatorCard226Html(c)).join("")}</div>` : ""}
+    ${s.businesses.length ? `<h3 class="u226-savedh">${J226("Saved businesses", "Negocios guardados")}</h3><div class="u226-feedlist">${s.businesses.map((b) => feedBusinessCard226Html(b)).join("")}</div>` : ""}
+    ${s.offers.length ? `<h3 class="u226-savedh">${J226("Saved offers", "Ofertas guardadas")}</h3><div class="u226-feedlist">${s.offers.map((o) => feedOfferCard226Html(o)).join("")}</div>` : ""}
+  </div>`;
+}
+async function loadSaved226() {
+  const host = document.getElementById("u226-saved-body");
+  if (!host) return false;
+  let merged = { creators: [], businesses: [], offers: [] };
+  try {
+    const d = await api("GET", "/favorites");
+    merged = savedNormalize226(d);
+    if (d && d.savedIds) seedFavCache226(d.savedIds);
+  } catch (e) { /* local saves still render below */ }
+  const map = favCache226();
+  const seen = new Set([...merged.creators.map((c) => "creator:" + c.userId), ...merged.businesses.map((b) => "business:" + (b.businessId || b.userId || b.id)), ...merged.offers.map((o) => "offer:" + o.id)]);
+  for (const key of Object.keys(map)) {
+    if (!map[key] || seen.has(key)) continue;
+    const [type, id] = key.split(/:(.+)/).filter(Boolean);
+    if (type === "creator") { const c = (state.discover || []).find((x) => x.userId === id); if (c) merged.creators.push({ ...c, isFavorite: true }); }
+    if (type === "offer") { const o = (state.openOffers || []).find((x) => x.id === id); if (o) merged.offers.push({ ...o, isFavorite: true }); }
+    if (type === "business") { const o = (state.openOffers || []).find((x) => x.businessId === id); if (o) merged.businesses.push({ businessId: id, businessName: o.businessName, category: o.category, businessImageUrl: o.businessImageUrl, isFavorite: true }); }
+  }
+  for (const c of merged.creators) c.isFavorite = true;
+  for (const b of merged.businesses) { b.isFavorite = true; b.viewerSaved = true; }
+  for (const o of merged.offers) { o.isFavorite = true; o.viewerSaved = true; }
+  host.innerHTML = savedView226Html(merged);
+  return false;
+}
+function openSaved226() {
+  const el = document.getElementById("tab-body") || document.getElementById("app");
+  if (!el) return false;
+  el.innerHTML = `<div class="wrap"><p><button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Home')">&larr; ${J226("Back", "Volver")}</button></p>
+    <h2 style="margin:6px 0 4px">${J226("Saved", "Guardados")}</h2>
+    <p class="small muted" style="margin:0 0 14px">${J226("Your saved creators, businesses and offers.", "Tus creadoras, negocios y ofertas guardados.")}</p>
+    <div id="u226-saved-body">${savedEmpty226Html()}</div></div>`;
+  if (typeof window !== "undefined" && window.scrollTo) window.scrollTo(0, 0);
+  loadSaved226();
+  return false;
+}
+function savedFeedButton226Html() {
+  return `<button type="button" class="u226-savedbtn" data-u226="saved-open" onclick="return openSaved226()" aria-label="${J226("Open Saved", "Abrir Guardados")}"><span aria-hidden="true">&#128278;</span> ${J226("Saved", "Guardados")}</button>`;
+}
+/* Profile heroes: full-bleed photo, white fade at the bottom of
+   the photo carrying identity, match badge on the hero, stats
+   row under the photo with one size on one baseline. */
+function socialIcons226Html(x) {
+  const chans = channelsOf226(x);
+  if (!chans.length) return "";
+  return `<span class="u226-socials">${chans.slice(0, 5).map((c) => { const mark = (typeof CHAN_MARK_226 !== "undefined" && CHAN_MARK_226[c.platform]) || [String(c.label || "?").slice(0, 2).toUpperCase(), "#44536A"]; const inner = `<span class="u226-soc" style="background:${mark[1]}">${esc(mark[0])}</span>`; return c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" aria-label="${esc(c.label)}">${inner}</a>` : inner; }).join("")}</span>`;
+}
+function statsRow226Html(stats) {
+  const list = (stats || []).filter((s) => s && s.value != null && s.value !== "");
+  if (!list.length) return "";
+  return `<div class="u226-stats" data-u226="stats-row">${list.map((s) => `<div class="u226-stat"><div class="u226-statlbl">${esc(s.label)}</div><div class="u226-statnum${s.grad ? " grad" : ""}">${esc(String(s.value))}</div></div>`).join("")}</div>`;
+}
+function creatorStats226(c) {
+  const p = (c && c.profile) || {};
+  const localCount = localFollowers226(c);
+  const total = totalAudienceOf226(c);
+  const stats = [];
+  if (localCount != null) stats.push({ value: fmtFull(localCount), label: J226("Local followers", "Seguidores locales"), grad: true });
+  if (total > 0) stats.push({ value: compact226(total), label: J226("Followers in all", "Seguidores en total") });
+  if (p.avgViews) stats.push({ value: compact226(p.avgViews), label: J226("Typical views", "Vistas típicas") });
+  const tr = c && c.trackRecord;
+  if (tr && tr.visitsCompleted) stats.push({ value: String(tr.visitsCompleted), label: J226("Visits done", "Visitas hechas") });
+  return stats;
+}
+function heroCreator226Html(c, opts) {
+  opts = opts || {};
+  const p = c.profile || {};
+  const first = firstName226(c.name || "") || "them";
+  const rating = ratingOf226(c);
+  const ratingCount = c.ratingCount !== undefined && c.ratingCount !== null ? c.ratingCount : (c.reviewSummary ? c.reviewSummary.count : 0);
+  const cats = (p.categories || []).join(" · ");
+  const place = placeParts226(c.city, c.neighborhood).join(", ") || c.market || "";
+  const initial = esc((c.name || "").trim().charAt(0).toUpperCase() || "S");
+  return `<div class="u226-hero" data-u226="creator-hero">
+    <div class="u226-herophoto">${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="u226-mono">${initial}</div>`}
+      ${matchBadge226Html(c)}
+      ${opts.preview || opts.admin ? "" : favBtn226Html("creator", c.userId, c.isFavorite)}
+      <div class="u226-fade">
+        <div class="u226-heroname">${esc(first)}</div>
+        <div class="u226-herometa">${cats ? `${esc(cats)} ${J226("creator", "creadora")} · ` : ""}<span class="u226-citygrad">${esc(place)}</span></div>
+        ${rating != null && ratingCount >= 3 ? `<div class="u226-herorate">&#9733; ${rating.toFixed(1)} · ${J226("from", "de")} ${ratingCount} ${J226("visits", "visitas")}</div>` : ""}
+        ${p.bio ? `<p class="u226-herobio">${esc(p.bio)}</p>` : ""}
+        <div class="u226-herorow">${socialIcons226Html(c)}${opts.preview || opts.admin ? "" : `<button type="button" class="btn u226-primary" onclick="startOffer('${c.userId}')">${J226("Book", "Reservar")} ${esc(first)}</button>`}</div>
+      </div>
+    </div>
+    ${statsRow226Html(creatorStats226(c))}
+  </div>`;
+}
+function heroBusiness226Html(b, opts) {
+  opts = opts || {};
+  const name = b.businessName || b.name || "";
+  const id = b.businessId || b.userId || b.id || "";
+  const rating = ratingOf226(b);
+  const place = [b.neighborhood, b.city].filter(Boolean).join(", ") || b.market || "";
+  const initial = esc((String(name || "M")).trim().charAt(0).toUpperCase() || "M");
+  const img = b.businessImageUrl || b.photoUrl || (Array.isArray(b.photos) && b.photos[0]) || "";
+  const stats = [];
+  if (b.visitsHosted != null) stats.push({ value: String(b.visitsHosted), label: J226("Visits hosted", "Visitas recibidas") });
+  if (rating != null) stats.push({ value: rating.toFixed(1), label: J226("Creator rating", "Calificación de creadoras") });
+  const total = totalAudienceOf226(b);
+  if (total > 0) stats.push({ value: compact226(total), label: J226("Followers in all", "Seguidores en total") });
+  return `<div class="u226-hero" data-u226="business-hero">
+    <div class="u226-herophoto">${img ? `<img src="${esc(img)}" alt="">` : `<div class="u226-mono">${initial}</div>`}
+      ${matchBadge226Html(b)}
+      ${opts.preview ? "" : favBtn226Html("business", id, b.viewerSaved != null ? b.viewerSaved : b.isFavorite)}
+      <div class="u226-fade">
+        <div class="u226-heroname">${esc(name)}</div>
+        <div class="u226-herometa">${esc(b.category || "")}${place ? ` · <span class="u226-citygrad">${esc(place)}</span>` : ""}</div>
+        ${rating != null ? `<div class="u226-herorate">&#9733; ${rating.toFixed(1)} · ${J226("from creators who visited", "de creadoras que visitaron")}</div>` : ""}
+        ${b.about ? `<p class="u226-herobio">${esc(b.about)}</p>` : ""}
+        <div class="u226-herorow">${socialIcons226Html(b)}<button type="button" class="btn u226-primary" onclick="${opts.onProfile ? "return scrollBizOffers226()" : `return openBusinessSaved226('${esc(id)}')`}">${J226("See open offers", "Ver ofertas abiertas")}</button></div>
+      </div>
+    </div>
+    ${statsRow226Html(stats)}
+  </div>`;
+}
+/* Accounts in fixed aligned columns: platform, handle, total,
+   and the local follower count highlighted in the gradient. */
+function accounts226Html(x, opts) {
+  opts = opts || {};
+  const list = channelsOf226(x);
+  if (!list.length) return "";
+  const total = totalAudienceOf226(x);
+  const localTotal = localFollowers226(x);
+  const rows = list.map((c) => {
+    const handle = c.handle ? (String(c.handle).startsWith("@") || c.platform === "website" ? String(c.handle) : "@" + c.handle) : "";
+    const local = c.followers != null && c.localPct != null ? Math.round((Number(c.followers) * Number(c.localPct)) / 100) : null;
+    const cells = `<span class="u226-acccell plat">${esc(c.label)}</span><span class="u226-acccell handle">${esc(handle)}</span><span class="u226-acccell num">${c.followers != null ? fmtFull(c.followers) : ""}</span><span class="u226-acccell num grad">${local != null ? fmtFull(local) + " " + J226("local", "local") : ""}</span>`;
+    return c.url ? `<a class="u226-accrow" href="${esc(c.url)}" target="_blank" rel="noopener">${cells}</a>` : `<div class="u226-accrow">${cells}</div>`;
+  }).join("");
+  const head = total > 0 ? `<p class="small muted" style="margin:0 0 8px">${fmtFull(total)} ${J226("followers in all", "seguidores en total")}${localTotal != null ? ` · <span class="u226-gradtext">${fmtFull(localTotal)} ${J226("local followers", "seguidores locales")}</span>` : ""}</p>` : "";
+  const inner = `${head}<div class="u226-accounts">${rows}</div>`;
+  if (opts.public) return `<div style="margin-top:18px"><h3 class="bookme-h">${esc(opts.heading || J226("Their accounts", "Sus cuentas"))}</h3>${inner}</div>`;
+  if (opts.app) return `<div class="pdp-block"><h4>${esc(opts.heading || J226("Their accounts", "Sus cuentas"))}</h4>${inner}</div>`;
+  return `<section class="j226-card"><h3 class="j226-h2">${esc(opts.heading || J226("Their accounts", "Sus cuentas"))}</h3>${inner}</section>`;
+}
+/* Photos section: the whole gallery, cover first, snap-scroll. */
+function photos226Html(photos, opts) {
+  opts = opts || {};
+  const list = (Array.isArray(photos) ? photos : []).filter(Boolean);
+  if (!list.length) return "";
+  const row = `<div class="u226-photos" data-u226="photos">${list.map((src, i) => `<img class="u226-photoimg" src="${esc(src)}" alt="" loading="lazy">${i === 0 ? "" : ""}`).join("")}</div>`;
+  if (opts.app) return `<div class="pdp-block"><h4>${J226("Photos", "Fotos")}</h4>${row}</div>`;
+  if (opts.public) return `<div style="margin-top:18px"><h3 class="bookme-h">${J226("Photos", "Fotos")}</h3>${row}</div>`;
+  return `<section class="j226-card"><h3 class="j226-h2">${J226("Photos", "Fotos")}</h3>${row}</section>`;
+}
+function bizPhotosOf226(u, home) {
+  const src = (home && (home.photos || home.businessPhotos)) || (u && u.business && (u.business.photos || u.business.businessPhotos)) || (u && u.photos) || [];
+  if (Array.isArray(src) && src.length) return src.filter(Boolean);
+  if (u && u.business && u.business.hasPhoto) { const uid = u.id || u.userId || (typeof state !== "undefined" && state.user && state.user.id) || ""; return uid ? [`/api/users/${uid}/photo`] : []; }
+  return [];
+}
+function bizGallery226Html(u, home) {
+  const urls = bizPhotosOf226(u, home);
+  const v = state.bizGalleryV || 0;
+  const tiles = urls.map((src, i) => `
+    <div class="gal-tile">
+      <img src="${esc(src)}${String(src).includes("?") ? "&" : "?"}v=${v}" alt="Business photo ${i + 1}">
+      ${i === 0 ? `<span class="gal-cover">${J226("Cover", "Portada")}</span>` : `<button type="button" class="gal-btn" onclick="return bizGalleryMakeCover226(${i})">${J226("Make cover", "Hacer portada")}</button>`}
+      <button type="button" class="gal-btn gal-del" onclick="return bizGalleryRemove226(${i})">${J226("Remove", "Quitar")}</button>
+    </div>`).join("");
+  const add = urls.length < 6 ? `<label class="gal-tile gal-add"><input type="file" accept="image/png,image/jpeg,image/webp" onchange="bizGalleryAdd226(this)"><span>${J226("Add photo", "Agregar foto")}</span></label>` : "";
+  return `<div class="gal-grid">${tiles}${add}</div>`;
+}
+function bizPhotosEditor226Html(u, home) {
+  return `<section class="j226-card" data-u226="biz-photos-editor">
+    <h3 class="j226-h2">${J226("Your photos", "Tus fotos")}</h3>
+    <p class="small muted" style="margin:0 0 10px">${J226("Up to 6 photos. The first is your cover: the one on your cards and your page. Changes save as you make them.", "Hasta 6 fotos. La primera es tu portada: la de tus tarjetas y tu página. Los cambios se guardan al hacerlos.")}</p>
+    <div id="biz-gallery">${bizGallery226Html(u, home)}</div>
+    <p class="small lane-err" id="biz-gallery-err" style="display:none"></p>
+  </section>`;
+}
+async function bizGalleryOp226(run) {
+  const err = document.getElementById("biz-gallery-err");
+  if (err) err.style.display = "none";
+  try {
+    const data = await run();
+    if (data && data.photos && state.user) {
+      state.user.business = state.user.business || {};
+      state.user.business.photos = data.photos;
+      state.user.business.photoCount = data.photoCount != null ? data.photoCount : data.photos.length;
+      state.user.business.hasPhoto = data.photos.length > 0;
+    }
+    state.bizGalleryV = (state.bizGalleryV || 0) + 1;
+    const host = document.getElementById("biz-gallery");
+    if (host && state.user) host.innerHTML = bizGallery226Html(state.user, state.bizProfileView && state.bizProfileView.home);
+    return true;
+  } catch (e) {
+    if (err) { err.textContent = (e && e.message) || J226("That photo change did not save.", "Ese cambio de foto no se guardó."); err.style.display = "block"; }
+    return false;
+  }
+}
+function bizGalleryAdd226(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return false;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const slot = bizPhotosOf226(state.user, state.bizProfileView && state.bizProfileView.home).length;
+    bizGalleryOp226(() => api("POST", "/me/photo", { dataUrl: reader.result, slot }));
+  };
+  reader.onerror = () => {
+    const err = document.getElementById("biz-gallery-err");
+    if (err) { err.textContent = J226("That photo could not be read.", "Esa foto no se pudo leer."); err.style.display = "block"; }
+  };
+  reader.readAsDataURL(file);
+  return false;
+}
+function bizGalleryMakeCover226(i) {
+  bizGalleryOp226(() => api("POST", "/me/photo/cover", { slot: i }));
+  return false;
+}
+function bizGalleryRemove226(i) {
+  bizGalleryOp226(() => api("DELETE", `/me/photo/${i}`));
+  return false;
+}
+
+/* BUILD226-END */
+
 function go(view, tab) {
   // Any navigation leaves Business Preview: the mode is a single
   // deliberate walk, and the admin lands back on the normal console.
@@ -7949,6 +9814,7 @@ async function render() {
   if (state.view === "brand-profile") return renderBrandProfilePage();
   clearShareShell();
   if (state.view === "staff") return renderStaff();
+  if (state.view && state.view.indexOf("j226-") === 0) return renderJourney226();
   const u = state.user;
   if (!u) {
     if (state.view === "join-creator") return renderJoinCreator();
@@ -11696,6 +13562,7 @@ function renderClaimFacts() {
       ${claimDots(2)}
       <h2 class="c85-h2">${T("Four", "Cuatro")} <span class="c85-accent2">${T("quick facts.", "datos rápidos.")}</span></h2>
       <div id="c85-facts-warn"></div>
+      ${stallCapture226Html("creator_claim")}
       <div class="c85-fact">
         <p class="fg-kicker">${T("Your city", "Tu ciudad")}</p>
         <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOpts}</select><p class="small muted" style="margin:6px 0 0">${esc(marketHelp)}</p><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and Magpie walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every Magpie post.</p></div>
@@ -12074,6 +13941,7 @@ function renderClaimAccount() {
         <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on Magpie on Magpie, and I agree Magpie can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en Magpie las reservas que empiezan en Magpie, y acepto que Magpie me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
         <button class="btn" type="submit" style="width:100%">${T("Finish — join the founding roster", "Terminar: únete a la lista de fundadores")}</button>
       </form>
+      ${pushReminder226Html("creator", "claim")}
       <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Once you are approved, you can update all your numbers and add every social channel you have, even ones not listed here.", "Una vez que te aprueben, puedes actualizar todos tus números y agregar todas tus redes sociales, incluso las que no aparecen aquí.")}</p>
       <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(3)">${T("Back", "Atrás")}</a></p>
     </div>
@@ -12774,6 +14642,7 @@ function renderForBusinesses() {
     <form onsubmit="return registerBusiness(event)">
       <div class="fgroup tint">
         <p class="fg-kicker">Your business</p>
+        ${stallCapture226Html("business_signup")}
         <div class="field"><label>Where do you operate?</label>${chipSelectHtml("jb-scope", [{ value: "market", label: "One market: we serve one city area" }, { value: "national", label: "National: we operate across markets" }], "market", "jbScopeSync181", false)}<p class="small muted">National is for brands whose products ship or sell across markets. Creators see your brand name and logo only, never your name or email. National accounts have no plan yet, and nothing is charged.</p></div>
         <div id="jb-national-fields" style="display:none">
           <div class="field"><label>Brand name (what creators see)</label><input id="jb-brand" placeholder="Your brand as customers know it, if different from the business name"><p class="small muted">Creators see this brand name. They never see your business name, your name, or your email.</p></div>
@@ -12786,7 +14655,7 @@ function renderForBusinesses() {
         </div>
         <p class="small muted" style="margin:-4px 0 10px">Your name and business name stay on your account. If you are a national brand, creators see only the Brand name above, never these.</p>
         <div class="form-2col">
-          <div class="field"><label>Email</label><input id="jb-email" type="email" required placeholder="you@yourbusiness.com" value="${esc(state.googlePrefill ? state.googlePrefill.email : "")}"></div>
+          <div class="field"><label>Email</label><input id="jb-email" type="email" required onchange="startedSignup226('business_signup', this.value)" placeholder="you@yourbusiness.com" value="${esc(state.googlePrefill ? state.googlePrefill.email : "")}"></div>
           <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input id="jb-password" type="password" required minlength="10"></div>
         </div>
       </div>
@@ -13685,6 +15554,7 @@ function renderPending() {
       ? `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding spot in", "Tu lugar de fundador en")} <strong>${place}</strong> ${T("is claimed and your application is in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está reclamado y tu solicitud está en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>
     <p class="muted" style="text-align:left">${T("Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.", "Tu perfil aún no está terminado, y es así a propósito: cuando te aprobemos, te escribimos por correo, y terminas tu perfil desde la lista de tu panel (tu ciudad, tus conteos de audiencia, qué parte es local, tu foto). Un perfil terminado es lo que ven los negocios, así que ese paso es lo que te hace contratable.")}</p>`
       : `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding creator profile for", "Tu perfil de creador fundador para")} <strong>${place}</strong> ${T("is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está creado y en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>`}
+    ${pendingNote226Html(u)}
     ${isCreator ? `<div style="text-align:left;margin-top:14px" id="pending-home">
       <h3 style="margin:0 0 6px">${T("What happens next", "Qué sigue")}</h3>
       <ol style="padding-left:20px;margin:0">
@@ -14402,37 +16272,26 @@ function creatorProfileDetailHtml(c, preview, opts) {
   return `
   <div class="panel">
     <p><button class="btn small-btn ghost" onclick="${adminView ? "adminBackToRequests()" : preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to ${adminView ? "Applications" : "results"}</button></p>
+    ${heroCreator226Html(c, { preview, admin: adminView })}
+    ${photos226Html(c.photos, { app: true })}
     <div class="creator-card full">
-      <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
-        ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono">${p.localAudiencePct !== null && p.localAudiencePct !== undefined ? `<span class="cc-mono189">${p.localAudiencePct}%<small>local audience</small></span>` : `<span>${initial}</span>`}</div>`}
-        ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-        ${p.paidRate ? `<span class="cc-paid">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}</span>` : ""}
-      </div>
-      ${galleryRowHtml(c.photos)}
       <div class="cc-body">
-        <div class="cc-id">
-          <div class="cc-name">${esc(c.name)}</div>
-          ${ccHandleHtml(p)}
-          <div class="cc-loc">${esc(locLine)}</div>
-        </div>
         <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${p.spanishContent ? ` <span class="badge">Spanish content</span>` : ""}${p.musician ? ` <span class="badge">Musician</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
-        ${pdpLocalHeroHtml(c)}
-        <div class="cc-meta">
-          <div><div class="k">Total audience (all platforms)</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
-          <div><div class="k">Typical views</div><div class="v">${fmtNum(p.avgViews)}</div></div>
-        </div>
         ${(() => { const pills = stackList(c).filter((x) => x.hasLink); return pills.length ? `<div class="cc-platforms">${pills.map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}${x.synced ? " &middot; Synced" : ""}</span>`).join("")}</div>` : ""; })()}
       </div>
     </div>
     ${(!adminView && !preview) ? `<div class="pdp-topacts"><button type="button" class="btn" onclick="startOffer('${c.userId}')">Book ${esc(firstName)}</button>${c.haveBack && state.user && state.user.role === "business" ? `<button type="button" class="btn" onclick="return haveThemBack('${c.userId}', this)">${esc(c.haveBack.label)}</button>` : ""}<button type="button" class="btn ghost" id="pdp-save-top" onclick="return pdpSaveToggle('${c.userId}')">${c.isFavorite ? "Saved" : "Save"}</button><button type="button" class="btn ghost" onclick="openThread('${c.userId}')">Message</button></div>${c.haveBack && state.user && state.user.role === "business" ? `<p class="small muted" style="margin-top:6px">"${esc(c.haveBack.label)}" copies your last visit's terms into a new draft. Nothing sends until you check it and publish.</p>` : ""}` : ""}
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">Greyed out in search and unable to take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. Offers can still be sent; accepting reopens next week.</span></p>` : ""}
+    ${openTo226Html(c)}
     ${whatYouGetHtml(c)}
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.musician && (p.musicPerform || p.musicCreate) ? `<p class="small muted">${[p.musicPerform ? "Open to live performances" : "", p.musicCreate ? "Open to creating music for businesses" : ""].filter(Boolean).join(" &middot; ")}</p>` : ""}
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
     ${platformLinksHtml(c)}
+    ${accounts226Html(c, { app: true })}
+    ${showcase226Html(c, { app: true })}
     ${creatorShowcaseHtml(c)}
     ${audienceSpecsHtml(c)}
     ${audienceGeoHtml(c)}
@@ -14501,87 +16360,9 @@ function backToDiscover() {
 }
 
 function creatorCard(c, viewer, opts) {
-  opts = opts || {};
-  const p = c.profile || {};
-  const localTxt = p.localAudiencePct === null || p.localAudiencePct === undefined
-    ? "Local audience not reported yet"
-    : `${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span>`;
-  const tr = c.trackRecord;
-  // Build -175: the canon local count for the cc-local block
-  // (null when no count can be formed — the block then reads
-  // exactly as it always has).
-  const localModel175 = localCountModel(c);
-  const trackLine = tr
-    ? (tr.isNew
-      ? `<span class="badge info">New to Magpie: no visits yet</span>`
-      : `<span class="muted">${tr.visitsCompleted} visit${tr.visitsCompleted === 1 ? "" : "s"} completed &middot; ${tr.postsDelivered} post${tr.postsDelivered === 1 ? "" : "s"} delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "—" : tr.onTimePct + "% on time"}</span>`)
-    : "";
-  const ratingAvg = c.ratingAvg !== undefined && c.ratingAvg !== null ? c.ratingAvg : (c.reviewSummary ? c.reviewSummary.average : null);
-  const ratingCount = c.ratingCount !== undefined ? c.ratingCount : (c.reviewSummary ? c.reviewSummary.count : 0);
-  // Feed anatomy (UX redesign section 6): the rating joins the card
-  // only once it rests on 3+ ratings; one or two ratings stay noise.
-  const reviewLine = ratingCount >= 3 && ratingAvg !== null && ratingAvg !== undefined
-    ? ` ${starsHtml(ratingAvg)} <strong>${esc(String(ratingAvg))}</strong> <span class="muted">(${ratingCount} rating${ratingCount === 1 ? "" : "s"})</span>`
-    : "";
-  // v2 .creator-card anatomy: one component for discovery, the public
-  // profile hero, and the profile detail header (DESIGN-SYSTEM.md).
-  // Same data, same words, same handlers; only the layout changed.
-  const initial = esc((c.name || "").trim().charAt(0).toUpperCase() || "S");
-  return `
-  <div class="creator-card${c.standing === "paused" ? " paused" : ""}">
-    <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
-      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono">${p.localAudiencePct !== null && p.localAudiencePct !== undefined ? `<span class="cc-mono189">${p.localAudiencePct}%<small>local audience</small></span>` : `<span>${initial}</span>`}</div>`}
-      ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-    </div>
-    <div class="cc-id">
-      <div class="cc-name">${esc(c.name)}</div>
-      ${p.primaryPlatform && p.primaryPlatform !== "instagram" ? ccHandleHtml(p) : (handleLabel(p.handle) ? `<div class="cc-handle">${esc(handleLabel(p.handle))}</div>` : "")}
-      <div class="cc-chips">
-        <span class="cc-chip market">${esc(marketDisplayName(c.market))}</span>
-        ${c.marketContext ? `<span class="cc-chip">Listed in ${esc(c.marketContext.market)}</span>` : ""}
-        ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
-        ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
-        ${c.distanceBand ? `<span class="cc-chip band">${esc(c.distanceBand)}</span>` : ""}
-        ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || (c.profile && c.profile.campusBadge) || "")}</span>` : ""}
-        ${c.foundingBand ? `<span class="cc-chip">First ${c.foundingBand} founding</span>` : ""}
-      </div>
-    </div>
-    <div class="cc-local">
-      ${p.localAudiencePct === null || p.localAudiencePct === undefined
-        ? `<div class="lbl">Local audience not reported yet</div>`
-        : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div>${lbarHtml119(p.localAudiencePct)}${localModel175.count !== null ? `<div class="cc-localcount">about ${fmtFull(localModel175.count)} ${localModel175.extrapolated ? "potential people" : "people"} here</div>` : ""}<div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
-    </div>
-    ${p.paidRate ? `<p class="small muted" style="margin-top:6px">Paid bookings from ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}${p.licensingFee ? ` · licenses posts at ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}` : ""}</p>` : ""}
-    ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<p class="small muted" style="margin-top:6px">${p.spanishAudiencePct}% Spanish-speaking audience</p>` : ""}
-    <div class="cc-meta">
-      <div><div class="k">Stacked audience</div><div class="v">${audienceLabel202(c) || fmtNum(totalAudienceOf(c))}</div></div>
-      <div><div class="k">Typical views</div><div class="v">${fmtNum(p.avgViews)}</div></div>
-    </div>
-    ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
-    ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">This creator is greyed out and cannot take new offers until the post is delivered.</span></p>` : ""}
-    ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. You can still send offers; they can accept next week.</span></p>` : ""}
-    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${p.spanishContent ? ` <span class="badge">Spanish content</span>` : ""}${p.musician ? ` <span class="badge">Musician</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
-    ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
-    ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
-    ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
-    <p class="small">${socialLinksHtml(p)}</p>
-    ${bestWorkHtml(c.bestWork, true)}
-    ${trackLine || reviewLine ? `<div class="cc-track">${trackLine}${reviewLine}</div>` : ""}
-    ${c.fit && c.fit.reasons && c.fit.reasons.length ? `<p class="small cc-fit"><strong>Why they fit:</strong> ${c.fit.reasons.slice(0, 2).map(esc).join(" &middot; ")}</p>` : ""}
-    ${c.match ? `<p class="small cc-match"><span class="badge ok">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? ` <strong>Why this match:</strong> ${c.match.reasons.map(esc).join(" &middot; ")}` : ""}</p>` : ""}
-    <p class="small muted">Every Magpie comped visit: 1 post or reel + 1 story that shares the post within 48 hours, tracked as proof. Paid bookings carry the deliverables set in the booking's terms. Content rights follow the visit: comp visits are native share only; paid visits add repost and ad rights for 90 days.</p>
-    <div class="cc-actions">
-      ${opts.preview
-        ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
-           <button class="btn small-btn ghost" onclick="previewStartOffer('${c.userId}')">Send preview offer</button>${p.paidRate ? `
-           <button class="btn small-btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""}`
-        : `<button class="btn small-btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? `
-           <button class="btn small-btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""}
-           <button class="btn small-btn ghost" onclick="openCreatorProfile('${c.userId}')">View profile</button>
-           <button class="btn small-btn ghost" onclick="openThread('${c.userId}')">Message</button>
-           <button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>`}
-    </div>
-  </div>`;
+  // Build -226 update: every creator card surface (list mode,
+  // Favorites, grids) renders the final feed structure.
+  return feedCreatorCard226Html(c, opts || {});
 }
 
 // ---------- creator ----------
@@ -14607,7 +16388,7 @@ function renderCreatorDash() {
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Find Offers") body = wsHead("Find offers", { sub: "Open visits from businesses in your markets, stated like prices. Grab the ones that fit.", subKey: "cr-findoffers" }) + `<div id="cr-findoffers">${skelHtml("Loading open offers...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
-  if (tab === "Profile") body = wsHead("My profile", { chip: (u.creator && u.creator.publicPage === true) ? livePill("Live") : `<span class="live-pill off">Public page off</span>`, sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u);
+  if (tab === "Profile") body = wsHead("My profile", { chip: (u.creator && u.creator.publicPage === true) ? livePill("Live") : `<span class="live-pill off">Public page off</span>`, sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u) + showcaseEditor226Html(u) + pushReminder226Html("creator", "profile");
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
@@ -14666,7 +16447,7 @@ function renderFoundingHome() {
   if (tab === "Find Offers") body = wsHead("Find offers", { sub: "Offers land here the day your market opens. When it opens, this is where businesses post visits and you grab the ones that fit.", subKey: "cr-findoffers" }) + `<div id="cr-findoffers">${skelHtml("Loading open offers...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div><div id="founding-buzz"></div><div id="founding-depth"></div>`;
-  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u);
+  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u) + showcaseEditor226Html(u) + pushReminder226Html("creator", "profile");
   if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
@@ -14772,6 +16553,7 @@ async function loadFoundingDashboard() {
     ${wsHead("Home", { sub: "Start here.", subKey: "cr-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} is building right now, and you're early. We email you as it gets close.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
     ${sigHero137Html(queueItems.length ? queueItems[0].text : "You are a founding creator.")}
+    ${pinnedVisit226Html(fBk.bookings || [])}
     ${promptSlotHtml()}
     ${highlights137Html([
       { label: "Momentum", sub: standingLevelName(momPts), value: `${fmtNum(momPts)} pts` },
@@ -16579,7 +18361,7 @@ function homeActiveVisitHtml(b) {
     </div>` : (b.redeemedAt ? `
     <p class="small muted">Code ${esc(b.code)} was redeemed ${esc(fmtDate(b.redeemedAt))} and is burned. It can never be used again.</p>` : "");
   const actionBlock = clockRunning
-    ? `<div class="home-actions"><button class="btn small-btn" onclick="return go('dashboard','My Visits')">Paste your post link</button></div>`
+    ? `<div class="home-actions"><button class="btn small-btn" onclick="return openPostWalk226('${b.id}')">Post about my visit</button></div>`
     : awaitingRedeem
       ? `<div class="home-actions">${b.checkinAt ? `<span class="small">You checked in at ${esc(fmtDate(b.checkinAt))}. Waiting for the business to confirm.</span>` : `<button class="btn small-btn ghost" onclick="homeCheckIn('${b.id}')">I am here (check in)</button>`}<button class="btn small-btn" onclick="return go('dashboard','My Visits')">Visit details</button></div>`
       : "";
@@ -17920,6 +19702,9 @@ async function loadCreatorHome() {
     ${completionPrompt221Html(u)}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}.</div></div>
     ${strikeStatusHtml(u)}
+    ${pinnedVisit226Html(bookings)}
+    ${postNudge226Html(bkData.postNudge || (bkData.postNudges || [])[0] || fData.postNudge || (fData.postNudges || [])[0] || null)}
+    ${pushReminder226Html("creator", "home")}
     ${sigHero137Html(brief137)}
     ${promptSlotHtml()}
     ${highlights137Html([
@@ -18997,7 +20782,7 @@ const RELEASE_TEXT = {
 function offersEmptyLine() {
   const mkt = marketTalkNameClient(state.user.market);
   if (state.user && state.user.founding && state.user.founding.marketLive === false) {
-    return `<p>You are a founding creator in ${esc(mkt)}. Offers land here the moment the market opens, founding creators see every offer first, and we email you the moment the first business posts. There is nothing to miss until then.</p>`;
+    return T(`<p>You are a founding creator in ${esc(mkt)}. Offers land here the moment the market opens, founding creators see every offer first, and we email you the moment the first business posts. There is nothing to miss until then.</p>`, `<p>Eres un creador fundador en ${esc(mkt)}. Las ofertas llegan aquí en el momento en que abre el mercado, los creadores fundadores ven cada oferta primero, y te escribimos en el momento en que el primer negocio publica. No hay nada que perderse hasta entonces.</p>`);
   }
   // Build -90: an approved creator with an empty board is still
   // a founding creator waiting on businesses, even once the
@@ -19955,27 +21740,16 @@ function visitCard(b, role) {
     if (b.kind === "paid" || b.paidLane) html += `<p class="small"><strong>${esc(postingTermsLineClient(b))}</strong> Paid visits follow the terms agreed on the booking.</p>`;
   }
   if (role === "creator" && b.redeemedAt && !post) {
-    const late = b.compliance && (b.compliance.status === "overdue" || b.compliance.status === "paused" || b.compliance.status === "missed");
-    html += `
-    <form onsubmit="return submitPost(event, '${b.id}')">
-      <h4 style="margin:10px 0 4px">Post your proof</h4>
-      ${(b.kind === "paid" || b.paidLane) ? `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered. This paid visit runs on its agreed terms: ${esc(postingTermsLineClient(b).replace(/^Posting terms: /, ""))}</p>` : late ? `<p class="small"><strong>This post is past its ${windowPhraseClient(deliverablesOfClient(b).windowHours)} deadline.</strong> Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts.</p>`}
-      <div class="field"><label>Link to your ${esc(primaryLabelClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram"))} post</label><input id="post-url-${b.id}" type="url" placeholder="https://${esc(primaryMetaClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram").host)}..." required></div>
-      <label class="ckrow"><input type="checkbox" class="ckbox" id="post-disc-${b.id}"><span>My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</span></label>
-      ${b.adDisclosure ? `<div class="field"><label>Your post caption (UK ad rule: #ad up front, then your code line)</label><textarea id="post-caption-${b.id}" rows="2">${esc(disclosureLine(b))} ${esc(b.audienceCode && b.audienceCode.line ? b.audienceCode.line : "")}</textarea><p class="small muted">${esc(b.adDisclosure.clause)} This visit does not count as delivered until the ad label is verified. Keep the code line in: it is how customers this post brings in get counted for both of you.</p></div>` : `<div class="field"><label>Your post caption (started for you — keep the code line in so the visit counts)</label><textarea id="post-caption-${b.id}" rows="2">${esc(disclosureLine(b))} ${esc(b.audienceCode && b.audienceCode.line ? b.audienceCode.line : "")}</textarea></div>`}
-      ${deliverablesOfClient(b).story ? `<label class="ckrow"><input type="checkbox" class="ckbox" id="post-story-attest-${b.id}"><span>I posted the story that shares this post too.</span></label>
-      <div class="field"><label>Story link (optional — a link or screenshot reference is enough)</label><input id="post-story-url-${b.id}" placeholder="https://"></div>
-      <p class="small muted">The story counts as creator-confirmed: you are telling us it went up. Magpie cannot see stories directly yet, so this runs on your word.</p>` : ""}
-      <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
-      <div class="field"><label>Your disclosure line, done for you</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" readonly value="${esc(disclosureLine(b))}" onclick="this.select()" style="flex:1;min-width:220px"><button type="button" class="btn small-btn ghost" onclick="return disclosureCopy(this)">Copy the line</button></div><p class="small muted">One tap copies it. Paste it at the top of your caption, then confirm on this card after the post is live.</p></div>
-      <button class="btn small-btn" type="submit">Submit post</button>
-    </form>`;
+    html += `<div class="j226-card" style="margin-top:12px" data-j226="walkthrough-entry"><h3 class="j226-h2" style="margin:0">Post your proof</h3><p class="small" style="margin:4px 0 0"><strong>Your visit is done. Now post about it.</strong></p><p class="small muted" style="margin:4px 0 0">The same three steps, every visit: post it, paste the link, and we track it from there.</p><div class="j226-cta"><button class="btn" type="button" onclick="return openPostWalk226('${b.id}')">Post about my visit</button><button class="btn ghost" type="button" onclick="return openVisitDone226('${b.id}')">See the steps</button></div></div>`;
   }
   if (role === "business" && b.compliance && b.compliance.status === "missed") {
     html += `<p class="small">This visit's comp was redeemed and no post was ever delivered. The creator's account has been closed to future offers. ${b.replacementRequestedAt ? "" : "You can request a replacement visit below."}</p>`;
   }
   if (post) {
     html += `<p class="small">Post: <a href="${esc(post.url)}" target="_blank" rel="noopener">${esc(post.url)}</a> &middot; submitted ${fmtDate(post.submittedAt)} (${post.hoursAfterRedeem}h after redemption) ${post.verifiedAt ? "&middot; <span class='saved'>Verified by the business</span>" : ""}</p>`;
+    html += visitCompleteLine226Html(b, role);
+    if (role === "creator") html += `<p style="margin-top:8px"><button class="btn small-btn ghost" type="button" onclick="return openTracked226('${b.id}')">See it tracked</button></p>`;
+    if (role === "business") html += `<p style="margin-top:8px"><button class="btn small-btn" type="button" onclick="return openBizComplete226('${b.id}')">See the finished post</button> <button class="btn small-btn ghost" type="button" onclick="return openPostReport226('${b.id}')">Post report</button></p>`;
     // Phase B (Build -111): the London #ad blocker, named on the
     // card itself with its fix path. The server has always named
     // this blocker (deliveryBlockers: "ad label missing") and
@@ -20060,6 +21834,7 @@ function visitCard(b, role) {
     <form onsubmit="return submitPostPerformance(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Add post numbers</h4>
       <p class="small muted">A week in, how did the post do? Optional numbers; reporting earns +5 Momentum points, and they price the media side of the business's modeled estimate.</p>
+      <p class="j226-incentive">Report your numbers, earn Momentum.</p>
       <div class="form-2col">
         <div class="field"><label>Views</label><input type="number" id="perf-views-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Likes</label><input type="number" id="perf-likes-${b.id}" min="0" placeholder="Optional"></div>
@@ -20158,37 +21933,22 @@ function visitCard(b, role) {
       html += `<div class="review-item"><span class="small muted">${esc(b.businessName)} rated you</span><br>${starsHtml(b.creatorReview.stars)} <span class="small">${esc(b.creatorReview.comment || "")}</span></div>`;
     }
     if (b.businessReview) {
-      html += `<div class="review-item"><span class="small muted">Your review of ${esc(b.businessName)}</span><br>${starsHtml(b.businessReview.stars)} <span class="small">${esc(b.businessReview.text || "")}</span> <span class="saved">+10 Momentum earned</span></div>`;
+      html += `<div class="review-item"><span class="small muted">Your review of ${esc(b.businessName)}</span><br>${starsHtml(b.businessReview.stars)} <span class="small">${esc(b.businessReview.note || b.businessReview.text || "")}${(b.businessReview.chips || []).length ? '<br><span class="small muted">' + b.businessReview.chips.map(esc).join(" / ") + '</span>' : ""}</span> <span class="saved">+10 Momentum earned</span></div>`;
     } else {
       html += `
-    <form onsubmit="return submitBusinessReview(event, '${b.id}')">
-      <h4 style="margin:10px 0 4px">Review this business</h4>
-      <p class="small muted">Optional, and honest is the whole point: leaving a review earns +10 Momentum at any star rating. Magpie never pays for positive reviews, and nobody can ask you for one.</p>
-      <div class="form-2col">
-        <div class="field"><label>Your rating</label>${chipSelectHtml("bizrev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
-        <div class="field"><label>Your words (optional)</label><input id="bizrev-text-${b.id}" maxlength="500" placeholder="How was the visit, honestly?"></div>
-      </div>
-      <button class="btn small-btn" type="submit">Leave review</button> <span class="small muted">+10 Momentum</span>
-    </form>`;
+    ${reviewPrompt226Html(b, "creator")}`;
     }
     html += reviewLinksBlockHtml(b.businessReviewLinks);
   }
   if (role === "business" && b.status === "completed") {
     if (b.creatorReview) {
-      html += `<div class="review-item"><span class="small muted">Your rating of this creator</span><br>${starsHtml(b.creatorReview.stars)} <span class="small">${esc(b.creatorReview.comment || "")}</span></div>`;
+      html += `<div class="review-item"><span class="small muted">Your rating of this creator</span><br>${starsHtml(b.creatorReview.stars)} <span class="small">${esc(b.creatorReview.note || b.creatorReview.comment || "")}</span>${(b.creatorReview.chips || []).length ? '<br><span class="small muted">' + b.creatorReview.chips.map(esc).join(" / ") + '</span>' : ""}${b.creatorReview.bookAgain === true ? '<br><span class="small">Would book again: yes</span>' : b.creatorReview.bookAgain === false ? '<br><span class="small">Would book again: not yet</span>' : ""}</div>`;
     } else {
       html += `
-    <form onsubmit="return submitCreatorReview(event, '${b.id}')">
-      <h4 style="margin:10px 0 4px">Rate this creator</h4>
-      <p class="small muted">The visit is complete and the post is in. Rate how the visit and the post went. The rating shows on the creator's profile next to their Momentum points: two separate numbers, and ratings never change anyone's points. One rating per visit, and it cannot be edited after.</p>
-      <div class="form-2col">
-        <div class="field"><label>Your rating</label>${chipSelectHtml("crev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
-        <div class="field"><label>Your words (optional, 280 characters)</label><input id="crev-comment-${b.id}" maxlength="280" placeholder="How was the visit and the post?"></div>
-      </div>
-      <button class="btn small-btn" type="submit">Leave rating</button>
-    </form>`;
+    ${reviewPrompt226Html(b, "business")}`;
     }
   }
+  html += visitActions226Html(b, role);
   const otherId = role === "creator" ? b.businessId : b.creatorId;
   html += `<div class="mt"><button class="btn small-btn ghost" onclick="openThread('${otherId}')">Message</button></div></div>`;
   return html;
@@ -20266,6 +22026,7 @@ function perfUpdateFormHtml(b, ctx) {
     <form onsubmit="return submitPostPerformanceUpdate(event, '${b.id}', '${ctx}')">
       <h4 style="margin:4px 0">Update post numbers</h4>
       <p class="small muted">${esc(b.title)} at ${esc(b.businessName)}: posts keep growing after week one. Fresh numbers keep the business's modeled estimate honest, and updating earns +5 Momentum.</p>
+      <p class="j226-incentive">Report your numbers, earn Momentum.</p>
       ${growth}
       <div class="form-2col">
         <div class="field"><label>Views</label><input type="number" id="perfu-views-${b.id}" min="0" value="${num(perf.views)}"></div>
@@ -21449,7 +23210,7 @@ async function loadNotificationsInto(elId) {
     if (!data.notifications.length) { el.innerHTML = ""; return; }
     state.badges = data.badges || state.badges;
     renderBottomNav();
-    el.innerHTML = `<div class="panel"><h3 style="margin-top:0">Updates</h3>${data.notifications.slice(0, 8).map((n) => `<p class="small" style="margin:6px 0"><span class="muted">${esc(fmtDate(n.createdAt))}</span> ${esc(n.text)}</p>`).join("")}</div>`;
+    el.innerHTML = `<div class="panel"><h3 style="margin-top:0">Updates</h3>${data.notifications.slice(0, 8).map((n) => notifRow226(n)).join("")}</div>`;
     // Badges (Wave 3c fix): do NOT mark notes read here. This loader runs on
     // every dashboard render, so marking read on load wiped the tab badges
     // in the same paint they appeared (rendered QA 2026-10-24: business
@@ -22523,6 +24284,7 @@ async function loadBizStats() {
     const d = await api("GET", `/me/stats?period=${bizStatsP}`);
     const host = document.getElementById("biz-stats");
     if (host) host.innerHTML = bizStatsHtml(d);
+    loadBizStats226();
   } catch (e) { /* Results still carries the Receipt; a stats failure never breaks the page */ }
 }
 function bizStatsPeriod(v) { bizStatsP = v; loadBizStats(); return false; }
@@ -22701,6 +24463,7 @@ async function renderAnalyticsTab() {
       el.innerHTML = `${head}
       <div id="biz-sample"></div>
       <div id="biz-stats"></div>
+      <div id="biz-stats226"></div>
       <div class="empty-card"><div class="ec-t">Your results</div><div class="ec-s">${hasLiveOffer ? "Your offer is live. This fills in as creators apply, visit, and post." : "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here."}</div></div>
       ${hasLiveOffer ? "" : `<p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">Post an offer</button></p>`}
       <div id="biz-receipt"></div>`;
@@ -22730,6 +24493,7 @@ async function renderAnalyticsTab() {
     ${head}
     <div id="biz-sample"></div>
     <div id="biz-stats"></div>
+      <div id="biz-stats226"></div>
     ${cards.length ? `<div class="kpi-grid c${Math.min(4, Math.max(2, cards.length))}">${cards.join("")}</div>` : ""}
     ${seriesHas ? `<div class="chart-card"><h3>Invites &amp; decisions</h3><p class="wc-sub">Per day, last 30 days. Decisions are application answers, stamped when you make them.</p>
       ${lineChartSvg(series, [{ k: "invited", color: "#0B0D0C" }, { k: "decisions", color: "#5F7265" }])}
@@ -22904,6 +24668,9 @@ function bizProfileCardHtml(bz, market, opts) {
     <div class="prof-meta"><span class="bp-card-meta">${esc(bz.category || "Business")}${bz.neighborhood ? ` · ${esc(bz.neighborhood)}` : ""} · ${esc(marketDisplayName(market))}</span><br><span class="bp-card-about">${bz.about ? esc(bz.about) : "No about yet. A written-up experience fills offers faster."}</span>${availabilitySummaryClient(bz.standingAvailability) ? `<br><span class="bp-card-avail">${esc(availabilitySummaryClient(bz.standingAvailability))}</span>` : ""}</div>
     <div class="prof-stats">${stats}</div>
     <div class="bp-card-badges">${bizProfileBadgesHtml(bz)}</div>
+    ${matchBadge226Html(bz.match ? bz : (opts.match ? { ...bz, match: opts.match, matchScore: opts.matchScore } : bz))}
+    ${photos226Html(bizPhotosOf226({ business: bz }, opts.home), { app: true })}
+    ${opts.publicView ? `<div class="u226-acts" style="margin-top:10px"><button type="button" class="btn u226-primary" onclick="return openBusinessSaved226('${esc(bz.businessId || bz.userId || bz.id || "")}')">${J226("See open offers", "Ver ofertas abiertas")}</button></div>` : ""}
   </div></div>`;
 }
 // The business as the page currently shows it: the saved record
@@ -23015,6 +24782,8 @@ async function renderBizProfileTab() {
     ${live ? "" : `<div class="bp-status-line"><strong>Founding list</strong><span>Your market has not opened yet, so nothing here is sent to a creator until it does.</span></div>`}
     <div class="bp-live-caption">Live preview</div>
     ${bizProfileCardHtml(b, u.market, { live, founding: !live, home: h, reviewsCount: reviews.length, planName: state.bizProfileView.planName, rootId: "biz-profile-live-card" })}
+    ${bizPhotosEditor226Html(u, h)}
+    ${pushReminder226Html("business", "profile")}
     ${wsTabs([
       { label: "Profile", on: bizProfTab === "profile", onclick: "return bizProfSet('profile')" },
       { label: "Reviews", count: reviews.length, on: bizProfTab === "reviews", onclick: "return bizProfSet('reviews')" },
@@ -23083,6 +24852,7 @@ async function renderBizProfileTab() {
         <button class="btn ws-primary" onclick="saveBusinessProfile('optional')">Save optional</button> <span id="bp-ok-opt" class="saved"></span>
       </div>`;
       bindBizProfileWysiwyg();
+      try { const ch226 = channels226Html(h || b, { business: true }); if (ch226) el.insertAdjacentHTML("beforeend", ch226); } catch (e) {}
     }
   } catch (err) {
     el.innerHTML = `${wsHead("Your business page")}<div class="error-box">${esc(err.message)}</div>`;
@@ -23126,6 +24896,20 @@ async function rebookCreator(creatorId) {
 
 // Favorites view: the saved roster, favorites first-class. The
 // heart on every discovery card toggles the same records.
+async function loadSavedExtra226() {
+  const host = document.getElementById("u226-saved-extra");
+  if (!host) return false;
+  const merged = { creators: [], businesses: [], offers: [] };
+  const map = favCache226();
+  for (const key of Object.keys(map)) {
+    if (!map[key]) continue;
+    const [type, id] = key.split(/:(.+)/).filter(Boolean);
+    if (type === "offer") { const o = (state.openOffers || []).find((x) => x.id === id); if (o) merged.offers.push({ ...o, isFavorite: true }); }
+    if (type === "business") { const o = (state.openOffers || []).find((x) => x.businessId === id); if (o) merged.businesses.push({ businessId: id, businessName: o.businessName, category: o.category, businessImageUrl: o.businessImageUrl, isFavorite: true }); }
+  }
+  host.innerHTML = (merged.businesses.length || merged.offers.length) ? savedView226Html(merged) : "";
+  return false;
+}
 async function loadFavorites() {
   const el = document.getElementById("tab-body");
   try {
@@ -23136,13 +24920,15 @@ async function loadFavorites() {
       { label: "Saved", on: true, onclick: "return go('dashboard','Favorites')" },
     ])}`;
     if (!data.favorites.length) {
-      el.innerHTML = `${favHead}<div class="empty-card"><div class="ec-t">No favorites yet</div><div class="ec-s">Tap the heart on any creator while browsing Find creators and they are saved here: your standing roster for repeat visits.</div></div><p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Discover')">Browse creators</button></p><div id="biz-wishlist"></div>`;
+      el.innerHTML = `${favHead}<div class="empty-card"><div class="ec-t">No favorites yet</div><div class="ec-s">Tap the bookmark on any creator while browsing Find creators and they are saved here: your standing roster for repeat visits.</div></div><p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Discover')">Browse creators</button></p><div id="u226-saved-extra"></div><div id="biz-wishlist"></div>`;
       loadWishlistSection();
+      loadSavedExtra226();
       return;
     }
     el.innerHTML = `${favHead}
-    <div class="creator-grid">${data.favorites.map((c) => `<div>${creatorCard(c, state.user)}<button class="btn small-btn mt" style="width:100%" onclick="rebookCreator('${c.userId}')">Invite again</button></div>`).join("")}</div><div id="biz-wishlist"></div>`;
+    <div class="creator-grid">${data.favorites.map((c) => `<div>${creatorCard(c, state.user)}<button class="btn small-btn mt" style="width:100%" onclick="rebookCreator('${c.userId}')">Invite again</button></div>`).join("")}</div><div id="u226-saved-extra"></div><div id="biz-wishlist"></div>`;
     loadWishlistSection();
+    loadSavedExtra226();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -23646,46 +25432,9 @@ function shelfProofLine(c) {
 // actions are inert and the proof line renders only when a real
 // track record rides the card (a setup preview has none to show).
 function shelfTileHtml(c, opts) {
-  const preview = !!(opts && opts.preview);
-  const topMatch = !!(opts && opts.topMatch);
-  const p = c.profile || {};
-  const pct = cardLocalPct(c);
-  const market = cardLocalMarket(c);
-  // Build -175: the tile leads with the absolute local count, big,
-  // in plain words, with the local % beside it — a business shops
-  // people, not percentages. The % alone (the pre--175 block) still
-  // renders when a % exists but no count can be formed.
-  const bits = peopleHereBits(c);
-  const localBlock = pct === null
-    ? `<div class="shelf-local-none">Local audience not reported yet</div>`
-    : bits
-      ? `<div class="shelf-local"><span class="shelf-count">${fmtFull(bits.count)}</span><span class="shelf-pctside">${bits.pct}% local</span></div><div class="shelf-local-tx">${bits.words} in ${esc(marketDisplayName(market))}</div><div class="shelf-bar"><span style="width:${Math.max(0, Math.min(100, bits.pct))}%"></span></div>`
-      : `<div class="shelf-local"><span class="shelf-pct">${pct}%</span><span class="shelf-local-tx">of their followers live in ${esc(marketDisplayName(market))}</span></div><div class="shelf-bar"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>`;
-  const price = shelfPriceLine(c);
-  const cats = (p.categories || []).slice(0, 2).join(" · ");
-  const place = [c.neighborhood, c.city].filter(Boolean).join(", ");
-  const tap = preview ? "" : ` onclick="openCreatorProfile('${c.userId}')"`;
-  return `<div class="shelf-tile${topMatch ? " top-match" : ""}">
-    ${topMatch ? `<span class="top-match-tag">Top match</span>` : ""}
-    <div class="shelf-photo"${tap}>
-      ${c.photoUrl ? avatarHtml(c, "shelf-photo-img") : `<span class="shelf-photo-img shelf-nophoto189" aria-hidden="true">${pct !== null && pct !== undefined ? `<span class="shelf-nophoto-pct">${pct}%</span><span class="shelf-nophoto-cap">local audience</span>` : `<span class="shelf-nophoto-init">${esc((c.name || "").trim().charAt(0).toUpperCase() || "S")}</span>`}</span>`}
-      <span class="shelf-badges">${p.tierBand ? `<span class="shelf-badge">${esc(p.tierBand)}</span>` : ""}${c.foundingBand ? `<span class="shelf-badge">Founding</span>` : ""}</span>
-      ${preview ? "" : `<button type="button" class="shelf-save${c.isFavorite ? " on" : ""}" onclick="event.stopPropagation(); shelfToggleFav('${c.userId}')" aria-label="Save ${esc(c.name || "creator")}">${c.isFavorite ? "Saved" : "Save"}</button>`}
-    </div>
-    <div class="shelf-body">
-      <div class="shelf-name"${tap}>${esc(c.name || "")}</div>
-      <div class="shelf-meta">${esc(place || marketDisplayName(market))}${cats ? ` · ${esc(cats)}` : ""}</div>
-      ${localBlock}
-      <div class="shelf-price-row"><div class="shelf-price">${esc(price.main)}${price.sub ? ` <span>${esc(price.sub)}</span>` : ""}</div>${acceptanceHtml(c)}</div>
-      ${preview && !c.trackRecord ? "" : `<div class="shelf-proof">${esc(shelfProofLine(c))}</div>`}
-      ${c.match ? `<div class="shelf-match"><span class="shelf-match-score">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? `<span class="shelf-match-why" title="${esc(c.match.reasons.join(" · "))}">${esc(c.match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
-      <div class="shelf-quiet">${audienceLabel202(c) || `${fmtNum(totalAudienceOf(c))} followers total`}${p.avgViews ? ` · about ${fmtNum(p.avgViews)} views a post` : ""}</div>
-      ${preview ? "" : `<div class="shelf-acts">
-        <button type="button" class="btn small-btn" onclick="startOffer('${c.userId}')">Book</button>
-        <button type="button" class="btn small-btn ghost" onclick="openCreatorProfile('${c.userId}')">View</button>
-      </div>`}
-    </div>
-  </div>`;
+  // Build -226 update: the Shelf (default Find creators view)
+  // renders the final feed card structure.
+  return feedCreatorCard226Html(c, opts || {});
 }
 async function shelfToggleFav(userId) {
   const c = (state.discover || []).find((x) => x.userId === userId);
@@ -24035,40 +25784,12 @@ function mirrorAskLine(o) {
 }
 function mirrorOfferValue(o) { return Number(o && o.cashRate) || Number(o && o.dollarCap) || 0; }
 function mirrorOfferCardHtml(o, opts) {
-  const preview = !!(opts && opts.preview);
-  const parked = !!(opts && opts.parked);
-  const lead = !!(opts && opts.lead);
-  const price = mirrorPriceLine(o);
-  const place = [o.businessNeighborhood, o.businessCity].filter(Boolean).join(", ");
-  const spotsLeft = (Number(o.spots) || 0) - (Number(o.filledCount) || 0);
-  const tr = o.businessTrackRecord;
-  // Canon imagery chain: the business's cover photo, then its
-  // logo (both ride businessImageUrl in that order), then an
-  // INITIAL tile — the business's own initial, never a "?".
-  const initial = esc((String(o.businessName || o.businessCity || o.title || "Magpie")).trim().charAt(0).toUpperCase() || "S");
-  const trackCells = tr ? [
-    tr.visitsHosted > 0 ? `<span><strong>${tr.visitsHosted}</strong> creator visit${tr.visitsHosted === 1 ? "" : "s"} hosted here</span>` : "",
-    tr.creatorsReturned > 0 ? `<span><strong>${tr.creatorsReturned}</strong> creator${tr.creatorsReturned === 1 ? "" : "s"} came back for a second visit</span>` : "",
-    tr.onTimePct !== null && tr.onTimePct !== undefined ? `<span><strong>${tr.onTimePct}%</strong> of visits ended with the post up on time</span>` : "",
-  ].filter(Boolean).join("") : "";
-  return `<div class="mirror-card${lead ? " mirror-lead" : ""}">
-    ${o.businessImageUrl ? `<img class="mirror-cover${o.businessImageIsLogo ? " mirror-cover-logo" : ""}" src="${esc(o.businessImageUrl)}" alt="" loading="lazy">` : `<div class="mirror-cover mirror-cover-fallback" aria-hidden="true">${initial}</div>`}
-    <div class="mirror-body">
-    <div class="mirror-top">
-      <span class="mirror-mono">${initial}</span>
-      <div class="mirror-id"><div class="mirror-biz">${esc(o.businessName || "")}</div><div class="mirror-meta">${esc(o.category || "")}${place ? ` · ${esc(place)}` : ""}${o.distanceBand ? ` · ${esc(o.distanceBand)}` : ""}</div></div>
-      ${o.fitNote ? `<span class="mirror-fit">Good fit</span>` : ""}
-    </div>
-    <div class="mirror-price">${esc(price.main)}</div>
-    <div class="mirror-title">${esc(o.title || "")}</div>
-    ${price.sub ? `<div class="mirror-sub">${esc(price.sub)}</div>` : ""}
-    <div class="mirror-ask">${esc(mirrorAskLine(o))}</div>
-    ${o.includes ? `<div class="mirror-line">Included: ${esc(o.includes)}</div>` : ""}
-    ${trackCells ? `<div class="mirror-track">${trackCells}</div>` : ""}
-    ${o.spots && spotsLeft > 0 ? `<div class="mirror-spots">${spotsLeft} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left</div>` : ""}
-    ${preview ? "" : o.myApplication ? `<div class="mirror-acts"><span class="badge ok">Applied</span><button type="button" class="btn small-btn ghost" onclick="state.crOffersSeg='applied'; return go('dashboard','Offers')">See it in My offers</button></div>` : `<div class="mirror-acts"><button type="button" class="btn small-btn" onclick="findOffersGrab('${o.id}')">Grab this visit</button>${parked ? `<button type="button" class="btn small-btn ghost" onclick="findOffersUnlater('${o.id}')">Move back</button>` : `<button type="button" class="btn small-btn ghost" onclick="findOffersLater('${o.id}')">Save for later</button>`}<button type="button" class="btn small-btn ghost" onclick="findOffersHide('${o.id}')">Not for me</button></div>`}
-    </div>
-  </div>`;
+  // Build -226 update: offer cards wear the final feed structure
+  // (full-bleed photo, straddle overlay, price once, checks row,
+  // Apply + See full offer). The function keeps its name and its
+  // j226-hero-card / j226-ratebadge / j226-chipstrip classes so
+  // every existing caller and style keeps working.
+  return feedOfferCard226Html(o, opts || {});
 }
 async function loadFindOffers() {
   const el = document.getElementById("cr-findoffers");
@@ -24100,10 +25821,11 @@ function foActiveCount() {
   if (state.foDistance) n++;
   if (state.foFit) n++;
   if (state.foSpots) n++;
+  if (state.foWhen) n++;
   return n;
 }
 function foClearAll() {
-  state.foKind = "all"; state.foCategory = ""; state.foDistance = ""; state.foFit = false; state.foSpots = false;
+  state.foKind = "all"; state.foCategory = ""; state.foDistance = ""; state.foFit = false; state.foSpots = false; state.foWhen = "";
   renderFindOffers();
   return false;
 }
@@ -24140,6 +25862,7 @@ function renderFindOffers() {
   if (dist) list = list.filter((o) => o.distanceBand === dist);
   if (state.foFit) list = list.filter((o) => o.fitNote);
   if (state.foSpots) list = list.filter((o) => (Number(o.spots) || 0) - (Number(o.filledCount) || 0) > 0);
+  if (state.foWhen) { const foDays = state.foWhen === "week" ? 7 : 31; const foNow = Date.now(); list = list.filter((o) => { const t = new Date(o.windowStartAt || o.redeemBy || 0).getTime(); return t && t >= foNow - 864e5 && t <= foNow + foDays * 864e5; }); }
   const foQ = (state.foQ || "").trim().toLowerCase();
   if (foQ) list = list.filter((o) => `${o.businessName || ""} ${o.title || ""} ${o.category || ""}`.toLowerCase().includes(foQ));
   if (sort === "value") list = [...list].sort((a, b) => mirrorOfferValue(b) - mirrorOfferValue(a));
@@ -24148,17 +25871,18 @@ function renderFindOffers() {
   const ea = state.findOffersEarly;
   const sortSel = (cls) => `<label class="fo-selfilter">Sort <select class="ctl189" onchange="state.foSort=this.value; renderFindOffers()"><option value="new"${sort === "new" ? " selected" : ""}>Newest first</option>${hasDistance ? `<option value="close"${sort === "close" ? " selected" : ""}>Closest first</option>` : ""}<option value="value"${sort === "value" ? " selected" : ""}>Highest value</option></select></label>`;
   el.innerHTML = `
-  <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Visits')">My visits</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Offers')">My offers</button></span></div>
+  <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Visits')">My visits</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Offers')">My offers</button>${savedFeedButton226Html()}</span></div>
   <div class="shop-layout">
     <aside class="shop-rail${state.foRailOpen ? " open" : ""}" id="fo-rail">
       <div class="rail-head"><strong>Filters</strong><span><button type="button" class="btn small-btn ghost" onclick="return foClearAll()">Clear all</button> <button type="button" class="rail-x" aria-label="Close filters" onclick="state.foRailOpen=false; renderFindOffers()">×</button></span></div>
-      <div class="df-group rail-only-m">
+      <div class="df-group">
         <div class="df-label">Sort</div>
         ${sortSel()}
       </div>
       <div class="df-group">
         <div class="df-label">The offer</div>
-        ${[["all", "All offers"], ["comp", "Comped visit"], ["paid", "Paid post"], ["coupon", "Coupon"]].map(([v, l]) => `<label class="rail-row"><input type="radio" name="fo-kind" ${kind === v ? "checked" : ""} onchange="state.foKind='${v}'; renderFindOffers()"><span class="rr-tx">${l}</span><span class="rr-count">${kindCount(v)}</span></label>`).join("")}
+        <div class="j226-seg" role="group" aria-label="Paid or comped">${[["all", "All"], ["paid", "Paid"], ["comp", "Comped"], ["coupon", "Coupon"]].map(([v, l]) => `<button type="button" class="j226-segbtn${kind === v ? " on" : ""}" onclick="state.foKind='${v}'; renderFindOffers()">${l}</button>`).join("")}</div>
+        <p class="rail-note">${kindCount("paid")} paid, ${kindCount("comp")} comped, ${kindCount("coupon")} coupon right now.</p>
       </div>
       <div class="df-group">
         <div class="df-label">Category</div>
@@ -24170,6 +25894,10 @@ function renderFindOffers() {
         <label class="rail-row"><input type="radio" name="fo-dist" ${!dist ? "checked" : ""} onchange="state.foDistance=''; renderFindOffers()"><span class="rr-tx">Anywhere in market</span><span class="rr-count">${base.length}</span></label>
         ${["Same neighborhood", "Under 2 miles", "Under 5 miles"].map((x) => `<label class="rail-row"><input type="radio" name="fo-dist" ${dist === x ? "checked" : ""} onchange="state.foDistance='${x}'; renderFindOffers()"><span class="rr-tx">${x}</span><span class="rr-count">${distCount(x)}</span></label>`).join("")}
         <details class="rail-details189"><summary>How distance bands work</summary><p class="rail-note">Bands come from the ZIPs and neighborhoods on file: an offer lands in a band only when both sides shared one.</p></details>
+      </div>
+      <div class="df-group">
+        <div class="df-label">When</div>
+        ${[["", "Any time"], ["week", "Starts this week"], ["month", "Starts this month"]].map(([v, l]) => `<label class="rail-row"><input type="radio" name="fo-when" ${(state.foWhen || "") === v ? "checked" : ""} onchange="state.foWhen='${v}'; renderFindOffers()"><span class="rr-tx">${l}</span></label>`).join("")}
       </div>
       <div class="df-group">
         <div class="df-label">Good to know</div>
@@ -24184,7 +25912,6 @@ function renderFindOffers() {
     <div class="shop-main">
     <div class="shop-searchrow">
       <span class="sr-q"><input type="search" id="fo-q" placeholder="Search a business, an offer, a category" value="${esc(state.foQ || "")}" oninput="foQInput(this)"></span>
-      <span class="sr-sel">${sortSel()}</span>
       <button type="button" class="btn small-btn sr-filters" id="fo-rail-btn" onclick="state.foRailOpen=!state.foRailOpen; renderFindOffers()">Filters${foActiveCount() ? ` (${foActiveCount()})` : ""}</button>
     </div>
     <p class="fo-count"><strong>${list.length}</strong> open visit${list.length === 1 ? "" : "s"} near you</p>
@@ -24413,7 +26140,7 @@ async function loadDiscover() {
   // "See everyone". The mode is only defaulted, never forced.
   const foundingDisc = isFoundingBusiness(u);
   el.innerHTML = `
-    <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Favorites')">Your shortlist</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Regulars')">My Regulars</button></span></div>
+    <div class="takeover-bar"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Home')">← Back to dashboard</button><span class="tb-links"><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Favorites')">Your shortlist</button><button type="button" class="btn ghost small-btn" onclick="return go('dashboard','Regulars')">My Regulars</button>${savedFeedButton226Html()}</span></div>
     ${wsHead("Find creators", { sub: "Shop local creators near you. Invite the ones who fit.", subKey: "biz-discover" })}
     <p class="small" style="margin:10px 0 0"><strong>Ranked by how local their audience is, not by follower count.</strong></p>
     ${foundingDisc ? `<p class="small muted" style="margin:4px 0 0">${esc(foundingBizPlace(u))}'s founding roster is still joining. New creators show up here as they finish their pages.</p>` : ""}
@@ -24421,11 +26148,19 @@ async function loadDiscover() {
     <aside class="shop-rail" id="disc-rail">
       <div class="rail-head"><strong>Filters</strong><span><button type="button" class="btn small-btn ghost" onclick="return discClearAll()">Clear all</button> <button type="button" class="rail-x" aria-label="Close filters" onclick="return shopRailToggle('disc-rail')">×</button></span></div>
     <div class="disc-filters">
-      <div class="df-group rail-only-m">
+      <div class="df-group">
         <div class="df-label">Where &amp; sort</div>
         <div class="filters disc-top">
-          <div><label>Market</label><select id="f-market-m" class="ctl189" onchange="var m=document.getElementById('f-market'); if(m){m.value=this.value;} runDiscover()">${discoverMarketOptions189(u.market)}</select></div>
-          <div><label>Sort by</label><select id="f-sort-m" class="ctl189" onchange="var m=document.getElementById('f-sort'); if(m){m.value=this.value;} runDiscover()"><option value="local">Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></div>
+          <div><label>Market</label><select id="f-market" class="ctl189" onchange="runDiscover()">${discoverMarketOptions189(u.market)}</select></div>
+          <div><label>Sort by</label><select id="f-sort" class="ctl189" onchange="runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></div>
+        </div>
+      </div>
+      <div class="df-group">
+        <div class="df-label">Must-haves</div>
+        <label class="rail-row"><input type="radio" name="disc-must" ${!state.discoverSpanish && !state.discoverMusician ? "checked" : ""} onchange="return discMustAll()"><span class="rr-tx">All creators</span></label>
+        <div class="musthave-row">
+          <label class="musthave"><span class="mh-tx"><strong>Spanish-speaking creators</strong><small>Makes content in Spanish</small></span><input type="checkbox" class="sw" id="dchip-spanish" ${state.discoverSpanish ? "checked" : ""} onchange="return discoverSpanishSet(this)"></label>
+          <label class="musthave"><span class="mh-tx"><strong>Musicians</strong><small>Creators who make music</small></span><input type="checkbox" class="sw" id="dchip-musician" ${state.discoverMusician ? "checked" : ""} onchange="return discoverMusicianSet(this)"></label>
         </div>
       </div>
       <div class="df-group">
@@ -24437,14 +26172,6 @@ async function loadDiscover() {
         <div class="df-label">Category</div>
         <label class="rail-row"><input type="checkbox" id="disc-cat-all" ${(state.discoverCats || []).length ? "" : "checked"} onchange="return discCatAll()"><span class="rr-tx">All categories</span></label>
         ${state.boot.creatorCategories.map((c) => `<label class="rail-row"><input type="checkbox" data-dcat-box="${esc(c)}" ${(state.discoverCats || []).includes(c) ? "checked" : ""} onchange="return discCatToggle('${esc(c)}', this.checked)"><span class="rr-tx">${esc(c)}</span><span class="rr-count" data-dcat-count="${esc(c)}"></span></label>`).join("")}
-      </div>
-      <div class="df-group">
-        <div class="df-label">Must-haves</div>
-        <label class="rail-row"><input type="radio" name="disc-must" ${!state.discoverSpanish && !state.discoverMusician ? "checked" : ""} onchange="return discMustAll()"><span class="rr-tx">All creators</span></label>
-        <div class="musthave-row">
-          <label class="musthave"><span class="mh-tx"><strong>Spanish-speaking creators</strong><small>Makes content in Spanish</small></span><input type="checkbox" class="sw" id="dchip-spanish" ${state.discoverSpanish ? "checked" : ""} onchange="return discoverSpanishSet(this)"></label>
-          <label class="musthave"><span class="mh-tx"><strong>Musicians</strong><small>Creators who make music</small></span><input type="checkbox" class="sw" id="dchip-musician" ${state.discoverMusician ? "checked" : ""} onchange="return discoverMusicianSet(this)"></label>
-        </div>
       </div>
       <div class="df-group">
         <div class="df-label">How you want to book</div>
@@ -24489,8 +26216,6 @@ async function loadDiscover() {
     <div class="shop-main">
     <div class="shop-searchrow">
       <span class="sr-q"><input type="search" id="f-q" placeholder="Search name or handle" oninput="discQInput(this)"></span>
-      <span class="sr-sel"><select id="f-market" class="ctl189" aria-label="Market" onchange="var m=document.getElementById('f-market-m'); if(m){m.value=this.value;} runDiscover()">${discoverMarketOptions189(u.market)}</select></span>
-      <span class="sr-sel"><select id="f-sort" class="ctl189" aria-label="Sort by" onchange="var m=document.getElementById('f-sort-m'); if(m){m.value=this.value;} runDiscover()"><option value="local" selected>Best local fit (most local first)</option><option value="people">Most people here</option><option value="">Founding order (first to join)</option><option value="score">Impact score (local reach + record)</option><option value="momentum">Reliability (Momentum)</option><option value="fit">Best fit for my business</option><option value="match">Best match</option></select></span>
       <button type="button" class="btn small-btn sr-filters" id="disc-rail-btn" onclick="return shopRailToggle('disc-rail')">Filters${discActiveCount() ? ` (${discActiveCount()})` : ""}</button>
     </div>
     <div id="lineup-slot"></div>
@@ -24589,7 +26314,6 @@ function discCampaignSet(id) {
   state.discoverCampaignId = id || "";
   if (id) {
     const s1 = document.getElementById("f-sort"); if (s1) s1.value = "match";
-    const s2 = document.getElementById("f-sort-m"); if (s2) s2.value = "match";
   }
   runDiscover();
   return false;
@@ -24877,41 +26601,33 @@ function discoverListHtml(list) {
 }
 function discoverStackCard(c) {
   const p = c.profile || {};
-  // Build -175: the deck card leads with the absolute local
-  // count, big, with the local % beside it — the same two-number
-  // reading as the shelf tile. No countable audience falls back
-  // to the % alone, exactly as the card read before.
-  const bits = peopleHereBits(c);
+  const first = firstName226(c.name || "") || "them";
+  const sym = typeof currencySymbolForMarket === "function" ? currencySymbolForMarket(c.market) : "$";
+  const pct = localPct226(c);
+  const localCount = localFollowers226(c);
+  const total = totalAudienceOf226(c);
+  const cats = (p.categories || []).slice(0, 2).join(" \u00b7 ");
+  const place = placeParts226(c.city, c.neighborhood).join(", ") || c.market || "";
+  const priceLine = p.paidRate ? `${sym}${fmtPrice(p.paidRate)} · ${J226("paid visit rate", "tarifa por visita pagada")}` : (p.compOpen !== false ? J226("Comped visits open", "Visitas en cortesía abiertas") : J226("Paid bookings only", "Solo reservas pagadas"));
   const initial = esc((c.name || "").trim().charAt(0).toUpperCase() || "S");
-  const cats = (p.categories || []).slice(0, 3);
-  const extra = (p.categories || []).length - cats.length;
-  const place = [c.neighborhood, c.city].filter(Boolean).map(esc).join(" &middot; ");
-  const rateLine = p.compOpen === false ? "Paid visits only" : (p.paidRate ? `Listed rate ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}` : "Comp friendly");
+  const ratingAvg226 = ratingOf226(c);
+  const matchBadge = matchBadge226Html(c);
   const thumbs = (Array.isArray(c.photos) && c.photos.length ? c.photos : (c.photoUrl ? [c.photoUrl] : [])).slice(0, 3);
-  return `<div class="dcard deck2-card${c.standing === "paused" ? " paused" : ""}">
-    <div class="dcard-photo${c.photoUrl ? "" : " no-photo"}">
-      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="dcard-mono">${p.localAudiencePct !== null && p.localAudiencePct !== undefined ? `<span class="dcard-mono189">${p.localAudiencePct}%<small>local audience</small></span>` : `<span>${initial}</span>`}</div>`}
-      ${p.tierBand ? `<span class="dcard-tier">${esc(p.tierBand)}</span>` : ""}
-      ${c.previewPhoto ? `<span class="dcard-sample">Sample photo · preview</span>` : ""}
-      <div class="dcard-scrim">
-        <div class="dcard-name">${esc(c.name)}</div>
-        ${handleLabel(p.handle) ? `<div class="dcard-handle">${esc(handleLabel(p.handle))}</div>` : ""}
-        <div class="dcard-local">${p.localAudiencePct === null || p.localAudiencePct === undefined
-          ? `<span class="dcard-local-na">Local reach not reported yet</span>`
-          : bits
-            ? `<span class="dcard-pct">${fmtFull(bits.count)}</span><span class="dcard-local-lbl">${bits.words} · ${bits.pct}% local</span>`
-            : `<span class="dcard-pct">${p.localAudiencePct}%</span><span class="dcard-local-lbl">local reach</span>`}</div>
-        <div class="dcard-rate">${rateLine}</div>
-      </div>
+  return `<div class="dcard deck2-card j226-hero-card u226-card${c.standing === "paused" ? " paused" : ""}" data-u226="creator-card">
+    <div class="dcard-photo u226-photo${c.photoUrl ? "" : " no-photo"}">
+      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="dcard-mono">${initial}</div>`}
+      ${matchBadge || (ratingAvg226 !== null ? `<span class="j226-ratebadge">&#9733; ${ratingAvg226.toFixed(1)}</span>` : "")}
+      ${favBtn226Html("creator", c.userId, c.isFavorite)}
     </div>
-    <div class="dcard-body">
-      ${cats.length || p.spanishContent || p.musician ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}${p.musician ? `<span class="cc-chip">Musician</span>` : ""}</div>` : ""}
-      <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${audienceLabel202(c) || `${fmtNum(totalAudienceOf(c))} followers`}</span>${c.distanceBand ? `<span class="dcard-band">${esc(c.distanceBand)}</span>` : ""}</div>
-      ${thumbs.length ? `<div class="deck2-thumbs">${thumbs.map((t) => `<img src="${esc(t)}" alt="" loading="lazy">`).join("")}</div>` : ""}
-      ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<div class="dcard-meta"><span>${p.spanishAudiencePct}% Spanish-speaking audience</span></div>` : ""}
-      ${c.match ? `<div class="dcard-match"><span class="dcard-match-score">Match ${c.match.score}</span>${c.match.reasons && c.match.reasons.length ? `<span class="dcard-match-why" title="${esc(c.match.reasons.join(" · "))}">${esc(c.match.reasons.slice(0, 2).join(" · "))}</span>` : ""}</div>` : ""}
-      ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
+    <div class="dcard-scrim j226-heroid u226-straddle"><div class="dcard-name u226-name">${esc(c.name || "")}</div><div class="u226-meta">${cats ? `${esc(cats)} \u00b7 ` : ""}<span class="u226-citygrad">${esc(place)}</span></div></div>
+    <div class="dcard-body u226-body">
+      <div class="u226-price">${esc(priceLine)}</div>
+      <div class="dcard-chips j226-chipstrip u226-chips">${pct != null ? `<span class="cc-chip">${pct}% ${J226("local", "local")}</span>` : ""}${localCount != null ? `<span class="cc-chip">${fmtFull(localCount)} ${J226("local followers", "seguidores locales")}</span>` : ""}${total > 0 ? `<span class="cc-chip">${compact226(total)} ${J226("total followers", "seguidores en total")}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}${p.musician ? `<span class="cc-chip">Musician</span>` : ""}</div>
+      ${creatorChecks226(c)}
+      ${thumbs.length > 1 ? `<div class="deck2-thumbs">${thumbs.map((t) => `<img src="${esc(t)}" alt="" loading="lazy">`).join("")}</div>` : ""}
+      ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week. Invites still land, accepting reopens next week.</p>` : ""}
       ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
+      <div class="u226-acts"><button type="button" class="btn u226-primary" onclick="event.stopPropagation(); startOffer('${c.userId}')">${J226("Book", "Reservar")} ${esc(first)}</button><button type="button" class="btn ghost u226-secondary" onclick="event.stopPropagation(); openCreatorProfile('${c.userId}')">${J226("See profile", "Ver perfil")}</button></div>
     </div>
   </div>`;
 }
@@ -26292,11 +28008,12 @@ async function loadCampaignSetup() {
   }).join("")}</div>`;
   el.innerHTML = `
   ${wsHead("Start a campaign", { sub: "Build a new campaign here. Checking on one you already made lives in Your campaigns.", subKey: "biz-setup" })}
+  ${pushReminder226Html("business", "offer")}
   <div class="camp-wrap"><div class="camp-layout"><div class="camp-main">
   <div id="offers-live-only">
   ${foundingBiz ? `<p class="small" style="margin:14px 0 0"><strong>Building ahead:</strong> build a campaign now and it saves as a draft. Drafts go out the day ${esc(foundingBizPlace(state.user))} opens. Nothing is sent to a creator before then.</p>${sigDraftCardHtml(state.user)}` : ""}
   <div class="panel camp-form189" id="offer-composer" style="margin-top:18px">
-    <h3 style="margin-top:0">New campaign</h3>
+    <h3 style="margin-top:0">Create an offer</h3>
     <div id="form-error"></div>
     ${campaignGuideHtml()}
     <div class="field"><label>Who sees this offer ${infoBtn("lane")}</label>
@@ -26424,7 +28141,7 @@ async function loadCampaignSetup() {
       <div class="cta-row" style="justify-content:flex-start">
         ${foundingBiz
           ? `<button class="btn" type="button" onclick="return createOfferV2(event, true)">${state.lineupTargets && state.lineupTargets.length ? `Save all ${state.lineupTargets.length === 5 ? "five" : state.lineupTargets.length} for opening day` : mode === "direct" ? "Save invite for opening day" : "Save for opening day"}</button>`
-          : `<button class="btn" type="submit">${state.lineupTargets && state.lineupTargets.length ? `Send all ${state.lineupTargets.length === 5 ? "five" : state.lineupTargets.length} invites` : mode === "direct" ? "Send invite" : "Post open call"}</button>
+          : `<button class="btn" type="submit">${state.lineupTargets && state.lineupTargets.length ? `Send all ${state.lineupTargets.length === 5 ? "five" : state.lineupTargets.length} invites` : mode === "direct" ? "Send invite" : "Create this offer"}</button>
         <button class="btn ghost" type="button" onclick="return createOfferV2(event, true)">Save as draft</button>`}
       </div>
       ${foundingBiz

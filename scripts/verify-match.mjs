@@ -154,7 +154,7 @@ try {
   check("maggie contract: top-level matchReasons mirrors match.reasons on every card", d1.json.creators.every((c) => Array.isArray(c.matchReasons) && JSON.stringify(c.matchReasons) === JSON.stringify(c.match.reasons)));
 
   const d0 = await api(bizCtx, "GET", "/discover?market=Nashville");
-  check("default discover: NO match fields, no brief", d0.json && d0.json.matchBrief === null && d0.json.creators.every((c) => !("matchScore" in c) && !("match" in c)));
+  check("default discover: NO ranking match fields, no brief; cards carry the match explainer object (Build -226 locked badge design)", d0.json && d0.json.matchBrief === null && d0.json.creators.every((c) => !("matchScore" in c) && !("matchReasons" in c) && c.match && c.match.defaultBrief === true && typeof c.match.score === "number" && Array.isArray(c.match.reasons)));
   check("maggie contract: default discover carries no matchReasons either", d0.json.creators.every((c) => !("matchReasons" in c)));
   check("default discover: founding order kept (Ana, earliest, first)", d0.json && d0.json.creators.length && d0.json.creators[0].userId === "crana");
   const dN = await api(bizCtx, "GET", "/discover?market=Nashville&sort=match");

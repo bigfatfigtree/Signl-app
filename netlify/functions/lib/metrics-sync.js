@@ -38,7 +38,92 @@
 // the creator-report route writes. The route, schedule, and payload
 // shapes do not change.
 
+// Build -226 (Jeff, 2026-11-21): the auto-populate pipe is built to
+// the stub boundary above, feature-flagged OFF by default
+// (METRICS_AUTOSYNC unset or not "1" changes zero behavior: no post
+// is read for sync, no snapshot is written, and the return shape is
+// exactly the historical one). When the flag is ON, runMetricsSync
+// walks submitted posts once (one bounded store list of the post:
+// prefix; the store's list() fetches values with bounded
+// concurrency, never a serial per-key scan), asks the provider for
+// each post's metrics, and applies what comes back through
+// applyPulledMetrics. Today the provider is the stub below, which
+// returns "unavailable" and performs no network calls, so a flag-on
+// run still syncs nothing and says so plainly. The approval that
+// unlocks real numbers is item 1 of the checklist: Meta App Review
+// for instagram_business_manage_insights, plus the Meta app
+// credentials in env for the Build -108 connection lane.
+//
+// LABELING LAW (Build -226): pulled numbers are labeled "platform",
+// creator-reported numbers stay labeled "creator". The two never
+// blend silently: post.metricSources carries one source per metric
+// ({ views: "creator", likes: "platform", ... }), a pulled value
+// replaces the reported value for that same metric only, and the
+// source label for that metric flips with it. Metrics a pull does
+// not return keep their creator value and their creator label.
+
+const METRIC_KEYS_226 = ["views", "likes", "comments", "shares", "saves"];
+
+function metricsAutosyncEnabled(env) {
+  const e = env || process.env;
+  return e.METRICS_AUTOSYNC === "1";
+}
+
+function cleanMetric226(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.floor(n);
+}
+
+// Apply one pulled metric set to a post record (mutates and
+// returns it). Only metrics the pull actually returns are touched:
+// each returned metric replaces the stored value, flips its
+// per-metric source to "platform", and the new set is appended to
+// post.snapshots[] with source "platform" (carrying forward the
+// untouched metrics, exactly like a creator snapshot update).
+// Returns the list of metric keys that were replaced.
+function applyPulledMetrics(post, pulled, at) {
+  if (!post || !pulled || typeof pulled !== "object") return [];
+  const ts = at || new Date().toISOString();
+  if (!post.metricSources || typeof post.metricSources !== "object") post.metricSources = {};
+  const replaced = [];
+  const snapshot = { at: ts, source: "platform" };
+  for (const k of METRIC_KEYS_226) {
+    const v = cleanMetric226(pulled[k]);
+    if (v !== null) {
+      post[k] = v;
+      post.metricSources[k] = "platform";
+      replaced.push(k);
+    }
+    snapshot[k] = typeof post[k] === "number" && Number.isFinite(post[k]) ? post[k] : null;
+  }
+  if (!replaced.length) return [];
+  if (!Array.isArray(post.snapshots)) post.snapshots = [];
+  post.snapshots.push(snapshot);
+  post.lastSnapshotAt = ts;
+  post.pulledAt = ts;
+  return replaced;
+}
+
+// The creator-report twin, used by the router's performance route
+// so both lanes write the same per-metric source shape: provided
+// metrics take the "creator" label, unprovided ones keep theirs.
+function applyCreatorMetrics(post, provided) {
+  if (!post || !provided || typeof provided !== "object") return post;
+  if (!post.metricSources || typeof post.metricSources !== "object") post.metricSources = {};
+  for (const k of METRIC_KEYS_226) {
+    if (provided[k] !== null && provided[k] !== undefined) post.metricSources[k] = "creator";
+    else if (typeof post[k] === "number" && Number.isFinite(post[k]) && !post.metricSources[k]) post.metricSources[k] = "creator";
+  }
+  return post;
+}
+
 // Provider stub: reports unavailable, performs no network calls.
+// This is the exact boundary Meta App Review unlocks: implement
+// fetchPostMetrics against the Graph API (using the creator's
+// platconn: Instagram connection from lib/platform-connect.js)
+// and every caller below lights up unchanged.
 const metaProvider = {
   name: "meta",
   async fetchPostMetrics(/* post */) {
@@ -56,23 +141,54 @@ const metaProvider = {
 };
 
 async function runMetricsSync(opts) {
+  const o = opts || {};
   let out;
-  if (process.env.METRICS_AUTOSYNC !== "1") {
+  if (!metricsAutosyncEnabled(o.env)) {
     out = { enabled: false, reason: "METRICS_AUTOSYNC is off" };
   } else {
-    // Flag is on but the provider is not connected yet (see the
-    // activation checklist above): iterate nothing, sync nothing,
-    // and say so plainly.
-    const probe = await metaProvider.fetchPostMetrics(null);
-    out = { enabled: true, synced: 0, providerStatus: probe.status, reason: "Meta provider not connected" };
+    // Flag on: walk the submitted posts once and ask the provider
+    // for each. Tests (and the future real provider) can inject
+    // opts.provider / opts.fetchPostMetrics / opts.posts /
+    // opts.savePost; production defaults read the store's post:
+    // list (one bounded list, values fetched with bounded
+    // concurrency by the store adapter, never a serial per-key
+    // scan) and write changed posts back one set per changed post.
+    const provider = o.provider || (typeof o.fetchPostMetrics === "function" ? { name: "injected", fetchPostMetrics: o.fetchPostMetrics } : metaProvider);
+    let posts = Array.isArray(o.posts) ? o.posts : null;
+    if (!posts) {
+      try {
+        const store = require("./store");
+        posts = (await store.list("post:")).map((r) => r.value).filter(Boolean);
+      } catch (e) {
+        posts = [];
+      }
+    }
+    let synced = 0;
+    let unavailable = 0;
+    let providerStatus = null;
+    for (const post of posts) {
+      if (!post || !post.url) continue;
+      let res = null;
+      try { res = await provider.fetchPostMetrics(post); } catch (e) { res = { status: "unavailable" }; }
+      if (!res || res.status === "unavailable" || !res.metrics) { unavailable += 1; if (res && res.status) providerStatus = res.status; continue; }
+      const replaced = applyPulledMetrics(post, res.metrics, o.now ? new Date(o.now).toISOString() : undefined);
+      if (replaced.length) {
+        synced += 1;
+        if (typeof o.savePost === "function") await o.savePost(post);
+        else {
+          try { const store = require("./store"); await store.set(`post:${post.id}`, post); } catch (e) { /* a failed write leaves the post as it was */ }
+        }
+      }
+    }
+    out = { enabled: true, synced, unavailable, providerStatus: providerStatus || (synced ? "ok" : "unavailable"), reason: synced ? "Platform metrics pulled" : "Meta provider not connected" };
   }
   // Connect Accounts audience sync (YouTube today): a real provider
   // lane that runs on this same daily clock, independent of the
   // Meta post-metrics flag above. The router passes the hook
   // because it owns the creator-record writes (stack, total, tier).
-  if (opts && typeof opts.syncAudience === "function") {
+  if (typeof o.syncAudience === "function") {
     try {
-      out.audience = await opts.syncAudience();
+      out.audience = await o.syncAudience();
     } catch (e) {
       out.audience = { error: String((e && e.message) || e) };
     }
@@ -80,4 +196,4 @@ async function runMetricsSync(opts) {
   return out;
 }
 
-module.exports = { runMetricsSync, metaProvider };
+module.exports = { runMetricsSync, metaProvider, metricsAutosyncEnabled, applyPulledMetrics, applyCreatorMetrics, METRIC_KEYS_226 };

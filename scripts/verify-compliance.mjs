@@ -499,15 +499,15 @@ try {
   const rep = await ontimeC2("POST", `/api/bookings/${vOn.bookingId}/performance`, { views: 4200, likes: 310 });
   check("creator reports views + likes", rep.status === 200 && rep.data.post.views === 4200 && rep.data.post.likes === 310 && !!rep.data.post.reportedAt, JSON.stringify(rep.data));
   const mOn2 = await momentumOf(ontimeC2);
-  check("+5 performance points land exactly once", mOn2.points === mOnBeforeReport + 5 && mOn2.ledger.filter((e) => e.kind === "performance_report").length === 1, `${mOnBeforeReport} -> ${mOn2.points} :: ${JSON.stringify(mOn2.ledger)}`);
+  check("+15 performance points land exactly once (+5 base + +10 day-7 window bonus, Build -226 item 12)", mOn2.points === mOnBeforeReport + 15 && mOn2.ledger.filter((e) => e.kind === "performance_report").length === 1 && mOn2.ledger.filter((e) => e.kind === "performance_report_window").length === 1, `${mOnBeforeReport} -> ${mOn2.points} :: ${JSON.stringify(mOn2.ledger)}`);
   // Wave 1 (UX redesign section 3, 2026-10-24): a second report is
   // no longer refused. It appends a snapshot to the time series,
   // the flat fields mirror the latest snapshot, reportedAt stays
-  // the FIRST report's stamp, and Momentum's +5 still lands once.
+  // the FIRST report's stamp, and Momentum's points still land once.
   const rep2 = await ontimeC2("POST", `/api/bookings/${vOn.bookingId}/performance`, { views: 9999 });
   check("a second report appends a snapshot (no 409) and mirrors the latest numbers", rep2.status === 200 && rep2.data.post.views === 9999 && rep2.data.post.likes === 310 && Array.isArray(rep2.data.post.snapshots) && rep2.data.post.snapshots.length === 2 && rep2.data.post.reportedAt === rep.data.post.reportedAt, JSON.stringify(rep2.data.post || rep2.data).slice(0, 300));
   const mOn3 = await momentumOf(ontimeC2);
-  check("+5 performance points still land exactly once after a snapshot update", mOn3.points === mOn2.points && mOn3.ledger.filter((e) => e.kind === "performance_report") .length === 1, `${mOn2.points} -> ${mOn3.points}`);
+  check("performance points still land exactly once after a snapshot update", mOn3.points === mOn2.points && mOn3.ledger.filter((e) => e.kind === "performance_report") .length === 1 && mOn3.ledger.filter((e) => e.kind === "performance_report_window").length === 1, `${mOn2.points} -> ${mOn3.points}`);
   const bizBookings2 = await bizC2("GET", "/api/bookings");
   const onBk2 = (bizBookings2.data.bookings || []).find((b) => b.id === vOn.bookingId);
   check("business visit view now shows the latest snapshot numbers", !!onBk2 && onBk2.post.views === 9999 && onBk2.post.likes === 310, JSON.stringify(onBk2 && onBk2.post));
