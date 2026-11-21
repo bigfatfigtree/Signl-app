@@ -36,7 +36,7 @@ function check(name, cond, extra) {
 }
 
 console.log("== stamp ==");
-check("build stamp is 2026.11.20-224 (lib + shell; bumped by Build -224)", buildJs.includes('BUILD_ID = "2026.11.20-224"') && (idxHtml.match(/2026\.11\.20-224/g) || []).length >= 5, `index count=${(idxHtml.match(/2026\.11\.20-224/g) || []).length}`);
+check("build stamp is 2026.11.20-225 (lib + shell; bumped by Build -225)", buildJs.includes('BUILD_ID = "2026.11.20-225"') && (idxHtml.match(/2026\.11\.20-225/g) || []).length >= 5, `index count=${(idxHtml.match(/2026\.11\.20-225/g) || []).length}`);
 check("no 2026.11.20-223 left in build.js or index.html", !buildJs.includes("2026.11.20-223") && !idxHtml.includes("2026.11.20-223"));
 
 console.log("== founding home hero ==");

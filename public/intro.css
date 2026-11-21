@@ -227,6 +227,15 @@
 }
 .splash-first-paint img { width: 188px; height: auto; }
 
+/* Build -225: while the first-paint splash is on screen, hide the
+   static shell chrome (top bar + footer) so the paint reads as one
+   clean splash. Keyed to the splash element's presence only: the
+   moment app.js replaces #app's contents on first render, the
+   splash node is gone and the chrome returns on its own. No JS
+   change; browsers without :has() keep the previous behavior. */
+body:has(.splash-first-paint) .topbar,
+body:has(.splash-first-paint) .footer { display: none; }
+
 /* Reduced motion: no film (renderIntro hands straight to the
    sign-in surface in JS as well) and no transitions here. */
 @media (prefers-reduced-motion: reduce) {

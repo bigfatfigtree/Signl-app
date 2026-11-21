@@ -7992,7 +7992,7 @@ async function render() {
 // different cut. Every sign-in and join flow behind the surface is
 // the existing one, unchanged.
 const INTRO_CUT = "/assets/intro/intro-film-v5.mp4";
-const INTRO_POSTER = "/assets/intro/intro-film-v5-poster.jpg";
+const INTRO_POSTER = "/assets/intro/intro-film-v5-firstframe.jpg";
 const INTRO_HARD_MS = 14000; // fallback: never strand a visitor on the film (v5 runs 11.4s)
 
 let introTimers = [];
