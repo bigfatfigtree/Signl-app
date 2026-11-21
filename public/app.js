@@ -8988,6 +8988,9 @@ function J226(en, es) {
   const lang = typeof sigLang === "function" ? sigLang() : (state.lang || "");
   return lang === "es" && es ? es : en;
 }
+// Build -231: the Facebook creator community group. Single place
+// to change client-side; matches the server const in router.js.
+const GROUP_URL = "https://www.facebook.com/groups/1820148515703356";
 const REVIEW_CHIP_ES_226 = {
   "Easy to work with": "Fácil trabajar con ellos",
   "Food was great": "La comida estuvo genial",
@@ -9154,6 +9157,36 @@ async function saveShowcase226() {
     if (msg) msg.textContent = J226("Saved. Your public profile shows them now.", "Guardado. Tu perfil público ya las muestra.");
   } catch (e) {
     if (msg) msg.textContent = J226("Could not save yet. Check the links and try again.", "No se pudo guardar todavía. Revisa los enlaces e inténtalo de nuevo.");
+  }
+  return false;
+}
+/* Build -231: the Facebook creator community card on the creator
+   Profile tab. Un-joined it invites; joined it goes quiet. The
+   join stamp is server-side and one-time, so the card simply
+   reflects the record. */
+function communityCard231Html(u) {
+  const joined = !!(u && u.creator && u.creator.communityJoinedAt);
+  if (joined) {
+    return `<section class="j226-card" data-community231="joined">
+    <h3 class="j226-h2">${J226("Join the Magpie creator community", "Únete a la comunidad de creadores de Magpie")}</h3>
+    <p class="small muted" style="margin:0">${J226("You're in · +10 Momentum", "Ya estás dentro · +10 Momentum")}</p>
+  </section>`;
+  }
+  return `<section class="j226-card" data-community231="join">
+    <h3 class="j226-h2">${J226("Join the Magpie creator community", "Únete a la comunidad de creadores de Magpie")}</h3>
+    <p class="small muted" style="margin:0 0 10px">${J226("Our brand new Facebook group for creators: share wins, ask questions, and hear about opportunities first.", "Nuestro grupo de Facebook para creadores, recién estrenado: comparte tus logros, haz preguntas y entérate primero de las oportunidades.")}</p>
+    <div class="j226-cta"><a class="btn" href="${GROUP_URL}" target="_blank" rel="noopener">${J226("Join the group", "Unirme al grupo")}</a><button class="btn ghost" type="button" onclick="return communityJoined231()">${J226("I joined", "Ya me uní")}</button></div>
+    <p class="small" id="community231-msg" style="margin:8px 0 0"></p>
+  </section>`;
+}
+async function communityJoined231() {
+  const msg = document.getElementById("community231-msg");
+  try {
+    const data = await api("POST", "/me/community");
+    if (data && data.user) state.user = data.user;
+    rerenderProfileTab();
+  } catch (e) {
+    if (msg) msg.textContent = J226("Could not save that yet. Try again in a moment.", "No se pudo guardar todavía. Inténtalo de nuevo en un momento.");
   }
   return false;
 }
@@ -16406,7 +16439,7 @@ function renderCreatorDash() {
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Find Offers") body = wsHead("Find offers", { sub: "Open visits from businesses in your markets, stated like prices. Grab the ones that fit.", subKey: "cr-findoffers" }) + `<div id="cr-findoffers">${skelHtml("Loading open offers...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
-  if (tab === "Profile") body = wsHead("My profile", { chip: (u.creator && u.creator.publicPage === true) ? livePill("Live") : `<span class="live-pill off">Public page off</span>`, sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u) + showcaseEditor226Html(u) + pushReminder226Html("creator", "profile");
+  if (tab === "Profile") body = wsHead("My profile", { chip: (u.creator && u.creator.publicPage === true) ? livePill("Live") : `<span class="live-pill off">Public page off</span>`, sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u) + showcaseEditor226Html(u) + communityCard231Html(u) + pushReminder226Html("creator", "profile");
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
@@ -16465,7 +16498,7 @@ function renderFoundingHome() {
   if (tab === "Find Offers") body = wsHead("Find offers", { sub: "Offers land here the day your market opens. When it opens, this is where businesses post visits and you grab the ones that fit.", subKey: "cr-findoffers" }) + `<div id="cr-findoffers">${skelHtml("Loading open offers...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div><div id="founding-buzz"></div><div id="founding-depth"></div>`;
-  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u) + showcaseEditor226Html(u) + pushReminder226Html("creator", "profile");
+  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u) + showcaseEditor226Html(u) + communityCard231Html(u) + pushReminder226Html("creator", "profile");
   if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}

@@ -6950,6 +6950,10 @@ function creatorRanks(users) {
 // earn entries dated after the ban do not count while the ban stands
 // (paused creators keep earning from profile completion; only offers
 // and posts are blocked for them).
+// Build -231: the Facebook creator community group ("Magpie
+// Creators", live). This is the single place to change the group
+// URL server-side; public/app.js carries the matching client const.
+const GROUP_URL = "https://www.facebook.com/groups/1820148515703356";
 const MOMENTUM_POINTS = {
   referralSignup: 3,
   referralApproved: 10,
@@ -6980,6 +6984,11 @@ const MOMENTUM_POINTS = {
   // from the post's performanceMomentumAwards stamps like every
   // other point, never stored as a balance.
   performanceReportWindow: 10,
+  // Build -231: +10 once for joining the Magpie creator community
+  // on Facebook, computed from the creator record's
+  // communityJoinedAt stamp like every other point, never a
+  // stored balance.
+  communityJoin: 10,
   latePenalty: -10,
   noShowPenalty: -25,
   neverPostedPenalty: -50,
@@ -7242,6 +7251,9 @@ function createMomentum(data) {
     for (let i = 0; i < workLinks; i++) {
       push("profile_best_work", `Best work link ${i + 1} added`, MOMENTUM_POINTS.profileBestWorkPerLink, user.updatedAt || user.createdAt);
     }
+    // Build -231: the community join award exists only while the
+    // stamp exists on the record, so re-tapping can never re-earn.
+    if (c.communityJoinedAt) push("community_joined", "Joined the Magpie creator community", MOMENTUM_POINTS.communityJoin, c.communityJoinedAt);
 
     // The work itself: offers, posts, reviews, streaks, penalties.
     const myBookings = (bookingsByCreator.get(user.id) || []).slice().sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
@@ -9365,6 +9377,13 @@ function approvalEmail(user, band) {
       `Grow your founding circle in ${place}: your invite link is ${inviteUrl}. Creators who join through it are credited to you: +3 when a creator joins through your link, +10 when they are approved, and your standing is part of the order they see.`,
     ];
   };
+  // Build -231: the brand new Facebook creator community, framed
+  // as founding. Plain text, no em dashes.
+  const communityLines = [
+    "",
+    `We just opened our brand new Facebook group, the Magpie creator community. It is a place to share wins, ask questions, and hear about opportunities first. Join here: ${GROUP_URL}`,
+    "Once you are in, tap I joined on the community card in your profile. That earns you +10 Momentum.",
+  ];
   const tail = [
     ...(paidLine ? ["", paidLine] : []),
     "",
@@ -9388,6 +9407,7 @@ function approvalEmail(user, band) {
       "",
       CREATOR_FREE_LINE,
       ...inviteLines(user.city),
+      ...communityLines,
       ...tail,
     );
     return { subject, text: lines.join("\n") };
@@ -9406,6 +9426,7 @@ function approvalEmail(user, band) {
     "",
     CREATOR_FREE_LINE,
     ...inviteLines(user.market),
+    ...communityLines,
     ...tail,
   );
   return { subject, text: lines.join("\n") };
@@ -12610,6 +12631,8 @@ function normalizeShowcase226(input) {
   }
   return { showcase: out };
 }
+// Build -231: the creator community view for the profile card.
+function communityView231(user) { const c = (user && user.creator) || {}; return { groupUrl: GROUP_URL, joined: !!c.communityJoinedAt, joinedAt: c.communityJoinedAt || null, points: MOMENTUM_POINTS.communityJoin }; }
 function showcaseView226(creatorRec) {
   const c = (creatorRec && creatorRec.creator) || creatorRec || {};
   const stored = Array.isArray(c.showcase) ? c.showcase : [];
@@ -36484,6 +36507,26 @@ async function route(event) {
       await store.set(`user:${user.id}`, user);
       await logEvent({ type: "showcase_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { count: norm.showcase.length } });
       return json(200, { showcase: showcaseView226(user.creator) });
+    }
+    return err(405, "Method not allowed");
+  }
+
+  // Build -231: the creator community card. POST is the profile
+  // card's "I joined" tap, server-stamped once, idempotent:
+  // repeat taps award nothing and never move the stamp.
+  if (seg[0] === "me" && seg[1] === "community" && seg.length === 2) {
+    if (user.role !== "creator") return err(403, "Creators only");
+    if (method === "GET") return json(200, { community: communityView231(user) });
+    if (method === "POST") {
+      user.creator = user.creator || {};
+      const alreadyJoined = !!user.creator.communityJoinedAt;
+      if (!alreadyJoined) {
+        user.creator.communityJoinedAt = nowIso();
+        user.updatedAt = nowIso();
+        await store.set(`user:${user.id}`, user);
+        await logEvent({ type: "community_joined", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: {} });
+      }
+      return json(200, { community: communityView231(user), awarded: alreadyJoined ? 0 : MOMENTUM_POINTS.communityJoin, user: publicUser(user) });
     }
     return err(405, "Method not allowed");
   }
