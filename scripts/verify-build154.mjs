@@ -222,11 +222,11 @@ let booking1 = null;
   check("creator accepts the lineup offer", acc.status === 201 && !!acc.data.booking, JSON.stringify(acc.data).slice(0, 200));
   booking1 = acc.data.booking;
   await BIZ.client("POST", `/api/bookings/${booking1.id}/confirm`, {});
-  check("the booking's audience offer IS the neighbor special", !!booking1.audienceOffer && booking1.audienceOffer.title === "Neighbor special" && booking1.audienceOffer.perk === SPECIAL && booking1.audienceOffer.source === "offer", JSON.stringify(booking1.audienceOffer || {}));
+  check("the booking's audience offer IS the neighbor special", !!booking1.audienceOffer && booking1.audienceOffer.title === "Follower special" && booking1.audienceOffer.perk === SPECIAL && booking1.audienceOffer.source === "offer", JSON.stringify(booking1.audienceOffer || {}));
   const acc6 = await C6.client("POST", `/api/offers/${lineupOffers.plainC6.id}/accept`, {});
   check("the plain offer accepts too", acc6.status === 201 && !!acc6.data.booking, JSON.stringify(acc6.data).slice(0, 160));
   const b6 = acc6.data.booking;
-  check("a booking with no special keeps the standing default offer", !!b6.audienceOffer && b6.audienceOffer.source === "booking_default" && b6.audienceOffer.title !== "Neighbor special", JSON.stringify(b6.audienceOffer || {}));
+  check("a booking with no special keeps the standing default offer", !!b6.audienceOffer && b6.audienceOffer.source === "booking_default" && b6.audienceOffer.title !== "Follower special", JSON.stringify(b6.audienceOffer || {}));
 }
 
 // --- E: counted redemptions -> Regulars -------------------------
@@ -270,10 +270,10 @@ console.log("== F: morning-after + have them back ==");
 
   const bizThread = await BIZ.client("GET", "/api/messages?with=signl-team");
   const bizBodies = (bizThread.data.messages || []).map((m) => m.body || "");
-  check("the business's note carries the counted truth", bizBodies.some((b) => b.includes("posted last night") && b.includes("5 neighbors have come in so far")), JSON.stringify(bizBodies).slice(0, 300));
+  check("the business's note carries the counted truth", bizBodies.some((b) => b.includes("posted last night") && b.includes("5 local followers have come in so far")), JSON.stringify(bizBodies).slice(0, 300));
   const crThread = await C1.client("GET", "/api/messages?with=signl-team");
   const crBodies = (crThread.data.messages || []).map((m) => m.body || "");
-  check("the creator's mirror note carries the same counted truth", crBodies.some((b) => b.includes("Your post for Fixture Taqueria") && b.includes("5 neighbors have come in so far")), JSON.stringify(crBodies).slice(0, 300));
+  check("the creator's mirror note carries the same counted truth", crBodies.some((b) => b.includes("Your post for Fixture Taqueria") && b.includes("5 local followers have come in so far")), JSON.stringify(crBodies).slice(0, 300));
 
   const sweepAgain = await admin("POST", "/api/admin/notify/sweep", { now: new Date(Date.now() + 50 * 3600 * 1000).toISOString() });
   check("a re-run never repeats the note", sweepAgain.data.morningAfterSweep && sweepAgain.data.morningAfterSweep.fired === 0 && sweepAgain.data.morningAfterSweep.alreadyStamped >= 1, JSON.stringify(sweepAgain.data.morningAfterSweep || {}));

@@ -68,7 +68,7 @@ check("pdp: the picked day rides the deal note, and the proposal card shows note
 
 // Public profile hero (client + SSR mirror tell the same story).
 check("public profile: client render carries the neighbors line", appJs.includes("cc-neighbors") && appJs.includes("neighbors who could actually walk through your door."));
-check("public profile: SSR mirror carries the same neighbors line", profileMetaJs.includes("cc-neighbors") && profileMetaJs.includes("neighbors who could actually walk through your door."));
+check("public profile: SSR mirror carries the same local followers line (Build -230 sweep)", profileMetaJs.includes("cc-neighbors") && profileMetaJs.includes("local followers who could actually walk through your door."));
 
 // The Mirror.
 check("mirror: card states the offer like a price and the ask in one line, due by the offer's terms with 48 hours as the comped standard goal (48-hour copy rule, 2026-11-06)", appJs.includes("function mirrorOfferCardHtml(o, opts)") && appJs.includes("function mirrorPriceLine(o)") && appJs.includes("function mirrorAskLine(o)") && appJs.includes("the standard goal for a comped visit is within 48 hours"));

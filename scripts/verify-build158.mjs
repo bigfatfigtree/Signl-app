@@ -108,7 +108,7 @@ async function login(fixture) {
   if (r.status !== 200) throw new Error("creator login failed: " + JSON.stringify(r.data));
 }
 const FULL_STACK = { instagram: 5000, tiktok: 3000, youtube: 2000 };
-const NEW_WHY = "Your followers are your neighbors — they'd watch you enjoy almost anything local. Creators here average about 7 categories, and each one is another kind of business that can find you.";
+const NEW_WHY = "Your followers are people near you, and they'd watch you enjoy almost anything local. Creators here average about 7 categories, and each one is another kind of business that can find you.";
 
 // --- E: source pins ------------------------------------------
 console.log("== E: source pins ==");

@@ -919,7 +919,7 @@ const KIT = {
   version: "2026-11-09",
   deck: { label: "Seller deck", version: "v4 — Nov 8", url: "/assets/bizdev-deck-v4.pdf" },
   openers: [
-    { title: "30-second opener", text: "Hey, I'm Tony — I'm local, I'm with Magpie. Magpie is local influencer marketing: real creators right here in Hampton Roads, whose followers actually live here. We're putting together the founding creator list now, and when we open, local shops will use those creators to get neighbors in the door. Shops like yours are claiming founding spots before we open. Can I show you the creators for two minutes? That's it." },
+    { title: "30-second opener", text: "Hey, I'm Tony — I'm local, I'm with Magpie. Magpie is local influencer marketing: real creators right here in Hampton Roads, whose followers actually live here. We're putting together the founding creator list now, and when we open, local shops will use those creators to get local followers in the door. Shops like yours are claiming founding spots before we open. Can I show you the creators for two minutes? That's it." },
     { title: "How the founding list works", text: "We don't open a city until the creator side is full — about fifty to sixty local creators, across food, beauty, fitness, going out, all of it, so any shop here has somebody worth picking. While that list fills, shops claim founding spots. First pick of creators, founding pricing locked. We open when the roster's full — I won't give you a date I can't keep, but founding shops hear first." },
   ],
   priceAnswers: [
@@ -953,7 +953,7 @@ const KIT = {
     title: "The 2-minute version",
     paras: [
       "Quick version of what this is. Most advertising a local shop buys can't be counted — you spend the money and hope. And most 'influencers' are no help either: a big following usually means people three states away who will never walk into your shop.",
-      "Magpie is local influencer marketing. It's a list of real creators right here in Hampton Roads, and every one of them is ranked by how many of their followers actually live here — neighbors, not follower counts. When a creator has a hundred followers and eighty-two of them live here, that's who you want: eight out of ten of her people are your neighbors.",
+      "Magpie is local influencer marketing. It's a list of real creators right here in Hampton Roads, and every one of them is ranked by how many of their followers actually live here — local followers, not follower counts. When a creator has a hundred followers and eighty-two of them live here, that's who you want: eight out of ten of her people are local followers.",
       "Here's how a visit works. You pick a creator — you approve every single one, nothing ever posts without you. You can treat them to a visit — a meal, a service, an experience — and they post about it. Or you can book them at their own listed rate for bigger work. Either way, every visit carries that creator's own code, redeemed at your register. So afterwards you don't get a guess or a good feeling — you get a count: exactly how many people came in because of that creator.",
       "Hampton Roads hasn't opened yet. We're filling the founding creator list first — about fifty to sixty local creators across food, fitness, beauty, going out, all of it — and shops that claim a founding spot now get first pick of those creators when we open, with founding pricing locked. Claiming takes about a minute and there's nothing to pay today. Want me to put your name down, or leave you the card so you can look it over?",
     ],
@@ -1035,7 +1035,7 @@ function jeffKit161(marketName) {
   if (jeffKitCache161.has(M)) return jeffKitCache161.get(M);
   const k = JSON.parse(JSON.stringify(KIT));
   const swap = (s) => String(s || "").split("Hampton Roads").join(M);
-  k.openers[0] = { title: "30-second opener", text: `Hey, I'm Jeff — I run Magpie. Magpie is local influencer marketing: real creators right here in ${M}, whose followers actually live here. We're putting together the founding creator list now, and when we open, local shops will use those creators to get neighbors in the door. Shops like yours are claiming founding spots before we open. Can I show you the creators for two minutes? That's it.` };
+  k.openers[0] = { title: "30-second opener", text: `Hey, I'm Jeff — I run Magpie. Magpie is local influencer marketing: real creators right here in ${M}, whose followers actually live here. We're putting together the founding creator list now, and when we open, local shops will use those creators to get local followers in the door. Shops like yours are claiming founding spots before we open. Can I show you the creators for two minutes? That's it.` };
   k.openers = k.openers.map((o, i) => (i === 0 ? o : { ...o, text: swap(o.text) }));
   k.objections = k.objections.map((o) => ({ ...o, a: swap(o.a) }));
   k.twoMinute = { title: k.twoMinute.title, paras: (k.twoMinute.paras || []).map((p) => swap(p)) };

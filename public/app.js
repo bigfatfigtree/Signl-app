@@ -2068,7 +2068,7 @@ function dealRowsHtml(o) {
   // the deal facts where the creator decides — followers who
   // come in with the creator's code get the perk, and each one
   // counts toward the creator's Regulars.
-  if (o.neighborSpecial) main.push(["For your followers", `Neighbor special: ${esc(o.neighborSpecial)} — followers who come in with your code get it, and they count toward your Regulars`]);
+  if (o.neighborSpecial) main.push(["For your followers", `Follower special: ${esc(o.neighborSpecial)}, followers who come in with your code get it, and they count toward your Regulars`]);
   // Phase A4 (M1): a paid deal's Post row never states a window —
   // its timing is the agreed posting terms on the row right
   // below, not the comped 48-hour standard. Comped rows unchanged.
@@ -6152,12 +6152,12 @@ function blockBookBarHtml213() {
   const t = blockPickedTotals213();
   const meta = state.blockMeta213 || {};
   const label = meta.founding || !meta.marketLive ? "Save for opening day" : "Book my Block";
-  return `<div class="btb-bb-t">${t.n ? `<strong>${t.n} creator${t.n === 1 ? "" : "s"} picked</strong> &middot; ${fmtNum(t.neighbors)} ${t.extrapolated ? "total potential neighbors" : "neighbors"} between them` : "Tap the check next to up to 5 creators above, then book them together here."}</div>
+  return `<div class="btb-bb-t">${t.n ? `<strong>${t.n} creator${t.n === 1 ? "" : "s"} picked</strong> &middot; ${fmtNum(t.neighbors)} ${t.extrapolated ? "total potential local followers" : "local followers"} between them` : "Tap the check next to up to 5 creators above, then book them together here."}</div>
   <button type="button" class="btn ws-primary" ${t.n ? "" : "disabled"} onclick="return blockBookSubmit213()">${label}</button>`;
 }
 function blockPickLineHtml213() {
   const t = blockPickedTotals213();
-  return t.n ? `<strong>${t.n} of 5 picked</strong> &middot; ${fmtNum(t.neighbors)} ${t.extrapolated ? "total potential neighbors" : "neighbors"} between them. The booking form is right below.` : "Tap the check next to up to 5 creators to book them together.";
+  return t.n ? `<strong>${t.n} of 5 picked</strong> &middot; ${fmtNum(t.neighbors)} ${t.extrapolated ? "total potential local followers" : "local followers"} between them. The booking form is right below.` : "Tap the check next to up to 5 creators to book them together.";
 }
 function blockTogglePick213(id) {
   if (state.blockPicks213.has(id)) state.blockPicks213.delete(id);
@@ -6253,10 +6253,10 @@ async function renderBlockTab213() {
   <div class="btb-proof">
     <div class="btb-pcard"><div class="btb-pnum">${fmtNum(pr.totals.checkedIn)}</div><div class="btb-plab">Checked in<br>creators who showed up</div></div>
     <div class="btb-pcard"><div class="btb-pnum">${fmtNum(pr.totals.postsLive)}</div><div class="btb-plab">Posts live<br>about your business</div></div>
-    <div class="btb-pcard"><div class="btb-pnum">${fmtNum(pr.totals.redeemed)}</div><div class="btb-plab">Redeemed<br>neighbors who came in</div></div>
+    <div class="btb-pcard"><div class="btb-pnum">${fmtNum(pr.totals.redeemed)}</div><div class="btb-plab">Redeemed<br>local followers who came in</div></div>
   </div>
-  <p class="small muted" style="margin:0 2px 14px">Those posts reached about <strong>${fmtNum(pr.totals.neighborsReached)} neighbors</strong>, counted from each creator's own local audience. Every booking you make reports back here.</p>` : `
-  <div class="empty-card"><div class="ec-t">Your proof board is ready when you are</div><div class="ec-s">Book your first Block below. When creators check in, post, and bring neighbors in, the counts land here where you can read them at a glance.</div></div>`;
+  <p class="small muted" style="margin:0 2px 14px">Those posts reached about <strong>${fmtNum(pr.totals.neighborsReached)} local followers</strong>, counted from each creator's own local audience. Every booking you make reports back here.</p>` : `
+  <div class="empty-card"><div class="ec-t">Your proof board is ready when you are</div><div class="ec-s">Book your first Block below. When creators check in, post, and bring local followers in, the counts land here where you can read them at a glance.</div></div>`;
     const picks = (pd.pitches || []).slice(0, 3);
     const picksHtml = picks.length ? `<h3 style="margin:20px 0 8px">Maggie's picks for you</h3>${picks.map((p) => pitchCardHtml213(p, "business")).join("")}` : "";
     const forming = roster.length < 2 ? `<div class="empty-card"><div class="ec-t">Your Block is still forming in ${esc(bd.market)}</div><div class="ec-s">${roster.length === 1 ? "One creator is listed so far, below. " : ""}Maggie adds creators the moment they finish their profiles, and your Block fills in on its own. Whoever is here is real and bookable today.</div></div>` : "";
@@ -12837,7 +12837,7 @@ function sigC2AskGap() {
     const catTotal = (state.boot.creatorCategories || []).length;
     const selSuffixEn = sel.length > 4 ? `Selected: ${sel.length} of ${catTotal}.` : `Selected: ${sel.length ? sel.join(", ") : "none yet"}.`;
     const selSuffixEs = sel.length > 4 ? `Seleccionadas: ${sel.length} de ${catTotal}.` : `Seleccionadas: ${sel.length ? sel.join(", ") : "ninguna aún"}.`;
-    sigOpAsk(ST(`What do you create in? We've ticked everything — most creators here keep nearly all, because your followers are your neighbors, not a niche audience. Untap any you'd never post about, then Done. ${selSuffixEn}`, `¿En qué categorías creas? Marcamos todas: la mayoría aquí conserva casi todas, porque tus seguidores son tus vecinos, no una audiencia de nicho. Desmarca lo que nunca publicarías y luego Listo. ${selSuffixEs}`), [
+    sigOpAsk(ST(`What do you create in? We've ticked everything — most creators here keep nearly all, because your followers are people near you, not a niche audience. Untap any you'd never post about, then Done. ${selSuffixEn}`, `¿En qué categorías creas? Marcamos todas: la mayoría aquí conserva casi todas, porque tus seguidores son personas cerca de ti, no una audiencia de nicho. Desmarca lo que nunca publicarías y luego Listo. ${selSuffixEs}`), [
       ...(state.boot.creatorCategories || []).map(toggle),
       { label: ST("My page is only about one thing", "Mi página es de una sola cosa"), run: () => sigOpPick(ST("My page is only about one thing", "Mi página es de una sola cosa"), async () => {
         if (!sel.length) { sigOpAsk(ST("Pick the one thing your page is about first, then tap that again.", "Elige primero la única cosa de la que trata tu página y luego toca eso de nuevo.")); return; }
@@ -13441,7 +13441,7 @@ function renderClaimHook() {
       <p class="muted" style="margin:0 0 12px">${h.extrapolated ? T(`potential local followers in ${marketLabel}`, `seguidores locales potenciales en ${marketLabel}`) : T(`of your followers live in ${marketLabel}`, `de tus seguidores viven en ${marketLabel}`)}</p>
       ${h.localWords ? `<p style="margin:0 0 8px"><strong>${esc(h.localWords)}.</strong></p>` : ""}
       <p style="margin:0 0 8px">${T("Your place as a founding creator in", "Tu lugar como creadora fundadora en")} <strong>${esc(marketLabel)}</strong> ${T("is waiting. Founding creators are recorded in founding order, and founding creators see offers first.", "te está esperando. Los creadores fundadores quedan registrados en orden de llegada, y ven las ofertas primero.")}</p>
-      ${h.inversion ? `<p class="small" style="margin:0 0 12px">@${esc(h.inversion.handle)} ${T(`has more followers than you (${claimFmtCount(h.inversion.followers)} in total), but fewer neighbors in ${marketLabel}. Local beats famous here.`, `tiene más seguidores que tú (${claimFmtCount(h.inversion.followers)} en total), pero menos vecinos en ${marketLabel}. Aquí lo local le gana a lo famoso.`)}</p>` : ""}
+      ${h.inversion ? `<p class="small" style="margin:0 0 12px">@${esc(h.inversion.handle)} ${T(`has more followers than you (${claimFmtCount(h.inversion.followers)} in total), but fewer local followers in ${marketLabel}. Local beats famous here.`, `tiene más seguidores que tú (${claimFmtCount(h.inversion.followers)} en total), pero menos seguidores locales en ${marketLabel}. Aquí lo local le gana a lo famoso.`)}</p>` : ""}
       <div class="c85-lanes">
         <p><span class="c85-check">✓</span> ${T("Hosted visits: a local business treats you, you post honestly.", "Visitas en cortesía: un negocio local te invita y tú publicas con honestidad.")}</p>
         <p><span class="c85-check">✓</span> ${T("Paid bookings at your rate. You keep 97%.", "Reservas pagadas a tu tarifa. Te quedas con el 97%.")}</p>
@@ -13508,7 +13508,7 @@ function renderClaimWelcome() {
     </div>
     <div class="c85-card">
       <div id="qc-ticket"></div>
-      ${(!state.claimHook || state.claimHook.variant === "generic") ? `<p style="margin:0 0 12px"><strong>${T("On Magpie, 800 followers who live here beats 90,000 followers who don't.", "En Magpie, 800 seguidores que viven aquí valen más que 90.000 que no.")}</strong> ${T("Add your platforms in the next step and we count your neighbors.", "Agrega tus plataformas en el siguiente paso y contamos a tus vecinos.")}</p>` : ""}
+      ${(!state.claimHook || state.claimHook.variant === "generic") ? `<p style="margin:0 0 12px"><strong>${T("On Magpie, 800 followers who live here beats 90,000 followers who don't.", "En Magpie, 800 seguidores que viven aquí valen más que 90.000 que no.")}</strong> ${T("Add your platforms in the next step and we count your local followers.", "Agrega tus plataformas en el siguiente paso y contamos a tus seguidores locales.")}</p>` : ""}
       ${lanes}
       ${!resolved ? "" : shownMarket === unlistedLabel()
         ? `<p class="small muted" style="margin:0 0 12px">${T("Your city is not one of our listed markets yet. On the next screen you tell us your city, and your sign-up counts toward opening Magpie there — founding sign-ups go first.", "Tu ciudad aún no es uno de nuestros mercados en la lista. En la siguiente pantalla nos dices tu ciudad, y tu registro cuenta para abrir Magpie ahí: los registros fundadores van primero.")}</p>`
@@ -13592,7 +13592,7 @@ function renderClaimFacts() {
       <div class="c85-fact">
         <p class="fg-kicker">${T("What you post about", "De qué publicas")}</p>
         <h3 class="c85-cat-head" style="margin:4px 0 6px">${T("Almost everything you post counts here.", "Casi todo lo que publicas cuenta aquí.")}</h3>
-        <p class="small" style="margin:0 0 10px">${T("Your followers are mostly your own neighbors, friends and family — and they'd love seeing you enjoy a meal, a haircut, a workout or a night out, not just one kind of post. So we've ticked everything for you. If your page is only ever about one thing, untick the rest and keep just yours.", "Tus seguidores son en su mayoría tus propios vecinos, amigos y familia, y les encantaría verte disfrutar una comida, un corte de pelo, un entrenamiento o una noche fuera, no solo un tipo de publicación. Por eso marcamos todo por ti. Si tu página es siempre de una sola cosa, desmarca el resto y deja solo la tuya.")}</p>
+        <p class="small" style="margin:0 0 10px">${T("Your followers are mostly people near you, friends and family, and they'd love seeing you enjoy a meal, a haircut, a workout or a night out, not just one kind of post. So we've ticked everything for you. If your page is only ever about one thing, untick the rest and keep just yours.", "Tus seguidores son en su mayoría personas cerca de ti, amigos y familia, y les encantaría verte disfrutar una comida, un corte de pelo, un entrenamiento o una noche fuera, no solo un tipo de publicación. Por eso marcamos todo por ti. Si tu página es siempre de una sola cosa, desmarca el resto y deja solo la tuya.")}</p>
         <div class="catpick" id="c85-cats"><label class="catpick-row catpick-allrow"><input type="checkbox" id="c85-cat-all" ${allCats.length && allCats.every((c) => d.cats.includes(c)) ? "checked" : ""} onchange="return claimToggleAllCats(this)"><span>${T("Select all", "Seleccionar todo")}</span></label>${cats}</div>
         <p class="small muted" style="margin:8px 0 0">${T("Every ticked category is another kind of local business that can find you.", "Cada categoría marcada es otro tipo de negocio local que puede encontrarte.")}</p>
         <p class="small" id="c85-cat-warn" style="display:none;color:#B3261E;margin:8px 0 0">${T("Pick at least one, so businesses can find you.", "Elige al menos una, para que los negocios te encuentren.")}</p>
@@ -14194,7 +14194,7 @@ function neighborPanelHtml() {
       </div>
       <p class="small" id="nb-stack-msg" style="margin:8px 0 0"></p>
     </div>` : `<p class="small muted" style="margin:0 0 10px">${T("Every platform you post on is counted.", "Todas las plataformas donde publicas están contadas.")}</p>`}
-    <p style="margin:10px 0 0"><button type="button" class="btn small-btn ghost" onclick="return neighborCardSave()">${T("Save my Neighbor Card", "Guardar mi Tarjeta de Vecinos")}</button></p>
+    <p style="margin:10px 0 0"><button type="button" class="btn small-btn ghost" onclick="return neighborCardSave()">${T("Save my local followers card", "Guardar mi tarjeta de seguidores locales")}</button></p>
   </div>`;
 }
 function neighborAnimateCount(el, from, to) {
@@ -14242,18 +14242,18 @@ function neighborCardSave() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#FFFFFF"/><circle cx="540" cy="215" r="85" fill="#E3F5EA"/><text x="540" y="245" font-family="Arial, sans-serif" font-size="72" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc((name || handle || "M").trim().charAt(0).toUpperCase())}</text>${photoAbs ? `<image href="${esc(photoAbs)}" x="455" y="130" width="170" height="170" preserveAspectRatio="xMidYMid slice"/>` : ""}<text x="540" y="380" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(name)}</text><text x="540" y="435" font-family="Arial, sans-serif" font-size="36" fill="#5F7265" text-anchor="middle">@${esc(handle)} · ${esc(marketLabel)}</text><text x="540" y="620" font-family="Arial, sans-serif" font-size="130" font-weight="800" fill="#0B0D0C" text-anchor="middle">${claimFmtCount(nb.neighborCount)}</text><text x="540" y="680" font-family="Arial, sans-serif" font-size="40" fill="#0B0D0C" text-anchor="middle">${nb.extrapolated ? "total potential local followers" : "local followers"}</text>${nb.localWords ? `<text x="540" y="745" font-family="Arial, sans-serif" font-size="34" fill="#5F7265" text-anchor="middle">${esc(nb.localWords)}</text>` : ""}<text x="540" y="830" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(rankLine)}</text><text x="540" y="950" font-family="Arial, sans-serif" font-size="32" fill="#5F7265" text-anchor="middle">Magpie · Local beats famous</text></svg>`;
   const blob = new Blob([svg], { type: "image/svg+xml" });
   api("POST", "/neighbor/card-event", { action: "generated" }).catch(() => {});
-  const file = new File([blob], "magpie-neighbor-card.svg", { type: "image/svg+xml" });
+  const file = new File([blob], "magpie-local-followers-card.svg", { type: "image/svg+xml" });
   if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-    navigator.share({ files: [file], title: "My Neighbor Card" }).then(() => { api("POST", "/neighbor/card-event", { action: "shared" }).catch(() => {}); }).catch(() => {});
+    navigator.share({ files: [file], title: "My local followers card" }).then(() => { api("POST", "/neighbor/card-event", { action: "shared" }).catch(() => {}); }).catch(() => {});
   } else {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "magpie-neighbor-card.svg";
+    a.download = "magpie-local-followers-card.svg";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
-  showToast(T("Your Neighbor Card is saved.", "Tu Tarjeta de Vecinos está guardada."));
+  showToast(T("Your local followers card is saved.", "Tu tarjeta de seguidores locales está guardada."));
   return false;
 }
 
@@ -15375,7 +15375,7 @@ function foundingLocalReachHtml() {
   return `<section class="wcard">
     <p class="ui-kicker">How ranking works</p>
     <h3>Ranked by local reach, not followers</h3>
-    <p class="wc-sub">Every creator on Magpie is ranked by the share of their audience that actually lives in your market, ranked over follower count. What matters is how many of a creator's people are your neighbors, not how big the account is.</p>
+    <p class="wc-sub">Every creator on Magpie is ranked by the share of their audience that actually lives in your market, ranked over follower count. What matters is how many of a creator's followers live in your market, not how big the account is.</p>
     <div class="panel" style="margin-top:12px">
       <p style="margin:0"><span class="badge info">Example</span></p>
       <p style="margin:8px 0 0">Example: a 2,000-follower creator whose audience is 90% local outranks a 50,000-follower account at 12% local, because the smaller creator's crowd is the one that can walk through your door.</p>
@@ -15432,7 +15432,7 @@ function foundingFirstOfferHtml(u) {
 function foundingBenefitsHtml(u) {
   const bizName = (u.business && u.business.businessName) || "your business";
   const items = [
-    ["Ranked by local reach", "Every creator is ranked by the share of their audience that actually lives here, ranked over follower count. A smaller creator whose crowd is your neighbors beats a big account whose crowd is somewhere else."],
+    ["Ranked by local reach", "Every creator is ranked by the share of their audience that actually lives here, ranked over follower count. A smaller creator whose crowd is made of local followers beats a big account whose crowd is somewhere else."],
     ["Booked in two taps, both lanes", "Comp a creator a meal, a service, or an experience, or book them paid at their own listed rate. On paid bookings, Magpie holds the payment until the post is live, and the creator keeps 97%."],
     ["Proof at your register", "Every visit carries a redemption code your staff scans or keys in at the register. Your point of sale is never touched. Each redemption is a sale your staff rang up, and your dashboard adds up exactly those counted dollars."],
     ["Results on day 7, 14, and 30", "Reach, engagement, and redemptions land on one page on a set rhythm after every visit, so you can see what a visit did instead of guessing."],
@@ -19953,7 +19953,7 @@ function creatorProfileHtml(u) {
         <div class="pf-addrow"><select id="p-add-platform">${addPlatformOptions(c)}</select><button type="button" class="btn small-btn ghost" onclick="return pfAddPlatform()">Add platform</button></div>
         <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform you add (Pinterest, Twitch, your own website, any of them). Businesses see the total and the breakdown. <strong>Magpie starts at 500 total followers across your platforms</strong>; until your total reaches 500, businesses cannot see you yet.</p>
       </div>
-      <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="catpick">${cats}</div><p class="small muted" style="margin:6px 0 0">${T("More ticked categories means more kinds of businesses can find you. Most creators here are in almost all of them — your followers are your neighbors, and they'd watch you enjoy almost anything local.", "Más categorías marcadas significa que más tipos de negocios pueden encontrarte. La mayoría de los creadores aquí está en casi todas: tus seguidores son tus vecinos, y te verían disfrutar casi cualquier cosa local.")}</p></div>
+      <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="catpick">${cats}</div><p class="small muted" style="margin:6px 0 0">${T("More ticked categories means more kinds of businesses can find you. Most creators here are in almost all of them — your followers are people near you, and they'd watch you enjoy almost anything local.", "Más categorías marcadas significa que más tipos de negocios pueden encontrarte. La mayoría de los creadores aquí está en casi todas: tus seguidores son personas cerca de ti, y te verían disfrutar casi cualquier cosa local.")}</p></div>
       <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP} Once you add a local % for a platform in Your audience below, this number is worked out from those automatically.</p></div>
       <div class="sec-save189"><button class="btn ghost small-btn" type="submit">Save changes</button></div>
       </div>
@@ -25590,7 +25590,7 @@ function pdpLocalHeroHtml(c) {
   const first = (c.name || "their").trim().split(" ")[0] || "their";
   return `<div class="pdp-hero">
     <div class="pdp-hero-pct">${pct}%</div>
-    <div class="pdp-hero-tx">of ${esc(first)}&rsquo;s followers live in ${esc(marketDisplayName(market))}.${count !== null ? `<br><strong>That&rsquo;s about <span class="pdp-hero-countnum">${fmtFull(count)}</span> ${model.extrapolated ? "potential neighbors" : "neighbors"}</strong> who could actually walk through your door, not strangers three states away.` : ""}</div>
+    <div class="pdp-hero-tx">of ${esc(first)}&rsquo;s followers live in ${esc(marketDisplayName(market))}.${count !== null ? `<br><strong>That&rsquo;s about <span class="pdp-hero-countnum">${fmtFull(count)}</span> ${model.extrapolated ? "potential local followers" : "local followers"}</strong> who could actually walk through your door, not strangers three states away.` : ""}</div>
     <div><div class="pdp-hero-src">${esc(p.localAudienceSource || "Self-reported")} · ${audienceLabel202(c) || `${fmtNum(totalAudienceOf(c))} followers in total`}</div>
     <p class="pdp-smallprint" style="margin-top:2px">${LOCAL_BASIS_LINE}</p></div>
   </div>`;
@@ -26336,7 +26336,7 @@ function lineupCardHtml(lu) {
         <div style="font-weight:700">${esc(c.name)}${handleLabel(c.handle) ? ` <span class="muted" style="font-weight:600">${esc(handleLabel(c.handle))}</span>` : ""}</div>
         <div class="small muted">${esc(c.why || "")}</div>
       </div>
-      <span style="flex:none;text-align:right"><strong>${fmtNum(c.neighborCount)}</strong><br><span class="small muted">${c.neighborExtrapolated ? "potential neighbors" : "neighbors"}</span></span>
+      <span style="flex:none;text-align:right"><strong>${fmtNum(c.neighborCount)}</strong><br><span class="small muted">${c.neighborExtrapolated ? "potential local followers" : "local followers"}</span></span>
       <span style="flex:none"><button type="button" class="btn small-btn ghost" onclick="return openCreatorProfile('${c.userId}')">View</button></span>
     </div>`).join("");
   return `<section class="wcard" id="lineup-card">
@@ -26346,7 +26346,7 @@ function lineupCardHtml(lu) {
     </div>
     <p class="small" style="margin:6px 0 0">Maggie picked the ${nWord} creators who match ${esc(lu.businessName || "your business")} best. <strong>A Lineup is optional:</strong> each creator visits on their own, exactly like any booking — book one, book all ${nWord}, or skip it.</p>
     <div>${rows}</div>
-    <p style="margin:10px 0 0"><strong>Together: about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential local followers" : "local followers"}</strong> <span class="muted">— the ${nWord} creators' local audiences added up${lu.anyExtrapolated ? "; part of that count is estimated at each creator's confirmed local rate, so it is labeled potential" : ""}. ${esc(terms)}.</span></p>
+    <p style="margin:10px 0 0"><strong>Together: about ${fmtNum(lu.combinedNeighbors)} ${lu.anyExtrapolated ? "potential local followers" : "local followers"}</strong> <span class="muted">The ${nWord} creators' local audiences added up${lu.anyExtrapolated ? ", and part of that count is estimated at each creator's confirmed local rate, so it is labeled potential" : ""}. ${esc(terms)}.</span></p>
     <p style="margin:12px 0 0"><button type="button" class="btn" onclick="return lineupBookAll()">Book all ${nWord}</button> <span class="small muted">One offer, sent as ${nWord} separate invites. Booking one at a time works exactly as always.</span></p>
   </section>`;
 }
@@ -28149,7 +28149,7 @@ async function loadCampaignSetup() {
       </div>
       <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Mats, towels and the smoothie after are on us" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea><p class="small muted camp-help" style="margin:4px 0 0">Spell out what's included — specific offers get grabbed first. Creators see this line word for word.</p></div>
       <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
-      <div class="field"><label>Neighbor special <span class="opt-tag">Optional</span></label><input id="o2-special" maxlength="140" value="${dv(dft.special)}" placeholder="For example: Show this post, get a free queso" oninput="offerDraftSync()"><p class="small muted camp-help" style="margin:4px 0 0">A little extra for the creator's followers, in your words. It rides the visit's code — no second code — and every follower who uses it counts as a customer that creator brought you.</p></div>
+      <div class="field"><label>Follower special <span class="opt-tag">Optional</span></label><input id="o2-special" maxlength="140" value="${dv(dft.special)}" placeholder="For example: Show this post, get a free queso" oninput="offerDraftSync()"><p class="small muted camp-help" style="margin:4px 0 0">A little extra for the creator's followers, in your words. It rides the visit's code — no second code — and every follower who uses it counts as a customer that creator brought you.</p></div>
       <div class="field spanish-panel"><div class="lrow"><input type="checkbox" class="sw" id="o2-spanish" ${dft.spanish ? "checked" : ""} onchange="offerDraftSync()"><div><label for="o2-spanish"><strong>Content in Spanish</strong></label> <span class="opt-tag">Optional</span><p class="small muted" style="margin:2px 0 0">Reach Spanish-speaking customers with content made in Spanish. The offer is marked; it never blocks anyone from applying.</p></div></div></div>
       </div>
       <div class="fgroup">
@@ -39191,7 +39191,7 @@ function bdShowScreens() {
   const af = d.areaFraming;
   return [
     { title: `Your next regulars are already following people right here in ${mktName}.`, body: `<p>Magpie is a local list of creators — neighbors with local followings. Local shops use them to get local people in the door. You're being invited in early, before we open here.</p>` },
-    { title: `These are founding creators in ${mktName}.`, body: bench.length ? `${cards}${af ? `<p class="bd-show-reach">Based in ${esc(af.label)}: ${af.count} of these creators — together they reach about ${fmtNum(af.combinedNeighbors)} ${af.anyExtrapolated ? "potential neighbors" : "neighbors"}.</p>` : ""}<p class="muted">The founding list is growing every week. Shops that claim a spot now get first pick when we open.</p>` : `<p>The founding list is growing every week — the first creators in this category are being added now. Shops that claim a spot now get first pick when we open.</p>` },
+    { title: `These are founding creators in ${mktName}.`, body: bench.length ? `${cards}${af ? `<p class="bd-show-reach">Based in ${esc(af.label)}: ${af.count} of these creators — together they reach about ${fmtNum(af.combinedNeighbors)} ${af.anyExtrapolated ? "potential local followers" : "local followers"}.</p>` : ""}<p class="muted">The founding list is growing every week. Shops that claim a spot now get first pick when we open.</p>` : `<p>The founding list is growing every week — the first creators in this category are being added now. Shops that claim a spot now get first pick when we open.</p>` },
     { title: "You pick. You approve. Nothing posts without you.", body: `<ol class="bd-show-steps"><li>Invite a creator to come in. Treat them to a visit — a meal, a service, an experience — and they post 1 post + 1 story.</li><li>Or book them at their own listed price for bigger work. They set their rate. (Creators keep 97% of their rate — the 3% is card processing.)</li><li>Every visit is counted at your register with their own code — you'll see exactly who came in because of them.</li></ol><p><strong>You choose every creator. You approve every visit. You see the count.</strong></p>` },
     { title: "We don't guess. We count.", body: `<p>Magpie's match system ranks creators by how many of their followers actually live here — not by who's most famous. When you want an idea, Maggie, our in-app helper, suggests a campaign and names the creators she'd pick for your shop, and why. After a visit, you don't get “good vibes” — you get a count: how many of their people came in and used the code.</p>` },
     { title: `${mktName} founding spots are open now.`, body: `<p>We're building the founding creator list for ${mktName} right now. Shops that claim a founding spot are first in line when we open — first pick of creators, founding pricing locked, and we'll set your page up with you. There's nothing to pay today — paying starts when we open here, and we open when the founding creator roster is full. You're being invited in early.</p>` },

@@ -630,9 +630,9 @@ async function dataSectionPayload(section, rangeDays) {
       { type: "profile_view", label: "In-app profile views" },
       { type: "claim_hook_view", label: "Neighbor hook views" },
       { type: "claim_hook_converted", label: "Claims from the Neighbor hook" },
-      { type: "neighbor_stack_added", label: "Neighbor stack adds" },
-      { type: "neighbor_card_generated", label: "Neighbor Cards made" },
-      { type: "neighbor_card_shared", label: "Neighbor Cards shared" },
+      { type: "neighbor_stack_added", label: "Local follower stack adds" },
+      { type: "neighbor_card_generated", label: "Local follower cards made" },
+      { type: "neighbor_card_shared", label: "Local follower cards shared" },
     ];
     const captures = captureKinds.map((k) => ({ ...k, inRange: rollupCount(rollups, k.type), since: sinceMap[k.type] || null }));
     captures.push({ type: "deck_actions", label: "Deck passes / Laters", inRange: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"].reduce((s, t) => s + rollupCount(rollups, t), 0), since: sinceMap["deck_later"] || null });
@@ -2410,7 +2410,7 @@ function coachLadderSteps() {
     { type: "platform", done: (u) => coachMissingPlatform(u) === null, headline: (u) => { const p = coachMissingPlatform(u); return p ? `Add your ${PLATFORM_LABELS[p] || p} audience` : "Add another platform audience"; }, why: () => "Every platform you add stacks into one total audience — and a bigger total is what businesses see first.", target: "audience" },
     { type: "local", done: (u) => { const c = u.creator || {}; return c.localAudiencePct !== null && c.localAudiencePct !== undefined; }, headline: () => "Add your local audience %", why: () => "Your local % is the number this platform ranks on. Businesses nearby see it before your follower count.", target: "local" },
     { type: "rate", done: (u) => Number((u.creator || {}).paidRate) > 0, headline: () => "Set your paid rate", why: () => "Businesses can only book a rate that is listed. No rate set means paid bookings cannot start with you.", target: "rate", evidence: "rate" },
-    { type: "categories", done: (u) => !!((u.creator || {}).categoriesLocked) || (((u.creator || {}).categories || []).length >= 2), headline: () => "Add a second thing you create", why: () => "Your followers are your neighbors — they'd watch you enjoy almost anything local. Creators here average about 7 categories, and each one is another kind of business that can find you.", target: "categories" },
+    { type: "categories", done: (u) => !!((u.creator || {}).categoriesLocked) || (((u.creator || {}).categories || []).length >= 2), headline: () => "Add a second thing you create", why: () => "Your followers are people near you, and they'd watch you enjoy almost anything local. Creators here average about 7 categories, and each one is another kind of business that can find you.", target: "categories" },
     { type: "firstpost", done: (u, ctx) => ctx.hasPost, headline: () => "Link your first post", why: () => "Businesses look at your work before they pick. One linked post gives them something real to go on.", target: "bestwork" },
   ];
 }
@@ -2594,7 +2594,7 @@ function catBackfillView(user) {
   if (cats.length >= CREATOR_CATEGORIES.length) return null;
   if (user.creator.categoriesLocked) return null;
   if (user.creator.catPromptSeenAt) return null;
-  return { type: "catbackfill", headline: "Almost everything you post counts here.", why: `You're in ${cats.length} of ${CREATOR_CATEGORIES.length} categories right now. Your followers are mostly your neighbors, friends and family — they'd love seeing you enjoy a meal, a haircut, a workout or a night out, not just one kind of post. Most creators here keep nearly all of them, and each one is another kind of local business that can find you.`, catCount: cats.length, catTotal: CREATOR_CATEGORIES.length, target: "categories", evidence: null };
+  return { type: "catbackfill", headline: "Almost everything you post counts here.", why: `You're in ${cats.length} of ${CREATOR_CATEGORIES.length} categories right now. Your followers are mostly people near you, friends and family, and they'd love seeing you enjoy a meal, a haircut, a workout or a night out, not just one kind of post. Most creators here keep nearly all of them, and each one is another kind of local business that can find you.`, catCount: cats.length, catTotal: CREATOR_CATEGORIES.length, target: "categories", evidence: null };
 }
 async function coachAct(user, action) {
   const state = await coachStateFor(user.id);
@@ -10370,7 +10370,7 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
   // followers see, and every use counts for this creator.
   if (offer.neighborSpecial) {
     booking.audienceOffer = {
-      title: "Neighbor special",
+      title: "Follower special",
       perk: String(offer.neighborSpecial).slice(0, 140),
       attachedAt: ts,
       source: "offer",
@@ -30204,21 +30204,21 @@ async function route(event) {
       const business = await store.get(`user:${booking.businessId}`);
       const creatorName = (creator && creator.name) || booking.creatorName || "Your creator";
       const bizName = booking.businessName || (business && business.business && business.business.businessName) || "the business";
-      const countLine = n > 0 ? `${n} neighbor${n === 1 ? " has" : "s have"} come in so far.` : null;
+      const countLine = n > 0 ? `${n} local follower${n === 1 ? " has" : "s have"} come in so far.` : null;
       const sides = [
         {
           user: business,
           text: n > 0
             ? `${creatorName} posted last night. ${countLine}`
-            : `${creatorName} posted last night. The post is live and counting has started: neighbors who come in with the code will show up in your Results.`,
-          subject: n > 0 ? `${creatorName} posted: ${n} neighbor${n === 1 ? "" : "s"} in so far` : `${creatorName} posted last night`,
+            : `${creatorName} posted last night. The post is live and counting has started: local followers who come in with the code will show up in your Results.`,
+          subject: n > 0 ? `${creatorName} posted: ${n} local follower${n === 1 ? "" : "s"} in so far` : `${creatorName} posted last night`,
         },
         {
           user: creator,
           text: n > 0
             ? `Your post for ${bizName} went up last night. ${countLine} They count toward your Regulars brought in.`
-            : `Your post for ${bizName} is live. Counting has started: neighbors who come in with your code will show up in your Regulars brought in count.`,
-          subject: n > 0 ? `Your post for ${bizName}: ${n} neighbor${n === 1 ? "" : "s"} in so far` : `Your post for ${bizName} is live`,
+            : `Your post for ${bizName} is live. Counting has started: local followers who come in with your code will show up in your Regulars brought in count.`,
+          subject: n > 0 ? `Your post for ${bizName}: ${n} local follower${n === 1 ? "" : "s"} in so far` : `Your post for ${bizName} is live`,
         },
       ];
       let sentAny = false;
@@ -33654,9 +33654,9 @@ async function route(event) {
         { type: "profile_view", label: "In-app profile views" },
         { type: "claim_hook_view", label: "Neighbor hook views" },
         { type: "claim_hook_converted", label: "Claims from the Neighbor hook" },
-        { type: "neighbor_stack_added", label: "Neighbor stack adds" },
-        { type: "neighbor_card_generated", label: "Neighbor Cards made" },
-        { type: "neighbor_card_shared", label: "Neighbor Cards shared" },
+        { type: "neighbor_stack_added", label: "Local follower stack adds" },
+        { type: "neighbor_card_generated", label: "Local follower cards made" },
+        { type: "neighbor_card_shared", label: "Local follower cards shared" },
       ];
       const captures = captureKinds.map((k) => ({ ...k, inRange: countType(k.type), since: sinceMap[k.type] || null }));
       captures.push({ type: "deck_actions", label: "Deck passes / Laters", inRange: ["deck_later", "deck_hide", "deck_unlater", "deck_unhide"].reduce((s, t) => s + countType(t), 0), since: sinceMap["deck_later"] || null });

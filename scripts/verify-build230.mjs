@@ -172,7 +172,7 @@ check("pay copy (app): canonical timing on the deal panel, wallet, and Maggie pa
   (appJs.match(/live and verified, within 48 hours, once/g) || []).length >= 3 && !appJs.includes("releases it when your post is live"));
 check("site proof: the real-app claim is gone and examples are labeled",
   !siteIndex.includes("This is the real app") && siteIndex.includes("An example of the app")
-  && siteBiz.includes("an example of how reporting looks in the app") && siteCreators.includes("an example of how your track record looks in the app")
+  && siteBiz.includes("An example of how reporting looks in the app") && siteCreators.includes("An example of how your track record looks in the app")
   && siteBiz.includes("<strong>Example:</strong>") && siteCreators.includes("<strong>Example:</strong>"));
 check("site proof: no invented counted-visit results remain on the three pages",
   !siteBiz.includes("186 counted visits") && !siteCreators.includes("186 counted visits") && !siteBiz.includes("94 counted visits"));
