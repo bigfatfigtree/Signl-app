@@ -19986,9 +19986,9 @@ function neighborLocalWords(pct) {
   const p = Number(pct);
   if (!Number.isFinite(p)) return null;
   const tenths = Math.round(p / 10);
-  if (tenths >= 10) return "10 out of 10 of your followers live here";
-  if (tenths <= 0) return "Fewer than 1 in 10 of your followers live here";
-  return `${tenths} out of 10 of your followers live here`;
+  if (tenths >= 10) return "10 out of 10 of your audience lives here";
+  if (tenths <= 0) return "Fewer than 1 in 10 of your audience lives here";
+  return `${tenths} out of 10 of your audience lives here`;
 }
 function neighborPctOf(creatorRec) {
   const c = creatorRec || {};

@@ -59,7 +59,7 @@ const idxHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const themeV3 = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
-check("build stamp is 2026.11.20-221 (lib + shell)", buildJs.includes("2026.11.20-221") && (idxHtml.match(/2026\.11\.20-221/g) || []).length >= 5);
+check("build stamp is 2026.11.20-222 (lib + shell; bumped by Build -222)", buildJs.includes("2026.11.20-222") && (idxHtml.match(/2026\.11\.20-222/g) || []).length >= 5);
 check("server: completionGaps221 defined", routerJs.includes("function completionGaps221(user)"));
 check("server: gaps attached in withFounding", routerJs.includes("pub.completionGaps = completionGaps221(user)"));
 check("server: gaps attached in admin applications attach", routerJs.includes("pub.completionGaps = completionGaps221(u)"));

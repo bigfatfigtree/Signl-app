@@ -113,7 +113,7 @@ console.log("== A: source pins ==");
   // -176's invariant holds too: no exact rank, no market count,
   // no live merit rank, no climb prompts are ever shown.
   check("client carries the hook screen, spot CTA, live stack panel and card", appJs.includes("renderClaimHook") && appJs.includes("Claim my founding spot") && appJs.includes("neighborStackAdd") && appJs.includes("neighborCardSave") && appJs.includes("Want a bigger number?"), "");
-  check("client shows the founding band and no rank labels (Builds -176/-177)", appJs.includes("You are in the first") && !appJs.includes("Founding rank") && !appJs.includes("Live rank today") && !appJs.includes("Claim my #") && !appJs.includes("Want to climb?"), "");
+  check("client shows the founding band and no rank labels (Builds -176/-177, -222 copy)", appJs.includes("You're one of the first") && !appJs.includes("Founding rank") && !appJs.includes("Live rank today") && !appJs.includes("Claim my #") && !appJs.includes("Want to climb?"), "");
   check("bizdev show bench carries honest area framing only", bizJs.includes("areaFraming") && !/within 2 miles|under 2 miles/i.test(bizJs), "");
 }
 
@@ -146,7 +146,7 @@ console.log("== B: personal hook ==");
   check("known checked handle gets the personal variant", r.status === 200 && h.variant === "personal", JSON.stringify(r.data).slice(0, 200));
   check("neighbor math: 12,000 x 85% = 10,200", h.neighborCount === 10200, `got ${h.neighborCount}`);
   check("local % rides along (85)", h.localPct === 85, `got ${h.localPct}`);
-  check("local % in plain words (9 out of 10)", h.localWords === "9 out of 10 of your followers live here", h.localWords);
+  check("local % in plain words (9 out of 10)", h.localWords === "9 out of 10 of your audience lives here", h.localWords);
   check("rank never reaches the browser (Build -177: logged server-side, then stripped)", h.rank === undefined, `got ${h.rank}`);
   check("the checked count never reaches the browser (Build -177)", h.checkedCount === undefined, `got ${h.checkedCount}`);
   check("no rank line reaches the browser (Build -177)", h.rankLine === undefined, `got ${h.rankLine}`);

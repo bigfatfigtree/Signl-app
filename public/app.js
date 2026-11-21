@@ -28,8 +28,8 @@ const state = {
   claimStep: 1, // Build -85 claim flow: 1 welcome, 2 facts, 3 markets (Build -160), 4 account, 5 done
   claimDraft: null, // Build -85: the in-progress claim (memory only until Finish)
   claimDone: null, // Build -85: the done-state readout ({firstName, total, complete, under})
-  claimHook: null, // Build -156: the Neighbor Number hook payload for this claim landing ({variant:"personal"|"generic", ...})
-  neighbor: null, // Build -156: my live Neighbor Number view (GET /neighbor/me or claim-complete)
+  claimHook: null, // Build -156: the local followers hook payload for this claim landing ({variant:"personal"|"generic", ...})
+  neighbor: null, // Build -156: my live local followers view (GET /neighbor/me or claim-complete)
   bizPrefill: null, // business-wave prefill: sanitized ?biz=&market=&category=
   publicHandle: null, // set when the URL is /c/<handle>
   resetToken: "", // password reset token from a /?reset= email link
@@ -7961,7 +7961,7 @@ async function render() {
     return renderIntro();
   }
   // Build -85: the claim flow's done state replaces the pending
-  // wall for the claim session itself ("You're on the roster").
+  // wall for the claim session itself ("You're in").
   // It is one screen, shown once: the exits below clear the step,
   // and a returning pending creator gets the normal pending home.
   if (state.claimStep === 5 && state.claimDone) return renderClaimDone();
@@ -11520,7 +11520,7 @@ function renderQuickClaim() {
   return renderClaimWelcome();
 }
 
-// ---------- Screen 0: the Neighbor Number (Build -156) ----------
+// ---------- Screen 0: the local followers hook (Build -156) ----------
 // Shown BEFORE any form when a checked record carries this
 // creator's own numbers: her counted neighbors, her local % in
 // plain words, her founding spot (never the exact rank or the
@@ -12187,7 +12187,7 @@ async function doQuickClaim(e) {
   return false;
 }
 
-// ---------- Done: you're on the roster ----------
+// ---------- Done: you're in ----------
 // ---------- PWA install (Build -87, audit Finding 11) ----------
 // Minimal service worker for installability; the install prompt
 // itself is offered once, on the claim DONE screen, dismissible
@@ -12238,14 +12238,14 @@ function renderClaimDone() {
   const line2 = done.under
     ? `<strong>${T("Magpie starts at 500 total followers across your platforms.", "Magpie empieza con 500 seguidores en total, sumando todas tus plataformas.")}</strong> ${T(`You have ${claimFmtCount(done.total)} counted so far. Add every platform you post on from your dashboard, and the counts add up.`, `Llevas ${claimFmtCount(done.total)} contados hasta ahora. Agrega cada plataforma donde publicas desde tu panel, y los conteos se suman.`)}`
     : done.complete
-      ? T("Your four facts are in. The moment you're approved, businesses can find your page.", "Tus cuatro datos ya están. En cuanto te aprueben, los negocios podrán ver tu página.")
+      ? T("Your numbers are in. The moment you're approved, businesses can find your page.", "Tus números ya están. En cuanto te aprueben, los negocios podrán ver tu página.")
       : T("Anything you skipped is waiting on your dashboard checklist. Two minutes finishes it.", "Lo que saltaste te espera en la lista de tu panel. Dos minutos lo terminan.");
   app.innerHTML = `
   <section class="c85-wrap">
     <div class="c85-card" style="text-align:center">
       <div class="c85-done-badge">✓</div>
-      <h2 class="c85-h2">${done.firstName ? `${T("You're on the roster,", "Ya estás en la lista,")} <span class="c85-accent2">${esc(done.firstName)}.</span>` : `${T("You're on the", "Ya estás en la")} <span class="c85-accent2">${T("roster.", "lista.")}</span>`}</h2>
-      <p style="margin:0 0 10px">${T("We review every creator personally. You'll hear within two business days.", "Revisamos a cada creador personalmente. Tendrás respuesta en dos días laborables.")}</p>
+      <h2 class="c85-h2">${done.firstName ? `${T("You're in,", "Ya estás dentro,")} <span class="c85-accent2">${esc(done.firstName)}.</span>` : `${T("You're", "Ya estás")} <span class="c85-accent2">${T("in.", "dentro.")}</span>`}</h2>
+      <p style="margin:0 0 10px">${T("We review every creator by hand. You'll hear back within two business days.", "Revisamos a cada creador a mano. Tendrás respuesta en dos días laborables.")}</p>
       <p class="muted" style="margin:0 0 18px">${line2}</p>
       <div id="claim-what-you-get" style="text-align:left;border-top:1px solid var(--hairline,#DFE7DF);padding-top:14px;margin:0 0 18px">
         <p style="margin:0 0 8px"><strong>${T("What you get today", "Lo que obtienes hoy")}</strong></p>
@@ -12284,14 +12284,21 @@ function neighborPanelHtml() {
   const missing = neighborMissingPlatforms();
   const nextPlat = missing.length ? missing[0] : null;
   const f = nb.founding;
+  // Build -222: the local share in plain words, from the same
+  // localPct the server computed the count from (tenths of ten,
+  // the exact rounding neighborLocalWords uses server-side).
+  const nbTenths = nb.localPct === null || nb.localPct === undefined || !Number.isFinite(Number(nb.localPct)) ? null : Math.round(Number(nb.localPct) / 10);
+  const nbShareLine = nbTenths === null ? "" : nbTenths >= 10
+    ? T("That's 10 out of 10 of your audience, and it's exactly what local businesses are buying.", "Eso es 10 de cada 10 de tu audiencia, y es exactamente lo que compran los negocios locales.")
+    : nbTenths <= 0
+      ? T("That's fewer than 1 out of 10 of your audience, and it's exactly what local businesses are buying.", "Eso es menos de 1 de cada 10 de tu audiencia, y es exactamente lo que compran los negocios locales.")
+      : T(`That's ${nbTenths} out of 10 of your audience, and it's exactly what local businesses are buying.`, `Eso es ${nbTenths} de cada 10 de tu audiencia, y es exactamente lo que compran los negocios locales.`);
   return `<div style="text-align:left;border-top:1px solid var(--hairline,#DFE7DF);padding-top:14px;margin:0 0 18px" id="nb-panel">
-    <p style="margin:0 0 4px"><strong>${T("Your Neighbor Number", "Tu Número de Vecinos")}</strong></p>
-    <p style="font-size:32px;font-weight:800;margin:0" id="nb-big">${claimFmtCount(nb.neighborCount)}</p>
-    <p class="muted" style="margin:0 0 8px" id="nb-big-label">${nb.extrapolated ? T(`total potential neighbors in ${marketLabel}`, `vecinos potenciales en total en ${marketLabel}`) : T(`neighbors in ${marketLabel}`, `vecinos en ${marketLabel}`)}${nb.localWords ? ` · ${esc(nb.localWords)}` : ""}</p>
-    ${f && f.band ? `<p class="small" style="margin:0 0 4px"><strong>${T(`You are in the first ${f.band} founding creators in ${nb.market}.`, `Estás en los primeros ${f.band} creadores fundadores de ${nb.market}.`)}</strong> ${T("Your founding spot is locked in; it never changes.", "Tu lugar fundador queda fijo; nunca cambia.")}</p>` : ""}
-    <p class="small" style="margin:0 0 10px">${T("Your Neighbor Number is live: it is your own count, and it updates every time your profile does.", "Tu Número de Vecinos está en vivo: es tu propia cuenta, y se actualiza cada vez que tu perfil se actualiza.")}</p>
+    <p style="margin:0 0 8px" id="nb-big-label"><span style="font-size:32px;font-weight:800" id="nb-big">${claimFmtCount(nb.neighborCount)}</span> ${T("of your followers live in", "de tus seguidores viven en")} ${esc(marketLabel)}.</p>
+    ${nbShareLine ? `<p class="small" style="margin:0 0 10px">${nbShareLine}</p>` : ""}
+    ${f && f.band ? `<p class="small" style="margin:0 0 4px"><strong>${T(`You're one of the first ${f.band} founding creators in ${nb.market}.`, `Eres una de las primeras ${f.band} creadoras fundadoras de ${nb.market}.`)}</strong> ${T("Founding creators see offers first, and that never changes.", "Las creadoras fundadoras ven las ofertas primero, y eso nunca cambia.")}</p>` : ""}
     ${nextPlat ? `<div class="notice blue" style="text-align:left">
-      <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Want a bigger number? Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Every platform you add recounts your neighbors, right here.`, `¿Quieres un número más grande? Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Cada plataforma que agregas vuelve a contar tus vecinos, aquí mismo.`)}</p>
+      <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Want a bigger number? Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Every platform you add recounts your local followers, right here.`, `¿Quieres un número más grande? Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Cada plataforma que agregas vuelve a contar tus seguidores locales, aquí mismo.`)}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
         <div class="field" style="margin:0"><label>${T("Platform", "Plataforma")}</label><select id="nb-plat">${missing.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join("")}</select></div>
         <div class="field" style="margin:0"><label>${T("Followers", "Seguidores")}</label><input type="number" id="nb-plat-count" min="1" inputmode="numeric" placeholder="0" style="width:130px"></div>
@@ -12330,7 +12337,7 @@ async function neighborStackAdd() {
     if (nb && nb.neighbor) state.neighbor = nb.neighbor;
     render();
     neighborAnimateCount(document.getElementById("nb-big"), oldCount, state.neighbor ? state.neighbor.neighborCount : oldCount);
-    showToast(T("Counted. Your Neighbor Number just moved.", "Contado. Tu Número de Vecinos acaba de moverse."));
+    showToast(T("Counted. Your local followers just moved.", "Contado. Tus seguidores locales acaban de moverse."));
   } catch (e) { if (msg) msg.textContent = e.message; }
   return false;
 }
@@ -12387,7 +12394,7 @@ function showQuickJoin() { state.joinMode = "quick"; state.claimStep = 1; render
 
 function renderJoinCreator() {
   // The claim flow (Build -85) is the default door: three short
-  // screens (welcome, four facts, account) ending in the done
+  // screens (welcome, numbers, account) ending in the done
   // state. The full founding profile form below stays one tap
   // away for creators who would rather do it all now.
   if (state.joinMode !== "full") return renderQuickClaim();
@@ -14750,7 +14757,7 @@ async function loadFoundingDashboard() {
     state.sigQueueLinks = [];
     state.sigQueueCount = queueItems.length;
     const fSteps = [
-      { label: "Claim your profile", sub: "You are on the roster.", done: u.status === "approved" },
+      { label: "Claim your profile", sub: "You're in.", done: u.status === "approved" },
       { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: !u.profileCompletion || u.profileCompletion.complete, btn: "Finish profile", act: () => goFinishProfile() },
       { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!(u.creator && u.creator.paidRate), optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
       { label: "Apply to your first offer", sub: "Offers open when your market launches. The Offers tab shows how they work.", info: "Opens at launch" },
@@ -16244,7 +16251,7 @@ function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
     <div class="stat-big">${pct === null ? "Local % not set" : `${pct}%`}</div>
     <div class="stat-lbl">${pct === null ? "Add your local audience % in your profile and this card fills in." : "of my audience is local"}</div>
     <div class="stat-rank">${esc(rankLine)}</div>
-    <div class="stat-sub">Ranked by local reach, not follower count.${f.priorityBand ? ` In the first ${f.priorityBand} founding creators in ${esc(placeRaw)}.` : ""}</div>
+    <div class="stat-sub">Ranked by local reach, not follower count.${f.priorityBand ? ` You're one of the first ${f.priorityBand} founding creators in ${esc(placeRaw)}.` : ""}</div>
     <div class="stat-actions"><button type="button" class="btn small-btn" onclick="return shareStatCard(this)" data-stat-text="${esc(bits.join(" "))}">Share my stat card</button></div>
   </section>`;
 }
@@ -16373,7 +16380,7 @@ async function loadFoundingStatus() {
     <div class="panel">
       <h3 style="margin-top:0">${esc(marketTalkNameClient(f.market))} is a founding market</h3>
       <p>Your market is not taking business offers yet, and that is on purpose: Magpie opens each market with its founding roster in place. The moment ${esc(marketTalkNameClient(f.market))} opens, we email you at <strong>${esc(state.user.email)}</strong>.</p>
-      ${f.priorityBand ? `<p><span class="badge tier badge-line" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} founding creators in ${esc(marketTalkNameClient(f.market))}</span></p>
+      ${f.priorityBand ? `<p><span class="badge tier badge-line" style="font-size:0.95rem;padding:6px 14px">You're one of the first ${f.priorityBand} founding creators in ${esc(marketTalkNameClient(f.market))}</span></p>
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(marketTalkNameClient(f.market))} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Your profile, your messages and Maggie are open now. Offers land the day your market opens, and visits follow from there. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`}`;
@@ -17842,7 +17849,7 @@ async function loadCreatorHome() {
     // The launch checklist (spec §4.6): the paid-rate step is
     // optional; the card retires when the other three are done.
     const steps = [
-      { label: "Claim your profile", sub: "You are on the roster.", done: true },
+      { label: "Claim your profile", sub: "You're in.", done: true },
       { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: gateDone, btn: "Finish profile", act: () => goFinishProfile() },
       { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!paidRate, optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
       { label: "Apply to your first offer", sub: "Flip through offers near you.", done: applications.length > 0 || bookings.length > 0, btn: "See offers", act: () => go("dashboard", "Find Offers") },
@@ -35277,7 +35284,7 @@ function previewDashboardHtml(d) {
       // visitor lands on the sign-up, pre-filled. Signed-in visitors
       // keep their normal landing, and nothing ever auto-submits.
       if (!state.user) state.view = "join-creator";
-      // Build -156: the Neighbor Number hook resolves BEFORE the
+      // Build -156: the local followers hook resolves BEFORE the
       // first paint, so a creator with checked numbers lands on
       // her own count (claimStep 0), never on a form first. Any
       // failure leaves the plain flow exactly as it was.
