@@ -77,9 +77,15 @@ check("sigdata summary carries the canonical timing",
   sigdataSrc.includes("recorded means the bookings on file, paid after the post is live and verified, within 48 hours, once payout details are set up"), "");
 check("sigdata carries the Spanish payout-timing branch",
   sigdataSrc.includes('"cuando me pagan"') && sigdataSrc.includes(ES_CANON), "");
-check("build stamp is 2026.11.21-236 in both homes",
-  fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.21-236"')
-  && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.21-236"'), "");
+// Build -237: the exact -236 pin is relaxed to "both homes
+// agree, >= 236" (same pattern -236 applied to -235's pin):
+// the stamp moves with every build; what this suite owns is
+// that the two homes never disagree.
+check("build stamp: both homes agree, >= 236 (relaxed by Build -237)",
+  (() => { const n = (s) => { const m = String(s).match(/2026\.11\.21-(\d+)/); return m ? Number(m[1]) : 0; };
+    const a = n(fs.readFileSync(path.join(root, "public/index.html"), "utf8"));
+    const b = n(fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8"));
+    return a >= 236 && a === b; })(), "");
 
 // --- B + C: server fixtures (Maggie data path) ----------------
 console.log("== B/C: server fixtures (POST /api/sig/ask as a creator, EN + ES) ==");

@@ -5834,7 +5834,7 @@ function renderSettingsTab() {
   ${notificationPrefsHtml(u)}
   <div class="panel mt">
     <h3>Payout details</h3>
-    <p class="small muted">Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, so there is nothing to set up here yet, and nothing in the app promises a payout date.</p>
+    <p class="small muted">Paid bookings record your rate in the app: booked at your rate, you keep 97%. You are paid after your post is live and verified, within 48 hours, once your payout details are set up.</p>
   </div>
   ${accountHtml(u)}`;
     loadAlertPrefs();
@@ -11131,13 +11131,13 @@ function sigC98Payout() {
   const c = (state.user && state.user.creator) || {};
   const ready = !!(c.payouts && c.payouts.ready);
   if (isUkUser()) {
-    sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and a UK bank account, your sort code and account number, so money can go to your bank by Faster Payments; bank details go to Stripe, never to Magpie. Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's. You are responsible for your own UK tax position, and Magpie does not withhold tax from your earnings. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
+    sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and a UK bank account, your sort code and account number, so money can go to your bank by Faster Payments; bank details go to Stripe, never to Magpie. Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's. You are responsible for your own UK tax position, and Magpie does not withhold tax from your earnings. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app, and you are paid after your post is live and verified, within 48 hours, once your payout details are set up. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
       { label: ST("Open payout setup on my Profile", "Abrir los pagos en mi perfil"), primary: true, run: async () => go("dashboard", "Profile") },
       { label: ST("Read it in Help", "Leerlo en Ayuda"), run: async () => go("dashboard", "Help") },
     ]);
     return;
   }
-  sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to Magpie. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
+  sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to Magpie. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app, and you are paid after your post is live and verified, within 48 hours, once your payout details are set up. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
     { label: ST("Open payout setup on my Profile", "Abrir los pagos en mi perfil"), primary: true, run: async () => go("dashboard", "Profile") },
     { label: ST("Read it in Help", "Leerlo en Ayuda"), run: async () => go("dashboard", "Help") },
   ]);
@@ -19188,7 +19188,7 @@ function payoutExplainerUkHtml(lastMargin) {
     <p class="small" style="margin:0 0 6px">Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's.</p>
     <p class="small" style="margin:0 0 6px">Taxes, in plain words: you are responsible for your own UK tax position, and Magpie does not withhold tax from your earnings.</p>
     <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
-    <p class="small" style="margin:0${lastMargin ? " 0 8px" : ""}">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup promises no payout date, and the app does not promise a payout date.</p>`;
+    <p class="small" style="margin:0${lastMargin ? " 0 8px" : ""}">Paid bookings are recorded in the app. You are paid after your post is live and verified, within 48 hours, once your payout details are set up.</p>`;
 }
 
 // Build -98 (11h): the payout-paperwork explainer copy, shared
@@ -19201,7 +19201,7 @@ function payoutExplainerHtml() {
     <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to Magpie. And it will ask for tax information, so paid earnings can be reported the right way.</p>
     <p class="small" style="margin:0 0 6px">Taxes, in plain words: if your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year. It is a tax record of money paid to you, not a bill. Keep it for your taxes.</p>
     <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
-    <p class="small" style="margin:0">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup promises no payout date, and the app does not promise a payout date.</p>
+    <p class="small" style="margin:0">Paid bookings are recorded in the app. You are paid after your post is live and verified, within 48 hours, once your payout details are set up.</p>
   </div>`;
 }
 function payoutsStepHtml(c) {
@@ -19229,7 +19229,7 @@ function payoutsStepHtml(c) {
       <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to Magpie. And it will ask for tax information, so paid earnings can be reported the right way.</p>
       <p class="small" style="margin:0 0 6px">Taxes, in plain words: if your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year. It is a tax record of money paid to you, not a bill. Keep it for your taxes.</p>
       <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
-      <p class="small" style="margin:0 0 8px">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup promises no payout date, and the app does not promise a payout date.</p>
+      <p class="small" style="margin:0 0 8px">Paid bookings are recorded in the app. You are paid after your post is live and verified, within 48 hours, once your payout details are set up.</p>
       <button type="button" class="btn small-btn ghost" onclick="return ackPayoutExplainer()">Got it</button>
     </div>`;
   }
@@ -39520,7 +39520,7 @@ async function bdLoadMoney(el) {
   ${bdCitySwitcherHtml()}
   <section class="panel">
     <p class="bd-money-big">Money building up: ${money(m.accrued)}</p>
-    ${d.hqSeat ? `<p class="muted" style="margin:0">This is your own seat — you're HQ, so no commission accrues on it and it never shows in the commission owed. The pipeline below is your book's, labelled as yours. Magpie isn't collecting payments yet, so nothing here is paid out.</p>` : `<p class="muted" style="margin:0">This is commission you've earned on paper. Magpie isn't collecting payments yet, so commissions are paid once ${esc(d.marketName || "Hampton Roads")} opens for payments and businesses start paying. No payout date is promised.</p>`}
+    ${d.hqSeat ? `<p class="muted" style="margin:0">This is your own seat — you're HQ, so no commission accrues on it and it never shows in the commission owed. The pipeline below is your book's, labelled as yours. Magpie isn't collecting payments yet, so nothing here is paid out.</p>` : `<p class="muted" style="margin:0">This is commission you've earned on paper. Magpie isn't collecting payments yet, so commissions are paid once ${esc(d.marketName || "Hampton Roads")} opens for payments and businesses start paying.</p>`}
     ${!d.hqSeat && d.seatState === "probation" ? `<p class="bd-pending" style="margin-top:10px">Probation: 25% direct rate. Exclusivity and the 5% ${esc(d.marketName || "Hampton Roads")} residual vest at 15 activations, or 3 straight months of 3+.</p>` : ""}
     ${d.warningMonth ? `<div class="bd-banner bd-banner-warn">Warning month: ${esc(d.warningMonth)} — Jeff has put this seat on a warning month. One more failing month and the seat lapses; the book you've built keeps paying either way.</div>` : ""}
     ${d.atRisk ? `<div class="bd-banner bd-banner-warn">Heads up: ${esc(d.atRisk)}</div>` : ""}
