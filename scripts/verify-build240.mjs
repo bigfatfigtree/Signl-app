@@ -29,9 +29,12 @@ function check(name, cond, extra) {
 }
 
 console.log("== Build -240: approval email carries no founding number ==");
-check("build stamp is 2026.11.21-240 in both homes",
-  fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.21-240"')
-  && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.21-240"'), "");
+// Build -241 note (2026-11-21): the stamp moved on the same day (the
+// claim and reminder emails joined the same ruling); the pin is both
+// homes agree and >= 240, the house relaxation for same-day
+// follow-on builds.
+check("build stamp is >= 2026.11.21-240 and agrees in both homes",
+  (() => { const a = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").match(/BUILD_ID = "2026\.11\.21-(\d+)"/); const b = fs.readFileSync(path.join(root, "public/index.html"), "utf8").match(/window\.__SIGNL_BUILD__ = "2026\.11\.21-(\d+)"/); return !!a && !!b && a[1] === b[1] && Number(a[1]) >= 240; })(), "");
 
 const listed = { id: "u240a", name: "Casey Creator", email: "c240@fixtures.dev", role: "creator", status: "approved", market: "Nashville", city: "Nashville", creator: { handle: "c240", categories: ["Food & Drink"] } };
 const unlisted = { ...listed, id: "u240b", market: "Not listed yet", city: "Tulsa", state: "OK" };

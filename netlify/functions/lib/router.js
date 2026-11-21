@@ -9192,7 +9192,7 @@ function signupConfirmationEmail(user, band) {
       `Your founding creator profile is built and in the review queue. Every application is reviewed by a person.`,
       "Every founding application gets a decision or a clear status within 2 business days.",
     ];
-    if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. That founding standing never expires.`);
+    if (band) lines.push(`You are a founding creator in ${user.city}, and that founding standing never expires.`);
     lines.push(
       "",
       `You're in, and you're early. ${user.city} isn't one of our launch markets yet; it's building right now. We're opening Magpie city by city, and sign-ups like yours are how we pick what's next: when ${user.city} gets close, founding creators there hear first and get first pick.`,
@@ -9222,7 +9222,7 @@ function signupConfirmationEmail(user, band) {
     `Your founding creator profile for ${user.market} is built and in the review queue. Every application is reviewed by a person.`,
     "Every founding application gets a decision or a clear status within 2 business days.",
   ];
-  if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. That founding standing never expires.`);
+  if (band) lines.push(`You are a founding creator in ${user.market}, and that founding standing never expires.`);
   lines.push(
     "",
     `What happens next: when you are approved, we email you again and your founding status page opens at app.magpielocal.com. ${marketTalkName(user.market)} is a founding market, and founding creators get first pick of offers when it opens to businesses.`,
@@ -9265,6 +9265,11 @@ function completionChecklistLines(user) {
 // the spot is claimed and the place in line is held; the profile
 // itself is finished after approval, which the email says plainly
 // so nobody mistakes the claim for a finished profile.
+// Build -241 (Jeff, 2026-11-21): same ruling as -240 ("We don't
+// say what number they are"): the band line no longer states the
+// creator's sign-up number or that spots are held in sign-up
+// order; it keeps the founding standing, which never expires.
+// The same band statement came out of signupConfirmationEmail.
 function claimConfirmationEmail(user, band) {
   const first = greetingName(user);
   const subject = "Your Magpie founding spot is claimed";
@@ -9276,7 +9281,7 @@ function claimConfirmationEmail(user, band) {
       `Your founding spot in ${user.city} is claimed, and your application is in the review queue. Every application is reviewed by a person.`,
       "Every founding application gets a decision or a clear status within 2 business days.",
     ];
-    if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. Founding spots are held in sign-up order, and that standing never expires.`);
+    if (band) lines.push(`You are a founding creator in ${user.city}, and that founding standing never expires.`);
     if (user.creator && user.creator.handle) lines.push("", `Your booking page is already live: https://app.magpielocal.com/c/${user.creator.handle}`, "Put it in your bio. Anyone who taps it sees your page and your rate card.");
     lines.push(
       "",
@@ -9308,7 +9313,7 @@ function claimConfirmationEmail(user, band) {
     `Your founding spot in ${user.market} is claimed, and your application is in the review queue. Every application is reviewed by a person.`,
     "Every founding application gets a decision or a clear status within 2 business days.",
   ];
-  if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. Founding spots are held in sign-up order, and that standing never expires.`);
+  if (band) lines.push(`You are a founding creator in ${user.market}, and that founding standing never expires.`);
   if (user.creator && user.creator.handle) lines.push("", `Your booking page is already live: https://app.magpielocal.com/c/${user.creator.handle}`, "Put it in your bio. Anyone who taps it sees your page and your rate card.");
   lines.push(
     "",
@@ -9340,6 +9345,8 @@ function claimConfirmationEmail(user, band) {
 // approval email. The bracketed points checklist is gone; what is
 // left is the standing, the plain missing list, one finish link,
 // and the launch line.
+// Build -241 (Jeff, 2026-11-21): the held-in-sign-up-order
+// statement is out, same ruling as -240.
 function profileCompletionReminderEmail(user) {
   const first = greetingName(user);
   const completion = profileCompletionFor(user);
@@ -9352,7 +9359,7 @@ function profileCompletionReminderEmail(user) {
   const lines = [
     `Hi ${first},`,
     "",
-    `You are approved as a Founding Creator in ${place}, and your founding spot is held in sign-up order. One step is still open: finish your profile, so businesses can see you and send you offers.`,
+    `You are approved as a Founding Creator in ${place}. One step is still open: finish your profile, so businesses can see you and send you offers.`,
     "",
     `Still to do: ${missing}.`,
     ...(completion.missing.includes("audience") && audienceMinimumApplies(user) ? [MIN_AUDIENCE_LINE] : []),
