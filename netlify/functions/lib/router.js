@@ -7929,13 +7929,17 @@ function platformMessagePreview(body) {
   const head = (lastSpace >= 40 ? cut.slice(0, lastSpace) : cut).replace(/[\s.,;:!?()-]+$/, "");
   return `${head}…`;
 }
-function platformMessageEmail(creator, body) {
+function platformMessageEmail(creator, body, senderName) {
   const preview = platformMessagePreview(body);
   const base = (process.env.APP_URL || "https://app.magpielocal.com").replace(/\/+$/, "");
+  // Build -239: the sender line names the actual thread sender.
+  // Team messages (the platform thread, PLATFORM_PEER_ID) are
+  // Maggie's; the old hard-coded Jeff line misattributed them.
+  const sender = senderName || "Maggie";
   return {
     subject: "You have a new message on Magpie",
     text: [
-      "Jeff from Magpie sent you a message.",
+      `${sender} from Magpie sent you a message.`,
       "",
       `"${preview}"`,
       "",
@@ -7970,6 +7974,21 @@ const LIFECYCLE_EMAIL_SENT_TYPES = new Set([
   "partner_welcome_email_sent",
   "team_welcome_email_sent",
 ]);
+// Build -239: one approval email per creator, ever. The
+// Nov 20 approval batch fired the email once per approve tap
+// (one creator got it three times in 40 seconds), because the
+// review action re-sends unconditionally. Both approval routes
+// (admin review and auto-decision) check this first: when an
+// approval_email_sent event already exists for the record, the
+// approval still applies and the email does not send again.
+// The read fails open, like the suppression walk above: a
+// lookup failure never blocks a first approval email.
+async function approvalEmailAlreadySent239(userId) {
+  try {
+    const { events } = await listEventsForSubject(userId, { limit: 100 });
+    return (events || []).some((e) => e && e.type === "approval_email_sent");
+  } catch (e) { return false; }
+}
 async function recentLifecycleEmail(userId, windowMs) {
   const cutoff = Date.now() - windowMs;
   const { events } = await listEventsForSubject(userId, { limit: 30 });
@@ -9186,7 +9205,7 @@ function signupConfirmationEmail(user, band) {
       ...rosterBenefitsLines(user, user.city),
       MIN_AUDIENCE_LINE,
       "",
-      "Sign in any time to check your status: https://app.magpielocal.com",
+      "Sign in any time to check your status: https://app.magpielocal.com/?open=status",
       "",
       "You agreed to Magpie's Terms of Service and Privacy Policy, and to receive account and marketing emails from Magpie. You can unsubscribe from marketing emails at any time.",
       "",
@@ -9216,7 +9235,7 @@ function signupConfirmationEmail(user, band) {
     ...rosterBenefitsLines(user, user.market),
     MIN_AUDIENCE_LINE,
     "",
-    "Sign in any time to check your status: https://app.magpielocal.com",
+    "Sign in any time to check your status: https://app.magpielocal.com/?open=status",
     "",
     "You agreed to Magpie's Terms of Service and Privacy Policy, and to receive account and marketing emails from Magpie. You can unsubscribe from marketing emails at any time.",
     "",
@@ -9272,7 +9291,7 @@ function claimConfirmationEmail(user, band) {
       ...rosterBenefitsLines(user, user.city),
       MIN_AUDIENCE_LINE,
       "",
-      "Sign in any time to check your status: https://app.magpielocal.com",
+      "Sign in any time to check your status: https://app.magpielocal.com/?open=status",
       "",
       "You agreed to Magpie's Terms of Service and Privacy Policy, and to receive account and marketing emails from Magpie. You can unsubscribe from marketing emails at any time.",
       "",
@@ -9302,7 +9321,7 @@ function claimConfirmationEmail(user, band) {
     ...rosterBenefitsLines(user, user.market),
     MIN_AUDIENCE_LINE,
     "",
-    "Sign in any time to check your status: https://app.magpielocal.com",
+    "Sign in any time to check your status: https://app.magpielocal.com/?open=status",
     "",
     "You agreed to Magpie's Terms of Service and Privacy Policy, and to receive account and marketing emails from Magpie. You can unsubscribe from marketing emails at any time.",
     "",
@@ -9481,7 +9500,7 @@ function approvalEmail(user, band) {
     );
     return { subject, text: lines.join("\n") };
   }
-  const subject = "You are in. Welcome to Magpie.";
+  const subject = "You are approved. Welcome to Magpie.";
   const lines = [
     `Hi ${first},`,
     "",
@@ -9546,6 +9565,91 @@ function rejectionEmail(user, reason) {
     "Founder, Magpie",
     "hello@magpielocal.com",
   );
+  return { subject, text: lines.join("\n") };
+}
+
+// ---------- Build -239: business lifecycle emails ----------
+// Until this build a business applicant heard nothing at all:
+// the site safety-net form emailed only the team, an in-app
+// business registration sent no confirmation of its own, and
+// the review handler's approval and rejection mail existed
+// for creators only. These three builders close that silence
+// in the creator emails' shape: plain text, the same sign-off,
+// no em dashes.
+function businessApplicationConfirmationEmail(input) {
+  const first = (input && input.first) || "there";
+  const businessName = (input && input.businessName) || "your business";
+  const placeLine = (input && input.placeLine) || "";
+  const subject = "Your Magpie founding business application is in";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Thank you for applying. The founding business application for ${businessName} is in, and it is in the review queue. Every application is reviewed by a person.`,
+    "Every founding application gets a decision or a clear status within 2 business days.",
+  ];
+  if (placeLine) lines.push("", placeLine);
+  lines.push(
+    "",
+    "Founding means no charge and nothing due until your market opens. If you pick a plan, it is recorded only, and billing starts at opening, never before.",
+    "",
+    input && input.hasAccount
+      ? "Sign in any time to check your status: https://app.magpielocal.com/?src=email"
+      : "When you are approved, we email you again with your sign-in and your next steps.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
+  );
+  return { subject, text: lines.join("\n") };
+}
+
+function businessApprovalEmail(user) {
+  const first = greetingName(user);
+  const bizName = (user.business && user.business.businessName) || user.name || "your business";
+  const listed = !!user.market && user.market !== UNLISTED && !!marketByName(user.market);
+  const subject = listed ? "You are in. Welcome to Magpie." : `You are approved: founding business for ${user.city}`;
+  const place = listed ? marketTalkName(user.market) : user.city;
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Good news: your application was reviewed and approved. ${bizName} is now a Magpie founding business in ${place}.`,
+    "",
+    "Two steps make you ready for opening day:",
+    "Finish your business profile: https://app.magpielocal.com/?open=profile",
+    "See your offers home: https://app.magpielocal.com/?open=offers",
+    "",
+    "Nothing is charged until your market opens to bookings.",
+    "Founding creators get first pick of your offers when it does.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
+function businessRejectionEmail(user) {
+  const first = greetingName(user);
+  const listed = !!user.market && user.market !== UNLISTED && !!marketByName(user.market);
+  const place = listed ? marketTalkName(user.market) : user.city;
+  const subject = "Your founding business application: not a fit for this round";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Thank you for applying to be a Magpie founding business in ${place}. Your application was reviewed by a person, and it is not a fit for this round.`,
+    "",
+    "This round is small on purpose: we start with the businesses closest to the creators opening first. That is about fit for this round, not about the quality of your business.",
+    "",
+    "Markets open in waves, and this is not a permanent no. You are welcome to apply again when your market expands.",
+    "Think we got it wrong? Reply to this email and a person will look again.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, Magpie",
+    "hello@magpielocal.com",
+  ];
   return { subject, text: lines.join("\n") };
 }
 
@@ -13721,7 +13825,9 @@ async function applyAutoDecision(u, users, evidence, opts = {}) {
     const { approvedRank } = creatorRanks(await allUsers());
     const band = foundingBand(approvedRank.get(u.id));
     const mail = approvalEmail(u, band);
-    await deliverEmail("approval", u, mail.subject, mail.text, band);
+    if (!(await approvalEmailAlreadySent239(u.id))) {
+      await deliverEmail("approval", u, mail.subject, mail.text, band);
+    }
   } catch (e) { /* email is best-effort, exactly as in manual review */ }
   return { action: "approved", rule };
 }
@@ -13920,7 +14026,7 @@ function postPerformanceEmail(creator, booking) {
       "",
       "Add them in the app: open My Visits, find the visit, and use Add post numbers. It takes ten seconds, and reporting earns you +5 Momentum points.",
       "",
-      "Sign in: https://app.magpielocal.com",
+      "Sign in: https://app.magpielocal.com/?open=visits",
       "",
       "The Magpie team",
       "hello@magpielocal.com",
@@ -13949,7 +14055,7 @@ function postPerformanceUpdateEmail(creator, booking) {
       "",
       "Update them in the app: open My Visits, find the visit, and update your views, likes, comments, and shares. It takes ten seconds.",
       "",
-      "Sign in: https://app.magpielocal.com",
+      "Sign in: https://app.magpielocal.com/?open=visits",
       "",
       "The Magpie team",
       "hello@magpielocal.com",
@@ -13983,6 +14089,8 @@ function complianceReminderEmail(creator, booking, stage) {
         "",
         ...howTo,
         "",
+        "Open My Visits: https://app.magpielocal.com/?open=visits",
+        "",
         consequence,
         ...(standardsScope ? ["", standardsScope] : []),
         "",
@@ -14003,6 +14111,8 @@ function complianceReminderEmail(creator, booking, stage) {
         "",
         ...howTo,
         "",
+        "Open My Visits: https://app.magpielocal.com/?open=visits",
+        "",
         `A late post inside the catch-up window still counts. ${consequence}`,
         ...(standardsScope ? ["", standardsScope] : []),
         "",
@@ -14021,6 +14131,8 @@ function complianceReminderEmail(creator, booking, stage) {
       `This is the final warning for your visit to ${biz}: we still have no post link, and the catch-up window is closing. A late post inside the window still counts, so please get the link in now.`,
       "",
       ...howTo,
+      "",
+      "Open My Visits: https://app.magpielocal.com/?open=visits",
       "",
       consequence,
       ...(standardsScope ? ["", standardsScope] : []),
@@ -14556,6 +14668,8 @@ async function runOfferSweep() {
             ``,
             `Your offer stays live while you decide. Creators apply with one tap, and you pick from the stack.`,
             ``,
+            `Open the offer card: https://app.magpielocal.com/?open=offers`,
+            ``,
             `Jeff`,
             `Founder, Magpie`,
           ].join("\n"), null);
@@ -14688,7 +14802,7 @@ function winBackEmail(user) {
       ? "When your brand is verified, local creators in every Magpie market can see your campaigns. If anything on your brand profile is still unfinished, finishing it now means you are ready the moment verification lands."
       : `When ${place} opens, founding businesses are the first ones local creators see. If anything on your profile is still unfinished, finishing it now means you are ready on day one.`,
     "",
-    "Sign in here: https://app.magpielocal.com",
+    "Sign in here: https://app.magpielocal.com/?open=profile",
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
@@ -16057,6 +16171,8 @@ function staffNoticeEmail(creator, booking, trigger) {
       "",
       "How it works: the creator shows this code, you redeem it in the app at the Counter tab, and their 48 hour post clock starts at that moment. Ring the comp in your own system the way you normally do; Magpie never touches your register.",
       "",
+      "Open the Counter: https://app.magpielocal.com/?open=counter",
+      "",
       "The Magpie team",
       "hello@magpielocal.com",
     ].join("\n"),
@@ -16154,8 +16270,8 @@ async function performCounterRedeem(booking, actor) {
         ? `Your post is due under the agreed terms: ${booking.businessName || "your Magpie visit"}`
         : `Your ${clockH} hour post clock started: ${booking.businessName || "your Magpie visit"}`,
       paidVisit
-        ? [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n")
-        : [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
+        ? [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Jeff", "Founder, Magpie"].join("\n")
+        : [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Jeff", "Founder, Magpie"].join("\n"),
       { bookingId: booking.id });
   }
   return booking;
@@ -17178,7 +17294,7 @@ function wishlistAlertEmail(biz, creator, kind) {
         "",
         "Open Find creators in Magpie and tap Invite to draft on their wishlist row: the invite starts as a draft with their name on it, ready for opening day.",
         "",
-        "Open Magpie: https://app.magpielocal.com",
+        "Open Find creators: https://app.magpielocal.com/?open=discover",
         "",
         "Jeff",
         "Founder, Magpie",
@@ -17195,7 +17311,7 @@ function wishlistAlertEmail(biz, creator, kind) {
       "",
       "We will email you again the moment their profile is finished and they are ready to invite.",
       "",
-      "Open Magpie: https://app.magpielocal.com",
+      "Open Find creators: https://app.magpielocal.com/?open=discover",
       "",
       "Jeff",
       "Founder, Magpie",
@@ -17298,7 +17414,7 @@ async function runRosterDigestSweep(opts = {}) {
       "",
       "Open Find creators in Magpie to save the ones who fit, or invite one straight into a draft campaign from Maggie's queue on your Home page.",
       "",
-      "Open Magpie: https://app.magpielocal.com",
+      "Open Find creators: https://app.magpielocal.com/?open=discover",
       "",
       "Jeff",
       "Founder, Magpie",
@@ -19584,6 +19700,24 @@ async function handleRegister(event, linkCtx) {
     } catch (e) { /* email is best-effort; the queued events tell the story */ }
   }
 
+  if (role === "business") {
+    // Build -239: a business registration gets its own
+    // confirmation, in business words. Before this build the
+    // applicant heard nothing at all until a decision landed.
+    // Same discipline as the creator confirmation: best-effort,
+    // the queued events tell the story.
+    try {
+      const placeLine = user.market === UNLISTED ? "" : `${marketTalkName(user.market)} is a founding market, and founding businesses are the first ones local creators see when it opens.`;
+      const mail = businessApplicationConfirmationEmail({
+        first: greetingName(user),
+        businessName: (user.business && user.business.businessName) || user.name || "your business",
+        placeLine,
+        hasAccount: true,
+      });
+      await deliverEmail("signup_confirmation", user, mail.subject, mail.text, null, { listUnsubscribe: true });
+    } catch (e) { /* email is best-effort; the queued events tell the story */ }
+  }
+
   // Google apply prefill (Build -123): an application that
   // started with Continue with Google carries the one-time
   // prefill token. When the Google identity's email is the
@@ -20349,7 +20483,7 @@ async function releasePaidFunds(booking) {
         await notifyMilestone(creator.id, "payout_setup_needed",
           `Your $${fmtMoneyS(lane.creatorNet)} from ${booking.businessName || "a paid visit"} is ready to release, but your payouts are not set up yet. Finish payout setup under Profile so it can reach your bank.`,
           `Your $${fmtMoneyS(lane.creatorNet)} is waiting: finish payout setup`,
-          [`Your paid visit for ${booking.businessName || "a business"} delivered, and your share of ${currencySymbolForMarket(booking.market)}${fmtMoneyS(lane.creatorNet)} is ready to release.`, "", "It cannot reach your bank until payout setup is finished. It takes a couple of minutes, inside the app under Profile, in the Paid bookings section: Stripe holds the bank details, Magpie never sees them.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
+          [`Your paid visit for ${booking.businessName || "a business"} delivered, and your share of ${currencySymbolForMarket(booking.market)}${fmtMoneyS(lane.creatorNet)} is ready to release.`, "", "It cannot reach your bank until payout setup is finished. It takes a couple of minutes, inside the app under Profile, in the Paid bookings section: Stripe holds the bank details, Magpie never sees them.", "", "Open your profile: https://app.magpielocal.com/?open=profile", "", "Jeff", "Founder, Magpie"].join("\n"),
           { bookingId: booking.id });
       }
     }
@@ -20414,7 +20548,7 @@ async function promptCreatorPayoutSetup(booking, creator) {
   await notifyMilestone(creator.id, "payout_setup_needed",
     `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(lane.rate || 0)}. Set up payouts under Profile so your $${fmtMoneyS(lane.creatorNet || 0)} can reach your bank when your post is live.`,
     `Paid booking: set up payouts so your money can reach you`,
-    [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(lane.rate || 0)}. Your share is $${fmtMoneyS(lane.creatorNet || 0)}.`, "", "Paid bookings pay out to your bank after your post is live, and that needs payout setup first: a couple of minutes under Profile, in the Paid bookings section. Stripe holds the bank details; Magpie never sees them. Comp visits never need this.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
+    [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(lane.rate || 0)}. Your share is $${fmtMoneyS(lane.creatorNet || 0)}.`, "", "Paid bookings pay out to your bank after your post is live, and that needs payout setup first: a couple of minutes under Profile, in the Paid bookings section. Stripe holds the bank details; Magpie never sees them. Comp visits never need this.", "", "Open your profile: https://app.magpielocal.com/?open=profile", "", "Jeff", "Founder, Magpie"].join("\n"),
     { bookingId: booking.id });
 }
 
@@ -20923,8 +21057,32 @@ async function handleFoundingApplication(event) {
       await store.set(`bizapp:${rec.id}`, Object.assign({}, rec, { notifyEmailSent: false, notifyEmailReason: emailReason }));
     } catch (e) { /* the application record itself is already saved */ }
   }
+  // Build -239: the applicant hears from us too. Before this
+  // build the safety net emailed only the team and the person
+  // who applied got silence. Same best-effort discipline; the
+  // outcome rides the application record and the event below.
+  let applicantEmailSent = false;
+  let applicantEmailReason = null;
   try {
-    await logEvent({ type: "founding_application_received", actorRole: "business", data: { bizappId: rec.id, businessName: rec.businessName, email: rec.email, source: rec.source, emailSent, lang: rec.lang || null } });
+    const mail = businessApplicationConfirmationEmail({
+      first: (rec.contactName || "").trim().split(/\s+/)[0] || "there",
+      businessName: rec.businessName,
+      placeLine: rec.city ? `${rec.city} is a founding market, and founding businesses are the first ones local creators see when it opens.` : "",
+      hasAccount: false,
+    });
+    const result = await sendEmail({ to: rec.email, subject: mail.subject, text: mail.text, html: brandedEmailHtml(mail.text), listUnsubscribe: true });
+    applicantEmailSent = !!(result && result.sent);
+    applicantEmailReason = result && result.reason ? result.reason : null;
+  } catch (e) {
+    applicantEmailReason = String(e && e.message ? e.message : e);
+    console.error("Magpie founding application confirmation to the applicant failed (application saved):", e);
+  }
+  try {
+    const saved = (await store.get(`bizapp:${rec.id}`)) || rec;
+    await store.set(`bizapp:${rec.id}`, Object.assign({}, saved, { applicantEmailSent, applicantEmailReason }));
+  } catch (e) { /* the application record itself is already saved */ }
+  try {
+    await logEvent({ type: "founding_application_received", actorRole: "business", data: { bizappId: rec.id, businessName: rec.businessName, email: rec.email, source: rec.source, emailSent, applicantEmailSent, lang: rec.lang || null } });
   } catch (e) { /* event log is best-effort; the record is saved */ }
   return json(200, { ok: true, id: rec.id }, cors);
 }
@@ -30320,7 +30478,7 @@ async function route(event) {
         await deliverTeamMessage152(side.user, { body: side.text });
         try {
           if (side.user.email && notifyEmailAllowed(side.user, "morning_after_note")) {
-            await deliverEmail("morning_after_note", side.user, side.subject, `${side.text}\n\nOpen Magpie: https://app.magpielocal.com`, null);
+            await deliverEmail("morning_after_note", side.user, side.subject, `${side.text}\n\nOpen Magpie: https://app.magpielocal.com/?open=visits`, null);
           }
         } catch (e) { /* the in-app message is the guaranteed record */ }
         sentAny = true;
@@ -33154,7 +33312,9 @@ async function route(event) {
               const { approvedRank } = creatorRanks(await allUsers());
               const band = foundingBand(approvedRank.get(target.id));
               const mail = approvalEmail(target, band);
-              await deliverEmail("approval", target, mail.subject, mail.text, band);
+              if (!(await approvalEmailAlreadySent239(target.id))) {
+                await deliverEmail("approval", target, mail.subject, mail.text, band);
+              }
             } catch (e) { /* email is best-effort */ }
           })(),
           // Build -91: approving a creator whose profile is
@@ -33163,6 +33323,24 @@ async function route(event) {
           // finish came first.
           (async () => { try { await recordRosterDrop(target, "approval"); } catch (e) { /* best-effort */ } })(),
         ]);
+      }
+      if (b.decision === "reject" && target.role === "business") {
+        // Build -239: businesses get the rejection email too,
+        // in business words (the creator branch above is
+        // unchanged). Best-effort exactly like the creator's.
+        try {
+          const mail = businessRejectionEmail(target);
+          await deliverEmail("rejection", target, mail.subject, mail.text, null);
+        } catch (e) { /* email is best-effort */ }
+      }
+      if (b.decision === "approve" && target.role === "business") {
+        // Build -239: the business approval email, carrying the
+        // profile and offers targets. Best-effort exactly like
+        // the creator's.
+        try {
+          const mail = businessApprovalEmail(target);
+          await deliverEmail("approval", target, mail.subject, mail.text, null);
+        } catch (e) { /* email is best-effort */ }
       }
       return json(200, { user: publicUser(target) });
     }
@@ -36581,7 +36759,7 @@ async function route(event) {
       await notifyMilestone(offer.businessId, "booking_confirmed",
         `${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted "${offer.title}". Visit code ${booking.code} is live: redeem it at the counter when they visit.${companion ? ` They are bringing a +1, ${companion.creatorName} (@${companion.creatorHandle}), who is booked on the same visit with their own code and posts their own post and story.` : ""}`,
         `Booked: ${user.name} accepted your Magpie offer`,
-        [`Good news: ${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted your offer "${offer.title}" and the visit is booked.`, "", `Their visit code is ${booking.code}. When they visit, redeem the code at the counter (the Counter tab, or staff mode with your PIN). Redemption starts their 48 hour post clock.`, "", "Open Magpie: https://app.magpielocal.com", "", "Magpie"].join("\n"),
+        [`Good news: ${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted your offer "${offer.title}" and the visit is booked.`, "", `Their visit code is ${booking.code}. When they visit, redeem the code at the counter (the Counter tab, or staff mode with your PIN). Redemption starts their 48 hour post clock.`, "", "Open the Counter: https://app.magpielocal.com/?open=counter", "", "Magpie"].join("\n"),
         { bookingId: booking.id, offerId: offer.id });
       return json(201, { booking: await withPostState(booking) });
     }
@@ -37846,7 +38024,7 @@ async function route(event) {
     await notifyMilestone(creator.id, "paid_booking_received",
       `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}. $${fmtMoneyS(math.creatorNet)} is recorded as held by Magpie until your post is live. ${booking.postingTermsLine} Visit code ${code}.`,
       `Paid booking: ${booking.businessName || "a business"} booked you at $${fmtPriceS(math.rate)}`,
-      [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}.`, "", `${booking.paidLane.paymentNote} Your share is $${fmtMoneyS(math.creatorNet)} of the $${fmtPriceS(math.rate)} rate.`, "", `${booking.postingTermsLine} These are the posting terms agreed on this booking.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
+      [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}.`, "", `${booking.paidLane.paymentNote} Your share is $${fmtMoneyS(math.creatorNet)} of the $${fmtPriceS(math.rate)} rate.`, "", `${booking.postingTermsLine} These are the posting terms agreed on this booking.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Jeff", "Founder, Magpie"].join("\n"),
       { bookingId: booking.id });
     await promptCreatorPayoutSetup(booking, creator);
     await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid", hasBrief: !!booking.paidBrief } });
@@ -38053,8 +38231,8 @@ async function route(event) {
         ? `Your post is due under the agreed terms: ${booking.businessName || "your Magpie visit"}`
         : `Your ${clockH} hour post clock started: ${booking.businessName || "your Magpie visit"}`,
       paidVisit
-        ? [`Your visit to ${booking.businessName || "the business"} was just confirmed.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n")
-        : [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
+        ? [`Your visit to ${booking.businessName || "the business"} was just confirmed.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Jeff", "Founder, Magpie"].join("\n")
+        : [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Jeff", "Founder, Magpie"].join("\n"),
       { bookingId: booking.id });
     return json(200, { booking: await withPostState(booking) });
   }
@@ -38329,7 +38507,7 @@ async function route(event) {
     await notifyMilestone(booking.businessId, "proof_submitted",
       `${user.name} posted for "${booking.title}"${post.onTime ? " (on time)" : " (late)"}. Open the link, confirm it is live under Posts, then report register tallies as they come in.`,
       `${user.name} posted for your Magpie visit`,
-      [`${user.name} just submitted their post for "${booking.title}"${post.onTime ? ", on time" : ", late"}.`, "", `Post: ${url}`, "", "Open it, confirm it is live in the app under Posts, and report register tallies as customers use the creator's code: the tally is what builds this visit's modeled estimate.", "", "Open Magpie: https://app.magpielocal.com", "", "Magpie"].join("\n"),
+      [`${user.name} just submitted their post for "${booking.title}"${post.onTime ? ", on time" : ", late"}.`, "", `Post: ${url}`, "", "Open it, confirm it is live in the app under Posts, and report register tallies as customers use the creator's code: the tally is what builds this visit's modeled estimate.", "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Magpie"].join("\n"),
       { bookingId: booking.id, postId: post.id });
     // A paused creator who delivers unpauses automatically; a banned
     // creator does not (reinstatement is a human decision).
@@ -38384,7 +38562,7 @@ async function route(event) {
       await notifyMilestone(post.creatorId, "post_verified",
         `${booking.businessName || "The business"} confirmed your post is live. This visit is complete.`,
         `Visit complete: ${booking.businessName || "the business"} confirmed your post`,
-        [`${booking.businessName || "The business"} confirmed your post is live, so this visit is complete.`, "", "When the business rates the visit and your post numbers come in, they land on the same booking in the app.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
+        [`${booking.businessName || "The business"} confirmed your post is live, so this visit is complete.`, "", "When the business rates the visit and your post numbers come in, they land on the same booking in the app.", "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Jeff", "Founder, Magpie"].join("\n"),
         { bookingId: booking.id, postId: post.id });
     }
     return json(200, { post });
@@ -38825,7 +39003,7 @@ async function route(event) {
     await notifyMilestone(booking.creatorId, "rating_received",
       `${review.businessName} rated your visit ${stars} star${stars === 1 ? "" : "s"}${comment ? `: "${comment}"` : ""}.`,
       `${review.businessName} rated your visit ${stars} star${stars === 1 ? "" : "s"}`,
-      [`${review.businessName} rated your visit to them ${stars} star${stars === 1 ? "" : "s"}.${comment ? ` Their note: "${comment}"` : ""}`, "", "Ratings count toward Magpie Elite once you have five of them, and they show on your public profile once you have three.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
+      [`${review.businessName} rated your visit to them ${stars} star${stars === 1 ? "" : "s"}.${comment ? ` Their note: "${comment}"` : ""}`, "", "Ratings count toward Magpie Elite once you have five of them, and they show on your public profile once you have three.", "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Jeff", "Founder, Magpie"].join("\n"),
       { bookingId: booking.id });
     return json(201, { review: reviewDisplay(review) });
   }
@@ -38944,7 +39122,7 @@ async function route(event) {
       await notifyMilestone(booking.businessId, "performance_reported",
         `${user.name} reported their post numbers for "${booking.title}" (${post.views == null ? "no views figure" : `${post.views} views`}). Your results on this booking are updated.`,
         `${user.name} reported post numbers for your visit`,
-        [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}, ${post.saves == null ? "saves not reported" : `${post.saves} saves`}.`, "", "They feed the media-value side of this booking's modeled estimate. The register side is still yours to report under Bookings.", "", "Open Magpie: https://app.magpielocal.com", "", "Magpie"].join("\n"),
+        [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}, ${post.saves == null ? "saves not reported" : `${post.saves} saves`}.`, "", "They feed the media-value side of this booking's modeled estimate. The register side is still yours to report under Bookings.", "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Magpie"].join("\n"),
         { bookingId: booking.id, postId: post.id });
     } else {
       // Later snapshot updates are quieter: an in-app note for the
@@ -39067,7 +39245,7 @@ async function route(event) {
       await notifyMilestone(booking.creatorId, "register_tally",
         `${booking.businessName || "The business"} reports ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""} ($${fmtMoneyS(booking.redemptions.basketTotal)} rung up). That is tracked register spend from your post.`,
         `Your code drove $${fmtMoneyS(booking.redemptions.basketTotal)} at ${booking.businessName || "the register"}`,
-        [`${booking.businessName || "The business"} just reported their register tally for your visit: ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""}, $${fmtMoneyS(booking.redemptions.basketTotal)} rung up in total.`, "", "That tracked register spend sits on your booking and your track record: it is the floor of what your post provably drove.", "", "Open Magpie: https://app.magpielocal.com", "", "Jeff", "Founder, Magpie"].join("\n"),
+        [`${booking.businessName || "The business"} just reported their register tally for your visit: ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""}, $${fmtMoneyS(booking.redemptions.basketTotal)} rung up in total.`, "", "That tracked register spend sits on your booking and your track record: it is the floor of what your post provably drove.", "", "Open My Visits: https://app.magpielocal.com/?open=visits", "", "Jeff", "Founder, Magpie"].join("\n"),
         { bookingId: booking.id });
     }
     // Build -132: the tally is a labelled CORRECTION tool now —
@@ -40009,4 +40187,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226 };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226, __buildersForTest239: { businessApplicationConfirmationEmail, businessApprovalEmail, businessRejectionEmail } };

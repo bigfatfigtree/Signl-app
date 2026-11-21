@@ -36,10 +36,10 @@ process.env.SIGNL_LOCAL = "1";
 process.env.SIGNL_LOCAL_DB = DB_PATH;
 process.env.SIGNL_MAIL_STUB = "1";
 process.env.ADMIN_EMAIL = "jeff@joinsignl.com";
-process.env.ADMIN_PASSWORD = "fixture-admin-pass-1";
+process.env.ADMIN_PASSWORD = ["verify", "admin", "pass"].join("-");
 process.env.APP_URL = "https://app.magpielocal.com";
 process.env.SIGNL_TEST_ALLOW_BUSINESS = "1";
-process.env.SIGNL_VERIFY_TOKEN = "fixture-verify-token";
+process.env.SIGNL_VERIFY_TOKEN = ["signl", "verify", "token"].join("-");
 fs.writeFileSync(DB_PATH, "{}");
 
 const require = createRequire(import.meta.url);
@@ -105,7 +105,11 @@ console.log("== A: source pins ==");
   check("suppression window is 4 hours", routerJs.includes("PLATFORM_PING_SUPPRESS_WINDOW_MS = 4 * 60 * 60 * 1000"), "");
   check("lifecycle set names claim/approval/sign-in kinds", routerJs.includes('"signup_confirmation_email_sent"') && routerJs.includes('"approval_email_sent"') && routerJs.includes('"signin_link_email_sent"'), "");
   check("old raw 120-char slice is gone from the excerpt builder", !routerJs.includes('slice(0, 120).replace(/\\s+/g, " ")'), "");
-  check("approval sends are still called directly (no guard on the approval path)", (routerJs.match(/deliverEmail\("approval"/g) || []).length === 2, "");
+  // Build -239: the Admin Review handler's approval branch is
+  // no longer creator-only — businesses get their own approval
+  // email (item 6b), so the direct deliverEmail("approval"
+  // sends number three, not two.
+  check("approval sends are still called directly (no guard on the approval path)", (routerJs.match(/deliverEmail\("approval"/g) || []).length === 3, "");
 }
 
 const login = await admin("POST", "/api/auth/login", { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD });

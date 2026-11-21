@@ -10456,15 +10456,31 @@ function renderSignin() {
 // status are creators only. A signed-in role that does not
 // fit the target just clears the stash and lands normally.
 const PENDING_OPEN_KEY_238 = "magpie_pending_open";
+// Build -239: the stash also lives in localStorage as an
+// expiring envelope, so a sign-in detour that hops tabs (the
+// emailed sign-in link opened in a fresh tab has no
+// sessionStorage copy) cannot lose the destination. The
+// expiry matches the sign-in link's own 30-minute lifetime.
+const PENDING_OPEN_TTL_239 = 30 * 60 * 1000;
 function stashPendingOpen238(target) {
   try { sessionStorage.setItem(PENDING_OPEN_KEY_238, target); } catch (e) { /* storage unavailable */ }
+  try { localStorage.setItem(PENDING_OPEN_KEY_238, JSON.stringify({ t: target, exp: Date.now() + PENDING_OPEN_TTL_239 })); } catch (e) { /* storage unavailable */ }
 }
 function applyPendingOpen238() {
   let target = "";
   try { target = sessionStorage.getItem(PENDING_OPEN_KEY_238) || ""; } catch (e) { target = ""; }
+  if (!target) {
+    // Build -239: the cross-tab fallback described above.
+    try {
+      const raw = localStorage.getItem(PENDING_OPEN_KEY_238) || "";
+      const env = JSON.parse(raw);
+      if (env && typeof env.t === "string" && env.exp && Date.now() < env.exp) target = env.t;
+    } catch (e) { target = ""; }
+  }
   if (!target) return false;
   if (!state.user) return false; // no session yet: keep the stash for the sign-in that is still to come
   try { sessionStorage.removeItem(PENDING_OPEN_KEY_238); } catch (e) { /* the routing below still runs once */ }
+  try { localStorage.removeItem(PENDING_OPEN_KEY_238); } catch (e) { /* the routing below still runs once */ }
   if (target === "messages" && (state.user.role === "creator" || state.user.role === "business")) {
     state.tab = "Messages";
     if (state.user.role === "creator") state.activeThread = "signl-team";
@@ -10478,6 +10494,74 @@ function applyPendingOpen238() {
   }
   if (target === "status" && state.user.role === "creator") {
     state.tab = "Status";
+    state.view = "dashboard";
+    return true;
+  }
+  // Build -239: the generalized targets. Every notification
+  // email now links at the surface its own words name; the
+  // role guards mirror the tabs each role actually has, and a
+  // role that does not fit just clears the stash (consumed
+  // above) and lands normally, exactly like the -238 targets.
+  if (target === "profile" && state.user.role === "business") {
+    state.tab = "Profile";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "visits" && state.user.role === "creator") {
+    state.tab = "My Visits";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "visits" && state.user.role === "business") {
+    state.tab = "Visits & Posts";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "offers" && state.user.role === "creator") {
+    state.tab = "Find Offers";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "offers" && state.user.role === "business") {
+    state.tab = "My Offers";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "deals" && state.user.role === "creator") {
+    state.tab = "Offers";
+    state.crOffersSeg = "deals";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "deals" && state.user.role === "business") {
+    state.offersSeg = "deals";
+    state.tab = "My Offers";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "applications" && state.user.role === "business") {
+    state.offersSeg = "applicants";
+    state.tab = "My Offers";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "licences" && state.user.role === "creator") {
+    state.tab = "Earnings";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "licences" && state.user.role === "business") {
+    state.tab = "Visits & Posts";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "counter" && state.user.role === "business") {
+    state.tab = "Counter";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "discover" && state.user.role === "business") {
+    state.tab = "Discover";
     state.view = "dashboard";
     return true;
   }
@@ -30100,6 +30184,9 @@ async function adminMsgOpenThread(creatorId) {
   if (host) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
   return false;
 }
+// Build -239: the segment send's in-flight lock (see
+// adminMsgSendReply below for why the lock is the idempotency).
+let adminMsgSegmentInFlight239 = false;
 async function adminMsgSendCompose(btn) {
   // Build -163: this sender is the market-segment tool in the
   // "Sent to many" area — the only thing it does is write one
@@ -30118,6 +30205,7 @@ async function adminMsgSendCompose(btn) {
   // handler with confirm() stubbed false: zero POSTs, empty
   // result line). Editing the words or switching the market
   // disarms, because the arm snapshots both.
+  if (adminMsgSegmentInFlight239) return false;
   const ta = document.getElementById("admin-msg-body");
   const result = document.getElementById("admin-msg-result");
   const body = ta ? ta.value.trim() : "";
@@ -30133,6 +30221,7 @@ async function adminMsgSendCompose(btn) {
     return false;
   }
   adminMsg.segmentArm = null;
+  adminMsgSegmentInFlight239 = true;
   const sel = document.getElementById("admin-msg-template");
   const payload = { body, templateId: sel ? sel.value : "blank", market };
   if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
@@ -30148,11 +30237,24 @@ async function adminMsgSendCompose(btn) {
   } catch (err) {
     if (result) result.textContent = err.message;
     if (btn) { btn.disabled = false; btn.textContent = "Send to segment"; }
+  } finally {
+    adminMsgSegmentInFlight239 = false;
   }
   return false;
 }
+// Build -239: a thread reply in flight ignores further
+// clicks. The platform-messages API has no client message id,
+// so the lock is the idempotency: while one send is unresolved
+// the button is disabled with a sending label, the box is
+// disabled, extra submits return at once, and the box clears
+// only on success (a failed send keeps the words and re-arms
+// the button). Before this, a slow thread repaint left a live
+// form that looked unsent, and repeat clicks delivered the
+// same message two and three times (2026-11-21).
+let adminMsgReplyInFlight239 = false;
 async function adminMsgSendReply(e) {
   e.preventDefault();
+  if (adminMsgReplyInFlight239) return false;
   const ta = document.getElementById("admin-msg-reply");
   const body = ta ? ta.value.trim() : "";
   if (!body || !adminMsg.openCreatorId) return false;
@@ -30160,10 +30262,21 @@ async function adminMsgSendReply(e) {
   // the home); everyone else rides userId (Build -163).
   const role = adminMsg.threadCreator ? adminMsg.threadCreator.role : null;
   const payload = role && role !== "creator" ? { userId: adminMsg.openCreatorId, body } : { creatorId: adminMsg.openCreatorId, body };
+  adminMsgReplyInFlight239 = true;
+  const btn = e.target ? e.target.querySelector('button[type="submit"]') : null;
+  if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
+  if (ta) ta.disabled = true;
   try {
     await api("POST", "/admin/platform-messages", payload);
+    if (ta) ta.value = "";
     await renderAdminMessages();
-  } catch (err) { alert(err.message); }
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = "Send reply"; }
+    if (ta) ta.disabled = false;
+    alert(err.message);
+  } finally {
+    adminMsgReplyInFlight239 = false;
+  }
   return false;
 }
 
@@ -37211,7 +37324,7 @@ function previewDashboardHtml(d) {
     // lands a signed-in creator or business straight on their
     // Messages view, where the Magpie team thread waits. Same
     // consume-and-strip discipline as the YouTube return above.
-    if (openParam238 === "messages" && state.user && (state.user.role === "creator" || state.user.role === "business")) {
+    if (params.get("open") === "messages" && state.user && (state.user.role === "creator" || state.user.role === "business")) {
       state.tab = "Messages";
       if (state.user.role === "creator") state.activeThread = "signl-team";
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
@@ -37219,11 +37332,11 @@ function previewDashboardHtml(d) {
     // Build -115: the approval and reminder emails link straight
     // to the surface they name (/?open=profile, /?open=status)
     // instead of the app root. Same consume-and-strip discipline.
-    if (openParam238 === "profile" && state.user && state.user.role === "creator") {
+    if (params.get("open") === "profile" && state.user && state.user.role === "creator") {
       state.tab = "Profile";
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
-    if (openParam238 === "status" && state.user && state.user.role === "creator") {
+    if (params.get("open") === "status" && state.user && state.user.role === "creator") {
       state.tab = "Status";
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
@@ -37248,6 +37361,50 @@ function previewDashboardHtml(d) {
       else state.googleNotice = "Sign in to read your message from the Magpie team.";
       introMarkSeen();
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    }
+    // Build -239: the generalized deep-link targets. Every
+    // notification email (the notify.js rail, the compliance
+    // reminders, the offer nudge, the staff notice) now links
+    // at the surface its own words name, using the same stash:
+    // signed in, the helper lands the reader immediately;
+    // logged out, the target is stashed, the first paint is
+    // the sign-in surface with a plain-words notice, and the
+    // film never starts. ?open=profile also serves businesses
+    // now (the business approval email links there).
+    const OPEN_TARGETS_239 = ["visits", "offers", "deals", "applications", "licences", "counter", "discover"];
+    const OPEN_NOTICES_239 = {
+      visits: "Sign in and we will take you straight to your visits.",
+      offers: "Sign in and we will take you straight to the offer this email is about.",
+      deals: "Sign in and we will take you straight to the deal this email is about.",
+      applications: "Sign in and we will take you straight to the applications waiting on you.",
+      licences: "Sign in and we will take you straight to the licence this email is about.",
+      counter: "Sign in and we will take you straight to your Counter.",
+      discover: "Sign in and we will take you straight to Find creators."
+    };
+    if (state.user && (OPEN_TARGETS_239.includes(openParam238) || (openParam238 === "profile" && state.user.role === "business"))) {
+      stashPendingOpen238(openParam238);
+      applyPendingOpen238();
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    }
+    if (!state.user && OPEN_TARGETS_239.includes(openParam238)) {
+      stashPendingOpen238(openParam238);
+      state.view = "signin";
+      state.googleNotice = OPEN_NOTICES_239[openParam238] || "";
+      introMarkSeen();
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    }
+    // Build -239 (Jeff's ruling): an arrival carrying ANY
+    // query param is an arrival from somewhere — an email, a
+    // text, a shared link — never a plain cold open, so the
+    // intro film does not play: the first paint is the sign-in
+    // surface and the film is marked seen. The param-specific
+    // blocks below (reset, claim, business wave, Google,
+    // sign-in link, public pages) still run and override the
+    // view exactly as they always have. A plain visit to the
+    // root carries no params and keeps the locked film.
+    if (!state.user && state.view === "home" && location.search.length > 1) {
+      state.view = "signin";
+      introMarkSeen();
     }
     // A password reset link (/?reset=<token>) lands on the reset
     // screen ahead of every other interpretation of the URL.

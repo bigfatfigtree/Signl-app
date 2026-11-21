@@ -51,6 +51,20 @@
 //      and its -231 community block (the GROUP_URL join line
 //      and the +10 Momentum line), and the REAL exported
 //      platformMessageEmail still carries ?open=messages.
+//
+// Build -239 adjustments (2026-11-21, same-day follow-on):
+//   - The three signed-in boot conditionals use the literal
+//     params.get("open") === ... form again (the -238 refactor
+//     to openParam238 === ... cost one check each in the
+//     legacy verify-build40 / verify-build115 source pins;
+//     behavior is identical, openParam238 still serves the
+//     logged-out and -239 boot paths). The three signed-in
+//     pins below pin the literal form.
+//   - The helper gained a fourth call site (the generalized
+//     signed-in arrival in -239), so the call-site pin counts
+//     5 occurrences including the definition.
+//   - The stamp pin is "both homes agree, >= 238": -239
+//     bumped the stamp to 2026.11.21-239.
 // Run: node scripts/verify-build238.mjs
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -79,12 +93,12 @@ const appSrc = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 check("open param is read once into openParam238",
   appSrc.includes('const openParam238 = (params.get("open") || "").trim();'), "");
 check("signed-in messages block kept exactly (tab + signl-team thread)",
-  appSrc.includes('if (openParam238 === "messages" && state.user && (state.user.role === "creator" || state.user.role === "business"))')
+  appSrc.includes('if (params.get("open") === "messages" && state.user && (state.user.role === "creator" || state.user.role === "business"))')
   && appSrc.includes('if (state.user.role === "creator") state.activeThread = "signl-team";'), "");
 check("signed-in profile block kept (creators only)",
-  appSrc.includes('if (openParam238 === "profile" && state.user && state.user.role === "creator")'), "");
+  appSrc.includes('if (params.get("open") === "profile" && state.user && state.user.role === "creator")'), "");
 check("signed-in status block kept (creators only)",
-  appSrc.includes('if (openParam238 === "status" && state.user && state.user.role === "creator")'), "");
+  appSrc.includes('if (params.get("open") === "status" && state.user && state.user.role === "creator")'), "");
 
 const loggedOutAt = appSrc.indexOf('if (!state.user && (openParam238 === "messages" || openParam238 === "profile" || openParam238 === "status"))');
 check("logged-out open arrival block exists", loggedOutAt >= 0, "");
@@ -127,8 +141,8 @@ check("helper is applied in the ?signinlink= consume block",
   appSrc.includes("applyPendingOpen238(); // Build -238: a stashed email deep link lands now, same as a password sign-in"), "");
 check("helper is applied at boot when a live session exists and no open param is present",
   appSrc.includes("if (state.user && !openParam238) applyPendingOpen238();"), "");
-check("helper has exactly the three call sites (plus its definition)",
-  count(appSrc, "applyPendingOpen238()") === 4,
+check("helper has the three -238 call sites plus the -239 generalized signed-in arrival (and its definition)",
+  count(appSrc, "applyPendingOpen238()") === 5,
   `count=${count(appSrc, "applyPendingOpen238()")}`);
 
 const renderAt = appSrc.indexOf("async function render()");
@@ -142,9 +156,13 @@ check("plain logged-out visit still defaults to renderIntro (the locked film)",
 check("no notice copy carries an em dash",
   !/googleNotice = "[^"]*—/.test(appSrc), "");
 
-check("build stamp is 2026.11.21-238 in both homes",
-  fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.21-238"')
-  && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.21-238"'), "");
+{
+  const buildId = (fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").match(/BUILD_ID = "([^"]+)"/) || [])[1] || "";
+  const shellId = (fs.readFileSync(path.join(root, "public/index.html"), "utf8").match(/window\.__SIGNL_BUILD__ = "([^"]+)"/) || [])[1] || "";
+  const num = Number((buildId.split("-").pop() || "0"));
+  check("build stamp agrees in both homes and is >= 238 (bumped by -239)",
+    buildId === shellId && num >= 238, `server=${buildId} shell=${shellId}`);
+}
 
 // --- B: template fixtures (real router exports) ---------------
 console.log("== B: template fixtures (approvalEmail / platformMessageEmail) ==");

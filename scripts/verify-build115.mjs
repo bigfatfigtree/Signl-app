@@ -92,7 +92,9 @@ const { brandedEmailHtml } = require(path.join(root, "netlify/functions/lib/emai
 
 const listed = { name: "Quick Claim", email: "q@fixtures.dev", market: "Hampton Roads", city: "Norfolk", creator: { handle: "quickclaim757", tierBand: "Locals", categories: ["Food & Drink"], localAudiencePct: 55, audienceStack: { instagram: 3000 }, followerCount: 3000, totalAudience: 3000, bestWork: [], bio: "", hasPhoto: false, neighborhood: "" } };
 const aListed = router.approvalEmail(listed, 100);
-check("approval (listed): subject unchanged", aListed.subject === "You are in. Welcome to Magpie.", aListed.subject);
+// Build -239 fold-in B (2026-11-21): the approval subject was deliberately
+// restored to say "approved" (the Jess case); this pin follows the change.
+check("approval (listed): subject unchanged", aListed.subject === "You are approved. Welcome to Magpie.", aListed.subject);
 check("approval (listed): lead sentence verbatim", aListed.text.includes("Good news: your application was reviewed and approved. You are now a Founding Creator in Hampton Roads"));
 check("approval (listed): shorter than the old 398 words", words(aListed.text) < 300, `${words(aListed.text)} words`);
 check("approval (listed): prize, step, gloss, hype, free line, invite all present", aListed.text.includes("first 100 founding creators") && aListed.text.includes("finish your profile to be launch-ready") && aListed.text.includes("Momentum is the priority score") && aListed.text.includes("founding creators get first pick of every offer") && aListed.text.includes(router.CREATOR_FREE_LINE) && aListed.text.includes("+3 when a creator joins through your link") && aListed.text.includes("+10 when they are approved") && aListed.text.includes("your standing is part of the order they see"), aListed.text);

@@ -70,8 +70,10 @@ const emStart = routerJs.indexOf("function rosterBenefitsLines");
 const emEnd = routerJs.indexOf("function sweepMemoFresh", routerJs.indexOf("function recruiterKitEmail"));
 const emailRegion = emStart >= 0 && emEnd > emStart ? routerJs.slice(emStart, emEnd) : "";
 check("email region slice found (benefits through recruiter kit, incl. approval + rejection)", emailRegion.length > 1000 && emailRegion.includes("function approvalEmail") && emailRegion.includes("function rejectionEmail") && emailRegion.includes("function recruiterKitEmail"), `len=${emailRegion.length}`);
-check("approval subject, verbatim", emailRegion.includes('const subject = "You are in. Welcome to Magpie.";'));
-check("no em dash in the new email subject", !"You are in. Welcome to Magpie.".includes("—") && !emailRegion.includes('const subject = "You are in. Welcome to Magpie. —'));
+// Build -239 fold-in B (2026-11-21): the subject was deliberately changed to
+// "You are approved. Welcome to Magpie." (the Jess case); these pins follow.
+check("approval subject, verbatim", emailRegion.includes('const subject = "You are approved. Welcome to Magpie.";'));
+check("no em dash in the new email subject", !"You are approved. Welcome to Magpie.".includes("—") && !emailRegion.includes('const subject = "You are approved. Welcome to Magpie. —'));
 check("approval invite: founding circle + your standing", emailRegion.includes("Grow your founding circle in ${place}: your invite link is ${inviteUrl}. Creators who join through it are credited to you: +3 when a creator joins through your link, +10 when they are approved, and your standing is part of the order they see."));
 check("benefits: founding circle opener", emailRegion.includes("Grow your founding circle in ${place}, and get seen first:"));
 check("benefits: credited to you", emailRegion.includes("is credited to you, and you earn Momentum points"));

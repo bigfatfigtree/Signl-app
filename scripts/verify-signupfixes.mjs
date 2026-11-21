@@ -212,7 +212,10 @@ try {
 
   const rejBiz = await admin("POST", "/api/admin/review", { userId: bizId, decision: "reject" });
   check("admin rejects the business", rejBiz.status === 200 && rejBiz.data.user.status === "rejected");
-  check("business rejection sends no rejection email (creators only)", (await eventsOf("rejection_email_queued")).filter((e) => e.subjectId === bizId).length === 0);
+  // Build -239 (2026-11-21): businesses DO get a rejection email now (item 6b
+  // closed the business silence); this pin flips from the old creators-only
+  // expectation to the new behavior.
+  check("business rejection sends a rejection email (Build -239)", (await eventsOf("rejection_email_queued")).filter((e) => e.subjectId === bizId).length === 1);
 
   // Rejected accounts receive no further pending-flow emails: the
   // day-3 profile reminder sweep targets approved creators only,
