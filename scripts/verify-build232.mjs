@@ -82,9 +82,10 @@ const handlerSrc = appJs.slice(fnStart, fnEnd);
     appJs.slice(appJs.indexOf("async function renderAdminCampaigns163()"), appJs.indexOf("function adminCampOpenThread163")).includes("adminMsg.segmentArm = null"), "");
   check("result line reports all four counts",
     handlerSrc.includes("data.sent") && handlerSrc.includes("data.emailSent") && handlerSrc.includes("data.emailFailed") && handlerSrc.includes("data.emailSuppressed"), "");
-  check("build stamp 232 in both homes",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.21-232")
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.21-232"), "");
+  check("build stamp >= 232 in both homes (relaxed by Build -233, same pattern as -231)",
+    (() => { const n = (s) => { const m = String(s).match(/2026\.11\.21-(\d+)/); return m ? Number(m[1]) : 0; };
+      return n(fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8")) >= 232
+        && n(fs.readFileSync(path.join(root, "public/index.html"), "utf8")) >= 232; })(), "");
 }
 
 // --- B: client harness ----------------------------------------

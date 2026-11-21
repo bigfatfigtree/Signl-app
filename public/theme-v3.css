@@ -2757,13 +2757,18 @@ body.v3-slim .ham137-panel .more-row, body.v3-slim .ev125-panel .more-row, body.
 .u226-herorow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-top: 12px; }
 .u226-socials { display: inline-flex; gap: 6px; }
 .u226-soc { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: .62rem; font-weight: 800; }
+.u226-soc svg.chan-glyph { width: 16px; height: 16px; display: block; }
+.j226-chanmark svg.chan-glyph { width: 21px; height: 21px; display: block; }
+.u226-acccell.plat { display: inline-flex; align-items: center; gap: 7px; overflow: hidden; }
+.u226-accicon { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 7px; display: inline-grid; place-items: center; }
+.u226-accicon svg.chan-glyph { width: 13px; height: 13px; display: block; }
 .u226-stats { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 18px 4px; }
 .u226-stat { flex: 1 1 0; min-width: 92px; }
 .u226-statnum { font-size: 1.45rem; font-weight: 800; line-height: 1.1; color: #0B2B4F; }
 .u226-statnum.grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .u226-statlbl { color: #7A879C; font-size: .82rem; font-weight: 600; margin: 0 0 3px; }
 .u226-accounts { display: grid; }
-.u226-accrow { display: grid; grid-template-columns: 92px 1fr 86px 118px; gap: 10px; align-items: baseline; padding: 9px 0; border-top: 1px solid #EEF2F7; color: inherit; text-decoration: none; }
+.u226-accrow { display: grid; grid-template-columns: 122px 1fr 86px 118px; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid #EEF2F7; color: inherit; text-decoration: none; }
 .u226-accrow:first-child { border-top: 0; }
 .u226-acccell.num { text-align: right; font-variant-numeric: tabular-nums; }
 .u226-acccell.grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 700; }
@@ -2775,7 +2780,9 @@ body.v3-slim .ham137-panel .more-row, body.v3-slim .ev125-panel .more-row, body.
 @media (max-width: 640px) {
   .panel > .u226-hero { margin: -15px -15px 14px; }
   .u226-herophoto > img, .u226-herophoto .u226-mono { height: 380px; }
-  .u226-accrow { grid-template-columns: 78px 1fr 70px 96px; gap: 7px; font-size: .9rem; }
+  .u226-accrow { grid-template-columns: 100px 1fr 60px 88px; gap: 6px; font-size: .9rem; }
+  .u226-accicon { flex-basis: 20px; width: 20px; height: 20px; border-radius: 6px; }
+  .u226-accicon svg.chan-glyph { width: 12px; height: 12px; }
 }
 .u226-inputbar { display: block; height: 6px; border-radius: 3px; background: #E7EEF6; margin-top: 6px; overflow: hidden; }
 .u226-inputfill { display: block; height: 100%; border-radius: 3px; background: var(--grad); }

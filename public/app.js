@@ -9077,7 +9077,43 @@ function stallCapture226Html(flow) {
    platform is hard-coded. Showcase picks are the creator's own links
    (creator.showcase, max 3), played through the shared video-embed
    parser where the platform allows and a link-out card where not. */
-const CHAN_MARK_226 = { instagram: ["IG", "#E1306C"], tiktok: ["TT", "#111111"], youtube: ["YT", "#FF0000"], x: ["X", "#111111"], twitter: ["X", "#111111"], facebook: ["FB", "#1877F2"], threads: ["TH", "#111111"], twitch: ["TW", "#9146FF"], snapchat: ["SC", "#B7950B"], website: ["Web", "#44536A"] };
+const CHAN_MARK_226 = { instagram: ["IG", "#E1306C"], tiktok: ["TT", "#111111"], youtube: ["YT", "#FF0000"], x: ["X", "#111111"], twitter: ["X", "#111111"], facebook: ["FB", "#1877F2"], threads: ["TH", "#111111"], twitch: ["TW", "#9146FF"], snapchat: ["SC", "#B7950B"], linkedin: ["IN", "#0A66C2"], pinterest: ["P", "#E60023"], reddit: ["R", "#FF4500"], bluesky: ["BS", "#0285FF"], discord: ["D", "#5865F2"], spotify: ["S", "#1DB954"], patreon: ["P", "#111111"], substack: ["SU", "#FF6719"], kick: ["K", "#111111"], website: ["Web", "#44536A"] };
+/* Build -233 (Jeff, 2026-11-21): social accounts show the platform's
+   real icon, never letter initials ("just use icons for the social
+   accounts. That's confusing as hell."). CHAN_ICON_226 maps every
+   supported platform to inline SVG glyph markup on a 24x24 grid;
+   glyphs render white on the platform color tile from CHAN_MARK_226
+   (two-tone marks carry their own colors). Unknown platforms fall
+   back to the globe, never to letters. */
+const CHAN_ICON_226 = {
+  instagram: `<rect x="3.2" y="3.2" width="17.6" height="17.6" rx="5" fill="none" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="4.1" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.4"/>`,
+  tiktok: `<path d="M16.8 3c.4 2.2 1.9 3.8 4.1 4.1v3c-1.6 0-3-.5-4.1-1.3v6.4c0 3.5-2.7 6-6.1 6a5.9 5.9 0 0 1-5.9-6.2c0-3.3 2.7-5.9 6-5.9.3 0 .7 0 1 .1v3.2a2.8 2.8 0 0 0-1-.2 2.7 2.7 0 0 0-2.7 2.7 2.7 2.7 0 0 0 2.7 2.7c1.5 0 2.8-1.2 2.8-2.8V3h3.2z"/>`,
+  youtube: `<rect x="2.4" y="5" width="19.2" height="14" rx="4" fill="#fff"/><path d="M10.1 9.2v5.6L15 12z" fill="#FF0000"/>`,
+  x: `<path d="M17.9 3h3l-6.7 7.7L22 21h-6.2l-4.8-6.3L5.4 21h-3l7.1-8.2L2 3h6.3l4.4 5.8L17.9 3zm-1.1 16.1h1.7L7.5 4.8H5.7l11.1 14.3z"/>`,
+  facebook: `<path d="M13.5 21.5v-7.2h2.4l.4-2.9h-2.8V9.5c0-.8.3-1.4 1.5-1.4h1.4V5.5c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.8v2.2H8.1v2.9h2.4v7.2h3z"/>`,
+  threads: `<circle cx="12" cy="12" r="8.6" fill="none" stroke="#fff" stroke-width="2"/><circle cx="11.3" cy="12" r="3.4" fill="none" stroke="#fff" stroke-width="2"/><path d="M14.7 12v1.7a2.4 2.4 0 0 0 4.8 0" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>`,
+  twitch: `<path d="M5.2 2.5 3.4 7v14.5h5.3V24h2.7l2.5-2.5h4.4l4.3-4.3V2.5H5.2zm15.3 13.7-2.9 2.9h-5l-2.4 2.4v-2.4H6V4.4h14.5v11.8z"/><rect x="16.2" y="7.9" width="1.9" height="4.9" fill="#9146FF"/><rect x="11.3" y="7.9" width="1.9" height="4.9" fill="#9146FF"/>`,
+  snapchat: `<path d="M12 2.8c2.8 0 4.9 2.1 4.9 5 0 .9-.2 1.7-.2 2.6 0 .5.3.9.8 1l1.5.5c.3.1.4.4.3.7-.1.3-.4.5-.8.6l-1 .3c-.3.1-.5.4-.5.7 0 .2 0 .4.1.5.1.3.3.5.6.6l1.1.5c.2.1.3.3.3.5-.1.2-.3.4-.5.4l-1.5.1c-.3 0-.5.2-.6.5l-.3.8c-.1.3-.3.4-.6.4-.4 0-.8-.2-1.4-.2s-1 .2-1.4.2c-.3 0-.5-.1-.6-.4l-.3-.8c-.1-.3-.3-.5-.6-.5L6 16.6c-.2 0-.4-.2-.5-.4 0-.2.1-.4.3-.5l1.1-.5c.3-.1.5-.3.6-.6.1-.1.1-.3.1-.5 0-.3-.2-.6-.5-.7l-1-.3c-.4-.1-.7-.3-.8-.6-.1-.3 0-.6.3-.7l1.5-.5c.5-.1.8-.5.8-1 0-.9-.2-1.7-.2-2.6 0-2.9 2.1-5 4.9-5z"/>`,
+  linkedin: `<rect x="2.8" y="2.8" width="18.4" height="18.4" rx="3.2" fill="#fff"/><circle cx="7.6" cy="7.7" r="1.7" fill="#0A66C2"/><rect x="6.2" y="10.3" width="2.8" height="7.2" fill="#0A66C2"/><path d="M12.3 17.5v-7.2h2.7v1.1c.6-.8 1.5-1.3 2.6-1.3 1.9 0 3 1.2 3 3.4v4h-2.8v-3.7c0-1.1-.4-1.8-1.4-1.8-.9 0-1.3.6-1.3 1.8v3.7h-2.8z" fill="#0A66C2"/>`,
+  pinterest: `<circle cx="12" cy="12" r="9.6" fill="#fff"/><path d="M12.3 5.6c-2.5 0-4.3 1.8-4.3 4 0 1.1.4 2 1.4 2.4.2.1.3 0 .4-.1l.3-1c0-.1 0-.2-.1-.3-.3-.3-.4-.7-.4-1.1 0-1.5 1.1-2.8 2.9-2.8 1.6 0 2.7 1 2.7 2.3 0 1.8-.8 3.3-1.9 3.3-.6 0-1.1-.5-1-1.2.2-.8.6-1.7.6-2.3 0-.5-.3-1-.8-1-.7 0-1.2.7-1.2 1.6 0 .6.2 1 .2 1l-1 4c-.3 1.2-.2 2.7 0 2.9l1.6-4c.1.2.7.7 1.4.7 1.9 0 3.3-1.8 3.3-4.2 0-2.2-1.6-4.1-4.1-4.1z" fill="#E60023"/>`,
+  reddit: `<circle cx="12" cy="13.6" r="7.4" fill="#fff"/><path d="M12.3 6.4 14 3.6l3.2.4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><circle cx="17.8" cy="4.1" r="1.5" fill="#fff"/><circle cx="9.3" cy="13.3" r="1.3" fill="#FF4500"/><circle cx="14.7" cy="13.3" r="1.3" fill="#FF4500"/><path d="M9.5 16.5c.7.6 1.6.9 2.5.9s1.8-.3 2.5-.9" fill="none" stroke="#FF4500" stroke-width="1.4" stroke-linecap="round"/>`,
+  bluesky: `<ellipse cx="7.4" cy="8.8" rx="3.7" ry="2.4" transform="rotate(-28 7.4 8.8)"/><ellipse cx="16.6" cy="8.8" rx="3.7" ry="2.4" transform="rotate(28 16.6 8.8)"/><ellipse cx="7.7" cy="15.6" rx="3" ry="2" transform="rotate(24 7.7 15.6)"/><ellipse cx="16.3" cy="15.6" rx="3" ry="2" transform="rotate(-24 16.3 15.6)"/><rect x="11.2" y="7.2" width="1.6" height="9.4" rx="0.8"/>`,
+  discord: `<path d="M7.9 5.3A13.4 13.4 0 0 1 10.9 4.8l.5 1.2c.5-.1 1-.1 1.5 0l.5-1.2c1 .2 2 .5 3 .9 1.9 3 2.8 6.3 2.6 9.9a13 13 0 0 1-3.4 1.8l-.8-1.3c.5-.2 1-.4 1.5-.7l-.4-.2a11.9 11.9 0 0 1-7.8 0l-.4.2c.5.3 1 .5 1.5.7l-.8 1.3a13 13 0 0 1-3.4-1.8c-.2-4 .7-7.4 2.6-10.2.9-.4 1.9-.7 2.9-.9zM9.7 15.2c.9 0 1.6-.8 1.6-1.8s-.7-1.8-1.6-1.8-1.6.8-1.6 1.8.7 1.8 1.6 1.8zm4.6 0c.9 0 1.6-.8 1.6-1.8s-.7-1.8-1.6-1.8-1.6.8-1.6 1.8.7 1.8 1.6 1.8z"/>`,
+  spotify: `<circle cx="12" cy="12" r="9.4" fill="#fff"/><path d="M7.6 9.7a8.6 8.6 0 0 1 8.5.8" fill="none" stroke="#1DB954" stroke-width="1.7" stroke-linecap="round"/><path d="M8 12.5a6.9 6.9 0 0 1 6.8.7" fill="none" stroke="#1DB954" stroke-width="1.5" stroke-linecap="round"/><path d="M8.4 15.2a5.3 5.3 0 0 1 5.2.6" fill="none" stroke="#1DB954" stroke-width="1.4" stroke-linecap="round"/>`,
+  patreon: `<rect x="4.6" y="3.8" width="3.1" height="16.4"/><circle cx="14.8" cy="9.7" r="5.6"/>`,
+  substack: `<rect x="4" y="4.6" width="16" height="3.1" rx="1"/><rect x="4" y="10.4" width="16" height="3.1" rx="1"/><path d="M4 16.2h16l-8 4.2z"/>`,
+  kick: `<path d="M5 3.8h3.2v6.4L12.6 3.8h3.5l-4.7 6.7 5.1 9.7h-3.5l-3.8-6.5-1 1.4v5.1H5z"/>`,
+  website: `<circle cx="12" cy="12" r="8.8" fill="none" stroke="#fff" stroke-width="1.9"/><ellipse cx="12" cy="12" rx="4" ry="8.8" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M3.2 12h17.6" fill="none" stroke="#fff" stroke-width="1.5"/>`,
+};
+CHAN_ICON_226.twitter = CHAN_ICON_226.x;
+function chanGlyph226(platform) {
+  const inner = CHAN_ICON_226[String(platform || "").toLowerCase()] || CHAN_ICON_226.website;
+  return `<svg class="chan-glyph" viewBox="0 0 24 24" fill="#fff" aria-hidden="true" focusable="false">${inner}</svg>`;
+}
+function chanColor226(platform) {
+  const m = CHAN_MARK_226[String(platform || "").toLowerCase()];
+  return m ? m[1] : "#44536A";
+}
 function channelsOf226(profile) {
   if (!profile) return [];
   const rec = profile.profile || profile.creator || profile.business || profile;
@@ -9107,7 +9143,7 @@ function channels226Html(profile, opts) {
     const mark = CHAN_MARK_226[c.platform] || [String(c.label || "?").slice(0, 2).toUpperCase(), "#0AA6C2"];
     const handle = c.handle ? (String(c.handle).startsWith("@") || c.platform === "website" ? String(c.handle) : "@" + c.handle) : "";
     const meta = [c.followers != null ? fmtNum(c.followers) + " " + J226("followers", "seguidores") : "", (!opts.business && c.localPct != null ? c.localPct + "% " + J226("local", "local") : "")].filter(Boolean).join(" · ");
-    const inner = `<span class="j226-chanmark" style="background:${mark[1]}">${esc(mark[0])}</span><span class="j226-chanmain"><span class="j226-chanplat">${esc(c.label)}</span>${handle ? `<span class="j226-chanhandle">${esc(handle)}</span>` : ""}</span>${meta ? `<span class="j226-chanmeta">${esc(meta)}</span>` : ""}`;
+    const inner = `<span class="j226-chanmark" style="background:${mark[1]}">${chanGlyph226(c.platform)}</span><span class="j226-chanmain"><span class="j226-chanplat">${esc(c.label)}</span>${handle ? `<span class="j226-chanhandle">${esc(handle)}</span>` : ""}</span>${meta ? `<span class="j226-chanmeta">${esc(meta)}</span>` : ""}`;
     return c.url ? `<a class="j226-chanrow" href="${esc(c.url)}" target="_blank" rel="noopener">${inner}</a>` : `<div class="j226-chanrow">${inner}</div>`;
   }).join("");
   if (opts.public) return `<div style="margin-top:18px"><h3 class="bookme-h">${J226("Social accounts", "Cuentas sociales")}</h3><div class="j226-chans">${rows}</div></div>`;
@@ -9620,7 +9656,7 @@ function savedFeedButton226Html() {
 function socialIcons226Html(x) {
   const chans = channelsOf226(x);
   if (!chans.length) return "";
-  return `<span class="u226-socials">${chans.slice(0, 5).map((c) => { const mark = (typeof CHAN_MARK_226 !== "undefined" && CHAN_MARK_226[c.platform]) || [String(c.label || "?").slice(0, 2).toUpperCase(), "#44536A"]; const inner = `<span class="u226-soc" style="background:${mark[1]}">${esc(mark[0])}</span>`; return c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" aria-label="${esc(c.label)}">${inner}</a>` : inner; }).join("")}</span>`;
+  return `<span class="u226-socials">${chans.slice(0, 5).map((c) => { const inner = `<span class="u226-soc" style="background:${chanColor226(c.platform)}">${chanGlyph226(c.platform)}</span>`; return c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" aria-label="${esc(c.label)}">${inner}</a>` : inner; }).join("")}</span>`;
 }
 function statsRow226Html(stats) {
   const list = (stats || []).filter((s) => s && s.value != null && s.value !== "");
@@ -9702,7 +9738,7 @@ function accounts226Html(x, opts) {
   const rows = list.map((c) => {
     const handle = c.handle ? (String(c.handle).startsWith("@") || c.platform === "website" ? String(c.handle) : "@" + c.handle) : "";
     const local = c.followers != null && c.localPct != null ? Math.round((Number(c.followers) * Number(c.localPct)) / 100) : null;
-    const cells = `<span class="u226-acccell plat">${esc(c.label)}</span><span class="u226-acccell handle">${esc(handle)}</span><span class="u226-acccell num">${c.followers != null ? fmtFull(c.followers) : ""}</span><span class="u226-acccell num grad">${local != null ? fmtFull(local) + " " + J226("local", "local") : ""}</span>`;
+    const cells = `<span class="u226-acccell plat"><span class="u226-accicon" style="background:${chanColor226(c.platform)}">${chanGlyph226(c.platform)}</span>${esc(c.label)}</span><span class="u226-acccell handle">${esc(handle)}</span><span class="u226-acccell num">${c.followers != null ? fmtFull(c.followers) : ""}</span><span class="u226-acccell num grad">${local != null ? fmtFull(local) + " " + J226("local", "local") : ""}</span>`;
     return c.url ? `<a class="u226-accrow" href="${esc(c.url)}" target="_blank" rel="noopener">${cells}</a>` : `<div class="u226-accrow">${cells}</div>`;
   }).join("");
   const head = total > 0 ? `<p class="small muted" style="margin:0 0 8px">${fmtFull(total)} ${J226("followers in all", "seguidores en total")}${localTotal != null ? ` · <span class="u226-gradtext">${fmtFull(localTotal)} ${J226("local followers", "seguidores locales")}</span>` : ""}</p>` : "";
