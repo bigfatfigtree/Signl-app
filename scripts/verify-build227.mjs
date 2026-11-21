@@ -26,6 +26,12 @@
 //     session behind the splash and render() lands on Home;
 //     renderIntro (the locked v5 film) is signed-out only.
 // Stamp 2026.11.21-227. (-226 is the journey build's stamp.)
+// Fix within -227 (independent reviewer catch): theme-v2's
+// #app > * vxRise enter animation also caught the splash div,
+// so on a fast boot the splash only ever showed as a grey wash
+// fading in. The splash is now exempt (animation: none, via an
+// ID + class selector that outranks theme-v2's ID + universal
+// rule) in both the inline critical style and intro.css.
 // Run: node scripts/verify-build227.mjs
 import fs from "node:fs";
 import path from "node:path";
@@ -61,6 +67,10 @@ check("inline critical splash style present (fixed, dark ground)", idxHtml.inclu
 check("intro.css splash is the same design (fixed, dark ground)", /\.splash-first-paint \{\n  position: fixed;\n  inset: 0;\n  z-index: 900;/.test(introCss) && introCss.includes("background: #0b0d0c;"));
 check("old white in-flow splash block is gone", !introCss.includes(".splash-first-paint {\n  min-height: 62vh;"));
 check("Build -225 chrome-hiding rule retained", introCss.includes("body:has(.splash-first-paint) .topbar") && introCss.includes("body:has(.splash-first-paint) .footer"));
+check("splash exempt from the #app > * rise animation (inline)", idxHtml.includes("#app>.splash-first-paint{animation:none}"));
+check("splash exempt from the #app > * rise animation (intro.css)", introCss.includes("#app > .splash-first-paint { animation: none; }"));
+const themeV2 = read("public/theme-v2.css");
+check("the rise rule it exempts from is really there (theme-v2)", themeV2.includes("#app > * { animation: vxRise .45s"));
 
 console.log("== signed-in path + Build -225 non-regression ==");
 check("INTRO_POSTER still points at the first-frame file (-225)", appJs.includes('const INTRO_POSTER = "/assets/intro/intro-film-v5-firstframe.jpg";'));

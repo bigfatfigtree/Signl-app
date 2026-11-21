@@ -241,6 +241,12 @@
 }
 .splash-first-paint img { width: 200px; max-width: 56vw; height: auto; }
 
+/* The splash is exempt from theme-v2's #app > * rise animation:
+   it must be at full opacity, solid, from the very first frame,
+   never a grey fade-in (reviewer catch, Build -227). The ID +
+   class selector outranks theme-v2's ID + universal rule. */
+#app > .splash-first-paint { animation: none; }
+
 /* Build -225: while the first-paint splash is on screen, hide the
    static shell chrome (top bar + footer) so the paint reads as one
    clean splash. Keyed to the splash element's presence only: the
