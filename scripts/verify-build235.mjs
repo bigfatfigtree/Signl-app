@@ -81,9 +81,15 @@ check("Sig bank payout answer carries the ES twin (ST pattern)",
 check("earn-more line carries the canonical timing in EN and ES",
   appSrc.includes(`For paid bookings, you are ${EN_CANON}.`) && appSrc.includes("En las reservas pagadas, te pagan después de que tu publicación esté activa y verificada, dentro de 48 horas"), "");
 check("Sig bank payout topic matches the Spanish ask", appSrc.includes('"cuando me pagan"'), "");
-check("build stamp is 2026.11.21-235 in both homes",
-  fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.21-235"')
-  && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.21-235"'), "");
+// Build -236: the exact -235 pin is relaxed to "both homes
+// agree, >= 235" (same pattern -235 applied to -234's pin):
+// the stamp moves with every build; what this suite owns is
+// that the two homes never disagree.
+check("build stamp: both homes agree, >= 235 (relaxed by Build -236)",
+  (() => { const n = (s) => { const m = String(s).match(/2026\.11\.21-(\d+)/); return m ? Number(m[1]) : 0; };
+    const a = n(fs.readFileSync(path.join(root, "public/index.html"), "utf8"));
+    const b = n(fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8"));
+    return a >= 235 && a === b; })(), "");
 
 // --- B: bank fixture (EN + ES) --------------------------------
 console.log("== B: Sig bank fixture (EN + ES payout answers) ==");
