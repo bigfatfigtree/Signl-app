@@ -36,9 +36,12 @@ function check(name, cond, extra) {
 }
 
 console.log("== Build -242: generic message notice + invite emails drop sign-up order ==");
-check("build stamp is 2026.11.21-242 in both homes",
-  fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.21-242"')
-  && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.21-242"'), "");
+// Build -243 note (2026-11-21): the stamp moved on the same day
+// (the Review card/list/table views and bulk approve joined the
+// same day's work); the pin is both homes agree and >= 242, the
+// house relaxation for same-day follow-on builds.
+check("build stamp is >= 2026.11.21-242 and agrees in both homes",
+  (() => { const a = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").match(/BUILD_ID = "2026\.11\.21-(\d+)"/); const b = fs.readFileSync(path.join(root, "public/index.html"), "utf8").match(/window\.__SIGNL_BUILD__ = "2026\.11\.21-(\d+)"/); return !!a && !!b && a[1] === b[1] && Number(a[1]) >= 242; })(), "");
 
 // --- 1. platform message notice: generic, no name -----------------
 const note = router.platformMessageEmail({ id: "u242a" }, "Loved the spread you posted from the market shoot.");

@@ -1384,6 +1384,18 @@ table { max-width: 100%; }
    forcing the cell wider than the card. */
 .apps-table .badge { white-space: normal; }
 
+/* Build -243: Review List and Table views. The bulk bar sits
+   over the pending block; under-minimum records carry the
+   .badge.bad tint (#FDECEC) as a full-row flag in both views. */
+.apps-bulkbar243 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 10px; }
+.apps-bulkbar243 input[type="checkbox"], .apps-table-243 input[type="checkbox"], .apps-listrow243 > input[type="checkbox"] { width: auto; flex: none; }
+.apps-table-243 td:first-child { overflow-wrap: normal; }
+.apps-row-under243 > td { background: #FDECEC; }
+.apps-listrow243 { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.apps-listrow243:last-child { border-bottom: none; }
+.apps-listrow243.under { background: #FDECEC; }
+.apps-listrow243 .grow { flex: 1; min-width: 0; }
+
 /* The Mirror card's fit pill never wraps its two words. */
 .mirror-fit { white-space: nowrap; }
 

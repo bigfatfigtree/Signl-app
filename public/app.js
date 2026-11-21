@@ -33392,8 +33392,16 @@ let adminAppView = null; // legacy: superseded by the per-section views below (k
 // section and a Creator applications section — each with its
 // own queue, its own counts, its own search and its own
 // Deck/List view. View and search state is per section.
-let adminAppViewByRole187 = { creator: null, business: null }; // "deck" | "list"; null = deck while that section's queue exists, else list
+let adminAppViewByRole187 = { creator: null, business: null }; // Build -243: "card" | "list" | "table"; null = card while that section's queue exists, else table. (Build -187's "deck" is today's card view; its "list" is today's table view.)
 let adminAppSearch187 = { creator: "", business: "" };
+// Build -243: bulk-approve selection for the List and Table
+// views, kept per section, the last bulk result note per
+// section, and the pending ids each section's List/Table last
+// rendered (the select-all checkbox acts on exactly those).
+let adminAppSel243 = { creator: new Set(), business: new Set() };
+let adminAppBulkNote243 = { creator: "", business: "" };
+let adminAppBulkNoteBad243 = { creator: false, business: false };
+let adminAppRenderedPend243 = { creator: [], business: [] };
 // Build -195 (Jeff, 2026-11-17): the two sections sit behind a
 // Businesses / Creators toggle at the top of the room — one
 // section on screen at a time, so Jeff opens the queue he wants
@@ -33698,13 +33706,14 @@ function adminDeckHtml(pend, role) {
     return `<div class="panel admin-deck-done">
       <h3 style="margin-top:0">Queue clear</h3>
       <p class="muted">Nothing is waiting on a decision.${adminDeckSession.decided ? ` You decided ${adminDeckSession.decided} this session: ${adminDeckSession.approved} approved, ${adminDeckSession.rejected} rejected.` : ""}</p>
-      <button class="btn ghost" onclick="adminAppSetView('list', '${role}')">See decided applications</button>
+      <button class="btn ghost" onclick="adminAppSetView('table', '${role}')">See decided applications</button>
     </div>`;
   }
   const u = pend[0];
   const under = adminUnderMinTotal(u);
   return `${adminDeckNote && adminDeckNoteRole === role ? `<p class="admin-deck-note${adminDeckNoteBad ? " bad" : ""}">${esc(adminDeckNote)}</p>` : ""}
     <p class="muted small" style="margin:0 0 10px"><strong>${pend.length} left</strong> &middot; ${adminDeckSession.decided} decided this session</p>
+    ${under ? `<p style="margin:0 0 10px"><span class="badge bad">Under the 500 minimum: ${fmtNum(under)} followers</span></p>` : ""}
     <div class="panel admin-user-card admin-deck-card">
       ${adminUserCardFactsHtml(u)}
       <div class="admin-deck-decide">
@@ -33986,7 +33995,16 @@ async function loadApplications() {
       other: { pend: pend.filter((u) => u.role !== "business" && u.role !== "creator"), dec: dec.filter((u) => u.role !== "business" && u.role !== "creator") },
     };
     for (const role of ["business", "creator"]) {
-      if (!adminAppViewByRole187[role]) adminAppViewByRole187[role] = state.adminAppsByRole187[role].pend.length ? "deck" : "list";
+      // Build -243: a view value saved earlier in this session
+      // maps forward (deck -> card). The old "list" value is NOT
+      // remapped: it is the new compact List view's own value
+      // now, and a pre-243 session simply lands there instead
+      // of the old table until it next toggles.
+      if (adminAppViewByRole187[role] === "deck") adminAppViewByRole187[role] = "card";
+      if (!adminAppViewByRole187[role]) adminAppViewByRole187[role] = state.adminAppsByRole187[role].pend.length ? "card" : "table";
+      // Build -243: a bulk selection never outlives its queue.
+      const pendIds243 = new Set(state.adminAppsByRole187[role].pend.map((u) => u.id));
+      adminAppSel243[role] = new Set([...adminAppSel243[role]].filter((id) => pendIds243.has(id)));
     }
     // Build -195: resolve which section the room opens on. A
     // section Jeff picked this session sticks; otherwise the
@@ -34021,10 +34039,11 @@ async function loadApplications() {
       <div class="apps-sec-tools187">
         <input id="apps-search-${role}" type="search" placeholder="Search this section: name, email${role === "business" ? ", business name" : ", @handle"}" value="${esc(adminAppSearch187[role])}" oninput="adminAppSearchApply187('${role}')">
         <span class="admin-apps-toggle" style="margin:0">
-          <button class="btn small-btn ${view === "deck" ? "" : "ghost"}" onclick="adminAppSetView('deck', '${role}')">Deck</button>
+          <button class="btn small-btn ${view === "card" ? "" : "ghost"}" onclick="adminAppSetView('card', '${role}')">Card</button>
           <button class="btn small-btn ${view === "list" ? "" : "ghost"}" onclick="adminAppSetView('list', '${role}')">List</button>
+          <button class="btn small-btn ${view === "table" ? "" : "ghost"}" onclick="adminAppSetView('table', '${role}')">Table</button>
         </span>
-        <span class="muted small">Deck: one application at a time. List: the full queue. Same applications, same order.</span>
+        <span class="muted small">Card: one application at a time. List: compact rows. Table: full details. List and Table carry checkboxes for approving several at once. Same applications, same order.</span>
       </div>
       <div id="apps-body-${role}">${adminAppSectionBody187(role)}</div>
     </section>`;
@@ -34059,15 +34078,25 @@ function adminAppSearchText187(u) {
     u.creator ? "@" + (u.creator.handle || "") : "",
   ].join(" ").toLowerCase();
 }
-function adminAppListHtml187(pend, dec) {
+function adminAppTable187(list, lastTh) {
   const row = state.adminAppRow187;
   if (!row) return "";
-  const table = (list, lastTh) => `<div data-uxmore><div class="table-wrap panel"><table class="apps-table"><colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:31%"><col style="width:10%"><col style="width:20%"></colgroup><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>${lastTh}</th></tr>${list.map((u, i203) => uxMark203(row(u), i203 >= 12)).join("")}</table></div>${list.length > 12 ? uxMoreBtn(list.length) : ""}</div>`;
+  return `<div data-uxmore><div class="table-wrap panel"><table class="apps-table"><colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:31%"><col style="width:10%"><col style="width:20%"></colgroup><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>${lastTh}</th></tr>${list.map((u, i203) => uxMark203(row(u), i203 >= 12)).join("")}</table></div>${list.length > 12 ? uxMoreBtn(list.length) : ""}</div>`;
+}
+// Build -243: the decided block, shared by the full list
+// renderer below and the new List/Table section bodies, so a
+// decided record reads the same in every view.
+function adminAppDecidedHtml187(dec) {
+  if (!state.adminAppRow187) return "";
+  return `<h3 class="mt">Decided (${dec.length})</h3>
+      ${dec.length ? adminAppTable187(dec, "Status") : `<p class="muted">None yet.</p>`}`;
+}
+function adminAppListHtml187(pend, dec) {
+  if (!state.adminAppRow187) return "";
   return `
       <h3>Pending (${pend.length})</h3>
-      ${pend.length ? table(pend, "Decision") : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}
-      <h3 class="mt">Decided (${dec.length})</h3>
-      ${dec.length ? table(dec, "Status") : `<p class="muted">None yet.</p>`}`;
+      ${pend.length ? adminAppTable187(pend, "Decision") : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}
+      ${adminAppDecidedHtml187(dec)}`;
 }
 function adminAppSectionBody187(role) {
   const d = (state.adminAppsByRole187 || {})[role];
@@ -34076,11 +34105,145 @@ function adminAppSectionBody187(role) {
   const match = (u) => !q || adminAppSearchText187(u).includes(q);
   const pend = d.pend.filter(match);
   const dec = d.dec.filter(match);
-  const view = adminAppViewByRole187[role] || (d.pend.length ? "deck" : "list");
+  let view = adminAppViewByRole187[role] || (d.pend.length ? "card" : "table");
+  if (view === "deck") view = "card";
+  if (view !== "card" && view !== "list" && view !== "table") view = "table";
   const note = q ? `<p class="muted small" style="margin:0 0 8px">Showing ${pend.length + dec.length} of ${d.pend.length + d.dec.length} in this section for &ldquo;${esc((adminAppSearch187[role] || "").trim())}&rdquo;.</p>` : "";
-  if (view === "deck") return note + adminDeckHtml(pend, role) + `<p class="muted small">Decided applications are in this section's List view.</p>`;
-  return note + adminAppListHtml187(pend, dec);
+  if (view === "card") return note + adminDeckHtml(pend, role) + `<p class="muted small">Decided applications are in this section's List and Table views.</p>`;
+  // Build -243: the List and Table bodies. Both carry the bulk
+  // bar and a checkbox per pending record; the decided block
+  // under them is the same one the full list renderer uses.
+  adminAppRenderedPend243[role] = pend.map((u) => u.id);
+  const bulkNote = adminAppBulkNote243[role] ? `<p class="admin-deck-note${adminAppBulkNoteBad243[role] ? " bad" : ""}">${esc(adminAppBulkNote243[role])}</p>` : "";
+  const pendingHtml = view === "list" ? adminAppListPending243(pend, role) : adminAppTablePending243(pend, role);
+  return note + bulkNote + pendingHtml + adminAppDecidedHtml187(dec);
 }
+// ---------- Admin: Review List and Table views + bulk approve (Build -243) ----------
+// Jeff (2026-11-21): the Review queue gets Card / List / Table
+// over the same pending records. List is compact rows, Table is
+// the six review columns; both carry a checkbox per record, a
+// select-all over what is on screen, and Approve selected,
+// which posts to the bulk route. The server runs each record
+// through the same decision path as a card approval, one at a
+// time, so every approval keeps its own email and events.
+// Records under the 500 follower minimum are flagged red in
+// every view and stay pending when approved in bulk (the
+// server holds them, exactly as it refuses a card approval).
+function adminAppNameCell243(u) {
+  if (u.role === "creator" && u.creator && u.creator.handle) return `<strong>${esc(u.name)}</strong><br><span class="muted small">@${esc(u.creator.handle)}</span>`;
+  if (u.role === "business" && u.business && u.business.businessName) return `<strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.business.businessName)}</span>`;
+  return `<strong>${esc(u.name)}</strong>`;
+}
+function adminAppCityCell243(u) {
+  return `${esc(marketDisplayName(u.market))}${u.city ? `<br><span class="muted small">${esc(u.city)}</span>` : ""}`;
+}
+function adminAppFollowersCell243(u) {
+  if (u.role !== "creator") return "n/a";
+  const under = adminUnderMinTotal(u);
+  return `${fmtNum(adminKnownTotal(u))}${under !== null ? ` <span class="badge bad">Under 500</span>` : ""}`;
+}
+function adminAppLocalCell243(u) {
+  if (u.role !== "creator" || !u.creator) return "n/a";
+  return u.creator.localAudiencePct === null || u.creator.localAudiencePct === undefined ? "Not reported" : `${u.creator.localAudiencePct}%`;
+}
+function adminAppBulkBar243(role, pendCount) {
+  const sel = adminAppSel243[role];
+  const rendered = adminAppRenderedPend243[role];
+  const allOn = rendered.length > 0 && rendered.every((id) => sel.has(id));
+  return `<div class="apps-bulkbar243">
+    <label class="small" style="font-weight:500"><input type="checkbox" id="apps-all-${role}" ${allOn ? "checked" : ""} ${pendCount ? "" : "disabled"} onchange="adminAppToggleAll243('${role}', this.checked)"> Select all</label>
+    <span class="small" id="apps-sel-count-${role}">${sel.size} selected</span>
+    <button class="btn small-btn" id="apps-approve-btn-${role}" ${sel.size ? "" : "disabled"} onclick="adminAppApproveSelected243('${role}')">Approve selected</button>
+  </div>`;
+}
+function adminAppListPending243(pend, role) {
+  const sel = adminAppSel243[role];
+  const rows = pend.map((u) => {
+    const under = adminUnderMinTotal(u);
+    return `<div class="apps-listrow243${under !== null ? " under" : ""}">
+      <input type="checkbox" ${sel.has(u.id) ? "checked" : ""} onchange="adminAppToggleSel243('${role}', '${u.id}', this.checked)" aria-label="Select ${esc(u.name)}">
+      <span class="grow">${adminAppNameCell243(u)}<br><span class="muted small">${esc(marketDisplayName(u.market))}${u.city ? ` &middot; ${esc(u.city)}` : ""}</span></span>
+      <span class="small">${u.role === "creator" ? `${fmtNum(adminKnownTotal(u))} followers &middot; ${adminAppLocalCell243(u)} local` : esc((u.business && u.business.category) || "")}</span>
+      <span class="small muted">${u.profileComplete ? "Profile complete" : "Profile not finished"}</span>
+    </div>`;
+  }).join("");
+  return `<h3>Pending (${pend.length})</h3>
+    ${adminAppBulkBar243(role, pend.length)}
+    ${pend.length ? `<div class="panel" style="padding:4px 0">${rows}</div>` : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}`;
+}
+function adminAppTablePending243(pend, role) {
+  const sel = adminAppSel243[role];
+  const rows = pend.map((u) => {
+    const under = adminUnderMinTotal(u);
+    return `<tr${under !== null ? ` class="apps-row-under243"` : ""}>
+      <td><input type="checkbox" ${sel.has(u.id) ? "checked" : ""} onchange="adminAppToggleSel243('${role}', '${u.id}', this.checked)" aria-label="Select ${esc(u.name)}"></td>
+      <td>${adminAppNameCell243(u)}</td>
+      <td>${adminAppCityCell243(u)}</td>
+      <td>${adminAppFollowersCell243(u)}</td>
+      <td>${adminAppLocalCell243(u)}</td>
+      <td>${u.profileComplete ? "Complete" : "Not finished"}</td>
+      <td>${fmtDate(u.createdAt)}</td>
+    </tr>`;
+  }).join("");
+  return `<h3>Pending (${pend.length})</h3>
+    ${adminAppBulkBar243(role, pend.length)}
+    ${pend.length ? `<div class="table-wrap panel"><table class="apps-table apps-table-243"><colgroup><col style="width:4%"><col style="width:24%"><col style="width:16%"><col style="width:14%"><col style="width:12%"><col style="width:16%"><col style="width:14%"></colgroup><tr><th></th><th>Name / handle</th><th>City</th><th>Followers</th><th>Local %</th><th>Profile complete</th><th>Claimed</th></tr>${rows}</table></div>` : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}`;
+}
+function adminAppSelRefresh243(role) {
+  const sel = adminAppSel243[role];
+  const count = document.getElementById(`apps-sel-count-${role}`);
+  if (count) count.textContent = `${sel.size} selected`;
+  const btn = document.getElementById(`apps-approve-btn-${role}`);
+  if (btn) btn.disabled = !sel.size;
+  const all = document.getElementById(`apps-all-${role}`);
+  const rendered = adminAppRenderedPend243[role];
+  if (all) all.checked = rendered.length > 0 && rendered.every((id) => sel.has(id));
+}
+function adminAppToggleSel243(role, id, checked) {
+  if (checked) adminAppSel243[role].add(id); else adminAppSel243[role].delete(id);
+  adminAppSelRefresh243(role);
+}
+function adminAppToggleAll243(role, checked) {
+  for (const id of adminAppRenderedPend243[role]) {
+    if (checked) adminAppSel243[role].add(id); else adminAppSel243[role].delete(id);
+  }
+  const host = document.getElementById(`apps-body-${role}`);
+  if (host) host.innerHTML = adminAppSectionBody187(role);
+}
+async function adminAppApproveSelected243(role) {
+  const ids = [...adminAppSel243[role]];
+  if (!ids.length) return;
+  const ok = await showConfirmSheet(
+    `Approve ${ids.length} ${ids.length === 1 ? "application" : "applications"}?`,
+    "Each one is approved on its own, exactly like approving it from its card, and each one gets their own approval email. A record under the 500 follower minimum is held and stays pending.",
+    `Approve ${ids.length}`
+  );
+  if (!ok) return;
+  const btn = document.getElementById(`apps-approve-btn-${role}`);
+  if (btn) { btn.disabled = true; btn.textContent = "Approving..."; }
+  try {
+    const res = await api("POST", "/admin/review/bulk", { userIds: ids });
+    const nameOf = (id) => {
+      const u = ((state.adminAppsByRole187 || {})[role] || { pend: [] }).pend.find((x) => x.id === id);
+      return u ? (u.role === "creator" && u.creator && u.creator.handle ? "@" + u.creator.handle : u.name) : id;
+    };
+    const heldNames = (res.results || []).filter((r) => r.outcome === "held").map((r) => nameOf(r.userId));
+    const skippedCount = (res.results || []).filter((r) => r.outcome === "skipped").length;
+    let note = `Approved ${res.approved} of ${res.total}.`;
+    if (heldNames.length) note += ` Held under the 500 minimum: ${heldNames.join(", ")}.`;
+    if (skippedCount) note += ` ${skippedCount} could not be approved and ${skippedCount === 1 ? "was" : "were"} skipped.`;
+    adminAppBulkNote243[role] = note;
+    adminAppBulkNoteBad243[role] = res.approved !== res.total;
+    adminDeckSession.decided += res.approved;
+    adminDeckSession.approved += res.approved;
+    for (const r of (res.results || [])) if (r.outcome === "approved") adminAppSel243[role].delete(r.userId);
+  } catch (e) {
+    adminAppBulkNote243[role] = e.message;
+    adminAppBulkNoteBad243[role] = true;
+  }
+  loadApplications();
+}
+
 function adminAppSearchApply187(role) {
   const inp = document.getElementById(`apps-search-${role}`);
   adminAppSearch187[role] = inp ? inp.value : "";
