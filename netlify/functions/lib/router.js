@@ -33250,15 +33250,23 @@ async function route(event) {
       });
       return json(200, { market: market.name, label: market.label, benchOpen: open || (await marketLaunchedByFlag(market.name)) });
     }
-    if (method === "POST" && seg[1] === "review") {
-      const b = parseBody(event);
+    // Build -243 (Jeff, 2026-11-21): one decision path, two
+    // callers. The single route and the bulk approve route below
+    // both run THIS function, one record at a time, so a mass
+    // approval is the single approval repeated: same market
+    // scope check, same held-under-minimum rule, same events,
+    // same per-record approval email, same -239 duplicate
+    // guard. Refusals come back as outcome objects so the bulk
+    // route can report per record instead of failing the whole
+    // batch on the first refusal.
+    async function applyReviewDecision243(b) {
       const target = await store.get(`user:${b.userId}`);
-      if (!target || target.role === "admin") return err(404, "Application not found");
+      if (!target || target.role === "admin") return { error: { status: 404, message: "Application not found" } };
       // Build -138: market scoping is complete on Applications —
       // a scoped approver cannot decide an application outside
       // their markets, even by id.
-      if (!perms138.isSuper(user) && !perms138.inMarketScope(user, target)) return err(403, "That application is outside your markets.");
-      if (b.decision !== "approve" && b.decision !== "reject") return err(400, "decision must be approve or reject");
+      if (!perms138.isSuper(user) && !perms138.inMarketScope(user, target)) return { error: { status: 403, message: "That application is outside your markets." } };
+      if (b.decision !== "approve" && b.decision !== "reject") return { error: { status: 400, message: "decision must be approve or reject" } };
       // A human rejection of a creator may carry one reason
       // category from the fixed list (audit F4): it is stored on
       // the record, rides the rejection event, and is named in the
@@ -33281,7 +33289,7 @@ async function route(event) {
           target.updatedAt = nowIso();
           await store.set(`user:${target.id}`, target);
           await logEvent({ type: "application_held_under_minimum", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { applicantRole: target.role, email: target.email, totalAudience: underTotal, minimum: MIN_TOTAL_AUDIENCE } });
-          return err(422, `${MIN_AUDIENCE_LINE} This creator's counted total is ${underTotal.toLocaleString("en-US")}, so the application stays pending until their audience reaches 500 total. No tier is assigned under the minimum.`);
+          return { error: { status: 422, message: `${MIN_AUDIENCE_LINE} This creator's counted total is ${underTotal.toLocaleString("en-US")}, so the application stays pending until their audience reaches 500 total. No tier is assigned under the minimum.` } };
         }
         delete target.underMinimum;
       }
@@ -33355,7 +33363,35 @@ async function route(event) {
           await deliverEmail("approval", target, mail.subject, mail.text, null);
         } catch (e) { /* email is best-effort */ }
       }
-      return json(200, { user: publicUser(target) });
+      return { user: publicUser(target) };
+    }
+    if (method === "POST" && seg[1] === "review" && seg.length === 2) {
+      const out = await applyReviewDecision243(parseBody(event));
+      if (out.error) return err(out.error.status, out.error.message);
+      return json(200, { user: out.user });
+    }
+    // Build -243: bulk approve for the Review List and Table
+    // views. Approve only (rejections stay one at a time, each
+    // with its own reason and confirm). Records run through the
+    // shared decision path one at a time, in the order given;
+    // a held or missing record never stops the rest, and the
+    // response reports every record's own outcome.
+    if (method === "POST" && seg[1] === "review" && seg[2] === "bulk") {
+      const b = parseBody(event);
+      if (b.decision !== undefined && b.decision !== "approve") return err(400, "Bulk is approve only. Rejections stay one at a time.");
+      const ids = [...new Set((Array.isArray(b.userIds) ? b.userIds : []).filter((x) => typeof x === "string" && x))];
+      if (!ids.length) return err(400, "No applications were selected.");
+      if (ids.length > 100) return err(400, "Approve at most 100 at a time.");
+      const results = [];
+      for (const id of ids) {
+        const out = await applyReviewDecision243({ userId: id, decision: "approve" });
+        if (out.error) results.push({ userId: id, outcome: out.error.status === 422 ? "held" : "skipped", message: out.error.message });
+        else results.push({ userId: id, outcome: "approved", user: out.user });
+      }
+      const approvedCount = results.filter((r) => r.outcome === "approved").length;
+      const heldCount = results.filter((r) => r.outcome === "held").length;
+      await logEvent({ type: "applications_bulk_approved", actorId: user.id, actorRole: "admin", subjectId: null, data: { requested: ids.length, approved: approvedCount, held: heldCount, skipped: ids.length - approvedCount - heldCount } });
+      return json(200, { results, approved: approvedCount, held: heldCount, total: ids.length });
     }
     // Profile backfill on demand (Jeff, 2026-10-20): recompute the
     // stored profileComplete flags from the records themselves and
