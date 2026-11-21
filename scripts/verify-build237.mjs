@@ -113,9 +113,15 @@ for (const [label, src] of [["public/app.js", appSrc], ["sigdata.js", sigdataSrc
 }
 check("ES canonical sentence still pinned in sigdata (ES branch) and the client QA",
   sigdataSrc.includes(ES_CANON) && appSrc.includes(ES_CANON), "");
-check("build stamp is 2026.11.21-237 in both homes",
-  fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.21-237"')
-  && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.21-237"'), "");
+// Build -238: the exact -237 pin is relaxed to "both homes
+// agree, >= 237" (same pattern -237 applied to -236's pin):
+// the stamp moves with every build; what this suite owns is
+// that the two homes never disagree.
+check("build stamp: both homes agree, >= 237 (relaxed by Build -238)",
+  (() => { const n = (s) => { const m = String(s).match(/2026\.11\.21-(\d+)/); return m ? Number(m[1]) : 0; };
+    const a = n(fs.readFileSync(path.join(root, "public/index.html"), "utf8"));
+    const b = n(fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8"));
+    return a >= 237 && a === b; })(), "");
 
 // --- B + C: server fixtures (Maggie data path) ----------------
 console.log("== B/C: server fixtures (POST /api/sig/ask as a creator, EN + ES) ==");

@@ -10432,6 +10432,58 @@ function renderSignin() {
   </section>`;
 }
 
+// Build -238: email deep links (/?open=profile, /?open=status,
+// /?open=messages) used to lose their destination whenever the
+// visitor was logged out. The approval email and the platform
+// message notification email link straight at those params,
+// but init() only honoured them for an already signed-in
+// session, so a newly approved creator tapped the link, sat
+// through the intro film (Jeff-locked for plain signed-out
+// visits, Build -219a), signed in, and landed on the default
+// dashboard tab instead of the surface the email named. The
+// fix: init() stashes a valid open target in sessionStorage
+// under magpie_pending_open when the visitor is logged out,
+// sends them straight to the sign-in surface (no film), and
+// this helper applies the stash the moment a session exists.
+// It is called from doSignin, from the ?signinlink= consume
+// block in init(), and at boot when a live session is already
+// present with no open param in the URL (the Google sign-in
+// return). The stash is consumed exactly once, and only once
+// a session exists, so an abandoned sign-in never loses it.
+// The role guards are the SAME ones the signed-in boot code
+// has always used: messages is for creators and businesses
+// (a creator lands on the Magpie team thread), profile and
+// status are creators only. A signed-in role that does not
+// fit the target just clears the stash and lands normally.
+const PENDING_OPEN_KEY_238 = "magpie_pending_open";
+function stashPendingOpen238(target) {
+  try { sessionStorage.setItem(PENDING_OPEN_KEY_238, target); } catch (e) { /* storage unavailable */ }
+}
+function applyPendingOpen238() {
+  let target = "";
+  try { target = sessionStorage.getItem(PENDING_OPEN_KEY_238) || ""; } catch (e) { target = ""; }
+  if (!target) return false;
+  if (!state.user) return false; // no session yet: keep the stash for the sign-in that is still to come
+  try { sessionStorage.removeItem(PENDING_OPEN_KEY_238); } catch (e) { /* the routing below still runs once */ }
+  if (target === "messages" && (state.user.role === "creator" || state.user.role === "business")) {
+    state.tab = "Messages";
+    if (state.user.role === "creator") state.activeThread = "signl-team";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "profile" && state.user.role === "creator") {
+    state.tab = "Profile";
+    state.view = "dashboard";
+    return true;
+  }
+  if (target === "status" && state.user.role === "creator") {
+    state.tab = "Status";
+    state.view = "dashboard";
+    return true;
+  }
+  return false;
+}
+
 async function doSignin(e) {
   e.preventDefault();
   const form = e.target;
@@ -10451,6 +10503,7 @@ async function doSignin(e) {
     });
     state.user = data.user;
     state.view = "dashboard";
+    applyPendingOpen238(); // Build -238: an email deep link stashed while logged out lands now
     render();
     refreshBadges();
     magpieNativeInitPush218();
@@ -37150,11 +37203,15 @@ function previewDashboardHtml(d) {
       state.sqNotice = sqParam.trim().slice(0, 24);
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
+    // Build -238: the open param is read once. Valid targets
+    // are exactly "messages", "profile" and "status"; anything
+    // else is ignored, exactly as before.
+    const openParam238 = (params.get("open") || "").trim();
     // A platform-message email link (/?open=messages, Build -40)
     // lands a signed-in creator or business straight on their
     // Messages view, where the Magpie team thread waits. Same
     // consume-and-strip discipline as the YouTube return above.
-    if (params.get("open") === "messages" && state.user && (state.user.role === "creator" || state.user.role === "business")) {
+    if (openParam238 === "messages" && state.user && (state.user.role === "creator" || state.user.role === "business")) {
       state.tab = "Messages";
       if (state.user.role === "creator") state.activeThread = "signl-team";
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
@@ -37162,12 +37219,34 @@ function previewDashboardHtml(d) {
     // Build -115: the approval and reminder emails link straight
     // to the surface they name (/?open=profile, /?open=status)
     // instead of the app root. Same consume-and-strip discipline.
-    if (params.get("open") === "profile" && state.user && state.user.role === "creator") {
+    if (openParam238 === "profile" && state.user && state.user.role === "creator") {
       state.tab = "Profile";
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
-    if (params.get("open") === "status" && state.user && state.user.role === "creator") {
+    if (openParam238 === "status" && state.user && state.user.role === "creator") {
       state.tab = "Status";
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    }
+    // Build -238: the same email links tapped while LOGGED OUT
+    // used to drop the destination entirely: the blocks above
+    // all require state.user, so the visitor got the intro film
+    // and then, after signing in, the default dashboard tab.
+    // Now the target is stashed for applyPendingOpen238, the
+    // first paint is the sign-in surface itself (render()
+    // checks the signin view before the intro branch, so the
+    // film never starts), a plain-words notice on that surface
+    // says where sign-in will take them (renderSignin renders
+    // and consumes state.googleNotice), and the film is marked
+    // seen so it cannot replay later in this session either.
+    // Plain visits carry no open param and are untouched: the
+    // intro film still plays exactly as Build -219a locked it.
+    if (!state.user && (openParam238 === "messages" || openParam238 === "profile" || openParam238 === "status")) {
+      stashPendingOpen238(openParam238);
+      state.view = "signin";
+      if (openParam238 === "profile") state.googleNotice = "You are approved. Sign in and we will take you straight to your profile so you can finish it.";
+      else if (openParam238 === "status") state.googleNotice = "Sign in and we will take you straight to your founding status page.";
+      else state.googleNotice = "Sign in to read your message from the Magpie team.";
+      introMarkSeen();
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
     // A password reset link (/?reset=<token>) lands on the reset
@@ -37270,6 +37349,7 @@ function previewDashboardHtml(d) {
         const data = await api("POST", "/auth/signin-link/consume", { token: signinLinkParam });
         state.user = data.user;
         state.view = "dashboard";
+        applyPendingOpen238(); // Build -238: a stashed email deep link lands now, same as a password sign-in
         setTimeout(() => showToast("You're signed in"), 300);
       } catch (e) {
         state.googleNotice = (e && e.message) || "That sign-in link did not work. Ask for a fresh one below.";
@@ -37277,6 +37357,13 @@ function previewDashboardHtml(d) {
       }
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
+    // Build -238: boot with a live session and no open param in
+    // the URL (the Google sign-in return is the live case: the
+    // visitor arrived logged out on an email link, chose Google,
+    // and comes back here signed in). A stash left by that
+    // logged-out arrival is applied and cleared by the same
+    // helper, with the same role guards. No stash, no change.
+    if (state.user && !openParam238) applyPendingOpen238();
     // The listing proof sheet (/c/<handle>/proof) is matched
     // before the plain profile: same public payload, print-first
     // rendering.
