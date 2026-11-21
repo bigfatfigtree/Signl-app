@@ -101,9 +101,15 @@ const routerSrc = fs.readFileSync(path.join(root, "netlify/functions/lib/router.
   check("sendPlatformMessage keeps the original walk as the default", spmSrc.includes("await recentLifecycleEmail(creator.id, PLATFORM_PING_SUPPRESS_WINDOW_MS)"), "");
   check("the batch lookup reads only today/yesterday event prefixes", routerSrc.includes("async function recentLifecycleByUser234(") && routerSrc.includes("`event:${new Date(Date.now() - back * dayMs).toISOString().slice(0, 10)}:`"), "");
   check("the pool is bounded (worker pattern, fixed concurrency)", routerSrc.includes("async function mapPool234(") && routerSrc.includes("const SEGMENT_SEND_CONCURRENCY234 = 8"), "");
-  check("build stamp is 2026.11.21-234 in both homes",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.21-234"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.21-234"'), "");
+  // Build -235: the exact -234 pin is relaxed to "both homes
+  // agree, >= 234" (same pattern -234 applied to -233's pin):
+  // the stamp moves with every build; what this suite owns is
+  // that the two homes never disagree.
+  check("build stamp: both homes agree, >= 234 (relaxed by Build -235)",
+    (() => { const n = (s) => { const m = String(s).match(/2026\.11\.21-(\d+)/); return m ? Number(m[1]) : 0; };
+      const a = n(fs.readFileSync(path.join(root, "public/index.html"), "utf8"));
+      const b = n(fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8"));
+      return a >= 234 && a === b; })(), "");
 }
 
 // --- fixture client (same shape as verify-build232) ----------

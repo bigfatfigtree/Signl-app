@@ -1522,7 +1522,7 @@ function answerCreator(f, q, t) {
   }
   // Earnings (recorded only, labeled)
   if (hasPhrase(t, "have i earned", "have i made", "my earnings", "much have i", "paid bookings", "money have i") || (hasWord(t, "earned", "earnings") && hasWord(t, "my", "i"))) {
-    return linked(`Recorded: ${cmoney(f, f.paidRecordedNet)} net across ${fmt(f.paidBookings)} paid ${plural(f.paidBookings, "booking")} on file. Recorded means the bookings in the app; payouts run outside the app for now, and the app never promises a payout date.${f.intentTotal > 0 ? ` Your posts have drawn ${fmt(f.intentTotal)} saves and shares so far (intent: people planning to come).` : ""}${f.licenseRequestsPending ? ` Also waiting on you: ${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} to approve or decline.` : ""}`, "Open Wallet", "cr-earnings");
+    return linked(`Recorded: ${cmoney(f, f.paidRecordedNet)} net across ${fmt(f.paidBookings)} paid ${plural(f.paidBookings, "booking")} on file. Recorded means the bookings in the app. For paid bookings, you are paid after your post is live and verified, within 48 hours, once your payout details are set up.${f.intentTotal > 0 ? ` Your posts have drawn ${fmt(f.intentTotal)} saves and shares so far (intent: people planning to come).` : ""}${f.licenseRequestsPending ? ` Also waiting on you: ${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} to approve or decline.` : ""}`, "Open Wallet", "cr-earnings");
   }
   // Profile state
   if (hasPhrase(t, "my profile", "am i finished", "am i complete", "profile finished", "profile complete", "businesses see me", "can businesses see") || (hasWord(t, "missing") && hasWord(t, "profile", "my"))) {
