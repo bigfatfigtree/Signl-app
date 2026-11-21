@@ -3402,7 +3402,7 @@ function menuIdentityStateLine187(u) {
   }
   if (u.role === "business" && isFoundingBusiness(u)) return `On the founding list — ${foundingBizPlace(u)} has not opened yet`;
   if (u.role === "business") return `Active in ${u.market || "your market"}`;
-  if (u.role === "creator") return (u.founding && u.founding.marketLive) ? `Creator in ${u.market || "your market"} — your market is open` : `Creator on the founding roster for ${u.market || "your market"}`;
+  if (u.role === "creator") return (u.founding && u.founding.marketLive) ? `Creator in ${u.market || "your market"} — your market is open` : `Founding creator in ${u.market || "your market"}`;
   if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) return "Impact Portal";
   if (u.role === "partner") return "Partner";
   if (u.role === "recruiter") return "Recruiter";
@@ -18993,7 +18993,7 @@ const RELEASE_TEXT = {
 function offersEmptyLine() {
   const mkt = marketTalkNameClient(state.user.market);
   if (state.user && state.user.founding && state.user.founding.marketLive === false) {
-    return `<p>You are on the founding roster for ${esc(mkt)}. Offers land here the moment the market opens, founding creators see every offer first, and we email you the moment the first business posts. There is nothing to miss until then.</p>`;
+    return `<p>You are a founding creator in ${esc(mkt)}. Offers land here the moment the market opens, founding creators see every offer first, and we email you the moment the first business posts. There is nothing to miss until then.</p>`;
   }
   // Build -90: an approved creator with an empty board is still
   // a founding creator waiting on businesses, even once the
