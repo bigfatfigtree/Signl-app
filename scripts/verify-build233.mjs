@@ -20,8 +20,13 @@ function check(name, cond) {
 const count = (s, sub) => String(s).split(sub).length - 1;
 
 // ---------- stamp ----------
-check("stamp: index.html carries 2026.11.21-233", indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.21-233"'));
-check("stamp: build.js agrees", buildJs.includes('BUILD_ID = "2026.11.21-233"'));
+// Build -234: the exact -233 pin is relaxed to "both homes
+// agree, >= 233" (same pattern -233 applied to -232's pin):
+// the stamp moves with every build; what this suite owns is
+// that the two homes never disagree.
+check("stamp: index.html and build.js agree, >= 233 (relaxed by Build -234)",
+  (() => { const n = (s) => { const m = String(s).match(/2026\.11\.21-(\d+)/); return m ? Number(m[1]) : 0; };
+    const a = n(indexHtml); const b = n(buildJs); return a >= 233 && a === b; })());
 
 // ---------- sandbox ----------
 let esMode = false;

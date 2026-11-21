@@ -7982,6 +7982,68 @@ async function recentLifecycleEmail(userId, windowMs) {
   }
   return latest;
 }
+// Build -234: the batch form of recentLifecycleEmail, for
+// multi-recipient sends. The per-recipient walk above lists
+// the ENTIRE event-log keyspace (listEventsForSubject opens
+// with store.listKeys("event:"), paginated serially over an
+// append-only log that grows forever) and then fetches the
+// log in 500-key chunks — per recipient. A market segment
+// paid that scan once per creator, on the request path,
+// which is the serial cost that sank the 2026-11-21 segment
+// sends (see the POST /admin/platform-messages handler).
+// This form answers the same question for a whole recipient
+// set with ONE bounded read: the suppression window is 4
+// hours and event keys carry the event's own date, so only
+// events keyed today or yesterday can possibly fall inside
+// the window. Same types, same window, same "latest wins"
+// pick, same result shape ({ kind, at, ts } | absent). It is
+// strictly more complete than the walk it replaces for this
+// use: the walk stops at 30 subject matches / a 5,000-event
+// scan cap and can miss a suppressing send in a pathological
+// log (it fails open); this read covers the full window.
+async function recentLifecycleByUser234(userIds, windowMs) {
+  const out = new Map();
+  const wanted = new Set((userIds || []).filter(Boolean));
+  if (!wanted.size) return out;
+  const cutoff = Date.now() - windowMs;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const prefixes = [0, 1].map((back) => `event:${new Date(Date.now() - back * dayMs).toISOString().slice(0, 10)}:`);
+  const keys = [];
+  for (const p of prefixes) keys.push(...(await store.listKeys(p)));
+  const rows = await store.getMany(keys);
+  for (const r of rows) {
+    const e = r && r.value;
+    if (!e || !LIFECYCLE_EMAIL_SENT_TYPES.has(e.type)) continue;
+    const ts = Date.parse(e.ts);
+    if (!Number.isFinite(ts) || ts < cutoff) continue;
+    for (const uid of [e.subjectId, e.actorId]) {
+      if (!uid || !wanted.has(uid)) continue;
+      const prev = out.get(uid);
+      if (!prev || ts > prev.ts) out.set(uid, { kind: e.type.replace(/_email_sent$/, ""), at: e.ts, ts });
+    }
+  }
+  return out;
+}
+// Build -234: bounded-concurrency map for request-path
+// fan-outs — the store layer's fetchValues worker pattern.
+// Never an unbounded Promise.all over a recipient set, never
+// a serial await per item: a fixed pool of workers pulls
+// indexes until the list is done.
+async function mapPool234(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      out[i] = await fn(items[i], i);
+    }
+  }
+  const workers = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return out;
+}
+const SEGMENT_SEND_CONCURRENCY234 = 8;
 // Build -185: the last-activity stamp the win-back sweep reads.
 // user.updatedAt cannot serve (sweeps and backfills bump it, so
 // it would mark everyone active forever); this field moves on a
@@ -8050,7 +8112,14 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
       });
       emailResult = { sent: false, suppressed: true, reason: "in_app_only" };
     } else {
-      const recent = await recentLifecycleEmail(creator.id, PLATFORM_PING_SUPPRESS_WINDOW_MS);
+      // Build -234: a segment send hands in the suppression
+      // answer it hoisted for the whole recipient set
+      // (meta.lifecycleRecent — the latest in-window
+      // lifecycle send, or null for "checked, none"), so the
+      // per-recipient event-log walk never runs per creator
+      // on a mass send. Every other caller leaves the key
+      // absent and gets the original walk, unchanged.
+      const recent = meta && "lifecycleRecent" in meta ? meta.lifecycleRecent : await recentLifecycleEmail(creator.id, PLATFORM_PING_SUPPRESS_WINDOW_MS);
       if (recent) {
         await logEvent({
           type: "platform_message_email_suppressed",
@@ -32202,22 +32271,55 @@ async function route(event) {
       } else {
         return err(400, "Choose a creator or a market segment");
       }
+      // Build -234: this fan-out used to run strictly
+      // serially — one creator at a time, each send paying
+      // its own store round trips, a full event-log key scan
+      // for the email-ping suppression check, and a fresh
+      // SMTP session — while the campaign receipt and the
+      // response waited at the very end of the loop. On any
+      // segment bigger than a handful of finished creators
+      // the total outran first the client's deadline (the
+      // admin saw "We could not reach Magpie" and never the
+      // counts) and then the function's own limit, so the
+      // receipt write after the loop never ran at all —
+      // while every thread message written before the kill
+      // stayed written. The 2026-11-21 group-invite run hit
+      // exactly this: all 33 markets delivered into threads,
+      // and the last 11 (the larger segments) have no "Sent
+      // to many" receipt. Now, for segment scope:
+      //   1. the receipt is written BEFORE the fan-out, with
+      //      the full recipient list; the same record is
+      //      rewritten with the final email counts when the
+      //      fan-out lands, so a send that dies midway still
+      //      leaves its receipt behind;
+      //   2. the suppression lookup is hoisted into ONE
+      //      bounded read for the whole segment
+      //      (recentLifecycleByUser234) instead of one
+      //      event-log scan per creator;
+      //   3. the sends run through a bounded-concurrency
+      //      pool (mapPool234), and one creator's failure is
+      //      counted, never fatal to the rest of the batch.
+      // The recipient filter, the per-recipient send, the
+      // receipt fields, and the response shape are exactly
+      // as before; the single-recipient paths keep the
+      // original serial loop and its error behavior.
       let emailSent = 0;
       let emailFailed = 0;
       let emailSuppressed = 0;
-      for (const creator of recipients) {
-        const sent = await sendPlatformMessage(user, creator, body, { scope, segmentMarket, templateId });
-        if (sent.email && sent.email.sent) emailSent += 1;
-        else if (sent.email && sent.email.suppressed) emailSuppressed += 1;
+      const tallyPm234 = (sent) => {
+        if (sent && sent.email && sent.email.sent) emailSent += 1;
+        else if (sent && sent.email && sent.email.suppressed) emailSuppressed += 1;
         else emailFailed += 1;
-      }
+      };
       if (scope === "segment") {
         // Build -163: the campaign receipt — one store record
         // per multi-recipient send, written at send time, so
         // the Messages home's "Sent to many" area never has to
-        // reconstruct a send from the Event Log.
+        // reconstruct a send from the Event Log. (Build -234:
+        // written before the fan-out, counts finalized after;
+        // see the note above.)
         const campaignId = crypto.randomUUID();
-        await store.set(`pmcampaign:${campaignId}`, {
+        const campaignReceipt = {
           id: campaignId,
           kind: "segment",
           title: null,
@@ -32229,14 +32331,37 @@ async function route(event) {
           audienceLabel: `${segmentMarket} — finished creators`,
           recipientIds: recipients.map((u) => u.id),
           messageCount: recipients.length,
-          emailSent,
-          emailFailed,
-          emailSuppressed,
+          emailSent: 0,
+          emailFailed: 0,
+          emailSuppressed: 0,
           templateId,
           reconstructed: false,
           source: null,
+        };
+        // The hoisted lookup runs BEFORE the receipt write:
+        // if it ever threw, the request fails with nothing
+        // sent and no receipt claiming otherwise.
+        const lifecycleByUser = await recentLifecycleByUser234(recipients.map((u) => u.id), PLATFORM_PING_SUPPRESS_WINDOW_MS);
+        await store.set(`pmcampaign:${campaignId}`, campaignReceipt);
+        await mapPool234(recipients, SEGMENT_SEND_CONCURRENCY234, async (creator) => {
+          try {
+            const sent = await sendPlatformMessage(user, creator, body, { scope, segmentMarket, templateId, lifecycleRecent: lifecycleByUser.get(creator.id) || null });
+            tallyPm234(sent);
+          } catch (e) {
+            console.error(`Magpie segment send failed for creator ${creator && creator.id}:`, e);
+            emailFailed += 1;
+          }
         });
+        campaignReceipt.emailSent = emailSent;
+        campaignReceipt.emailFailed = emailFailed;
+        campaignReceipt.emailSuppressed = emailSuppressed;
+        await store.set(`pmcampaign:${campaignId}`, campaignReceipt);
         await logEvent({ type: "platform_message_segment", actorId: user.id, actorRole: "admin", subjectId: null, market: segmentMarket, data: { market: segmentMarket, recipients: recipients.length, emailSent, emailFailed, emailSuppressed, templateId } });
+      } else {
+        for (const creator of recipients) {
+          const sent = await sendPlatformMessage(user, creator, body, { scope, segmentMarket, templateId });
+          tallyPm234(sent);
+        }
       }
       return json(201, { sent: recipients.length, recipients: recipients.map((u) => u.id), emailSent, emailFailed, emailSuppressed, scope, market: segmentMarket });
     }
