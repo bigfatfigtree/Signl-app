@@ -34998,7 +34998,7 @@ function ccSetTesters(on) { ccFilters.testers = !!on; loadStats(); return false;
 // no Wallet: creator/business money pages are theirs alone.
 let astFilters = { range: "all", market: "", status: "all" };
 let astData = null;
-let astView = "creators";
+let astView = "overview";
 
 function astFull(n) { return (Number(n) || 0).toLocaleString("en-US"); }
 function astCreatorTotal(u) {
@@ -35167,6 +35167,149 @@ function astRender() {
   if (revHost) revHost.innerHTML = astRevenueHtml();
 }
 
+// ---------- Admin Stats: Overview (Build -244) ----------
+// Jeff (2026-11-21): one screen with everything. The Overview
+// is the Stats tab's default view: creators against the
+// 50-approved launch line per market, growth, businesses,
+// activity, creator-reported engagement, revenue, and where
+// downloads live. Data: GET /admin/stats-overview, which serves
+// ONE stored summary built off the request path by the same
+// background refresh as the Admin Home summary (-212), so the
+// page paints from a single fetch and prints its "Numbers as
+// of" time. Every figure is the same number its home surface
+// shows (see refreshAdminStatsSummary244 in the server code):
+// no second math lives here either, this view only lays the
+// record out.
+function astOverviewRoi244(roi) {
+  if (roi == null || !Number.isFinite(roi)) return "—";
+  return (Math.round(roi * 100) / 100) + "x";
+}
+function adminOverviewHtml244(d) {
+  const c = d.creators || {};
+  const g = d.growth || { claimsByDay: [], claimsBySource: [], queue: {} };
+  const b = d.businesses || {};
+  const a = d.activity || {};
+  const e = d.engagement || {};
+  const r = d.revenue || {};
+  const markets = d.markets || [];
+  const dayRows = (g.claimsByDay || []).slice().reverse();
+  return `
+  ${asOfLine212(d.asOf)}
+  <div class="panel" style="margin-top:10px">
+    <h3 style="margin:0 0 4px">Creators</h3>
+    <p class="muted small" style="margin:0 0 10px">A market launches at 50 approved creators. Finished means the profile is complete.</p>
+    <div class="stat-band">
+      ${astDataCell(astFull(c.signedUp || 0), "Signed up")}
+      ${astDataCell(astFull(c.approved || 0), "Approved")}
+      ${astDataCell(astFull(c.pending || 0), "Waiting on review")}
+      ${astDataCell(astFull(c.finished || 0), "Finished profiles")}
+      ${astDataCell(astFull(c.totalFollowers || 0), "Followers, stacked")}
+      ${astDataCell(astFull(c.localFollowers || 0), "Local followers")}
+      ${astDataCell(c.avgLocalPct == null ? "—" : c.avgLocalPct + "%", "Average % local")}
+    </div>
+    ${markets.length ? `<div class="table-wrap ct199" style="margin-top:12px"><table>
+      <tr><th>Market</th><th>Approved</th><th>Finished</th><th>Waiting</th><th>Businesses approved</th></tr>
+      ${markets.map((m) => `<tr><td><strong>${esc(m.label || m.name)}</strong></td><td data-label="Approved">${astFull(m.creatorsApproved || 0)} of 50</td><td data-label="Finished">${astFull(m.creatorsApprovedComplete || 0)}</td><td data-label="Waiting">${astFull(m.creatorsPending || 0)}</td><td data-label="Businesses approved">${astFull(m.businessesApproved || 0)}</td></tr>`).join("")}
+    </table></div>` : `<p class="small muted" style="margin-top:10px">No markets yet.</p>`}
+  </div>
+  <div class="panel" style="margin-top:14px">
+    <h3 style="margin:0 0 4px">Growth</h3>
+    <p class="muted small" style="margin:0 0 10px">Claims and approvals over the last 30 days, and where claims came from.</p>
+    <div class="stat-band">
+      ${astDataCell(astFull(g.claims30 || 0), "Claims, last 30 days")}
+      ${astDataCell(astFull(g.approvals30 || 0), "Approvals, last 30 days")}
+      ${astDataCell(astFull((g.queue && g.queue.applications) || 0), "Waiting in the review queue")}
+    </div>
+    ${dayRows.length ? `<div data-uxmore><div class="table-wrap ct199" style="margin-top:12px"><table>
+      <tr><th>Day</th><th>Claims</th><th>Approvals</th></tr>
+      ${dayRows.map((r2, i) => `<tr${i >= 12 ? ' class="ux-extra" hidden' : ""}><td>${esc(r2.date)}</td><td data-label="Claims">${astFull(r2.claims || 0)}</td><td data-label="Approvals">${astFull(r2.approvals || 0)}</td></tr>`).join("")}
+    </table></div>${dayRows.length > 12 ? uxMoreBtn(dayRows.length) : ""}</div>` : ""}
+    ${(g.claimsBySource || []).length ? `<h4 style="margin:16px 0 6px">Where claims came from, last 30 days</h4>
+    <div class="table-wrap ct199"><table>
+      <tr><th>Source</th><th>Creators</th></tr>
+      ${(g.claimsBySource || []).map((s) => `<tr><td>${esc(s.label || s.key)}</td><td data-label="Creators">${astFull(s.creators || 0)}</td></tr>`).join("")}
+    </table></div>` : `<p class="small muted" style="margin-top:10px">No claims in the last 30 days yet.</p>`}
+  </div>
+  <div class="panel" style="margin-top:14px">
+    <h3 style="margin:0 0 4px">Businesses</h3>
+    <p class="muted small" style="margin:0 0 10px">Founding means approved and waiting for their market to launch. Active means the market is live for them.</p>
+    <div class="stat-band">
+      ${astDataCell(astFull(b.signedUp || 0), "Signed up")}
+      ${astDataCell(astFull(b.approved || 0), "Approved")}
+      ${astDataCell(astFull(b.founding || 0), "Founding")}
+      ${astDataCell(astFull(b.active || 0), "Active")}
+    </div>
+    ${markets.length ? `<div class="table-wrap ct199" style="margin-top:12px"><table>
+      <tr><th>Market</th><th>Approved</th><th>Founding</th><th>Active</th></tr>
+      ${markets.map((m) => `<tr><td><strong>${esc(m.label || m.name)}</strong></td><td data-label="Approved">${astFull(m.businessesApproved || 0)}</td><td data-label="Founding">${astFull(m.businessesFounding || 0)}</td><td data-label="Active">${astFull(m.businessesActive || 0)}</td></tr>`).join("")}
+    </table></div>` : ""}
+  </div>
+  <div class="panel" style="margin-top:14px">
+    <h3 style="margin:0 0 4px">Activity</h3>
+    <p class="muted small" style="margin:0 0 10px">Counted customers and register spend come from the register record, the same numbers businesses see in their own reporting.</p>
+    <div class="stat-band">
+      ${astDataCell(astFull(a.visits || 0), "Visits booked")}
+      ${astDataCell(astFull(a.countedCustomers || 0), "Counted customers")}
+      ${astDataCell(ccMoneyFmt(a.registerSpend || 0), "Register spend")}
+      ${astDataCell(ccMoneyFmt(a.visitCost || 0), "Visit cost")}
+      ${astDataCell(astOverviewRoi244(a.roi), "Return on spend")}
+      ${astDataCell(astFull(a.offersCreated || 0), "Offers created")}
+      ${astDataCell(astFull(a.applications || 0), "Applications")}
+      ${astDataCell(astFull(a.postsDelivered || 0), "Posts delivered")}
+    </div>
+  </div>
+  <div class="panel" style="margin-top:14px">
+    <h3 style="margin:0 0 4px">Engagement, creator-reported</h3>
+    <p class="muted small" style="margin:0 0 10px">From creators' own post reports. Automatic numbers start when Meta approves the app review.</p>
+    ${(e.reportedPosts || 0) > 0 ? `<div class="stat-band">
+      ${astDataCell(astFull(e.views || 0), "Views")}
+      ${astDataCell(astFull(e.likes || 0), "Likes")}
+      ${astDataCell(astFull(e.comments || 0), "Comments")}
+      ${astDataCell(astFull(e.shares || 0), "Shares")}
+      ${astDataCell(astFull(e.saves || 0), "Saves")}
+      ${astDataCell(astFull(e.total || 0), "Total")}
+    </div>
+    <p class="small muted" style="margin:8px 0 0">${astFull(e.reportedPosts)} post${e.reportedPosts === 1 ? "" : "s"} reported so far.</p>` : `<p class="small muted" style="margin:0">No post reports yet. When a creator reports a post's numbers, they land here.</p>`}
+  </div>
+  <div class="panel" style="margin-top:14px">
+    <h3 style="margin:0 0 4px">Revenue</h3>
+    <div class="stat-band">
+      ${astDataCell(ccMoneyFmt(r.collected || 0), "Collected so far")}
+      ${astDataCell(ccMoneyFmt(r.planPipeline || 0), "Founding plans picked, per month")}
+      ${astDataCell(astFull(r.planPipelineCount || 0), "Businesses that picked a plan")}
+    </div>
+    ${(r.collected || 0) === 0 ? `<p class="small" style="margin:8px 0 0">No market is live for money yet, so nothing has been charged or collected. The plan figures are what businesses picked on paper, not money in.</p>` : `<p class="small muted" style="margin:8px 0 0">Collected is the charge ledger's net. The plan figures are recorded picks, not charges.</p>`}
+  </div>
+  <div class="panel" style="margin-top:14px">
+    <h3 style="margin:0 0 4px">Downloads</h3>
+    <p class="small" style="margin:0">App downloads and devices live in App Store Connect, not in the app itself. <a href="${esc((d.downloads && d.downloads.appStoreUrl) || "https://apps.apple.com/app/magpie-local/id6837488886")}" target="_blank" rel="noopener">See the store page</a>. Google Play numbers join here when Android ships.</p>
+  </div>`;
+}
+let astOverviewRetries244 = 0;
+async function loadAdminOverview244() {
+  const host = document.getElementById("ast-overview");
+  if (!host) return;
+  if (!host.innerHTML) host.innerHTML = `<p class="muted">Loading the overview...</p>`;
+  try {
+    const d = await api("GET", "/admin/stats-overview");
+    if (!d || d.preparing) {
+      host.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Overview</h3><p class="small muted" style="margin:0">Your numbers are being prepared. This page fills in on its own in a few minutes; nothing is missing, the first count is still running.</p></div>`;
+      // The copy above promises the page fills in on its own,
+      // so it does: re-check on a timer while the admin stays
+      // on this view, up to about three minutes of retries.
+      if (astOverviewRetries244 < 10) {
+        astOverviewRetries244 += 1;
+        setTimeout(() => { if (astView === "overview" && document.getElementById("ast-overview")) loadAdminOverview244(); }, 20000);
+      }
+      return;
+    }
+    astOverviewRetries244 = 0;
+    host.innerHTML = adminOverviewHtml244(d);
+  } catch (err) {
+    host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
 async function loadStats() {
   const el = document.getElementById("tab-body");
   try {
@@ -35190,6 +35333,7 @@ async function loadStats() {
       ${wsHead("Stats", { sub: "The platform in numbers — creators, reach, money and the books." })}
       <div id="ast-suggest"><p class="muted small">Loading suggestions…</p></div>
       ${wsTabs([
+        { label: "Overview", on: astView === "overview", onclick: "return astSetView('overview')" },
         { label: "Creators", on: astView === "creators", onclick: "return astSetView('creators')" },
         { label: "Businesses", on: astView === "businesses", onclick: "return astSetView('businesses')" },
         { label: "Website", on: astView === "website", onclick: "return astSetView('website')" },
@@ -35197,6 +35341,7 @@ async function loadStats() {
         { label: "Revenue", on: astView === "revenue", onclick: "return astSetView('revenue')" },
         { label: "Data", on: astView === "data", onclick: "return astSetView('data')" },
       ])}
+      <div id="astview-overview"${astView === "overview" ? "" : ' style="display:none"'}><div id="ast-overview"></div></div>
       <div id="astview-creators"${astView === "creators" ? "" : ' style="display:none"'}>
       <div class="panel cc-filters">
         <div class="cc-filter-row">
@@ -35347,6 +35492,8 @@ async function loadStats() {
     // -151 it is kicked off at the top of this load, not here.
     // The Data view fills itself when it is the open view.
     if (astView === "data") astLoadData();
+    // Build -244: the Overview view fills itself the same way.
+    if (astView === "overview") loadAdminOverview244();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }

@@ -18,7 +18,14 @@
 // Auth: the caller must carry the SIGNL_SWEEP_TOKEN as the
 // x-signl-sweep-token header (fail closed when unset). Body
 // may be JSON { force: true } to bypass the freshness skip.
-const { runAdminHomeRefresh212 } = require("./lib/router");
+//
+// Build -244: the same run also builds the Admin Stats
+// Overview record (runAdminStatsSummary244, stored at
+// config:adminStatsSummary), so the */5 schedule, the trigger
+// endpoint and the read-path nudges keep both summaries fresh
+// together. Each compute is guarded on its own: one failing
+// never blocks the other, and the answer reports both.
+const { runAdminHomeRefresh212, runAdminStatsSummary244 } = require("./lib/router");
 
 exports.handler = async (event) => {
   const token = process.env.SIGNL_SWEEP_TOKEN || "";
@@ -29,12 +36,25 @@ exports.handler = async (event) => {
   }
   let force = false;
   try { force = !!(event.body && JSON.parse(event.body).force); } catch (e) { /* empty body is fine */ }
+  let out = null;
+  let statsOut = null;
+  let firstError = null;
   try {
-    const out = await runAdminHomeRefresh212({ force });
+    out = await runAdminHomeRefresh212({ force });
     console.log("Magpie admin home summary refresh:", JSON.stringify(out));
-    return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: true, refresh: out }) };
   } catch (e) {
+    firstError = e;
     console.error("Magpie admin home summary refresh failed:", e);
-    return { statusCode: 500, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: false, error: String((e && e.message) || e) }) };
   }
+  try {
+    statsOut = await runAdminStatsSummary244({ force });
+    console.log("Magpie admin stats overview refresh:", JSON.stringify(statsOut));
+  } catch (e) {
+    if (!firstError) firstError = e;
+    console.error("Magpie admin stats overview refresh failed:", e);
+  }
+  if (firstError && !out && !statsOut) {
+    return { statusCode: 500, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: false, error: String((firstError && firstError.message) || firstError) }) };
+  }
+  return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: true, refresh: out, statsRefresh: statsOut }) };
 };

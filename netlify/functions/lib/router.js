@@ -1435,6 +1435,251 @@ function maybeRefreshAdminHome212() {
   (async () => { try { await fireAdminHomeRefresh212(false); } catch (e) { /* the schedule is the guarantee */ } finally { adminHomeNudging = false; } })();
 }
 
+// ---------- Build -244: the Admin Stats Overview summary ----------
+// Jeff (2026-11-21 17:06): "build that stats screen that puts it
+// all in one place." The Stats tab's new default view, Overview,
+// reads ONE stored record (config:adminStatsSummary) built by
+// the SAME background refresh that builds the Admin Home summary
+// (the -212 pattern): the compute runs only inside the
+// admin-home-refresh background function, and
+// GET /admin/stats-overview serves the record and never builds.
+// Every figure comes from the same helper its home surface uses
+// (platformTotals126 for creator totals, adminMarketRows for the
+// per-market rows, approvalQueue138 for the queue,
+// buildSignupSourceWindows for sign-up channels, the -226 agg
+// helpers for activity and engagement, ccPrep + ccMoneyAgg for
+// revenue): one counting source per number, no second math.
+// Reads are bounded prefix lists (listMemoized210 / store.list)
+// plus the day rollups' getMany pattern, never a serial per-key
+// walk, so the LOADER RULE holds on the request path (which does
+// zero scans) and inside the compute itself.
+const ADMIN_STATS_SUMMARY_KEY = "config:adminStatsSummary";
+const ADMIN_STATS_STALE_MS = 10 * 60 * 1000;
+const APP_STORE_URL_244 = "https://apps.apple.com/app/magpie-local/id6837488886";
+
+async function loadAdminStatsSummary244() {
+  try { return await store.get(ADMIN_STATS_SUMMARY_KEY); } catch (e) { return null; }
+}
+
+// Sign-up channel buckets for the growth section: the raw
+// channel strings buildSignupSourceWindows produces (UTM source,
+// else the ?src= tag, else "Direct / untagged") mapped onto the
+// labels Jeff's growth plan names. A tag lands in a bucket only
+// when the tag itself says so; anything else stays visible as
+// its own "other" row, so the rows always add up and nothing is
+// quietly relabeled.
+function statsSourceBucket244(raw) {
+  const s = String(raw || "").toLowerCase();
+  if (!s || s === "direct / untagged") return "direct";
+  if (s.includes("pinterest")) return "pinterest";
+  if (s.includes("tiktok") || s.includes("tik tok")) return "tiktok";
+  if (s.includes("email") || s.includes("gmail")) return "email";
+  if (s.includes("community") || s.includes("facebook") || s.includes("fb group") || s === "fb" || s.startsWith("fb_") || s.startsWith("fb-") || s.includes("fbgroup")) return "community";
+  if (s.includes("referr") || s.startsWith("ref")) return "referral";
+  return "other";
+}
+const STATS_SOURCE_LABELS_244 = { email: "Email invites", referral: "Creator referrals", community: "Community", pinterest: "Pinterest", tiktok: "TikTok", direct: "Direct / untagged", other: "Other tagged sources" };
+
+// The full compute. Runs only in the background refresh.
+async function refreshAdminStatsSummary244() {
+  const all = await allUsers();
+  // Creators: platformTotals126 is the totals definition; the
+  // approved / pending / finished split counts the SAME
+  // population (creators, approved or pending, testers out),
+  // with profileCompleteOf as the finished definition.
+  const totals = platformTotals126(all);
+  let approved = 0;
+  let pending = 0;
+  let finished = 0;
+  let bizSignedUp = 0;
+  let bizApproved = 0;
+  for (const u of all) {
+    if (!u || isTester(u)) continue;
+    if (u.role === "creator") {
+      if (u.status === "approved") { approved += 1; if (profileCompleteOf(u)) finished += 1; }
+      else if (u.status === "pending") pending += 1;
+    } else if (u.role === "business") {
+      if (u.status === "approved") { bizSignedUp += 1; bizApproved += 1; }
+      else if (u.status === "pending") bizSignedUp += 1;
+    }
+  }
+  const creators = {
+    signedUp: totals.creatorsSignedUp,
+    approved,
+    pending,
+    finished,
+    totalFollowers: totals.totalFollowers,
+    localFollowers: totals.localFollowers,
+    avgLocalPct: totals.avgLocalPct,
+  };
+  // Markets: the canonical adminMarketRows rows projected to
+  // the fields the Overview prints, Nashville first (the launch
+  // line Jeff watches), then most approved first.
+  const marketRows = await adminMarketRows();
+  const markets = marketRows.map((m) => ({
+    name: m.name,
+    label: m.label,
+    creatorsApproved: m.creatorsApproved,
+    creatorsApprovedComplete: m.creatorsApprovedComplete,
+    creatorsPending: m.creatorsPending,
+    businessesApproved: m.businessesApproved,
+    businessesFounding: m.businessesFounding,
+    businessesActive: m.businessesActive,
+  })).sort((a, b) => ((b.name === "Nashville" ? 1 : 0) - (a.name === "Nashville" ? 1 : 0)) || b.creatorsApproved - a.creatorsApproved || String(a.name).localeCompare(String(b.name)));
+  const businesses = {
+    signedUp: bizSignedUp,
+    approved: bizApproved,
+    founding: markets.reduce((s, m) => s + (m.businessesFounding || 0), 0),
+    active: markets.reduce((s, m) => s + (m.businessesActive || 0), 0),
+  };
+  // Growth: claims per day from creator createdAt over the
+  // stored user list (every non-tester creator record, the same
+  // records Admin Review counts), approvals per day from the
+  // day rollups' application_approved tally (the event log's
+  // own count, the -150 pattern), and the queue depth from
+  // approvalQueue138 read for a super admin, the same count
+  // Admin Home shows Jeff.
+  const DAY_MS = 86400000;
+  const dayKeys = [];
+  for (let i = 29; i >= 0; i--) dayKeys.push(new Date(Date.now() - i * DAY_MS).toISOString().slice(0, 10));
+  const claimsByDayMap = new Map(dayKeys.map((d) => [d, 0]));
+  for (const u of all) {
+    if (!u || u.role !== "creator" || isTester(u)) continue;
+    const day = String(u.createdAt || "").slice(0, 10);
+    if (claimsByDayMap.has(day)) claimsByDayMap.set(day, claimsByDayMap.get(day) + 1);
+  }
+  const rollups = await rollupsInRange(30);
+  const approvalsByDayMap = new Map(dayKeys.map((d) => [d, 0]));
+  for (const r of rollups || []) {
+    if (r && approvalsByDayMap.has(r.day)) approvalsByDayMap.set(r.day, (r.byType && r.byType.application_approved) || 0);
+  }
+  const claimsByDay = dayKeys.map((d) => ({ date: d, claims: claimsByDayMap.get(d) || 0, approvals: approvalsByDayMap.get(d) || 0 }));
+  const superAdmin = all.find((u) => u.role === "admin" && perms138.isSuper(u)) || null;
+  let queue = { applications: pending + (businesses.signedUp - businesses.approved), marketingDrafts: 0, socialDrafts: 0, teamInvites: 0 };
+  if (superAdmin) { try { queue = await approvalQueue138(superAdmin); } catch (e) { /* the pending count above stands */ } }
+  // Claims by source (last 30 days): buildSignupSourceWindows'
+  // channel logic, creators only, bucketed by the labels above.
+  const srcWindows = await buildSignupSourceWindows();
+  const srcRows = (srcWindows && srcWindows.d30 && srcWindows.d30.rows) || [];
+  const bucketMap = new Map();
+  for (const r of srcRows) {
+    const b = statsSourceBucket244(r.source);
+    const cur = bucketMap.get(b) || { key: b, label: STATS_SOURCE_LABELS_244[b], creators: 0 };
+    cur.creators += r.creators || 0;
+    bucketMap.set(b, cur);
+  }
+  const claimsBySource = [...bucketMap.values()].filter((r) => r.creators > 0).sort((a, b) => b.creators - a.creators);
+  const growth = {
+    claimsByDay,
+    claims30: claimsByDay.reduce((s, r) => s + r.claims, 0),
+    approvals30: claimsByDay.reduce((s, r) => s + r.approvals, 0),
+    claimsBySource,
+    queue,
+  };
+  // Activity: the platform-wide roll-up over every booking,
+  // joined to its post and its register events exactly as the
+  // business stats endpoint joins them (postReportFor226 +
+  // the agg helpers), so counted customers, register spend and
+  // ROI carry the business definitions verbatim.
+  const bookings = await allBookings();
+  const posts = await allPosts();
+  const postByBooking = new Map();
+  for (const p of posts) if (p && p.bookingId && !postByBooking.has(p.bookingId)) postByBooking.set(p.bookingId, p);
+  const eventsByBooking = new Map();
+  for (const r of await store.list("redevent:")) {
+    const e = r.value;
+    if (e && e.bookingId) {
+      if (!eventsByBooking.has(e.bookingId)) eventsByBooking.set(e.bookingId, []);
+      eventsByBooking.get(e.bookingId).push(e);
+    }
+  }
+  const agg = emptyAgg226();
+  for (const b of bookings) addToAgg226(agg, postReportFor226(b, postByBooking.get(b.id) || null, eventsByBooking.get(b.id) || []));
+  const actAgg = finishAgg226(agg);
+  const offers = await allOffers();
+  const applications = await allApplications();
+  const activity = {
+    visits: actAgg.bookings,
+    countedCustomers: actAgg.countedCustomers,
+    registerSpend: actAgg.registerSpend,
+    visitCost: actAgg.visitCost,
+    roi: actAgg.roi,
+    offersCreated: offers.length,
+    applications: applications.length,
+    postsDelivered: posts.length,
+  };
+  // Engagement: the agg's engagement sums (engagementFor226 per
+  // post), labeled creator-reported, with the count of posts
+  // that carry any reported number; the zero state is real
+  // (reportedPosts 0 and the client prints the empty line).
+  let reportedPosts = 0;
+  for (const p of posts) {
+    const eg = engagementFor226(p);
+    if (eg.views != null || eg.likes != null || eg.comments != null || eg.shares != null || eg.saves != null) reportedPosts += 1;
+  }
+  const engagement = {
+    views: actAgg.engagement.views,
+    likes: actAgg.engagement.likes,
+    comments: actAgg.engagement.comments,
+    shares: actAgg.engagement.shares,
+    saves: actAgg.engagement.saves,
+    total: actAgg.engagement.total,
+    reportedPosts,
+  };
+  // Revenue: the figures the Revenue view already derives
+  // (ccPrep + ccMoneyAgg over the charge ledger and the books).
+  // Collected is the charge-ledger net; the founding pipeline
+  // is the recorded subscription row (businesses that picked a
+  // founding plan, at their monthly rate, not yet charged).
+  let revenue = { collected: 0, recordedFlowed: 0, planPipeline: 0, planPipelineCount: 0 };
+  try {
+    const P = await ccPrep({ period: "all" });
+    const money = ccMoneyAgg(P);
+    revenue = {
+      collected: (money.charged && money.charged.netTotal) || 0,
+      recordedFlowed: (money.recorded && money.recorded.totals && money.recorded.totals.flowed) || 0,
+      planPipeline: (money.recorded && money.recorded.rows && money.recorded.rows.subscriptions && money.recorded.rows.subscriptions.flowed) || 0,
+      planPipelineCount: (money.recorded && money.recorded.rows && money.recorded.rows.subscriptions && money.recorded.rows.subscriptions.count) || 0,
+    };
+  } catch (e) {
+    console.error("stats overview revenue derivation failed (section stays at zero):", e && e.message);
+  }
+  const computedAt = nowIso();
+  const rec = {
+    creators,
+    markets,
+    businesses,
+    growth,
+    activity,
+    engagement,
+    revenue,
+    downloads: { appStoreUrl: APP_STORE_URL_244 },
+    computedAt,
+  };
+  await store.set(ADMIN_STATS_SUMMARY_KEY, rec);
+  return { markets: markets.length, computedAt };
+}
+
+// Exported entry for the background function (and the suites),
+// with the same discipline as runAdminHomeRefresh212: a 60s
+// in-flight stampede guard and a 4-minute freshness skip unless
+// forced.
+async function runAdminStatsSummary244(opts) {
+  const force = !!(opts && opts.force);
+  const stampKey = "config:adminStatsSummaryRefresh";
+  const prev = await store.get(stampKey).catch(() => null);
+  if (prev && prev.startedAt && Date.now() - Date.parse(prev.startedAt) < 60 * 1000) return { skipped: "in-flight", startedAt: prev.startedAt };
+  if (!force) {
+    const rec = await loadAdminStatsSummary244();
+    if (rec && rec.computedAt && Date.now() - Date.parse(rec.computedAt) < 4 * 60 * 1000) return { skipped: "fresh", computedAt: rec.computedAt };
+  }
+  const startedAt = nowIso();
+  await store.set(stampKey, { startedAt, ok: false }).catch(() => {});
+  const out = await refreshAdminStatsSummary244();
+  await store.set(stampKey, { startedAt, lastRunAt: nowIso(), ok: true }).catch(() => {});
+  return out;
+}
+
 // Build -213: the cold-path fallback for GET /admin/home-summary,
 // mirroring -211's suggestionBoardFallback211. -212 answered a
 // bare { preparing: true } when no summary slice was stored, and
@@ -26513,6 +26758,7 @@ function adminGate138(user, seg, method, query) {
     case "message-templates": return need("templates.view");
     case "platform-totals": return null; // the handler scopes its own payload
     case "home-summary": return null; // Build -212: the handler serves the requester's own pre-scoped slice; the shared slices are perm-filtered inside the handler
+    case "stats-overview": return need("stats.view"); // Build -244: the Stats Overview record rides the Stats view permission
     case "national": return need("approvals"); // Build -178: national accounts ride the approvals permission
     case "seo-board": return (perms138.hasPerm(user, "learn.view") || perms138.hasPerm(user, "stats.view")) ? null : deny(); // Build -216: the SEO board rides the Learn/Stats view permissions
     default: return deny();
@@ -31549,6 +31795,31 @@ async function route(event) {
       if (perms138.isSuper(user) || perms138.hasPerm(user, "markets.view")) payload212.markets = shared.markets || [];
       if (perms138.isSuper(user) || perms138.hasPerm(user, "partners.view")) payload212.partnerRows = shared.partnerRows || [];
       return json(200, payload212);
+    }
+
+    // Build -244: GET /admin/stats-overview serves the stored
+    // Stats Overview record (config:adminStatsSummary, built by
+    // refreshAdminStatsSummary244 inside the same background
+    // refresh as the Home summary). One store fetch; this read
+    // never computes. With no record yet it answers
+    // { preparing: true } and kicks the throttled off-path
+    // refresh; the Overview renders an honest preparing state,
+    // never zeroed numbers dressed as truth. `asOf` is the
+    // stored computedAt and the client prints it.
+    if (seg[1] === "stats-overview" && seg.length === 2 && method === "GET") {
+      const rec = await loadAdminStatsSummary244();
+      // Shape guard: a record that is not the compute's own
+      // shape (corruption, a manual write) counts as absent, so
+      // the client renders the honest preparing state instead of
+      // zeroed cards dressed as truth.
+      const recOk = !!rec && typeof rec === "object" && !!rec.creators && typeof rec.creators === "object" && Number.isFinite(Date.parse(rec.computedAt || ""));
+      if (!recOk) {
+        maybeRefreshAdminHome212();
+        return json(200, { preparing: true, asOf: null });
+      }
+      const computedMs = Date.parse(rec.computedAt || "");
+      if (Date.now() - computedMs > ADMIN_STATS_STALE_MS) maybeRefreshAdminHome212();
+      return json(200, { preparing: false, asOf: rec.computedAt || null, ...rec });
     }
 
     // Platform totals (Build -126, Jeff, 2026-11-04): the strip at
@@ -40236,4 +40507,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226, __buildersForTest239: { businessApplicationConfirmationEmail, businessApprovalEmail, businessRejectionEmail } };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runAdminStatsSummary244, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226, __buildersForTest239: { businessApplicationConfirmationEmail, businessApprovalEmail, businessRejectionEmail } };
