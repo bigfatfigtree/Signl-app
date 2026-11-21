@@ -11554,15 +11554,15 @@ function renderClaimHook() {
     </div>
     <div class="c85-card">
       <p style="font-size:34px;font-weight:800;margin:0 0 2px" id="nb-hook-count">${claimFmtCount(h.neighborCount)}</p>
-      <p class="muted" style="margin:0 0 12px">${h.extrapolated ? T(`total potential neighbors in ${marketLabel}`, `vecinos potenciales en total en ${marketLabel}`) : T(`neighbors in ${marketLabel}`, `vecinos en ${marketLabel}`)}</p>
+      <p class="muted" style="margin:0 0 12px">${h.extrapolated ? T(`potential local followers in ${marketLabel}`, `seguidores locales potenciales en ${marketLabel}`) : T(`of your followers live in ${marketLabel}`, `de tus seguidores viven en ${marketLabel}`)}</p>
       ${h.localWords ? `<p style="margin:0 0 8px"><strong>${esc(h.localWords)}.</strong></p>` : ""}
-      <p style="margin:0 0 8px">${T("Your founding spot in", "Tu lugar de fundadora en")} <strong>${esc(marketLabel)}</strong> ${T("is waiting. Founding creators are recorded in founding order, and founding creators see offers first.", "te está esperando. Los creadores fundadores quedan registrados en orden de llegada, y ven las ofertas primero.")}</p>
+      <p style="margin:0 0 8px">${T("Your place as a founding creator in", "Tu lugar como creadora fundadora en")} <strong>${esc(marketLabel)}</strong> ${T("is waiting. Founding creators are recorded in founding order, and founding creators see offers first.", "te está esperando. Los creadores fundadores quedan registrados en orden de llegada, y ven las ofertas primero.")}</p>
       ${h.inversion ? `<p class="small" style="margin:0 0 12px">@${esc(h.inversion.handle)} ${T(`has more followers than you (${claimFmtCount(h.inversion.followers)} in total), but fewer neighbors in ${marketLabel}. Local beats famous here.`, `tiene más seguidores que tú (${claimFmtCount(h.inversion.followers)} en total), pero menos vecinos en ${marketLabel}. Aquí lo local le gana a lo famoso.`)}</p>` : ""}
       <div class="c85-lanes">
         <p><span class="c85-check">✓</span> ${T("Hosted visits: a local business treats you, you post honestly.", "Visitas en cortesía: un negocio local te invita y tú publicas con honestidad.")}</p>
         <p><span class="c85-check">✓</span> ${T("Paid bookings at your rate. You keep 97%.", "Reservas pagadas a tu tarifa. Te quedas con el 97%.")}</p>
       </div>
-      <button class="btn" type="button" style="width:100%" onclick="return claimHookGo()">${T("Claim my founding spot", "Reclamar mi lugar de fundadora")}</button>
+      <button class="btn" type="button" style="width:100%" onclick="return claimHookGo()">${T("Claim my place", "Reclamar mi lugar")}</button>
       <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Free for creators. Takes a minute.", "Gratis para creadores. Toma un minuto.")}</p>
     </div>
   </section>`;
@@ -14719,7 +14719,7 @@ async function loadFoundingDashboard() {
       queueItems.push({ text: "Finish your profile. Businesses can only find finished profiles.", btn: "Open profile", act: () => goFinishProfile() });
     }
     if (!queueItems.length) {
-      queueItems.push({ text: isUnl ? `You are on the founding roster, and ${f.city} is building right now. Finish your profile to lock your founding spot — first pick goes to completed founding profiles.` : `You are on the founding roster for ${marketTalkNameClient(f.market)}. We email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
+      queueItems.push({ text: isUnl ? `You are a founding creator, and ${f.city} is building right now. Finish your profile to hold your place. First pick goes to completed founding profiles.` : `You are a founding creator in ${marketTalkNameClient(f.market)}. We email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
     }
     // Sig activation ideas (founding home): once the essentials
     // are done, Sig prompts the two build-up moves a founding
@@ -14767,7 +14767,7 @@ async function loadFoundingDashboard() {
     el.innerHTML = `
     ${wsHead("Home", { sub: "Start here.", subKey: "cr-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} is building right now, and you're early. We email you as it gets close.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
-    ${sigHero137Html(queueItems.length ? queueItems[0].text : "You are on the founding roster.")}
+    ${sigHero137Html(queueItems.length ? queueItems[0].text : "You are a founding creator.")}
     ${promptSlotHtml()}
     ${highlights137Html([
       { label: "Momentum", sub: standingLevelName(momPts), value: `${fmtNum(momPts)} pts` },

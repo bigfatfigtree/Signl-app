@@ -7364,10 +7364,10 @@ function rosterBenefitsLines(user, place) {
   const inviteUrl = inviteUrlForUser(user);
   if (!inviteUrl) return [];
   return [
-    `Grow your roster in ${place}, and get seen first:`,
+    `Grow your founding circle in ${place}, and get seen first:`,
     `Your personal invite link: ${inviteUrl}`,
-    "Share it with creators you know. Every creator who signs up through your link is credited to your roster, and you earn Momentum points: +3 when a creator joins through your link, and +10 when they are approved.",
-    "A bigger roster moves you up: when businesses in your market start choosing creators, roster standing is part of the order they see.",
+    "Share it with creators you know. Every creator who signs up through your link is credited to you, and you earn Momentum points: +3 when a creator joins through your link, and +10 when they are approved.",
+    "A bigger circle moves you up: when businesses in your market start choosing creators, your standing is part of the order they see.",
     "",
   ];
 }
@@ -9310,7 +9310,7 @@ function approvalEmail(user, band) {
     if (!inviteUrl) return [];
     return [
       "",
-      `Grow your roster in ${place}: your invite link is ${inviteUrl}. Creators who join through it are credited to you: +3 when a creator joins through your link, +10 when they are approved, and roster standing is part of the order they see.`,
+      `Grow your founding circle in ${place}: your invite link is ${inviteUrl}. Creators who join through it are credited to you: +3 when a creator joins through your link, +10 when they are approved, and your standing is part of the order they see.`,
     ];
   };
   const tail = [
@@ -9340,7 +9340,7 @@ function approvalEmail(user, band) {
     );
     return { subject, text: lines.join("\n") };
   }
-  const subject = "You are approved: welcome to the Magpie founding roster";
+  const subject = "You are in. Welcome to Magpie.";
   const lines = [
     `Hi ${first},`,
     "",
@@ -9373,8 +9373,8 @@ function approvalEmail(user, band) {
 const REJECTION_REASONS = ["Not local enough", "Audience too small for this wave", "Content not a fit", "Market not open yet", "Other"];
 const REJECTION_REASON_LINES = {
   "Not local enough": "your audience is not local enough to your market yet",
-  "Audience too small for this wave": "your audience is still small for this wave of the founding roster",
-  "Content not a fit": "your content is not the fit this round of the roster is being built around",
+  "Audience too small for this wave": "your audience is still small for this wave of founding creators",
+  "Content not a fit": "your content is not the fit this round is being built around",
   "Market not open yet": "your market is not open yet, and this round is for the markets opening first",
   "Other": "your profile did not meet the founding bar for this round",
 };
@@ -9392,7 +9392,7 @@ function rejectionEmail(user, reason) {
   if (reasonLine) {
     lines.push("", `The honest reason: ${reasonLine}.`);
   } else {
-    lines.push("", "This round is small on purpose: founding rosters start with the creators closest to the businesses opening first. That is about fit for this round, not about the quality of your work.");
+    lines.push("", "This round is small on purpose: we start with the creators closest to the businesses opening first. That is about fit for this round, not about the quality of your work.");
   }
   lines.push(
     "",
@@ -9428,7 +9428,7 @@ function recruiterKitEmail(user) {
   const lines = [
     `Hi ${first},`,
     "",
-    `Thank you for being first. You are on the Magpie founding roster in ${place}, approved before the market opens, and this platform gets built on creators who show up early like you did.`,
+    `Thank you for being first. You are a Magpie founding creator in ${place}, approved before the market opens, and this platform gets built on creators who show up early like you did.`,
     "",
     "Your Founding Creator badge is ready. It is yours to save and post anywhere:",
     `Square (best for feed posts): ${BADGE_SQUARE_URL}`,
@@ -9436,7 +9436,7 @@ function recruiterKitEmail(user) {
     "",
     ...rosterBenefitsLines(user, place),
     `If you feel like spreading the word, post the badge to your story with your invite link, or share our short creator film: ${CREATOR_FILM_URL}`,
-    "Only if you want to. There is no requirement and no follow-up nagging from me. You are on the founding roster either way, and first pick of offers stays yours.",
+    "Only if you want to. There is no requirement and no follow-up nagging from me. You are a founding creator either way, and first pick of offers stays yours.",
     "",
     unlisted
       ? `${user.city} is building right now, and every creator who joins through you brings it closer to opening. When it opens, you hear from me first.`

@@ -45,7 +45,7 @@ function check(name, cond, extra) {
 }
 
 console.log("== stamp ==");
-check("build stamp is 2026.11.20-222 (lib + shell)", buildJs.includes('BUILD_ID = "2026.11.20-222"') && (idxHtml.match(/2026\.11\.20-222/g) || []).length >= 5);
+check("build stamp is 2026.11.20-223 (lib + shell; bumped by Build -223)", buildJs.includes('BUILD_ID = "2026.11.20-223"') && (idxHtml.match(/2026\.11\.20-223/g) || []).length >= 5);
 check("no 2026.11.20-221 left in build.js or index.html", !buildJs.includes("2026.11.20-221") && !idxHtml.includes("2026.11.20-221"));
 
 console.log("== done screen: approved copy in, jargon out ==");

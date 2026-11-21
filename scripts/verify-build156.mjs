@@ -112,7 +112,7 @@ console.log("== A: source pins ==");
   // carries -177's founding-band framing (Jeff, 2026-11-15) and
   // -176's invariant holds too: no exact rank, no market count,
   // no live merit rank, no climb prompts are ever shown.
-  check("client carries the hook screen, spot CTA, live stack panel and card", appJs.includes("renderClaimHook") && appJs.includes("Claim my founding spot") && appJs.includes("neighborStackAdd") && appJs.includes("neighborCardSave") && appJs.includes("Want a bigger number?"), "");
+  check("client carries the hook screen, spot CTA, live stack panel and card", appJs.includes("renderClaimHook") && appJs.includes("Claim my place") && appJs.includes("neighborStackAdd") && appJs.includes("neighborCardSave") && appJs.includes("Want a bigger number?"), "");
   check("client shows the founding band and no rank labels (Builds -176/-177, -222 copy)", appJs.includes("You're one of the first") && !appJs.includes("Founding rank") && !appJs.includes("Live rank today") && !appJs.includes("Claim my #") && !appJs.includes("Want to climb?"), "");
   check("bizdev show bench carries honest area framing only", bizJs.includes("areaFraming") && !/within 2 miles|under 2 miles/i.test(bizJs), "");
 }
