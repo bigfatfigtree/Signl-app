@@ -29770,7 +29770,7 @@ async function sendMessage(e, otherId) {
 // for multi-recipient sends, the fenced market-segment tool,
 // and the broadcast room). One view on screen at a time.
 // Nothing here sends on its own: every send is Jeff's tap.
-let adminMsg = { templates: [], threads: [], markets: [], targetId: null, segmentMarket: "", openCreatorId: null, threadCreator: null, threadMessages: [], lastTemplateFill: null, scrollToThread: false, view: null };
+let adminMsg = { templates: [], threads: [], markets: [], targetId: null, segmentMarket: "", segmentArm: null, openCreatorId: null, threadCreator: null, threadMessages: [], lastTemplateFill: null, scrollToThread: false, view: null };
 
 function adminMsgTargetUser() {
   if (!adminMsg.targetId) return null;
@@ -30017,17 +30017,36 @@ async function adminMsgSendCompose(btn) {
   // message into every finished creator's thread in a market.
   // One-to-one sends happen in the thread itself (reply box) or
   // by naming the person in the broadcast room.
+  // Build -232: the confirmation lives IN THE PAGE — a first
+  // tap arms the send, a second tap with the same market and
+  // the same words sends. It used to gate on the browser's
+  // window.confirm popup, and that popup is the bug Jeff hit
+  // on 2026-11-21: in browsers that suppress or auto-dismiss
+  // native dialogs (automated browsers, some webviews),
+  // confirm() silently answers "no" without ever appearing,
+  // so the click did nothing at all — no error, no record,
+  // and the server was never called (proven by running this
+  // handler with confirm() stubbed false: zero POSTs, empty
+  // result line). Editing the words or switching the market
+  // disarms, because the arm snapshots both.
   const ta = document.getElementById("admin-msg-body");
   const result = document.getElementById("admin-msg-result");
   const body = ta ? ta.value.trim() : "";
-  if (!body) { if (result) result.textContent = "Write a message first."; return false; }
+  if (!body) { adminMsg.segmentArm = null; if (result) result.textContent = "Write a message first."; return false; }
   const msel = document.getElementById("admin-msg-market");
   const market = msel ? msel.value : adminMsg.segmentMarket;
-  if (!market) { if (result) result.textContent = "Pick a market first."; return false; }
-  if (!window.confirm(`Send this message to every finished creator in ${market}?\n\nIt lands in each person's own thread in the app, and each send is recorded under "Sent to many".`)) return false;
+  if (!market) { adminMsg.segmentArm = null; if (result) result.textContent = "Pick a market first."; return false; }
+  const arm = adminMsg.segmentArm;
+  if (!arm || arm.market !== market || arm.body !== body) {
+    adminMsg.segmentArm = { market, body };
+    if (btn) btn.textContent = `Confirm send to ${market}`;
+    if (result) result.textContent = `One more tap sends this to every finished creator in ${market}. It lands in each person's own thread in the app, and the send is recorded under "Sent to many".`;
+    return false;
+  }
+  adminMsg.segmentArm = null;
   const sel = document.getElementById("admin-msg-template");
   const payload = { body, templateId: sel ? sel.value : "blank", market };
-  if (btn) btn.disabled = true;
+  if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
   try {
     const data = await api("POST", "/admin/platform-messages", payload);
     if (ta) { ta.value = ""; adminMsg.lastTemplateFill = null; }
@@ -30036,10 +30055,10 @@ async function adminMsgSendCompose(btn) {
     await renderAdminCampaigns163();
     adminMsg.segmentMarket = keepMarket;
     const r2 = document.getElementById("admin-msg-result");
-    if (r2) r2.textContent = `Sent to ${data.sent} creator${data.sent === 1 ? "" : "s"}. Email notifications: ${data.emailSent} sent, ${data.emailFailed} failed. Recorded under "Sent to many" above.`;
+    if (r2) r2.textContent = `Sent to ${data.sent} creator${data.sent === 1 ? "" : "s"} in ${market}. Email notifications: ${data.emailSent} sent, ${data.emailFailed} failed, ${data.emailSuppressed} already opted out. Recorded under "Sent to many" above.`;
   } catch (err) {
     if (result) result.textContent = err.message;
-    if (btn) btn.disabled = false;
+    if (btn) { btn.disabled = false; btn.textContent = "Send to segment"; }
   }
   return false;
 }
@@ -30072,6 +30091,10 @@ let adminCamp163 = { campaigns: [], loaded: false };
 async function renderAdminCampaigns163() {
   const host = document.getElementById("admin-campaigns-panel");
   if (!host) return;
+  // Build -232: a fresh paint of this panel starts the segment
+  // tool unarmed — an arm is a within-one-render state, so a
+  // view switch can never carry one into a one-tap send.
+  adminMsg.segmentArm = null;
   try {
     getCache.delete("/admin/message-campaigns");
     const data = await api("GET", "/admin/message-campaigns");

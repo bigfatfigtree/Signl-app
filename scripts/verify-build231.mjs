@@ -36,7 +36,11 @@ check("joined line EN+ES present", appJs.includes("You're in · +10 Momentum") &
 check("approvalEmail source includes community line", routerJs.includes("We just opened our brand new Facebook group"));
 check("no em dash in new email lines or card strings", (()=>{ const lines=[...routerJs.matchAll(/We just opened our brand new[^\n]*/g), ...routerJs.matchAll(/Once you are in, tap I joined[^\n]*/g)]; const card=[...appJs.matchAll(/Our brand new Facebook group[^\n]*/g), ...appJs.matchAll(/You're in · \+10 Momentum[^\n]*/g)]; return lines.length>=2 && card.length>=2 && [...lines,...card].every(m=>!m[0].includes("—")); })());
 check("card wired into both profile assemblies", (appJs.match(/communityCard231Html\(u\)/g)||[]).length>=2);
-check("build stamp 231", fs.readFileSync(path.join(root,"netlify/functions/lib/build.js"),"utf8").includes("2026.11.21-231") && fs.readFileSync(path.join(root,"public/index.html"),"utf8").includes("2026.11.21-231"));
+// Pin relaxed at Build -232: the two stamp homes must AGREE with
+// each other and be at least the -231 stamp this suite shipped
+// under (later builds bump both together; an exact -231 pin
+// would fail every successor build).
+check("build stamp 231+", (()=>{ const b = fs.readFileSync(path.join(root,"netlify/functions/lib/build.js"),"utf8").match(/BUILD_ID = "(\d{4}\.\d{2}\.\d{2})-(\d+)"/); const i = fs.readFileSync(path.join(root,"public/index.html"),"utf8").match(/__SIGNL_BUILD__ = "(\d{4}\.\d{2}\.\d{2})-(\d+)"/); return !!b && !!i && b[1] === i[1] && b[2] === i[2] && Number(b[2]) >= 231; })());
 
 part("in-process unit");
 process.env.SIGNL_LOCAL="1";
