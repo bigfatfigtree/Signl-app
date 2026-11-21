@@ -53,7 +53,7 @@ function plural(n, one, many) { return n === 1 ? one : (many || one + "s"); }
 
 // The one true bright spot in the asker's own sheet, or null.
 // Only real, positive state is ever spoken; silence otherwise.
-function brightSpot(role, f) {
+function brightSpot(role, f, opts) {
   if (!f) return null;
   try {
     if (role === "admin") {
@@ -65,6 +65,16 @@ function brightSpot(role, f) {
       if (f.profileComplete === false) {
         const n = (f.missingLabels || []).length;
         return n ? `your profile has ${fmtN(n)} ${plural(n, "step")} left to finish, and finishing it is what puts you in front of businesses` : "your profile is not finished yet, and finishing it is what puts you in front of businesses";
+      }
+      // Build -245: the blue-check gap is the bright spot when a
+      // creator is within 100 points of 300, stronger inside 50,
+      // and never once Maggie has already raised it in this
+      // conversation (opts.blueCheckRaised, from the history).
+      const bc = f.blueCheck;
+      if (bc && !bc.earned && bc.within100 && !(opts && opts.blueCheckRaised)) {
+        return bc.within50
+          ? `you are at ${fmtN(bc.points)} Momentum points, just ${fmtN(bc.gap)} from the blue check at 300`
+          : `you are at ${fmtN(bc.points)} Momentum points, ${fmtN(bc.gap)} from the blue check at 300`;
       }
       if (f.momentumPoints > 0) return `you are at ${fmtN(f.momentumPoints)} Momentum points`;
       return null;
@@ -102,11 +112,12 @@ const LANE_DO = {
 // does not just state (Jeff, 2026-11-07: "she doesn't prompt
 // anything"). The yes-handler below answers these offers
 // from the same fact sheet, so the promise is always kept.
-function spotOffer(role, f) {
+function spotOffer(role, f, opts) {
   if (!f) return null;
   try {
     if (role === "admin" && f.waiting && f.waiting.total > 0) return "Want me to pull up who is waiting?";
     if (role === "creator" && f.profileComplete === false) return "Want me to walk you through what is left?";
+    if (role === "creator" && f.blueCheck && !f.blueCheck.earned && f.blueCheck.within100 && !(opts && opts.blueCheckRaised)) return "Want the fastest way there?";
     if (role === "business" && f.applicantsWaiting > 0) return "Want me to pull them up?";
     if (role === "partner" && f.totals && f.totals.creatorsAttributed > 0) return "Want the breakdown by market?";
   } catch (e) { return null; }
@@ -131,6 +142,11 @@ function yesAnswer(role, facts, history) {
   if (/walk you through what is left/i.test(pt) && role === "creator" && facts.profileComplete === false && (facts.missingLabels || []).length) {
     return { text: `Here is what is left on your profile: ${facts.missingLabels.join(", ")}. Each one finishes on your Profile, and a finished profile is what puts you in front of businesses.` };
   }
+  if (/fastest way there/i.test(pt) && role === "creator" && facts.blueCheck && !facts.blueCheck.earned) {
+    const bc = facts.blueCheck;
+    const step = bc.fastestStep ? ` Start with the step that is ready now: ${bc.fastestStep.phrase}, worth +${bc.fastestStep.points}.` : "";
+    return { text: `You are ${fmtN(bc.gap)} points from the blue check.${step} The fast lane is inviting: +3 when a creator joins with your link, +10 when they are approved, and your invite link is on your Home page.` };
+  }
   if (/pull them up/i.test(pt) && role === "business" && facts.applicantsWaiting > 0) {
     return { text: `You have ${fmtN(facts.applicantsWaiting)} ${plural(facts.applicantsWaiting, "applicant")} waiting on your answer. They sit under My Offers, in Applicants, and every applicant gets an answer within 2 business days.` };
   }
@@ -154,8 +170,12 @@ function sigConverse(role, facts, question, history, who) {
   if (!b) return null;
   const lane = LANE_OFFER[role] ? role : "creator";
   const name = who && who.firstName ? String(who.firstName).trim() : "";
-  const spot = brightSpot(role, facts);
   const hist = Array.isArray(history) ? history : [];
+  // Build -245: the blue-check nudge fires at most once per
+  // conversation; once any earlier Maggie message in this thread
+  // named the blue check, the gap spot and its offer stay silent.
+  const blueCheckRaised = hist.some((h) => h && h.who === "sig" && typeof h.text === "string" && /blue check|insignia azul|marca azul/i.test(h.text));
+  const spot = brightSpot(role, facts, { blueCheckRaised });
   const prevUser = [...hist].reverse().find((h) => h && h.who === "user" && typeof h.text === "string");
 
   if (GREET_WORDS.has(b)) {
@@ -163,7 +183,7 @@ function sigConverse(role, facts, question, history, who) {
       return { text: `Hey again${name ? ", " + name : ""}. ${LANE_OFFER[lane]}` };
     }
     const spotLine = spot ? ` Right now: ${spot}.` : "";
-    const offer = spot ? spotOffer(role, facts) : null;
+    const offer = spot ? spotOffer(role, facts, { blueCheckRaised }) : null;
     return { text: `${greetingWord(question)}${name ? ", " + name : ""}. I am Maggie, and I keep an eye on your numbers so you do not have to.${spotLine} ${offer || LANE_OFFER[lane]}` };
   }
   if (YES_WORDS.has(b)) {
@@ -171,7 +191,7 @@ function sigConverse(role, facts, question, history, who) {
     if (yes) return yes;
   }
   if (THANKS.has(b)) {
-    const offer = spot ? spotOffer(role, facts) : null;
+    const offer = spot ? spotOffer(role, facts, { blueCheckRaised }) : null;
     return { text: `Any time${name ? ", " + name : ""}. ${spot ? `Still true right now: ${spot}. ` : ""}${offer || "Shout when you want the next step."}` };
   }
   if (FAREWELL.has(b)) {

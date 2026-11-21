@@ -60,8 +60,10 @@ const count = (src, needle) => src.split(needle).length - 1;
 
 // --- A: source pins -------------------------------------------
 console.log("== A: source pins ==");
-check("build stamp is 2026.11.21-244 and agrees in both homes",
-  (() => { const a = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").match(/BUILD_ID = "2026\.11\.21-(\d+)"/); const b = fs.readFileSync(path.join(root, "public/index.html"), "utf8").match(/window\.__SIGNL_BUILD__ = "2026\.11\.21-(\d+)"/); return !!a && !!b && a[1] === b[1] && Number(a[1]) === 244; })(), "");
+// Build -245 ship note (2026-11-21): the stamp moved on the same day; the pin is
+// both homes agree and >= 244, the house relaxation for same-day follow-on builds.
+check("build stamp is >= 2026.11.21-244 and agrees in both homes",
+  (() => { const a = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").match(/BUILD_ID = "2026\.11\.21-(\d+)"/); const b = fs.readFileSync(path.join(root, "public/index.html"), "utf8").match(/window\.__SIGNL_BUILD__ = "2026\.11\.21-(\d+)"/); return !!a && !!b && a[1] === b[1] && Number(a[1]) >= 244; })(), "");
 
 const routerSrc = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 check("the compute exists (refreshAdminStatsSummary244) and stores one record",

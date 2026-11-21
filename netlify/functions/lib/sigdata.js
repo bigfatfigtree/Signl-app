@@ -470,6 +470,47 @@ function buildBusinessFacts(d) {
 // ---------------- CREATOR FACTS ----------------
 // deps: { user, full, readout, bookings, posts, openOffers,
 //         directInvites, level, listedMarkets, missingLabels }
+// Build -245: the blue check, from the creator's own Momentum
+// detail (the same numbers the profile and the card derive from).
+// earned at 300 (Standout); gap and band drive Maggie's proximity
+// prompts; fastestStep is the single most valuable step this
+// creator can take right now, read off their own checklist (a due
+// review or numbers report first, then the biggest open profile
+// step). Twin of the router's blueCheckFastestStep245; keep the
+// two in step.
+const BLUE_CHECK_STEP_PHRASES_FACTS_245 = {
+  photo: "add your profile photo",
+  bio: "write your bio",
+  neighborhood: "add your neighborhood",
+  local: "report your local audience share",
+  geo: "finish your audience breakdown",
+  stack: "complete your platform list",
+  localrates: "add a local share for another platform",
+  bestwork: "add a best work link",
+  reviews: "review the business from your finished visit",
+  performance: "report the numbers on your delivered post",
+};
+function blueCheckFacts245(mom) {
+  const points = (mom && mom.points) || 0;
+  const earned = points >= 300;
+  // A step is open when unfinished OR newly due (the reviews and
+  // performance rows read done after the first one ever, while
+  // dueBookingId marks a fresh due instance). Twin of the
+  // router's blueCheckFastestStep245; keep the two in step.
+  const items = ((mom && mom.checklist) || []).filter((it) => it && BLUE_CHECK_STEP_PHRASES_FACTS_245[it.id] && (it.dueBookingId || !it.done));
+  const due = items.filter((it) => it.dueBookingId);
+  const pool = due.length ? due : items;
+  const top = pool.slice().sort((a, b) => (b.points || 0) - (a.points || 0))[0] || null;
+  return {
+    points,
+    earned,
+    gap: earned ? 0 : 300 - points,
+    within100: !earned && points >= 200,
+    within50: !earned && points >= 250,
+    fastestStep: top ? { phrase: BLUE_CHECK_STEP_PHRASES_FACTS_245[top.id], points: top.points || 0 } : null,
+  };
+}
+
 function buildCreatorFacts(d) {
   const u = d.user || {};
   const c = u.creator || {};
@@ -495,6 +536,7 @@ function buildCreatorFacts(d) {
     marketLive: !!d.marketLive,
     status: u.status || null,
     momentumPoints: mom.points || 0,
+    blueCheck: blueCheckFacts245(mom),
     level: d.level || null,
     recentLedger: ledger,
     referrals: { signups: mom.signups || 0, approved: mom.approved || 0 },
@@ -745,6 +787,15 @@ function factsLines(role, f) {
     ? `Public roster pages they appear on right now: ${f.publicRoster.map((r) => `${r.market} (${r.url})`).join(", ")}. A market's public roster page opens only when at least 5 finished public profiles are listed there; these are public web pages, separate from the in-app roster businesses browse.`
     : "They are not on a public roster page yet: a market's public roster opens once at least 5 finished public profiles are listed in it. Businesses inside Magpie can still find a finished profile in the app; the public page is the web version of the same roster.");
   lines.push(`Their Momentum is ${fmt(f.momentumPoints)} points, level ${lv ? lv.name : "Starter"}${lv && lv.nextName ? `, with ${fmt(lv.nextAt - f.momentumPoints)} points to ${lv.nextName}` : ", the top level"}. Their tier is ${f.tier || "not set yet"}${f.audienceTotal != null ? ` on ${fmt(f.audienceTotal)} total followers across platforms` : ""}. Local audience in their home market: ${f.localPct != null ? f.localPct + "%" : "not reported"}. Markets they are listed in: ${f.listedMarkets.length ? f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}`).join(", ") : "just their home market"}.`);
+  // Build -245: the blue check state, so Maggie can answer about
+  // it and work the gap in when a creator is close (canon carries
+  // the once-per-conversation and tone rules).
+  if (f.blueCheck) {
+    const bc = f.blueCheck;
+    lines.push(bc.earned
+      ? `Blue check: EARNED. They are at ${fmt(bc.points)} Momentum points (Standout level, 300 or more), and the blue check shows next to their name on their profile and their Find creators card. Never raise a points gap with them; the next level is Cornerstone at 750.`
+      : `Blue check: not yet. They are at ${fmt(bc.points)} Momentum points, ${fmt(bc.gap)} away from the 300 that earns the check at the Standout level.${bc.within100 ? ` They are within 100 points, so if it fits the conversation naturally, Maggie may point out the gap once in this conversation, with their fastest step: ${bc.fastestStep ? `${bc.fastestStep.phrase} (+${bc.fastestStep.points})` : "inviting a creator (+3 on a join, +10 on an approval)"}. Never repeat it in the same conversation.` : " They are not close yet; do not raise the blue check unless they ask about it."}`);
+  }
   lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${cmoney(f, f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid after the post is live and verified, within 48 hours, once payout details are set up). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
   // Build -178: this creator's own national-campaign hands are
   // their own data. Other creators' hands, pick states, and hand
@@ -1406,6 +1457,13 @@ function answerCreator(f, q, t) {
     if (!f.recentLedger.length) return "No points on your ledger yet. Points land for finishing your profile, posting on time, reviews, and invites; the Momentum list on your Home shows every way to earn.";
     const bits = f.recentLedger.map((e) => `${e.points > 0 ? "+" : ""}${fmt(e.points)} for ${String(e.label || "an entry").replace(/\.$/, "").toLowerCase()}`).join("; ");
     return linked(`Your most recent points: ${bits}. That puts you at ${fmt(f.momentumPoints)} in total. Points are priority, not cash: they order the list businesses see.`, "See my Momentum", "cr-momentum");
+  }
+  // The blue check (Build -245): earned at 300, never bought.
+  if (hasPhrase(t, "blue check", "insignia azul", "marca azul", "check mark", "blue tick")) {
+    const bc = f.blueCheck || { points: f.momentumPoints || 0, earned: (f.momentumPoints || 0) >= 300, gap: Math.max(0, 300 - (f.momentumPoints || 0)), fastestStep: null };
+    if (bc.earned) return linked(`You have the blue check: ${fmt(bc.points)} Momentum points, Standout level. It shows next to your name on your profile and on your card in Find creators. The check is earned with points, never bought.`, "See my Momentum", "cr-momentum");
+    const step = bc.fastestStep ? ` One step is ready right now: ${bc.fastestStep.phrase}, worth +${bc.fastestStep.points}.` : "";
+    return linked(`The blue check comes at 300 Momentum points, the Standout level. You are at ${fmt(bc.points)}, so ${fmt(bc.gap)} to go.${step} Inviting a creator is the fastest way there: +3 when they join with your link, +10 when they are approved.`, "See my Momentum", "cr-momentum");
   }
   // My Momentum / points total
   if ((hasWord(t, "momentum", "points") && hasPhrase(t, "my", "how many", "do i have", "have i got")) || hasPhrase(t, "my momentum")) {

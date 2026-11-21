@@ -482,13 +482,17 @@ function buildClaimPageHtml(shellHtml, profile) {
 // the creators shown, no business names, and no market is
 // featured over another: every qualifying market gets the same
 // page from the same code.
+// Build -245: the blue check on public roster cards. Static
+// glyph (the explainer lives in the app); the title carries the
+// plain-words meaning for anyone who hovers or asks.
+const ROSTER_BLUE_CHECK_245 = ` <svg class="bluecheck" viewBox="0 0 24 24" width="17" height="17" role="img" aria-label="Blue check: Standout creator, 300 Momentum points" style="vertical-align:-3px"><title>Blue check: Standout creator, earned at 300 Momentum points</title><circle cx="12" cy="12" r="10" fill="#1D9BF0"/><path d="M8.2 12.6l2.4 2.4 5.2-5.6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 function rosterCardHtml(card, origin) {
   const pct = typeof card.localPct === "number" ? Math.round(card.localPct) : null;
   const photo = card.photoUrl ? `<img src="${escHtml(origin + card.photoUrl)}" alt="" loading="lazy">` : `<span class="avatar-fallback">${escHtml(String(card.name || "?").trim().slice(0, 1).toUpperCase())}</span>`;
   return `<a class="card" href="${escHtml(origin)}/c/${escHtml(String(card.handle).toLowerCase())}">
     <span class="photo">${photo}</span>
     <span class="card-body">
-      <span class="card-name">${escHtml(card.name || "")}</span>
+      <span class="card-name">${escHtml(card.name || "")}${card.blueCheck ? ROSTER_BLUE_CHECK_245 : ""}</span>
       <span class="card-handle">@${escHtml(card.handle || "")}</span>
       ${pct !== null ? `<span class="card-local"><strong>${pct}% local</strong> in ${escHtml(card.marketName || "")}${card.verified ? ` <span class="verified">Verified from Instagram</span>` : ""}</span>` : ""}
       <span class="card-meta">${card.followers ? `${escHtml(fmtFollowers(card.followers))} followers` : ""}${card.categories && card.categories.length ? `${card.followers ? " · " : ""}${escHtml(card.categories.slice(0, 3).join(" · "))}` : ""}</span>

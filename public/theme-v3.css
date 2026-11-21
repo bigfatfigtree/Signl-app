@@ -2734,6 +2734,31 @@ body.v3-slim .ham137-panel .more-row, body.v3-slim .ev125-panel .more-row, body.
 .u226-favlbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .u226-straddle { position: relative; z-index: 4; margin: -24px 14px 0; background: #fff; border-radius: 14px; box-shadow: 0 8px 24px rgba(16, 42, 80, .12); padding: 10px 14px; line-height: 1.3; }
 .u226-name { font-weight: 800; font-size: 1.08rem; color: #0B2B4F; }
+/* Build -245: the blue check beside a Standout creator's name,
+   and the Momentum ladder on the creator's own Momentum view. */
+.u226-bluecheck { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; margin-left: 4px; background: none; border: 0; cursor: pointer; vertical-align: -7px; }
+.u226-bluecheck svg { width: 20px; height: 20px; display: block; }
+.u226-bluecheck.sm { width: 20px; height: 20px; margin-left: 4px; vertical-align: -4px; }
+.u226-bluecheck.sm svg { width: 16px; height: 16px; }
+.u226-heroname .u226-bluecheck { width: 30px; height: 30px; vertical-align: -8px; }
+.u226-heroname .u226-bluecheck svg { width: 24px; height: 24px; }
+.bookme-name .u226-bluecheck { width: 22px; height: 22px; }
+.bookme-name .u226-bluecheck svg { width: 22px; height: 22px; }
+.u226-bluecheck-static { display: inline-flex; align-items: center; width: 20px; height: 20px; vertical-align: -4px; }
+.u226-bluecheck-static svg { width: 20px; height: 20px; display: block; }
+.u226-meter { margin: 16px 0 6px; }
+.u226-meter-track { position: relative; height: 10px; border-radius: 999px; background: #E7EEF6; margin-top: 10px; }
+.u226-meter-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 999px; background: var(--grad); }
+.u226-meter-check { position: absolute; left: 40%; top: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; padding: 0; border: 0; cursor: pointer; border-radius: 50%; background: #fff; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(16, 42, 80, .18); }
+.u226-meter-check svg { width: 18px; height: 18px; display: block; opacity: .45; }
+.u226-meter-check.on svg { opacity: 1; }
+.u226-meter-marks { position: relative; height: 34px; margin-top: 8px; }
+.u226-meter-mark { position: absolute; top: 0; transform: translateX(-50%); font-size: .72rem; font-weight: 600; color: #44536A; white-space: nowrap; }
+.u226-meter-mark.first { transform: none; }
+.u226-meter-mark.last { transform: translateX(-100%); }
+/* Regular (100) sits close to Starter (0) on the 750 scale, so
+   its label drops to a second row instead of colliding. */
+.u226-meter-mark.alt { top: 17px; }
 .u226-meta { color: #44536A; font-size: .92rem; margin-top: 2px; }
 .u226-citygrad, .u226-gradtext { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 700; }
 .u226-body { padding: 12px 16px 16px; line-height: 1.45; }

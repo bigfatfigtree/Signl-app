@@ -885,7 +885,7 @@ async function renderPublicProfile() {
       <div class="bookme-cover-id">
         <div class="bookme-id-row">
           <div class="bookme-id-main">
-            <div class="cc-name bookme-name">${esc(profileDisplayName(p))}</div>
+            <div class="cc-name bookme-name">${esc(profileDisplayName(p))}${blueCheck226Html(p)}</div>
             <div class="bookme-handle">${handleLabel(p.handle) ? `${esc(handleLabel(p.handle))} &middot; ` : ""}${esc(p.primaryPlatformLabel || "Instagram")}</div>
             ${profileHeaderSocialsHtml(p)}
             ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
@@ -957,7 +957,7 @@ function renderClaimedProfile(p) {
     <div class="bookme-cover">
       <div class="cc-mono bookme-mono"><span>${initial}</span></div>
       <div class="bookme-cover-id">
-        <div class="cc-name bookme-name">${esc(p.name)}</div>
+        <div class="cc-name bookme-name">${esc(p.name)}${blueCheck226Html(p)}</div>
         <div class="bookme-handle">${handleLabel(p.handle) ? `${esc(handleLabel(p.handle))} &middot; ` : ""}${esc(p.primaryPlatformLabel || "Instagram")}</div>
       </div>
     </div>
@@ -1382,6 +1382,30 @@ const POINTS_WHY_LONG = "Points are priority. They move you up the list business
 const POINTS_WHY_SHORT = "Points are priority: they move you up the list businesses choose from, and they raise your level.";
 const POINTS_WHY_POP = "Points move you up the list businesses choose from and raise your level; higher levels see new offers earlier.";
 
+/* Build -245: the Momentum ladder. One bar, the four levels as
+   markers (Starter 0, Regular 100, Standout 300, Cornerstone
+   750), the blue check sitting AT the 300 marker, and the fill
+   running to the creator's points: the climb continues past the
+   check toward Cornerstone. Numbers and level names only, plus
+   the one line about the list businesses see. The creator's own
+   progress only; there is no ranking of creators here. */
+function momentumMeter226Html(m) {
+  const pts = Math.max(0, Number(m && m.points) || 0);
+  const cap = 750;
+  const fillPct = Math.min(100, Math.round((pts / cap) * 1000) / 10);
+  const earned = pts >= 300;
+  const gap = 300 - pts;
+  const status = earned
+    ? `<span class="u226-bluecheck-static">${BLUE_CHECK_SVG_226}</span> ${J226("Blue check earned", "Insignia azul ganada")}`
+    : `${fmtNum(gap)} ${J226("points to the blue check. Inviting creators is the fastest way.", "puntos para la insignia azul. Invitar creadoras es la forma más rápida.")}`;
+  return `<div class="u226-meter" data-u226="momentum-meter">
+    <div class="u226-meter-track"><div class="u226-meter-fill" style="width:${fillPct}%"></div><button type="button" class="u226-meter-check${earned ? " on" : ""}" title="300" onclick="return openBlueCheck226()" aria-label="${esc(J226("Blue check: Standout, earned at 300 Momentum points", "Insignia azul: Standout, ganada con 300 puntos de Momentum"))}">${BLUE_CHECK_SVG_226}</button></div>
+    <div class="u226-meter-marks"><span class="u226-meter-mark first" style="left:0">Starter 0</span><span class="u226-meter-mark alt" style="left:13.3%">Regular 100</span><span class="u226-meter-mark" style="left:40%">Standout 300</span><span class="u226-meter-mark last" style="left:100%">Cornerstone 750</span></div>
+    <p class="small" style="margin:8px 0 0">${status}</p>
+    <p class="small muted" style="margin:2px 0 0">${J226("More Momentum, higher on the list businesses see.", "Más Momentum, más arriba en la lista que ven los negocios.")}</p>
+  </div>`;
+}
+
 function momentumHtml(u) {
   const m = u && u.momentum;
   if (!m) return "";
@@ -1396,6 +1420,7 @@ function momentumHtml(u) {
   return `
   <div class="panel mt" style="text-align:left">
     <div class="flex-between"><h3 style="margin:0">Momentum points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points > 0 ? `${m.points} points` : "Just starting"}</span></div>
+    ${momentumMeter226Html(m)}
     <p class="small">Earned for on-time posts, a complete profile, reviews and invites.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
     <p class="small" style="margin-top:6px">${POINTS_WHY_LONG}</p>
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
@@ -8863,7 +8888,7 @@ function j226Sheet226(id, inner) {
   return false;
 }
 function closeSheet226() {
-  for (const id of ["j226-cancel-sheet", "j226-move-sheet"]) { const el = document.getElementById(id); if (el) el.remove(); }
+  for (const id of ["j226-cancel-sheet", "j226-move-sheet", "j226-bluecheck-sheet"]) { const el = document.getElementById(id); if (el) el.remove(); }
   return false;
 }
 function openCancel226(bookingId, role) {
@@ -9373,6 +9398,38 @@ function closeMatch226() {
   if (el) el.remove();
   return false;
 }
+/* Build -245: the blue check. The server derives blueCheck from
+   the creator's Momentum points (>= 300, the Standout level) on
+   every payload; the client only renders it. Tapping it opens
+   the plain-words explainer sheet, mirroring the match badge. */
+const BLUE_CHECK_SVG_226 = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#1D9BF0"/><path d="M8.2 12.4l2.5 2.5 5.1-5.4" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+function blueCheck226Html(x, small) {
+  if (!x || !x.blueCheck) return "";
+  // The small variant fits a text line exactly (20px box, -4px
+  // align): tight rows like the Lineup and the Bench, where the
+  // full 26px button wraps and paints over the next line.
+  return `<button type="button" class="u226-bluecheck${small ? " sm" : ""}" data-u226="blue-check" onclick="return openBlueCheck226()" aria-label="${J226("Blue check. Standout creator. What is this?", "Insignia azul. Creadora Standout. ¿Qué es esto?")}">${BLUE_CHECK_SVG_226}</button>`;
+}
+function blueCheckSheet226Html() {
+  return `<div data-u226="bluecheck-sheet">
+    <p class="j226-kicker">${J226("The blue check", "La insignia azul")}</p>
+    <h3 class="j226-h"><span class="u226-bluecheck-static">${BLUE_CHECK_SVG_226}</span> ${J226("Standout, earned", "Standout, ganada")}</h3>
+    <p class="small" style="margin:6px 0 0">${J226("This creator reached Standout, the level at 300 Momentum points.", "Esta creadora llegó a Standout, el nivel de los 300 puntos de Momentum.")}</p>
+    <p class="small" style="margin:8px 0 0">${J226("Momentum is earned by delivering posts on time, reviewing businesses, and inviting other creators. Inviting is the fastest way to earn.", "El Momentum se gana entregando publicaciones a tiempo, reseñando negocios e invitando a otras creadoras. Invitar es la forma más rápida de ganar.")}</p>
+    <p class="small" style="margin:8px 0 0">${J226("Standout creators see new offers 18 hours early once their market is live.", "Las creadoras Standout ven las ofertas nuevas 18 horas antes cuando su mercado está activo.")}</p>
+    <p class="small muted" style="margin:8px 0 0">${J226("The check is earned, never bought.", "La insignia se gana, nunca se compra.")}</p>
+    <div class="j226-cta"><button class="btn" type="button" onclick="return closeBlueCheck226()">${J226("Got it", "Entendido")}</button></div>
+  </div>`;
+}
+function openBlueCheck226() {
+  if (typeof j226Sheet226 === "function") return j226Sheet226("j226-bluecheck-sheet", blueCheckSheet226Html());
+  return false;
+}
+function closeBlueCheck226() {
+  const el = typeof document !== "undefined" ? document.getElementById("j226-bluecheck-sheet") : null;
+  if (el) el.remove();
+  return false;
+}
 /* Favorites: server first for the landed creator shape, generic
    target body for businesses and offers, per-user local cache
    underneath so a saved state always renders on revisit. */
@@ -9484,7 +9541,7 @@ function feedCreatorCard226Html(c, opts) {
       ${matchBadge226Html(c)}
       ${opts.preview ? "" : favBtn226Html("creator", c.userId, c.isFavorite)}
     </div>
-    <div class="u226-straddle j226-heroid"><div class="u226-name">${esc(c.name || "")}</div><div class="u226-meta">${cats ? `${esc(cats)} · ` : ""}<span class="u226-citygrad">${esc(placeTxt)}</span></div></div>
+    <div class="u226-straddle j226-heroid"><div class="u226-name">${esc(c.name || "")}${blueCheck226Html(c)}</div><div class="u226-meta">${cats ? `${esc(cats)} · ` : ""}<span class="u226-citygrad">${esc(placeTxt)}</span></div></div>
     <div class="u226-body">
       <div class="u226-price">${esc(priceLine)}</div>
       <div class="u226-chips j226-chipstrip">${pct != null ? `<span class="cc-chip">${pct}% ${J226("local", "local")}</span>` : ""}${localCount != null ? `<span class="cc-chip">${fmtFull(localCount)} ${J226("local followers", "seguidores locales")}</span>` : ""}${total > 0 ? `<span class="cc-chip">${compact226(total)} ${J226("total followers", "seguidores en total")}</span>` : ""}</div>
@@ -9689,7 +9746,7 @@ function heroCreator226Html(c, opts) {
       ${matchBadge226Html(c)}
       ${opts.preview || opts.admin ? "" : favBtn226Html("creator", c.userId, c.isFavorite)}
       <div class="u226-fade">
-        <div class="u226-heroname">${esc(first)}</div>
+        <div class="u226-heroname">${esc(first)}${blueCheck226Html(c)}</div>
         <div class="u226-herometa">${cats ? `${esc(cats)} ${J226("creator", "creadora")} · ` : ""}<span class="u226-citygrad">${esc(place)}</span></div>
         ${rating != null && ratingCount >= 3 ? `<div class="u226-herorate">&#9733; ${rating.toFixed(1)} · ${J226("from", "de")} ${ratingCount} ${J226("visits", "visitas")}</div>` : ""}
         ${p.bio ? `<p class="u226-herobio">${esc(p.bio)}</p>` : ""}
@@ -17928,7 +17985,8 @@ function benchCardHtml(c) {
     <div style="display:flex;gap:12px;align-items:flex-start">
       ${c.photoUrl ? `<img class="avatar" style="width:56px;height:56px" src="${esc(c.photoUrl)}" alt="">` : `<span class="avatar avatar-initial" style="width:56px;height:56px;font-size:1.4rem">${initial}</span>`}
       <div style="flex:1;min-width:0">
-        <div class="flex-between"><strong>${esc(c.name)}${handleLabel(c.handle) ? ` <span class="muted">${esc(handleLabel(c.handle))}</span>` : ""}</strong><span class="badge tier">${esc(c.tier || "")}</span></div>
+        <div class="flex-between"><strong>${esc(c.name)}${blueCheck226Html(c, true)}</strong><span class="badge tier">${esc(c.tier || "")}</span></div>
+        ${handleLabel(c.handle) ? `<div class="muted small" style="margin-top:1px">${esc(handleLabel(c.handle))}</div>` : ""}
         <p class="small" style="margin:4px 0 0">${c.localAudiencePct}% local &middot; ${esc(c.primaryPlatformLabel || "Instagram")}${c.charter ? ` &middot; <span class="badge ok">Charter Creator</span>` : ""}${c.levelName ? ` &middot; <span class="badge info">${esc(c.levelName)}</span>` : ""}</p>
         ${c.categories && c.categories.length ? `<p class="small muted" style="margin:2px 0 0">${c.categories.map((x) => esc(x)).join(" &middot; ")}</p>` : ""}
         ${c.streets && c.streets.length ? `<p class="small muted" style="margin:2px 0 0">${c.streets.map((x) => esc(x)).join(" &middot; ")}</p>` : ""}
@@ -26539,7 +26597,8 @@ function lineupCardHtml(lu) {
     <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--hairline,#DFE7DF)">
       <span style="flex:none;width:44px;height:44px;border-radius:50%;overflow:hidden;background:#E3F5EA;display:flex;align-items:center;justify-content:center">${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="" style="width:44px;height:44px;object-fit:cover;display:block">` : `<span style="font-weight:800;font-size:1.1rem">${esc((c.name || "").trim().charAt(0).toUpperCase() || "M")}</span>`}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700">${esc(c.name)}${handleLabel(c.handle) ? ` <span class="muted" style="font-weight:600">${esc(handleLabel(c.handle))}</span>` : ""}</div>
+        <div style="font-weight:700">${esc(c.name)}${blueCheck226Html(c, true)}</div>
+        ${handleLabel(c.handle) ? `<div class="muted" style="font-weight:600;font-size:.88rem">${esc(handleLabel(c.handle))}</div>` : ""}
         <div class="small muted">${esc(c.why || "")}</div>
       </div>
       <span style="flex:none;text-align:right"><strong>${fmtNum(c.neighborCount)}</strong><br><span class="small muted">${c.neighborExtrapolated ? "potential local followers" : "local followers"}</span></span>
@@ -26888,7 +26947,7 @@ function discoverStackCard(c) {
       ${matchBadge || (ratingAvg226 !== null ? `<span class="j226-ratebadge">&#9733; ${ratingAvg226.toFixed(1)}</span>` : "")}
       ${favBtn226Html("creator", c.userId, c.isFavorite)}
     </div>
-    <div class="dcard-scrim j226-heroid u226-straddle"><div class="dcard-name u226-name">${esc(c.name || "")}</div><div class="u226-meta">${cats ? `${esc(cats)} \u00b7 ` : ""}<span class="u226-citygrad">${esc(place)}</span></div></div>
+    <div class="dcard-scrim j226-heroid u226-straddle"><div class="dcard-name u226-name">${esc(c.name || "")}${blueCheck226Html(c)}</div><div class="u226-meta">${cats ? `${esc(cats)} \u00b7 ` : ""}<span class="u226-citygrad">${esc(place)}</span></div></div>
     <div class="dcard-body u226-body">
       <div class="u226-price">${esc(priceLine)}</div>
       <div class="dcard-chips j226-chipstrip u226-chips">${pct != null ? `<span class="cc-chip">${pct}% ${J226("local", "local")}</span>` : ""}${localCount != null ? `<span class="cc-chip">${fmtFull(localCount)} ${J226("local followers", "seguidores locales")}</span>` : ""}${total > 0 ? `<span class="cc-chip">${compact226(total)} ${J226("total followers", "seguidores en total")}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}${p.musician ? `<span class="cc-chip">Musician</span>` : ""}</div>

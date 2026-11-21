@@ -7279,6 +7279,22 @@ function referralCounts(users) {
   return counts;
 }
 
+// Build -245 (Jeff, 2026-11-21): the blue check. Reaching the
+// Standout level (300 Momentum points) earns a blue check that
+// shows next to the creator's name on their profile and on their
+// Find creators card. The check is DERIVED from the same Momentum
+// points every surface already reads (createMomentum below); it
+// is never a stored flag, so it can never drift from the points.
+// The two stamps on the creator record (blueCheckEarnedAt,
+// blueCheckBand50At) are NOT the check: they only remember that
+// the one-time congratulation / near-check messages already
+// fired, so those can never repeat.
+const BLUE_CHECK_POINTS = 300;
+const BLUE_CHECK_BAND50_POINTS = 250;
+function blueCheckFromPoints(points) {
+  return (Number(points) || 0) >= BLUE_CHECK_POINTS;
+}
+
 // Builds the per-creator Momentum view from the full dataset. The
 // caller loads users/bookings/posts/reviews once per request and
 // every surface (own profile, discovery, public profile, admin)
@@ -7629,6 +7645,7 @@ function createMomentum(data) {
       signups: ref.signups,
       approved: ref.approved,
       points,
+      blueCheck: blueCheckFromPoints(points),
       floorApplied: rawTotal < 0,
       ledger: effective,
       checklist,
@@ -7643,7 +7660,7 @@ function createMomentum(data) {
 
   function summaryFor(user) {
     const d = detailFor(user);
-    return { signups: d.signups, approved: d.approved, points: d.points, campusCrew: d.campusCrew, campusLead: d.campusLead };
+    return { signups: d.signups, approved: d.approved, points: d.points, blueCheck: d.blueCheck, campusCrew: d.campusCrew, campusLead: d.campusLead };
   }
 
   return { detailFor, summaryFor, ladderFor, badgesFor };
@@ -7882,6 +7899,108 @@ async function creatorBuzz(user, preloadedUsers) {
   };
 }
 
+// Build -245: short names for the earning steps the near-check
+// message and Maggie's fastest-path answer can point at, keyed by
+// the Momentum checklist ids in detailFor. Only steps a creator
+// can take right now get a phrase; anything that needs a business
+// or a future booking is never offered as a step.
+const BLUE_CHECK_STEP_PHRASES_245 = {
+  photo: { en: "add your profile photo", es: "agrega tu foto de perfil" },
+  bio: { en: "write your bio", es: "escribe tu biografía" },
+  neighborhood: { en: "add your neighborhood", es: "agrega tu vecindario" },
+  local: { en: "report your local audience share", es: "reporta la parte local de tu audiencia" },
+  geo: { en: "finish your audience breakdown", es: "termina el desglose de tu audiencia" },
+  stack: { en: "complete your platform list", es: "completa tu lista de plataformas" },
+  localrates: { en: "add a local share for another platform", es: "agrega la parte local de otra plataforma" },
+  bestwork: { en: "add a best work link", es: "agrega un enlace a tu mejor trabajo" },
+  reviews: { en: "review the business from your finished visit", es: "reseña el negocio de tu visita terminada" },
+  performance: { en: "report the numbers on your delivered post", es: "reporta los números de tu publicación entregada" },
+};
+// The single most valuable step this creator can take right now,
+// from their own checklist: a due review or numbers report first
+// (those windows close), then the biggest unfinished profile step.
+// A step counts as open when it is unfinished OR when a new one
+// is due: the reviews and performance rows read done once the
+// creator has EVER done one, while dueBookingId marks a fresh
+// due instance on the same row, so done alone would hide exactly
+// the steps that are waiting (reviewer catch, Build -245).
+function blueCheckFastestStep245(detail) {
+  const items = (detail && detail.checklist) || [];
+  const open = items.filter((it) => it && BLUE_CHECK_STEP_PHRASES_245[it.id] && (it.dueBookingId || !it.done));
+  if (!open.length) return null;
+  const due = open.filter((it) => it.dueBookingId);
+  const pool = due.length ? due : open;
+  return pool.slice().sort((a, b) => (b.points || 0) - (a.points || 0))[0];
+}
+
+// Build -245: the blue-check moments. Momentum points are computed
+// on read (createMomentum), so the creator's own payload build
+// (withFounding, on sign-in and every dashboard boot) IS the award
+// point: this hook watches the computed total there and fires each
+// moment exactly once per creator. Claim-then-send, mirroring the
+// Build -231 community stamp: the stamp lands on the creator
+// record FIRST and the note + Maggie message go out only after it
+// is durable, so a retry can never double-send. The stamps are
+// delivery receipts only; the check itself is derived from points
+// (blueCheckFromPoints) and never reads them. Crossing 300 earns
+// the congratulation; first entering the last 50 points earns one
+// near-check message with the creator's own fastest step. A
+// creator at 300 or more never gets the near-check message.
+async function maybeBlueCheckMoments245(user, detail) {
+  try {
+    if (!user || user.role !== "creator" || !user.creator || user.status !== "approved" || isTester(user) || !detail) return;
+    const points = Number(detail.points) || 0;
+    const earned = points >= BLUE_CHECK_POINTS;
+    const inBand = !earned && points >= BLUE_CHECK_BAND50_POINTS;
+    if (!earned && !inBand) return;
+    // The session's own record is loaded fresh from the store on
+    // every request: when it already carries the stamp, the
+    // moment has fired and this stays a field check, never a
+    // store read (reviewer catch, Build -245: no permanent
+    // per-request cost for the most active creators).
+    if (earned && user.creator.blueCheckEarnedAt) return;
+    if (inBand && user.creator.blueCheckBand50At) return;
+    const rec = await store.get(`user:${user.id}`);
+    if (!rec || !rec.creator) return;
+    // Claim with a unique token, then verify the claim survived
+    // before sending: a parallel payload build that claimed in
+    // the same breath overwrites the stamp, and only the build
+    // whose token is still on the record sends. That narrows
+    // the double-send race to a single store round trip; the
+    // sequential case is exact.
+    const claimStamp = async (field) => {
+      if (rec.creator[field]) return null;
+      const token = `${nowIso()}#${crypto.randomUUID()}`;
+      rec.creator[field] = token;
+      rec.updatedAt = nowIso();
+      await store.set(`user:${user.id}`, rec);
+      const verify = await store.get(`user:${user.id}`);
+      return verify && verify.creator && verify.creator[field] === token ? token : null;
+    };
+    if (earned) {
+      if (!(await claimStamp("blueCheckEarnedAt"))) return;
+      await notifyBilingual226(user.id, "blue_check_earned",
+        "You earned the blue check. 300 Momentum points, Standout level. It now shows on your profile and your card.",
+        "Ganaste la insignia azul. 300 puntos de Momentum, nivel Standout. Ya aparece en tu perfil y en tu tarjeta.",
+        { points });
+      await sendPlatformMessage(null, rec, msg226(rec,
+        "You earned the blue check. You passed 300 Momentum points, so you are now a Standout creator, and the blue check shows next to your name on your profile and on your card in Find creators. The check is earned, never bought. Next stop is Cornerstone at 750.",
+        "Ganaste la insignia azul. Pasaste los 300 puntos de Momentum, así que ahora eres una creadora Standout, y la insignia azul aparece junto a tu nombre en tu perfil y en tu tarjeta en Find creators. La insignia se gana, nunca se compra. La siguiente parada es Cornerstone, a los 750."),
+        { inAppOnly: true, engine: "blue-check-earned-245" });
+      return;
+    }
+    if (!(await claimStamp("blueCheckBand50At"))) return;
+    const gap = BLUE_CHECK_POINTS - points;
+    const step = blueCheckFastestStep245(detail);
+    const stepEn = step ? ` One step is ready right now: ${BLUE_CHECK_STEP_PHRASES_245[step.id].en}, worth +${step.points}.` : "";
+    const stepEs = step ? ` Un paso está listo ahora mismo: ${BLUE_CHECK_STEP_PHRASES_245[step.id].es}, vale +${step.points}.` : "";
+    await sendPlatformMessage(null, rec, msg226(rec,
+      `You are close to the blue check. You have ${points} Momentum points, ${gap} away from the 300 that earns the check at the Standout level. Inviting a creator is the fastest way there: +3 when they join with your link, +10 when they are approved.${stepEn} Your invite link is on your Home page.`,
+      `Estás cerca de la insignia azul. Tienes ${points} puntos de Momentum, a ${gap} de los 300 que ganan la insignia en el nivel Standout. Invitar a una creadora es la forma más rápida de llegar: +3 cuando se une con tu enlace, +10 cuando es aprobada.${stepEs} Tu enlace de invitación está en tu página de inicio.`),
+      { inAppOnly: true, engine: "blue-check-band50-245" });
+  } catch (e) { /* a blue-check moment must never break the payload */ }
+}
+
 async function withFounding(user) {
   const pub = publicUser(user);
   // Business highlight (Build -67, Deliverable 3): a verified,
@@ -7925,6 +8044,9 @@ async function withFounding(user) {
     pub.momentum = momentum.detailFor(user);
     pub.ladder = momentum.ladderFor(user);
     pub.badges = pub.ladder.badges;
+    // Build -245: the one-time blue-check moments (crossing 300,
+    // first entry into the last 50) watch this same computed total.
+    await maybeBlueCheckMoments245(user, pub.momentum);
   }
   return pub;
 }
@@ -10948,6 +11070,7 @@ async function rankApplications(apps) {
         ratingAvg: rating.ratingAvg,
         ratingCount: rating.ratingCount,
         badges: momentum.badgesFor(c),
+        blueCheck: blueCheckFromPoints(mom.points),
         // Build -188 (PL-12): the exact founding rank is Admin-only
         // (Jeff: "it tells on us"). This stack is a BUSINESS payload,
         // so it carries the band only ("in the first 100"), never
@@ -11589,6 +11712,8 @@ async function discoverCards(query, viewer, opts) {
     // Roster standing rides on the card: it is part of the order
     // businesses were promised creators would be seen in.
     card.momentum = momentum.summaryFor(c);
+    // Build -245: the blue check, derived from the same summary.
+    card.blueCheck = !!card.momentum.blueCheck;
     // Build -36: total Points (Momentum + Your Line) ride the
     // card; the momentum re-sort orders by them.
     card.pointsTotal = card.momentum.points + lineFor(c, rosterUsers36).points;
@@ -12003,7 +12128,7 @@ function categoryBySlug(slug) {
 // their local share in THAT market, the item-12
 // Verified flag as tiebreak, then handle for stability. Each
 // card carries the market's own share, never the home number.
-function rosterMembers(users, marketName, categoryName) {
+function rosterMembers(users, marketName, categoryName, momentum) {
   const members = finishedPublicCreators(users).filter((u) => isListedInMarket(u, marketName));
   const cell = categoryName ? members.filter((u) => (u.creator.categories || []).includes(categoryName)) : members;
   const rows = cell.map((u) => {
@@ -12016,6 +12141,12 @@ function rosterMembers(users, marketName, categoryName) {
       verified,
       card: {
         name: u.name || "",
+        // Build -245: the blue check rides the public roster
+        // card too, but only when the caller supplies a real
+        // Momentum calculator (the page handler does; the
+        // sitemap and path callers, which never render cards,
+        // do not, and their cards simply carry no check field).
+        blueCheck: momentum ? !!momentum.summaryFor(u).blueCheck : undefined,
         handle: u.creator.handle || "",
         photoUrl: u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
         localPct: typeof share === "number" ? share : (typeof u.creator.localAudiencePct === "number" ? u.creator.localAudiencePct : null),
@@ -12079,6 +12210,9 @@ async function publicProfilePayload(u) {
   const university = universityOfRecord(u);
   const audience = audienceView(c);
   const primary = primaryProfileOf(c);
+  // Build -245: one Momentum summary feeds both payload fields
+  // (summaryFor recomputes the full ledger, so it runs once).
+  const momSummary = momentum.summaryFor(u);
   return {
     name: u.name,
     handle: c.handle,
@@ -12161,7 +12295,8 @@ async function publicProfilePayload(u) {
     // rides beside the local % on the public profile payload.
     spanishAudiencePct: c.spanishAudiencePct === undefined ? null : c.spanishAudiencePct,
     localImpactScore: impact ? impact.score : null,
-    momentumPoints: momentum.summaryFor(u).points,
+    momentumPoints: momSummary.points,
+    blueCheck: momSummary.blueCheck,
     badges: momentum.badgesFor(u),
     foundingBand: foundingBand(approvedRank.get(u.id) || null),
     bestWork: bestWorkCards(c),
@@ -12319,6 +12454,9 @@ async function bookMePayload(u, viewer) {
   // business gets a Book action.
   payload.paidRate = full.paidRate;
   payload.licensingFee = full.licensingFee;
+  // Build -245: the blue check is a public badge, so it rides at
+  // every tier like the rate above, not with the owner-only stats.
+  payload.blueCheck = full.blueCheck;
   if (t.tier >= 1) {
     payload.creatorUserId = u.id;
   }
@@ -21768,6 +21906,7 @@ function lineupMemberView(card, userRec) {
   return {
     userId: card.userId,
     name: card.name || (userRec && userRec.name) || "",
+    blueCheck: !!card.blueCheck,
     handle: (c.handle || card.handle || ""),
     photoUrl: card.photoUrl || null,
     why: promptWhyLine(card),
@@ -22824,12 +22963,15 @@ function collabEligible(u) {
 // The creator-facing card: exactly what a business sees on the
 // profile (the Local List field set), never earnings, deal
 // terms, scores, or contact details.
-function benchCardFor(u, pointsTotal) {
+function benchCardFor(u, pointsTotal, momentumPoints) {
   const c = (u && u.creator) || {};
   const lvl = levelForPoints(pointsTotal || 0);
   return {
     userId: u.id,
     name: u.name,
+    // Build -245: the blue check derives from the Momentum
+    // ledger points, passed in beside the Your Line total.
+    blueCheck: blueCheckFromPoints(momentumPoints || 0),
     handle: c.handle || "",
     photoUrl: c.photoUrl || null,
     hasPhoto: !!c.hasPhoto,
@@ -27992,7 +28134,12 @@ async function route(event) {
     if (!market) return notFound;
     const category = seg.length === 3 ? categoryBySlug(seg[2]) : null;
     if (seg.length === 3 && !category) return notFound;
-    const rows = rosterMembers(await allUsers(), market.name, category);
+    // Build -245: the page handler loads the full Momentum
+    // context once so roster cards can carry the derived blue
+    // check; the page is CDN cached, so this is not a per-app-
+    // request cost.
+    const rosterCtx = await momentumContext();
+    const rows = rosterMembers(rosterCtx.users, market.name, category, rosterCtx.momentum);
     if (rows.length < ROSTER_MIN) return notFound;
     const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.magpielocal.com";
     return htmlPage(buildRosterPageHtml({
@@ -33422,6 +33569,7 @@ async function route(event) {
       const momentum = createMomentum({ users: all, bookings: cpBk, posts: cpPo, reviews: cpRv, bizReviews: cpBz });
       const card = await publicCreator(target, user, approvedRank.get(target.id) || pendingRank.get(target.id) || null);
       card.momentum = momentum.summaryFor(target);
+      card.blueCheck = !!card.momentum.blueCheck;
       card.badges = momentum.badgesFor(target);
       card.standing = standingState(target);
       card.applicationStatus = target.status;
@@ -34918,6 +35066,7 @@ async function route(event) {
       const { approvedRank } = creatorRanks(users);
       const card = await publicCreator(target, { id: "__preview__", role: "business", market: null }, approvedRank.get(target.id) || null);
       card.momentum = momentum.summaryFor(target);
+      card.blueCheck = !!card.momentum.blueCheck;
       card.standing = standingState(target);
       return json(200, { creator: decoratePreviewCard(card), preview: true });
     }
@@ -35516,8 +35665,9 @@ async function route(event) {
       const intro = await benchIntroductionFor(user);
       if (intro) {
         const ctx = await pointsContext();
+        const introTotals = totalPointsFor(intro.u, ctx);
         payload.introduction = {
-          creator: benchCardFor(intro.u, totalPointsFor(intro.u, ctx).total),
+          creator: benchCardFor(intro.u, introTotals.total, introTotals.momentumPoints),
           sharedStreets: intro.sharedStreets,
           sharedCategories: intro.sharedCategories,
         };
@@ -35526,9 +35676,9 @@ async function route(event) {
     if (open) {
       const visible = await benchCandidatesFor(user, { forCollab: false });
       const ctx = await pointsContext();
-      const pts = new Map(visible.map((u) => [u.id, totalPointsFor(u, ctx).total]));
-      const sorted = [...visible].sort((a, b) => (((b.creator || {}).localAudiencePct || 0) - ((a.creator || {}).localAudiencePct || 0)) || ((pts.get(b.id) || 0) - (pts.get(a.id) || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
-      let cards = sorted.map((u) => benchCardFor(u, pts.get(u.id)));
+      const pts = new Map(visible.map((u) => [u.id, totalPointsFor(u, ctx)]));
+      const sorted = [...visible].sort((a, b) => (((b.creator || {}).localAudiencePct || 0) - ((a.creator || {}).localAudiencePct || 0)) || (((pts.get(b.id) || {}).total || 0) - ((pts.get(a.id) || {}).total || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
+      let cards = sorted.map((u) => { const t = pts.get(u.id) || {}; return benchCardFor(u, t.total, t.momentumPoints); });
       // One person, one appearance (Build -47, audit C6): the
       // introduced creator leaves the roster list (their card is
       // the introduction above), and a roster that would render
@@ -35598,7 +35748,8 @@ async function route(event) {
     const hit = cands.find((u) => String((u.creator || {}).handle || "").toLowerCase() === q || String(u.name || "").trim().toLowerCase() === q);
     if (!hit) return json(200, { creator: null });
     const ctx = await pointsContext();
-    return json(200, { creator: benchCardFor(hit, totalPointsFor(hit, ctx).total) });
+    const hitTotals = totalPointsFor(hit, ctx);
+    return json(200, { creator: benchCardFor(hit, hitTotals.total, hitTotals.momentumPoints) });
   }
 
   // ---------- market activation gate ----------
@@ -36064,9 +36215,20 @@ async function route(event) {
       if (user.role !== "business" && user.role !== "creator") return err(403, "Creators and businesses only");
       const sets = await savedSets226(user.id);
       const creatorsOut = [];
+      // Build -245: Saved renders the same feed card as Find
+      // creators, so it carries the same Momentum patch (points
+      // and the derived blue check), exactly like discoverCards.
+      const favMomCtx = sets.creators.length ? await momentumContext() : null;
       for (const id of sets.creators) {
         const c = sets.byId.get(id);
-        if (c && profileCompleteOf(c)) creatorsOut.push(await publicCreator(c, user));
+        if (c && profileCompleteOf(c)) {
+          const card = await publicCreator(c, user);
+          if (favMomCtx) {
+            card.momentum = favMomCtx.momentum.summaryFor(c);
+            card.blueCheck = !!card.momentum.blueCheck;
+          }
+          creatorsOut.push(card);
+        }
       }
       const businessesOut = [];
       for (const id of sets.businesses) {
@@ -40507,4 +40669,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runAdminStatsSummary244, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226, __buildersForTest239: { businessApplicationConfirmationEmail, businessApprovalEmail, businessRejectionEmail } };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runAdminStatsSummary244, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226, BLUE_CHECK_POINTS, BLUE_CHECK_BAND50_POINTS, blueCheckFromPoints, blueCheckFastestStep245, maybeBlueCheckMoments245, __buildersForTest239: { businessApplicationConfirmationEmail, businessApprovalEmail, businessRejectionEmail } };
