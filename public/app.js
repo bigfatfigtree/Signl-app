@@ -1372,15 +1372,19 @@ function profileCompletionHtml(u) {
 // of it comes from the server payload (state.user.momentum), which
 // is computed from stored records only.
 
-// Points-why canon (Build -49, Jeff's standing order: always
-// explain why points matter, everywhere we can). One wording,
-// defined once, rendered next to every points number. Built ONLY
-// from mechanics verified in the code (see build49 REPORT.md):
+// Points-why canon (Build -49): one short wording, defined
+// once, rendered next to points numbers. Built ONLY from
+// mechanics verified in the code (see build49 REPORT.md):
 // total points are 20% of the applicant stack a business picks
 // from, they ride the roster card businesses can sort by, and
 // they set the level whose hours open new offers early in a live
 // market. Points are not money and never promise a booking.
-const POINTS_WHY_LONG = "Points are priority. They move you up the list businesses choose from when you apply, they ride on your roster card where businesses can sort by them, and they raise your level: Regular, Standout and Cornerstone see new offers 12, 18 and 24 hours early once your market is live. Points are not money, and they never promise a booking.";
+// Build -247 (Jeff, 2026-11-21, visual-first rule): the LONG
+// form is retired. It rendered as a pasted paragraph on the
+// Momentum view and Jeff cut it. Its facts live where they
+// belong now: the meter's one list line on the view itself, and
+// the "not money, never a booking" line inside the blue check
+// explainer sheet, behind the tap.
 const POINTS_WHY_SHORT = "Points are priority: they move you up the list businesses choose from, and they raise your level.";
 const POINTS_WHY_POP = "Points move you up the list businesses choose from and raise your level; higher levels see new offers earlier.";
 
@@ -1423,8 +1427,7 @@ function momentumHtml(u) {
   <div class="panel mt" style="text-align:left">
     <div class="flex-between"><h3 style="margin:0">Momentum points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points > 0 ? `${m.points} points` : "Just starting"}</span></div>
     ${momentumMeter226Html(m)}
-    <p class="small">Earned for on-time posts, a complete profile, reviews and invites.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
-    <p class="small" style="margin-top:6px">${POINTS_WHY_LONG}</p>
+    ${m.floorApplied ? `<p class="small muted" style="margin:8px 0 0">Your total never drops below zero.</p>` : ""}
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
     ${checklist || `<p class="small muted">Loading...</p>`}
     ${ledger ? `<h4 style="margin:16px 0 6px">Points history</h4>${ledger}` : ""}
@@ -9420,6 +9423,7 @@ function blueCheckSheet226Html() {
     <p class="small" style="margin:8px 0 0">${J226("Momentum is earned by delivering posts on time, reviewing businesses, and inviting other creators. Inviting is the fastest way to earn.", "El Momentum se gana entregando publicaciones a tiempo, reseñando negocios e invitando a otras creadoras. Invitar es la forma más rápida de ganar.")}</p>
     <p class="small" style="margin:8px 0 0">${J226("Standout creators see new offers 18 hours early once their market is live.", "Las creadoras Standout ven las ofertas nuevas 18 horas antes cuando su mercado está activo.")}</p>
     <p class="small muted" style="margin:8px 0 0">${J226("The check is earned, never bought.", "La insignia se gana, nunca se compra.")}</p>
+    <p class="small muted" style="margin:4px 0 0">${J226("Points are not money, and they never promise a booking.", "Los puntos no son dinero y nunca prometen una reserva.")}</p>
     <div class="j226-cta"><button class="btn" type="button" onclick="return closeBlueCheck226()">${J226("Got it", "Entendido")}</button></div>
   </div>`;
 }

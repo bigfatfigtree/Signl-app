@@ -64,21 +64,25 @@ const WHY_POP = "Points move you up the list businesses choose from and raise yo
 const WHY_SHORT_ES = "Los puntos son prioridad: te suben en la lista de la que eligen los negocios, y suben tu nivel.";
 
 // ---------- 1. canon: defined once, verbatim ----------
-check("canon: WHY_LONG is defined verbatim, once",
-  count(appJs, `const POINTS_WHY_LONG = "${WHY_LONG}";`) === 1);
+// Build -247 re-pin (Jeff, 2026-11-21, visual-first rule): the
+// LONG form was retired; Jeff cut the pasted paragraph from the
+// Momentum view. The const no longer exists anywhere.
+check("canon: WHY_LONG retired in Build -247 (the const is gone)",
+  count(appJs, `const POINTS_WHY_LONG = "${WHY_LONG}";`) === 0 && !appJs.includes("POINTS_WHY_LONG"));
 check("canon: WHY_SHORT is defined verbatim, once",
   count(appJs, `const POINTS_WHY_SHORT = "${WHY_SHORT}";`) === 1);
 check("canon: WHY_POP is defined verbatim, once",
   count(appJs, `const POINTS_WHY_POP = "${WHY_POP}";`) === 1);
 
 // ---------- 2. surface coverage ----------
-check("surface: Momentum panel (momentumHtml) pairs the total with WHY_LONG and keeps the pinned sources line",
-  slice(appJs, "function momentumHtml(u)", "function fmtNum").includes("${POINTS_WHY_LONG}")
-  && appJs.includes("Earned for on-time posts, a complete profile, reviews and invites."));
-check("surface: Momentum tab KPI card carries WHY_LONG under the giant number",
-  slice(appJs, "function renderMomentumTab()", "// Creator Earnings").includes("${POINTS_WHY_LONG}"));
-check("surface: Points and Your Line panel carries WHY_LONG under the level rows",
-  slice(appJs, "async function loadPointsCard()", "function proofSectionHtml").includes("${POINTS_WHY_LONG}"));
+check("surface (-247): Momentum panel carries no pasted paragraph: no WHY_LONG, no Earned-for line; the not-money fact lives in the blue check sheet",
+  !slice(appJs, "function momentumHtml(u)", "function fmtNum").includes("${POINTS_WHY_LONG}")
+  && !appJs.includes("Earned for on-time posts, a complete profile, reviews and invites.")
+  && appJs.includes("Points are not money, and they never promise a booking."));
+check("surface (-247): Momentum tab KPI card carries no WHY_LONG under the giant number",
+  !slice(appJs, "function renderMomentumTab()", "// Creator Earnings").includes("${POINTS_WHY_LONG}"));
+check("surface (-247): Points and Your Line panel carries no WHY_LONG under the level rows",
+  !slice(appJs, "async function loadPointsCard()", "function proofSectionHtml").includes("${POINTS_WHY_LONG}"));
 check("surface: the Points panel actually loads (Build -49 fix: loadPointsCard called \"/api/me/points\" through the api() helper, which prefixes /api itself, so the card 404'd into its fallback text on every render since Build -36; no earlier suite rendered the card live)",
   appJs.includes('api("GET", "/me/points")') && !appJs.includes('api("GET", "/api/me/points")'));
 check("surface: Golden Ticket panel pairs its +100/+25/+10/+3 table with WHY_SHORT and keeps the nothing-for-a-click line",

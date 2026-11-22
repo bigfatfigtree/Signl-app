@@ -130,7 +130,7 @@ check("PL-01: Admin Markets client pins Nashville then Virginia Beach", appJs.in
 check("PL-24: scope note no longer points at plans above", !appJs.includes("ignore the plans above"));
 check("PL-29a: editor button says Maggie", appJs.includes('T("Draft it with Maggie"') && !appJs.includes("Draft it with Sig"));
 check("PL-42: no 'setup call' wording survives", !/setup call/i.test(appJs) && !/setup call/i.test(sigJs));
-check("PL-48: POINTS_WHY_LONG renders at exactly one site (the Momentum panel)", (appJs.match(/\$\{POINTS_WHY_LONG\}/g) || []).length === 1);
+check("PL-48 (-247 re-pin): POINTS_WHY_LONG renders at zero sites (retired from the Momentum panel by Jeff's visual-first cut)", (appJs.match(/\$\{POINTS_WHY_LONG\}/g) || []).length === 0);
 check("PL-59: stampLastSignIn is guarded", seg(routerJs, "async function stampLastSignIn", "async function handleRegister").includes("try {"));
 check("PL-63: partner Help button says Open Sig", seg(appJs, "function partnerHelpHtml", "function partnerOffersHtml").includes("Open Sig"));
 check("PL-78: HR intro repair pair present", bizJs.includes('"I run Magpie, and I\'m building its founding creator list"'));

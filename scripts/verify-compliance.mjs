@@ -638,7 +638,7 @@ try {
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   check("signup carries the post-compliance agreement checkbox", appJs.includes("jc-agree-compliance") && appJs.includes("agreedPostCompliance"));
   check("My Visits proof block is headed Post your proof", appJs.includes("Post your proof"));
-  check("momentum block explains what points are earned for (UX redesign section 7: no discovery-order promise)", appJs.includes("Earned for on-time posts, a complete profile, reviews and invites.") && !appJs.includes("your order in business search"));
+  check("momentum view carries no pasted earn paragraph (Build -247: the earn story lives in the Ways to earn rows; still no discovery-order promise)", appJs.includes("Ways to earn") && !appJs.includes("Earned for on-time posts, a complete profile, reviews and invites.") && !appJs.includes("your order in business search"));
   check("compliance tab wired in the client", appJs.includes("loadCompliance") && appJs.includes("/admin/compliance"));
   check("ad use action wired in the client", appJs.includes("declareAdUse") && appJs.includes("/ad-use"));
   check("performance form wired in the client", appJs.includes("submitPostPerformance") && appJs.includes("/performance"));

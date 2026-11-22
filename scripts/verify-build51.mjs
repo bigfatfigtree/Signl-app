@@ -155,8 +155,8 @@ check("guard: sigai's -49-pinned level substrings stay byte-intact",
   && sigaiJs.includes("Regular sees new offers 12 hours early, Standout 18 hours early, and Cornerstone 24 hours early"));
 check("X-06: the what-do-I-owe answer carries the 30-day keep-live term",
   appJs.includes("as the FTC requires. Keep the post live for at least 30 days."));
-check("guard: the -49 points-why canon is untouched",
-  appJs.includes("const POINTS_WHY_LONG") && appJs.includes("Points are priority. They move you up the list businesses choose from"));
+check("guard (-247 re-pin): the -49 points-why SHORT canon is untouched; the LONG form was retired by Jeff's visual-first cut in Build -247",
+  appJs.includes("const POINTS_WHY_SHORT") && appJs.includes("Points are priority: they move you up the list businesses choose from") && !appJs.includes("POINTS_WHY_LONG"));
 
 // ---------- X-07: the founding badge carries both frames ----------
 check("X-07: the founding badge states the credit and the first-month price in one breath",
