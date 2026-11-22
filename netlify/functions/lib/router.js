@@ -8125,6 +8125,17 @@ async function deliverEmail(kind, user, subject, text, band, opts) {
   }
   const base = { kind, to: user.email, subject, band: band || null, profile };
   await logEvent({ type: `${kind}_email_queued`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
+  // Build -246: an optional pre-send gate, used by the approval
+  // fan-out drain. It runs immediately before the transport
+  // call, after every other read this function does, so a drain
+  // that lost its claim during those reads stands down here
+  // instead of sending a duplicate. Returning claim_lost writes
+  // no sent or not-sent event: nothing was attempted.
+  if (opts && typeof opts.preSendCheck === "function") {
+    let gateOk = false;
+    try { gateOk = await opts.preSendCheck(); } catch (e) { gateOk = false; }
+    if (!gateOk) return { sent: false, reason: "claim_lost" };
+  }
   // Build -114: every transactional email also carries the
   // branded HTML alternative (logo + gradient band) generated
   // from the same text, so the wording a suite pins in the text
@@ -8514,7 +8525,7 @@ async function recentApprovalSentByUser246(userIds) {
 // approval.
 function approvalJobSettles246(job) {
   if (!job) return false;
-  if (job.state === "pending" || job.state === "claimed") return true;
+  if (job.state === "pending" || job.state === "claimed" || job.state === "sending") return true;
   if (job.state === "done" && job.sent) return true;
   return false;
 }
@@ -8603,13 +8614,15 @@ async function reconcileApprovalFanout246() {
 }
 // The drain. Exported for the admin-home-refresh background
 // function (and the suites). Claims each due job before working
-// it, verifies the claim landed, and re-verifies claim
-// ownership immediately before the approval send (the store
-// has no compare-and-swap, so a claim can be overwritten
-// between another drain's write and read-back; the pre-send
-// re-verification is what makes overlapping drains safe).
-// A claim older than the stale window is reclaimable, so a
-// drain that died mid-job never strands the record.
+// it and verifies the claim landed. Because the store has no
+// compare-and-swap, the approval send itself runs a four-step
+// sequence (claim re-verification, the "sending" transition
+// with read-back, a second guard pass, and a point-read claim
+// gate inside deliverEmail right before the transport call) so
+// overlapping drains cannot both send. Every write the drain
+// makes after claiming is claim-guarded, including the failure
+// write. A claim older than the stale window is reclaimable,
+// so a drain that died mid-job never strands the record.
 async function runApprovalFanout246() {
   const out = { reconciled: 0, due: 0, sent: 0, alreadySent: 0, failed: 0, skipped: 0 };
   try { out.reconciled = await reconcileApprovalFanout246(); } catch (e) { console.error("Magpie approval fan-out reconcile failed:", e); }
@@ -8618,7 +8631,7 @@ async function runApprovalFanout246() {
   const due = rows.map((r) => r.value).filter((j) => {
     if (!j || !j.userId) return false;
     if (j.state === "pending") return true;
-    if (j.state === "claimed" && j.claimedAt && nowMs - Date.parse(j.claimedAt) > APPROVAL_FANOUT_CLAIM_STALE_MS246) return true;
+    if ((j.state === "claimed" || j.state === "sending") && j.claimedAt && nowMs - Date.parse(j.claimedAt) > APPROVAL_FANOUT_CLAIM_STALE_MS246) return true;
     return false;
   }).sort((a, b) => String(a.queuedAt || "").localeCompare(String(b.queuedAt || ""))).slice(0, APPROVAL_FANOUT_RUN_CAP246);
   out.due = due.length;
@@ -8633,7 +8646,7 @@ async function runApprovalFanout246() {
     const key = approvalFanoutKey246(job.userId);
     const cur = await store.get(key).catch(() => null);
     if (!cur || cur.state === "done") { out.skipped += 1; continue; }
-    if (cur.state === "claimed" && cur.claimId && cur.claimedAt && nowMs - Date.parse(cur.claimedAt) <= APPROVAL_FANOUT_CLAIM_STALE_MS246) { out.skipped += 1; continue; }
+    if ((cur.state === "claimed" || cur.state === "sending") && cur.claimId && cur.claimedAt && nowMs - Date.parse(cur.claimedAt) <= APPROVAL_FANOUT_CLAIM_STALE_MS246) { out.skipped += 1; continue; }
     const claimId = crypto.randomUUID();
     const claimed = { ...cur, state: "claimed", claimId, claimedAt: nowIso(), attempts: (cur.attempts || 0) + 1 };
     await store.set(key, claimed);
@@ -8680,32 +8693,64 @@ async function runApprovalFanout246() {
         } else {
           mail = businessApprovalEmail(target);
         }
-        // Claim re-verification, immediately before the send:
-        // the store has no compare-and-swap, so two drains
-        // (the schedule plus a nudge, across instances) can
-        // both pass the claim check when one's claim lands
-        // between the other's write and read-back. The loser
-        // detects it HERE — its claimId is no longer on the
-        // job — and stands down before sending, which is what
-        // keeps the send exactly-once when drains overlap.
+        // The send sequence, built against overlapping drains
+        // (the store has no compare-and-swap, so no single
+        // check can be a lock):
+        //   1. Re-verify claim ownership after the guard walk.
+        //   2. Move the job to "sending" under this claim and
+        //      read it back: a rival that overwrote the claim
+        //      in between is seen here, and this drain stands
+        //      down.
+        //   3. Run the -239 guard a SECOND time: a rival that
+        //      sent while this drain worked is caught by its
+        //      sent event.
+        //   4. deliverEmail re-checks the claim by point read
+        //      immediately before the transport call (its
+        //      preSendCheck gate), after its own internal
+        //      reads, so a claim lost during those reads still
+        //      stops the send.
+        // A rival must beat all four, inside one in-flight
+        // send, to duplicate an approval email.
         const stillMine = await store.get(key).catch(() => null);
         if (!stillMine || stillMine.claimId !== claimId) { out.skipped += 1; continue; }
-        const res = await deliverEmail("approval", target, mail.subject, mail.text, band);
-        if (!res || !res.sent) throw new Error(`approval email not sent: ${(res && res.reason) || "unknown"}`);
-        out.sent += 1;
+        await store.set(key, { ...stillMine, state: "sending" });
+        const sendingCheck = await store.get(key).catch(() => null);
+        if (!sendingCheck || sendingCheck.claimId !== claimId || sendingCheck.state !== "sending") { out.skipped += 1; continue; }
+        if (await approvalEmailAlreadySent239(target.id)) {
+          out.alreadySent += 1;
+        } else {
+          const res = await deliverEmail("approval", target, mail.subject, mail.text, band, {
+            preSendCheck: async () => {
+              const j = await store.get(key).catch(() => null);
+              return !!j && j.claimId === claimId && j.state === "sending";
+            },
+          });
+          if (res && !res.sent && res.reason === "claim_lost") { out.skipped += 1; continue; }
+          if (!res || !res.sent) throw new Error(`approval email not sent: ${(res && res.reason) || "unknown"}`);
+          out.sent += 1;
+        }
       }
       await store.set(key, { ...verify, state: "done", sent: true, claimId: null, claimedAt: null, doneAt: nowIso(), lastError: null });
     } catch (e) {
       const attempts = claimed.attempts || 1;
       const exhausted = attempts >= APPROVAL_FANOUT_MAX_ATTEMPTS246;
       console.error(`Magpie approval fan-out failed for ${job.userId} (attempt ${attempts}):`, (e && e.message) || e);
-      await store.set(key, { ...verify, state: exhausted ? "failed" : "pending", claimId: null, claimedAt: null, lastError: String((e && e.message) || e) }).catch(() => {});
-      if (exhausted) {
-        out.failed += 1;
-        // A parked job is named in the event log, not just the
-        // console, so a stuck approval email is findable later
-        // (the daily trigger-email check reads these events).
-        try { await logEvent({ type: "approval_fanout_failed", actorId: null, actorRole: "system", subjectId: job.userId, data: { attempts, error: String((e && e.message) || e) } }); } catch (e2) { /* best-effort */ }
+      // The failure write is claim-guarded: a drain that lost
+      // its claim mid-job (a rival overwrote it) must not write
+      // over the owner's live claim, and must never park a job
+      // the owner is about to complete. If the claim is no
+      // longer this drain's, the owner (or the stale-claim
+      // reclaim) handles the record from here.
+      const curJob = await store.get(key).catch(() => null);
+      if (curJob && curJob.claimId === claimId) {
+        await store.set(key, { ...curJob, state: exhausted ? "failed" : "pending", claimId: null, claimedAt: null, lastError: String((e && e.message) || e) }).catch(() => {});
+        if (exhausted) {
+          out.failed += 1;
+          // A parked job is named in the event log, not just the
+          // console, so a stuck approval email is findable later
+          // (the daily trigger-email check reads these events).
+          try { await logEvent({ type: "approval_fanout_failed", actorId: null, actorRole: "system", subjectId: job.userId, data: { attempts, error: String((e && e.message) || e) } }); } catch (e2) { /* best-effort */ }
+        }
       }
     }
   }
