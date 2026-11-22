@@ -1,0 +1,46 @@
+  ok before: business signs in
+  ok before: the comp deal DOES carry the under-it framing (the defect, reproduced)
+  ok biz signs in
+  ok biz sends the comp deal
+  ok after sending, Your campaigns is pointed at the Deals segment
+  ok the sender lands on the sent deal (Brunch for two, under Deals)
+  note receipt founding state not on business Home in this seed; covered by source pins
+  ok creator signs in
+  ok A: value hero present ($85, Comp value)
+  ok A: no under/over framing on the comp deal
+  ok A: no 'You get' row
+  ok A: terms rows present (You post / When / Rights / Money)
+  ok A: Accept present
+  ok A: decline default is not the rate reason on a comp deal
+  ok A: the value line renders in the gradient
+  ok A: deals explainer is behind a tap, not pasted
+FAIL A: no horizontal overflow, images load, no page errors :: overflow=0 imgs=False errs=[]
+  ok B: the visit code appears exactly once on the card
+  ok B: the visit code renders in the gradient
+  ok B: one audience section, plainly labelled, no duplicated header
+  ok B: audience offer rides under its own title
+  ok B: timeline renders as a stepper
+  ok B: deal panel rows present (Posts / Rights / Money / Counted)
+  ok B: check-in button present on the hero block
+  ok C: confirmation stands alone (no review form welded under it)
+  ok C: the rate entry row is there instead
+  ok C: tapping Rate opens the review as its own step
+  ok offer detail EN: labels + comp line
+  ok walkthrough: the comped visit is disclosed, never 'free'
+  ok Find offers: Clear all clears the search text
+  ok offer detail ES: labels in Spanish
+  ok offer detail ES: body in Spanish (no pagas nada, audiencia local, licencia)
+  ok offer detail ES: no English row labels left
+  ok blue-check sheet: a not-yet creator reads 'not yet' with the gap
+  ok blue-check sheet: it does NOT claim she reached Standout
+FAIL Golden Tickets: prose behind the tap (in the DOM, not on the page) :: Your Golden Tickets
+    Your two founding seats, on the record: who claimed theirs, and whose closed when Nashville launched.
+    
+    
+      A creator you invi
+  ok C (business twin): confirmation stands alone, rate row present
+  ok B desktop: gradient visit code present
+  ok desktop: no horizontal overflow, no page errors
+
+word counts: deal card 157 -> 139; visit card 498 -> 381
+qa-build250: 36 passed, 2 failed

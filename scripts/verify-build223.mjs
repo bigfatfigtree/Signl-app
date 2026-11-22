@@ -57,7 +57,11 @@ check("hook slice found", hook.length > 500, `len=${hook.length}`);
 check("count label (live): of your followers live in", hook.includes("T(`of your followers live in ${marketLabel}`, `de tus seguidores viven en ${marketLabel}`)"));
 check("count label (extrapolated): potential local followers in", hook.includes("T(`potential local followers in ${marketLabel}`, `seguidores locales potenciales en ${marketLabel}`)"));
 check("founding line opener: Your place as a founding creator in", hook.includes('${T("Your place as a founding creator in", "Tu lugar como creadora fundadora en")}'));
-check("founding line second half unchanged", hook.includes("is waiting. Founding creators are recorded in founding order, and founding creators see offers first."));
+// Build -250 re-pin (Jeff's NO-NUMBER rule, -249 reviewer addition): the
+// founding-order clause was deliberately REMOVED from this line; the pin
+// now holds the new second half verbatim and asserts the old language
+// (and the server "N out of 10" localWords line) is gone from the hook.
+check("founding line second half (number-free, -250)", hook.includes("is waiting. Founding creators see offers first.") && !hook.includes("recorded in founding order") && !hook.includes("localWords"));
 check("CTA: Claim my place", hook.includes('T("Claim my place", "Reclamar mi lugar")'));
 // Note: the bare substring "neighbors in" also occurs in the
 // untouched inversion line ("but fewer neighbors in ..."),

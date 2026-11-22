@@ -1,0 +1,62 @@
+  ok before: business signs in
+  ok before: the comp deal DOES carry the under-it framing (the defect, reproduced)
+  ok biz signs in
+  ok biz sends the comp deal
+  ok after sending, Your campaigns is pointed at the Deals segment
+  ok the sender lands on the sent deal (Brunch for two, under Deals)
+  note receipt founding state not on business Home in this seed; covered by source pins
+  ok creator signs in
+FAIL A: value hero present ($85, Comp value) :: Juniper Table
+Answer by Nov 24, 4:22 AM
+Comped visit
+$90
+Comp value · Brunch for two
+
+THE TERMS
+
+You post
+1 post + 1 story, within 48 hours of the visit
+When
+Post within 7 days of the visit
+Visit timi
+  ok A: no under/over framing on the comp deal
+  ok A: no 'You get' row
+  ok A: terms rows present (You post / When / Rights / Money)
+  ok A: Accept present
+  ok A: decline default is not the rate reason on a comp deal
+  ok A: the value line renders in the gradient
+  ok A: deals explainer is behind a tap, not pasted
+FAIL A: no horizontal overflow, images load, no page errors :: []
+  ok B: the visit code appears exactly once on the card
+  ok B: the visit code renders in the gradient
+FAIL B: one audience section, plainly labelled, no duplicated header :: Dinner for two
+Booked, not yet redeemed
+
+Juniper Table · Nashville, Tennessee · Comp: Dinner for two: two mains, two drinks (cap $85.00) · Comp covers you · Visit: This week
+
+YOUR BRIEF
+Goal
+weeknight covers
+The hook
+The tasting menu nobody
+  ok B: audience offer rides under its own title
+  ok B: timeline renders as a stepper
+  ok B: deal panel rows present (Posts / Rights / Money / Counted)
+  ok B: check-in button present on the hero block
+  ok C: confirmation stands alone (no review form welded under it)
+  ok C: the rate entry row is there instead
+  ok C: tapping Rate opens the review as its own step
+  ok offer detail EN: labels + comp line
+  ok walkthrough: the comped visit is disclosed, never 'free'
+  ok Find offers: Clear all clears the search text
+  ok offer detail ES: labels in Spanish
+  ok offer detail ES: body in Spanish (no pagas nada, audiencia local, licencia)
+  ok offer detail ES: no English row labels left
+Traceback (most recent call last):
+  File "/home/hatch/workspace/signl-app-250/scripts/qa-build250.py", line 388, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/hatch/workspace/signl-app-250/scripts/qa-build250.py", line 337, in main
+    mpts = re.search(r"Momentum points\s+(\d+) points", mom_txt)
+           ^^
+NameError: name 're' is not defined. Did you forget to import 're'?

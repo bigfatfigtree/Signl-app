@@ -170,5 +170,21 @@ try {
   server.kill();
   try { fs.unlinkSync(DB); } catch (e) { /* already gone */ }
 }
+console.log("== additions from the -249 review (NO-NUMBER + Sig categories) ==");
+{
+  const hs = app.indexOf("function renderClaimHook()");
+  const he = app.indexOf("function claimHookGo()");
+  const hook = hs >= 0 && he > hs ? app.slice(hs, he) : "";
+  check("hook: no server 'N out of 10' line rendered (localWords gone)", hook.length > 500 && !hook.includes("localWords"), "");
+  check("hook: no founding-order language", !hook.includes("recorded in founding order") && !hook.includes("orden de llegada"), "");
+  check("hook: number-free founding line present EN+ES", hook.includes("is waiting. Founding creators see offers first.") && hook.includes("te está esperando. Los creadores fundadores ven las ofertas primero."), "");
+  check("hook: her own local-follower count still shown", hook.includes('id="nb-hook-count"'), "");
+  const cs = app.indexOf('if (gap === "categories")');
+  const cblock = cs >= 0 ? app.slice(cs, cs + 2600) : "";
+  check("Sig categories: no pre-tick of all twelve", cblock.length > 500 && !cblock.includes("sel.push(...state.boot.creatorCategories"), "");
+  check("Sig categories: copy no longer claims we ticked everything", !app.includes("We've ticked everything") && !app.includes("Marcamos todas"), "");
+  check("Sig categories: neutral ask copy present EN+ES", cblock.includes("Tap the ones you post about") && cblock.includes("Toca las que publicas"), "");
+}
+
 console.log(`\nverify-build250: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

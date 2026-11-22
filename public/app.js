@@ -13176,7 +13176,10 @@ function sigC2AskGap() {
   if (gap === "categories") {
     const sel = f.data.patch.categories || ((state.user.creator && state.user.creator.categories) || []).slice();
     f.data.patch.categories = sel;
-    if (!sel.length && (state.boot.creatorCategories || []).length) { sel.push(...state.boot.creatorCategories); f.data.patch.categories = sel; }
+    // Build -250 (bundle, -249 reviewer addition): no pre-ticking —
+    // a creator with zero saved categories starts with NONE checked,
+    // the same rule -249 applied on both signup doors. Done still
+    // requires at least one pick (below).
     const toggle = (c) => ({ label: `${sel.includes(c) ? "✓ " : ""}${c}`, run: () => sigOpPick(c, async () => {
       const i = sel.indexOf(c);
       if (i >= 0) sel.splice(i, 1); else sel.push(c);
@@ -13185,7 +13188,7 @@ function sigC2AskGap() {
     const catTotal = (state.boot.creatorCategories || []).length;
     const selSuffixEn = sel.length > 4 ? `Selected: ${sel.length} of ${catTotal}.` : `Selected: ${sel.length ? sel.join(", ") : "none yet"}.`;
     const selSuffixEs = sel.length > 4 ? `Seleccionadas: ${sel.length} de ${catTotal}.` : `Seleccionadas: ${sel.length ? sel.join(", ") : "ninguna aún"}.`;
-    sigOpAsk(ST(`What do you create in? We've ticked everything — most creators here keep nearly all, because your followers are people near you, not a niche audience. Untap any you'd never post about, then Done. ${selSuffixEn}`, `¿En qué categorías creas? Marcamos todas: la mayoría aquí conserva casi todas, porque tus seguidores son personas cerca de ti, no una audiencia de nicho. Desmarca lo que nunca publicarías y luego Listo. ${selSuffixEs}`), [
+    sigOpAsk(ST(`What do you create in? Tap the ones you post about, then Done. ${selSuffixEn}`, `¿En qué categorías creas? Toca las que publicas, luego Listo. ${selSuffixEs}`), [
       ...(state.boot.creatorCategories || []).map(toggle),
       { label: ST("My page is only about one thing", "Mi página es de una sola cosa"), run: () => sigOpPick(ST("My page is only about one thing", "Mi página es de una sola cosa"), async () => {
         if (!sel.length) { sigOpAsk(ST("Pick the one thing your page is about first, then tap that again.", "Elige primero la única cosa de la que trata tu página y luego toca eso de nuevo.")); return; }
@@ -13787,8 +13790,7 @@ function renderClaimHook() {
     <div class="c85-card">
       <p style="font-size:34px;font-weight:800;margin:0 0 2px" id="nb-hook-count">${claimFmtCount(h.neighborCount)}</p>
       <p class="muted" style="margin:0 0 12px">${h.extrapolated ? T(`potential local followers in ${marketLabel}`, `seguidores locales potenciales en ${marketLabel}`) : T(`of your followers live in ${marketLabel}`, `de tus seguidores viven en ${marketLabel}`)}</p>
-      ${h.localWords ? `<p style="margin:0 0 8px"><strong>${esc(h.localWords)}.</strong></p>` : ""}
-      <p style="margin:0 0 8px">${T("Your place as a founding creator in", "Tu lugar como creadora fundadora en")} <strong>${esc(marketLabel)}</strong> ${T("is waiting. Founding creators are recorded in founding order, and founding creators see offers first.", "te está esperando. Los creadores fundadores quedan registrados en orden de llegada, y ven las ofertas primero.")}</p>
+      <p style="margin:0 0 8px">${T("Your place as a founding creator in", "Tu lugar como creadora fundadora en")} <strong>${esc(marketLabel)}</strong> ${T("is waiting. Founding creators see offers first.", "te está esperando. Los creadores fundadores ven las ofertas primero.")}</p>
       ${h.inversion ? `<p class="small" style="margin:0 0 12px">@${esc(h.inversion.handle)} ${T(`has more followers than you (${claimFmtCount(h.inversion.followers)} in total), but fewer local followers in ${marketLabel}. Local beats famous here.`, `tiene más seguidores que tú (${claimFmtCount(h.inversion.followers)} en total), pero menos seguidores locales en ${marketLabel}. Aquí lo local le gana a lo famoso.`)}</p>` : ""}
       <div class="c85-lanes">
         <p><span class="c85-check">✓</span> ${T("Hosted visits: a local business treats you, you post honestly.", "Visitas en cortesía: un negocio local te invita y tú publicas con honestidad.")}</p>

@@ -1,0 +1,31 @@
+== A: source pins ==
+  FAIL  build stamp is 2026.11.21-249 and agrees in both homes
+  PASS  server: the signup fan-out exists (queue, drain, reconcile) and is exported
+  PASS  server: the background function runs the signup drain in its own guarded block
+  PASS  server: register queues the fan-out and holds NO fan-out work itself
+  PASS  server: register still commits its own events (application_submitted, plan_selected)
+  PASS  server: the drain sends the confirmation under a preSendCheck claim gate
+  PASS  server: the consent version is stamped (constant, user record, creator record, event)
+  PASS  server: the -230 refusal carries the new general wording
+  PASS  client: the confirmation headline is You've applied (EN + ES), never You're in
+  PASS  client: the 3-step what-happens-next is on the confirmation screen
+  PASS  client: the text-heavy What-you-get block is gone from the confirmation screen
+  PASS  client: the stat card keeps the big local-followers number, number-free founding line
+  PASS  client: NO number/position language in the stat panel (no band, no out-of-10)
+  PASS  client: the Maggie stack card survives, compact (one line + the form)
+  PASS  client: Step 2 renders NO stall-capture email field anymore
+  PASS  client: Step 2 categories start unchecked (no boot-category seeding)
+  PASS  client: the full-join form's categories start unchecked too
+  PASS  client: the push reminder is OUT of the claim form and ON the confirmation screen
+  PASS  client: the post agreement is the general per-offer wording on BOTH doors (EN + ES)
+  PASS  client: the lookup note is a neutral fill-in instruction, no confession
+  PASS  client: the Terms/Privacy agreement is untouched on the claim account screen
+== B: rendered confirmation screen (real functions, EN + ES) ==
+  PASS  render EN: headline reads You've applied, Jeff.
+  PASS  render EN: the 3 steps render (Applied done, review by hand, dashboard opens)
+  PASS  render EN: the stat card shows 865 of your followers live in Virginia Beach
+  PASS  render EN: founding standing stated with NO numbers (no first-100, no position, no out-of-10)
+  PASS  render EN: the push reminder card is present on the confirmation screen
+  PASS  render ES: headline + steps + stat card in Spanish, still no number language
+  PASS  render EN (no neighbor view): screen still complete without the stat card
+== C: register is fast and lands NOTHING downstream; the drain delivers exactly once ==
