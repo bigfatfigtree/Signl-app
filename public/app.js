@@ -39028,7 +39028,7 @@ async function apRemoveSpend(pilotId, spendId) {
 // -72): state.boot.markets is the app's own market list; this
 // static copy (names exactly as lib/markets.js) only matters if
 // the form is opened before the bootstrap lands.
-const SR_FALLBACK_MARKET_NAMES = ["Virginia Beach", "Richmond", "Washington DC", "Raleigh", "Charlotte", "Baltimore", "Atlanta", "Nashville", "Austin", "Dallas", "Chicago", "Los Angeles", "San Diego", "Seattle", "Tampa", "Phoenix", "Denver", "Minneapolis", "Philadelphia", "Pittsburgh", "Cincinnati", "Columbus", "New Orleans", "Orlando", "Miami", "Houston", "San Antonio", "Las Vegas", "Detroit", "San Juan", "London", "Manchester", "Dubai", "Paris", "Barcelona", "Lisbon", "Sydney", "Melbourne", "Vancouver", "Toronto", "Montreal"];
+const SR_FALLBACK_MARKET_NAMES = ["Virginia Beach", "Richmond", "Washington DC", "Raleigh", "Charlotte", "Baltimore", "Atlanta", "Nashville", "Austin", "Dallas", "Chicago", "Los Angeles", "San Diego", "Seattle", "Tampa", "Phoenix", "Denver", "Minneapolis", "Philadelphia", "Pittsburgh", "Cincinnati", "Columbus", "New Orleans", "Orlando", "Miami", "Houston", "San Antonio", "Las Vegas", "Detroit", "San Juan", "London", "Manchester", "Dubai", "Paris", "Barcelona", "Lisbon", "Sydney", "Melbourne", "Vancouver", "Calgary", "Toronto", "Montreal"];
 
 function srMarketOptionsHtml(names, selectedName) {
   return (names || []).map((name) => `<option value="${esc(name)}" ${name === selectedName ? "selected" : ""}>${esc(name)}</option>`).join("");

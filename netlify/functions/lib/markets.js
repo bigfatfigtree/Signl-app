@@ -550,6 +550,18 @@ const MARKETS = [
     cities: ["Vancouver", "Burnaby", "Richmond", "Surrey", "Langley", "Delta", "Tsawwassen", "Ladner", "Coquitlam", "Port Coquitlam", "Port Moody", "New Westminster", "North Vancouver", "West Vancouver", "Maple Ridge", "Pitt Meadows", "White Rock", "Anmore", "Belcarra"],
   },
   {
+    id: "calgary",
+    name: "Calgary",
+    label: "Calgary, Canada",
+    country: "Canada",
+    // Canada prices in CAD, same override as Toronto,
+    // Montreal and Vancouver (CA$70 floor, CAD_PLANS book).
+    currency: "CAD",
+    currencySymbol: "$",
+    paidFloor: 70,
+    cities: ["Calgary", "Airdrie", "Cochrane", "Okotoks", "Chestermere", "Strathmore", "High River", "Crossfield", "Langdon", "Irricana", "Bragg Creek"],
+  },
+  {
     id: "toronto",
     name: "Toronto",
     label: "Toronto, Canada",
