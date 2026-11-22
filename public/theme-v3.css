@@ -2836,3 +2836,140 @@ body, button, input, select, textarea, h1, h2, h3, h4, .display, .num, .stat .nu
 h1, h2, h3, h4, strong, b { font-weight: 400 !important; }
 .btn, .ws-primary, .rail-primary187, button.btn { font-weight: 600 !important; }
 .tu-name, .pdp-sim-name, .u226-heroname, .person-name { font-weight: 600 !important; }
+
+/* ============================================================
+   Build -248 (Jeff, 2026-11-21): DESKTOP PARITY — the desktop
+   app wears the approved mobile design, laid out wide per the
+   renders Jeff approved tonight
+   (~/workspace/magpie-concepts/desktop-parity-2026-11-21/).
+   Feeds carry a persistent left filter column inside the
+   content area (Jeff's correction, 2026-11-21 21:01: search
+   at the top of the column, then the mobile panel's filter
+   set in its locked order), and the Your Lineup panel does
+   not ride the desktop Find creators page (Jeff's decision,
+   2026-11-21). Profiles split into a
+   main column + right rail, the Wallet's next-move card sits
+   beside the money cards, Results stat tiles run four across
+   with the charts paired, and the Momentum tab gains the
+   business-eye rail. Everything layout-shaped lives inside
+   min-width:1024px; below it, nothing changes.
+   ============================================================ */
+.pdp248-onlyd, .mom248-rail { display: none; }
+.rail-search248, .rail-clear248 { display: none; }
+
+@media (min-width: 1024px) {
+  /* --- Feeds: persistent left filter column (Jeff's
+     correction, 2026-11-21 21:01: the desktop feeds were
+     missing search and filters on the left). The base
+     min-width:900px shop-layout already grids rail + main
+     with the rail sticky; here the column widens a touch,
+     search moves into the top of it (the main column's
+     search row stands down), and the card grids narrow to
+     fit beside it. Below 1024 nothing changes: the phone
+     keeps its search bar + Filter button and the rail stays
+     the bottom sheet it already was. --- */
+  .shop-layout:has(> #disc-rail), .shop-layout:has(> #fo-rail) { grid-template-columns: 300px minmax(0, 1fr); }
+  .rail-search248 { display: block; }
+  .rail-search248 .sr-q { display: block; }
+  .rail-search248 input[type="search"] { width: 100%; }
+  .rail-clear248 { display: block; padding: 4px 0 14px; }
+  .shop-layout:has(> #disc-rail) .shop-searchrow, .shop-layout:has(> #fo-rail) .shop-searchrow { display: none; }
+  /* Jeff (2026-11-21): the Lineup panel is out on desktop
+     Find creators — the card grid leads. */
+  #lineup-slot { display: none; }
+  /* Card grids beside the column: two across, cards keep
+     the mobile card's proportions (the shared .shelf-grid /
+     .mirror-grid step to three across elsewhere at 1280;
+     the feeds stay at two so the cards never squeeze). */
+  #discover-results .shelf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #cr-findoffers .mirror-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* --- Creator profile: main column + right rail --- */
+  .pdp248 {
+    display: grid; grid-template-columns: minmax(0, 1fr) 370px;
+    column-gap: 26px; align-items: start; grid-auto-flow: dense;
+  }
+  .pdp248 > * { grid-column: 1; min-width: 0; }
+  .pdp248 > p:first-child { grid-column: 1 / -1; }
+  .pdp248 > .pdp248-railslot { grid-column: 2; }
+  .pdp248-onlyd { display: block; }
+  .pdp248 .u226-photos {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px; overflow: visible; padding-bottom: 0;
+  }
+  .pdp248 .u226-photoimg { width: 100%; height: 170px; scroll-snap-align: none; }
+  .pdp248-standcard {
+    display: flex; align-items: center; gap: 12px; background: #fff;
+    border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px;
+  }
+  .pdp248-standicon { flex: none; display: inline-flex; }
+  .pdp248-standicon svg { width: 30px; height: 30px; display: block; }
+  .pdp248-standicon.off { opacity: .35; filter: grayscale(1); }
+  .pdp248-standtx { flex: 1 1 auto; min-width: 0; line-height: 1.35; }
+  .pdp248-info {
+    flex: none; width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid var(--line); background: #fff; color: var(--ink2);
+    font: inherit; font-weight: 700; cursor: pointer;
+  }
+
+  /* --- Business profile: hero + photos left, offers rail --- */
+  .bizp248 {
+    display: grid; grid-template-columns: minmax(0, 1fr) 370px;
+    column-gap: 26px; align-items: start;
+  }
+  .bizp248 > * { grid-column: 1; min-width: 0; }
+  .bizp248 > #u226-biz-offers { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; }
+  .bizp248 .u226-photos {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px; overflow: visible; padding-bottom: 0;
+  }
+  .bizp248 .u226-photoimg { width: 100%; height: 170px; scroll-snap-align: none; }
+
+  /* --- Wallet: money cards left, next-move card beside --- */
+  .wallet248-top {
+    display: grid; grid-template-columns: minmax(0, 1fr) 370px;
+    column-gap: 26px; align-items: start; grid-auto-flow: dense;
+  }
+  .wallet248-top > * { grid-column: 1 / -1; min-width: 0; }
+  .wallet248-top > .kpi-grid { grid-column: 1; margin-top: 0; }
+  .wallet248-top > .money-next { grid-column: 2; margin-bottom: 0; }
+  .wallet248-top > p { grid-column: 1; }
+
+  /* --- Business Results: tiles four across, charts paired --- */
+  .j226-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .charts248 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; align-items: start; }
+  .charts248 .chart-card { margin: 0; }
+  .charts248 > .wcard:only-child { grid-column: 1 / -1; }
+
+  /* --- Momentum: main column + business-eye rail --- */
+  .mom248 {
+    display: grid; grid-template-columns: minmax(0, 1fr) 370px;
+    column-gap: 26px; align-items: start;
+  }
+  .mom248-main { min-width: 0; }
+  .mom248-rail { display: block; min-width: 0; }
+  .mom248-rail .u226-card { margin-bottom: 8px; }
+  .mom248-level {
+    display: flex; align-items: center; gap: 12px; background: #fff;
+    border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px;
+    line-height: 1.35;
+  }
+  .mom248-levelbadge {
+    flex: none; width: 44px; height: 44px; border-radius: 50%;
+    background: var(--grad); display: inline-flex; align-items: center; justify-content: center;
+  }
+  /* Ways to earn + points history pair up two across inside
+     the Momentum panel; every other panel child spans full. */
+  .mom248-main .panel.mt { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+  .mom248-main .panel.mt > * { grid-column: 1 / -1; min-width: 0; }
+  .mom248-main .panel.mt > .earn-row { grid-column: auto; }
+}
+
+/* Build -248, narrower desktops: beside the filter column
+   the feed grids drop to one across rather than squeeze the
+   cards below the mobile card's proportions; two across
+   resumes once the main column is wide enough to hold it. */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  #discover-results .shelf-grid { grid-template-columns: 1fr; }
+  #cr-findoffers .mirror-grid { grid-template-columns: 1fr; }
+}

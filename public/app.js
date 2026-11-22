@@ -6118,6 +6118,25 @@ function renderHelpTab() {
   </div>`;
 }
 
+// Build -248: the desktop Momentum rail — the creator's own
+// feed card exactly as a business sees it (the same preview
+// builder the Profile peek uses), a plain-words line about
+// the blue check, and the level card from the approved
+// desktop render. Desktop only: the rail is display:none
+// below 1024px, so the phone tab is byte-identical.
+function momRail248Html(u, m) {
+  let card = "";
+  try { card = feedCreatorCard226Html(creatorPreviewCard(), { preview: true }); } catch (e) { card = ""; }
+  const pts = Math.max(0, Number(m && m.points) || 0);
+  const earned = pts >= 300;
+  const level = pts >= 750 ? "Cornerstone" : pts >= 300 ? "Standout" : pts >= 100 ? "Regular" : "Starter";
+  const caption = earned
+    ? J226("Your blue check shows on this card.", "Tu insignia azul se ve en esta tarjeta.")
+    : `${fmtNum(300 - pts)} ${J226("points to the blue check. It turns blue at 300 points.", "puntos para la insignia azul. Se vuelve azul a los 300 puntos.")}`;
+  return `${card ? `<p class="ui-kicker">${J226("How businesses see you", "Cómo te ven los negocios")}</p>${card}<p class="small muted" style="margin:2px 0 16px">${caption}</p>` : ""}
+  <div class="mom248-level"><span class="mom248-levelbadge"><svg viewBox="0 0 24 24" width="20" height="20" fill="#fff" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span><div><strong>${level}</strong><br><span class="small muted">${J226("Standout at 300 · Cornerstone at 750", "Standout a los 300 · Cornerstone a los 750")}</span></div></div>`;
+}
+
 function renderMomentumTab() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -6127,6 +6146,7 @@ function renderMomentumTab() {
   const next = (m.checklist || []).find((i) => !i.done);
   el.innerHTML = `
   ${wsHead("Momentum", { sub: "Your points, your tier, and what earns more.", subKey: "momentum" })}
+  <div class="mom248"><div class="mom248-main">
   <div class="wcard mom-card">
     <div class="kpi-label">Your Momentum</div>
     <div class="kpi-num" style="font-size:3rem">${fmtNum(m.points || 0)}</div>
@@ -6135,7 +6155,8 @@ function renderMomentumTab() {
   ${momentumHtml(u)}
   ${growRosterHtml(u)}
   ${pointsSectionHtml()}
-  ${goldenTicketsSectionHtml()}`;
+  ${goldenTicketsSectionHtml()}
+  </div><aside class="mom248-rail">${momRail248Html(u, m)}</aside></div>`;
   loadPointsCard();
   loadGoldenTickets();
 }
@@ -6521,7 +6542,7 @@ async function renderEarningsTab() {
   <div class="empty-card"><div class="ec-t">Nothing here yet</div><div class="ec-s">Every paid booking, license and comped visit lands here, dated, cash and comps side by side but never mixed.</div></div>`}`;
     el.innerHTML = `
   ${wsHead("Wallet", { sub: "Cash, comps and history — kept separate, the way a wallet is.", subKey: "earnings" })}
-  ${moneyTop}
+  <div class="wallet248-top">${moneyTop}</div>
   ${wsTabs([
     { label: "Cash", on: wseg === "cash", onclick: "return walletSetSeg125('cash')" },
     { label: "Comps", on: wseg === "comps", onclick: "return walletSetSeg125('comps')" },
@@ -9634,7 +9655,7 @@ function businessProfile226Html(b) {
   if (heroBiz.visitsHosted == null && b.businessTrackRecord && b.businessTrackRecord.visitsHosted != null) heroBiz.visitsHosted = b.businessTrackRecord.visitsHosted;
   const offers = Array.isArray(b.openOffers) ? b.openOffers : [];
   const cards = offers.map((o) => feedOfferCard226Html({ ...o, businessCity: o.businessCity || b.city || "", businessNeighborhood: o.businessNeighborhood || b.neighborhood || "", businessImageUrl: o.businessImageUrl || (Array.isArray(b.photos) && b.photos[0]) || b.photoUrl || "" })).join("");
-  return `<div data-u226="business-profile">
+  return `<div class="bizp248" data-u226="business-profile">
     ${heroBusiness226Html(heroBiz, { onProfile: true })}
     ${photos226Html(b.photos, { app: true })}
     <div class="pdp-block" id="u226-biz-offers"><h4>${J226("Open offers", "Ofertas abiertas")}</h4>
@@ -16535,6 +16556,23 @@ function creatorShowcaseHtml(card) {
 // discovery card (and what the admin preview opens). Built entirely
 // from the same card payload discovery returns, so the detail view
 // can never disagree with the card.
+// Build -248: the desktop creator-profile rail's Momentum card.
+// Earned creators wear the Standout card from the approved
+// desktop render; everyone else sees their real points and the
+// gap, the same numbers the Momentum meter states. Desktop
+// only: the rail slot is display:none below 1024px, and the
+// card renders nothing when the payload carries no Momentum.
+function pdpStandout248Html(c) {
+  if (!c || (!c.momentum && !c.blueCheck)) return "";
+  const pts = Math.max(0, Number(c.momentum && c.momentum.points) || 0);
+  const earned = pts >= 300 || c.blueCheck === true;
+  return `<div class="pdp248-standcard">
+    <span class="pdp248-standicon${earned ? "" : " off"}">${BLUE_CHECK_SVG_226}</span>
+    <div class="pdp248-standtx"><strong>${earned ? J226("Standout creator", "Creadora Standout") : J226("Momentum", "Momentum")}</strong><br><span class="small muted">${fmtNum(pts)} ${J226("Momentum points", "puntos de Momentum")}${earned ? "" : ` · ${fmtNum(300 - pts)} ${J226("to the blue check", "para la insignia azul")}`}</span></div>
+    <button type="button" class="pdp248-info" onclick="return openBlueCheck226()" aria-label="${esc(J226("What the blue check means", "Qué significa la insignia azul"))}">?</button>
+  </div>`;
+}
+
 function creatorProfileDetailHtml(c, preview, opts) {
   // Admin review mode (Jeff, 2026-10-26): the same profile a
   // business sees, rendered from the Admin Applications queue. The
@@ -16557,7 +16595,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
   const locLine = locParts.length ? locParts.join(" · ") : marketDisplayName(c.market);
   const firstName = (c.name || "this creator").trim().split(" ")[0] || "this creator";
   return `
-  <div class="panel">
+  <div class="panel pdp248">
     <p><button class="btn small-btn ghost" onclick="${adminView ? "adminBackToRequests()" : preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to ${adminView ? "Applications" : "results"}</button></p>
     ${heroCreator226Html(c, { preview, admin: adminView })}
     ${photos226Html(c.photos, { app: true })}
@@ -16570,14 +16608,15 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${(!adminView && !preview) ? `<div class="pdp-topacts"><button type="button" class="btn" onclick="startOffer('${c.userId}')">Book ${esc(firstName)}</button>${c.haveBack && state.user && state.user.role === "business" ? `<button type="button" class="btn" onclick="return haveThemBack('${c.userId}', this)">${esc(c.haveBack.label)}</button>` : ""}<button type="button" class="btn ghost" id="pdp-save-top" onclick="return pdpSaveToggle('${c.userId}')">${c.isFavorite ? "Saved" : "Save"}</button><button type="button" class="btn ghost" onclick="openThread('${c.userId}')">Message</button></div>${c.haveBack && state.user && state.user.role === "business" ? `<p class="small muted" style="margin-top:6px">"${esc(c.haveBack.label)}" copies your last visit's terms into a new draft. Nothing sends until you check it and publish.</p>` : ""}` : ""}
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">Greyed out in search and unable to take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. Offers can still be sent; accepting reopens next week.</span></p>` : ""}
-    ${openTo226Html(c)}
+    <div class="pdp248-railslot">${openTo226Html(c)}</div>
     ${whatYouGetHtml(c)}
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.musician && (p.musicPerform || p.musicCreate) ? `<p class="small muted">${[p.musicPerform ? "Open to live performances" : "", p.musicCreate ? "Open to creating music for businesses" : ""].filter(Boolean).join(" &middot; ")}</p>` : ""}
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
     ${platformLinksHtml(c)}
-    ${accounts226Html(c, { app: true })}
+    <div class="pdp248-railslot">${accounts226Html(c, { app: true })}</div>
+    <div class="pdp248-railslot pdp248-onlyd">${pdpStandout248Html(c)}</div>
     ${showcase226Html(c, { app: true })}
     ${creatorShowcaseHtml(c)}
     ${audienceSpecsHtml(c)}
@@ -24828,6 +24867,7 @@ async function renderAnalyticsTab() {
     <div id="biz-stats"></div>
       <div id="biz-stats226"></div>
     ${cards.length ? `<div class="kpi-grid c${Math.min(4, Math.max(2, cards.length))}">${cards.join("")}</div>` : ""}
+    <div class="charts248">
     ${seriesHas ? `<div class="chart-card"><h3>Invites &amp; decisions</h3><p class="wc-sub">Per day, last 30 days. Decisions are application answers, stamped when you make them.</p>
       ${lineChartSvg(series, [{ k: "invited", color: "#0B0D0C" }, { k: "decisions", color: "#5F7265" }])}
       <div class="chart-legend"><span><span class="legend-dot" style="background:#0B0D0C"></span>Invites</span><span><span class="legend-dot" style="background:#5F7265"></span>Decisions</span></div>
@@ -24836,6 +24876,7 @@ async function renderAnalyticsTab() {
       ${barsChartSvg(series, "reach", "#03C9AB")}
     </div>` : ""}
     ${!seriesHas && !reachHas ? `<div class="wcard"><h3>Charts</h3><p class="wc-sub" style="margin:4px 0 0">Charts fill in as your campaigns run: invites, decisions, and local reach, day by day.</p></div>` : ""}
+    </div>
     <div id="biz-intent"></div>
     <div class="wcard"><div class="flex-between" style="flex-wrap:wrap;gap:10px"><h3 style="margin:0">Creator funnel</h3>${segSw([{ v: "7", label: "7 days" }, { v: "30", label: "30 days" }], String(anaDays), "anaSetDays")}</div>
       ${((f.invited || 0) + (f.claimed || 0) + (f.visited || 0) + (f.posted || 0)) > 0 ? `${funnel2Html(stages)}
@@ -25355,6 +25396,15 @@ let discQT138 = null;
 function discQInput() {
   clearTimeout(discQT138);
   discQT138 = setTimeout(() => runDiscover(), 250);
+}
+/* Build -248 (Jeff's desktop correction, 2026-11-21): the
+   desktop filter column carries its own search field at the
+   top. It writes through to the main search input, so
+   runDiscover keeps reading one source. */
+function discQInputRail248(el) {
+  const q = document.getElementById("f-q");
+  if (q) q.value = el.value;
+  discQInput();
 }
 function discMustAll() {
   state.discoverSpanish = false;
@@ -26171,6 +26221,16 @@ function foQInput(el) {
   clearTimeout(foQT138);
   foQT138 = setTimeout(() => renderFindOffers(), 200);
 }
+/* Build -248 (Jeff's desktop correction, 2026-11-21): the
+   desktop filter column's own search field. Same state and
+   debounce as the main search; focus returns to the column
+   field after the re-render, not the main one. */
+function foQInputRail248(el) {
+  state.foQ = el.value;
+  state.foQRailFocus248 = true;
+  clearTimeout(foQT138);
+  foQT138 = setTimeout(() => renderFindOffers(), 200);
+}
 function foDistSet(btn) { state.foDistance = btn.getAttribute("data-dist") || ""; renderFindOffers(); return false; }
 function renderFindOffers() {
   const el = document.getElementById("cr-findoffers");
@@ -26208,6 +26268,10 @@ function renderFindOffers() {
   <div class="shop-layout">
     <aside class="shop-rail${state.foRailOpen ? " open" : ""}" id="fo-rail">
       <div class="rail-head"><strong>Filters</strong><span><button type="button" class="btn small-btn ghost" onclick="return foClearAll()">Clear all</button> <button type="button" class="rail-x" aria-label="Close filters" onclick="state.foRailOpen=false; renderFindOffers()">×</button></span></div>
+      <div class="df-group rail-search248">
+        <div class="df-label">Search</div>
+        <span class="sr-q"><input type="search" id="fo-q-rail" placeholder="Search a business, an offer, a category" value="${esc(state.foQ || "")}" oninput="foQInputRail248(this)"></span>
+      </div>
       <div class="df-group">
         <div class="df-label">Sort</div>
         ${sortSel()}
@@ -26240,6 +26304,7 @@ function renderFindOffers() {
           <label class="musthave"><span class="mh-tx"><strong>Spots still open</strong><small>Room left to apply</small></span><input type="checkbox" class="sw" ${state.foSpots ? "checked" : ""} onchange="state.foSpots=this.checked; renderFindOffers()"></label>
         </div>
       </div>
+      <div class="rail-clear248"><button type="button" class="btn small-btn ghost" onclick="return foClearAll()">Clear all</button></div>
       <div class="rail-foot"><button type="button" class="btn" onclick="state.foRailOpen=false; renderFindOffers()">Show ${list.length} result${list.length === 1 ? "" : "s"}</button></div>
     </aside>
     <div class="shop-main">
@@ -26255,7 +26320,11 @@ function renderFindOffers() {
     ${q.parked.length ? `<h3 style="margin:22px 0 10px">Saved for later</h3>${uxGrid203(q.parked.filter((o) => !o.myApplication).map((o) => mirrorOfferCardHtml(o, { parked: true })), 9, "mirror-grid")}` : ""}
     </div>
   </div>`;
-  if (foRefocus) {
+  if (state.foQRailFocus248) {
+    state.foQRailFocus248 = false;
+    const ri = document.getElementById("fo-q-rail");
+    if (ri) { ri.focus(); try { ri.setSelectionRange(ri.value.length, ri.value.length); } catch (e) { /* no-op */ } }
+  } else if (foRefocus) {
     const qi = document.getElementById("fo-q");
     if (qi) { qi.focus(); try { qi.setSelectionRange(qi.value.length, qi.value.length); } catch (e) { /* no-op */ } }
   }
@@ -26480,6 +26549,10 @@ async function loadDiscover() {
     <div class="shop-layout">
     <aside class="shop-rail" id="disc-rail">
       <div class="rail-head"><strong>Filters</strong><span><button type="button" class="btn small-btn ghost" onclick="return discClearAll()">Clear all</button> <button type="button" class="rail-x" aria-label="Close filters" onclick="return shopRailToggle('disc-rail')">×</button></span></div>
+    <div class="df-group rail-search248">
+      <div class="df-label">Search</div>
+      <span class="sr-q"><input type="search" id="f-q-rail" placeholder="Search name or handle" oninput="discQInputRail248(this)"></span>
+    </div>
     <div class="disc-filters">
       <div class="df-group">
         <div class="df-label">Where &amp; sort</div>
@@ -26497,14 +26570,14 @@ async function loadDiscover() {
         </div>
       </div>
       <div class="df-group">
-        <div class="df-label">Match to a campaign</div>
-        <div class="filters disc-top"><div><select id="f-campaign" class="ctl189" onchange="return discCampaignSet(this.value)"><option value="">No campaign picked</option></select></div></div>
-        <p class="small muted" style="margin:4px 0 0">Every creator gets a match score for that campaign.</p>
-      </div>
-      <div class="df-group">
         <div class="df-label">Category</div>
         <label class="rail-row"><input type="checkbox" id="disc-cat-all" ${(state.discoverCats || []).length ? "" : "checked"} onchange="return discCatAll()"><span class="rr-tx">All categories</span></label>
         ${state.boot.creatorCategories.map((c) => `<label class="rail-row"><input type="checkbox" data-dcat-box="${esc(c)}" ${(state.discoverCats || []).includes(c) ? "checked" : ""} onchange="return discCatToggle('${esc(c)}', this.checked)"><span class="rr-tx">${esc(c)}</span><span class="rr-count" data-dcat-count="${esc(c)}"></span></label>`).join("")}
+      </div>
+      <div class="df-group">
+        <div class="df-label">Match to a campaign</div>
+        <div class="filters disc-top"><div><select id="f-campaign" class="ctl189" onchange="return discCampaignSet(this.value)"><option value="">No campaign picked</option></select></div></div>
+        <p class="small muted" style="margin:4px 0 0">Every creator gets a match score for that campaign.</p>
       </div>
       <div class="df-group">
         <div class="df-label">How you want to book</div>
@@ -26544,6 +26617,7 @@ async function loadDiscover() {
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto" onchange="runDiscover()"> Has a paid rate (paid bookings) only</label></div>
     </div>
     </details>
+      <div class="rail-clear248"><button type="button" class="btn small-btn ghost" onclick="return discClearAll()">Clear all</button></div>
       <div class="rail-foot"><button type="button" class="btn" id="disc-show-btn" onclick="return shopRailToggle('disc-rail')">Show results</button></div>
     </aside>
     <div class="shop-main">
