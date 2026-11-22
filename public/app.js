@@ -34319,7 +34319,7 @@ async function adminAppApproveSelected243(role) {
     // the refreshed list below show what is still pending.
     if (e && e.message === "We could not reach Magpie. Check your connection and try again.") {
       adminAppBulkNote243[role] = approvedTotal
-        ? `The connection timed out partway through. ${approvedTotal} of ${ids.length} went through before it stopped. The list has been refreshed to show what is still pending.`
+        ? `The connection timed out partway through. At least ${approvedTotal} of ${ids.length} went through before it stopped, and more may have landed in the batch that timed out. The list has been refreshed to show what is still pending.`
         : "The connection timed out. Some approvals may have gone through, so the list has been refreshed to show what is still pending.";
       adminAppBulkNoteBad243[role] = false;
     } else {

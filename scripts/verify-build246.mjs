@@ -44,8 +44,15 @@
 //   E. A record whose queue write is lost still gets its
 //      email: the drain's reconciliation re-queues it.
 //   F. A failing send retries across drains, parks as failed
-//      after 5 attempts, and a re-approval after the address
-//      is fixed delivers exactly one email.
+//      after 5 attempts (named by an approval_fanout_failed
+//      event), and a re-approval after the address is fixed
+//      delivers exactly one email.
+//   G. Two drains running at the SAME time still send exactly
+//      one email per record (the claim is re-verified right
+//      before the send).
+//   H. A job that closed without sending (approve, then
+//      reject before the drain ran) settles nothing: a later
+//      re-approval queues fresh and the email lands.
 // Run: node scripts/verify-build246.mjs
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -368,6 +375,8 @@ for (let i = 0; i < 4; i += 1) await runApprovalFanout246();
 jobH = await jobFor(fxH.id);
 check("after 5 attempts the job parks as failed (never dropped, never sent)",
   !!jobH && jobH.state === "failed" && jobH.attempts === 5 && (await approvalMailsFor(fxH.id)).length === 0, JSON.stringify(jobH));
+check("the parked job is named by an approval_fanout_failed event in the log",
+  (await allEvents()).some((e) => e.subjectId === fxH.id && e.type === "approval_fanout_failed"), "");
 const recH = await store.get(`user:${fxH.id}`);
 recH.email = "lat246h-fixed@fixtures.dev";
 await store.set(`user:${fxH.id}`, recH);
@@ -375,6 +384,31 @@ await admin("POST", "/api/admin/review", { userId: fxH.id, decision: "approve" }
 await runApprovalFanout246();
 check("a re-approval after the address is fixed delivers exactly one email",
   (await approvalMailsFor(fxH.id)).length === 1, `mails=${(await approvalMailsFor(fxH.id)).length}`);
+
+// --- G: overlapping drains still send exactly once -------------
+console.log("== G: concurrent drains ==");
+const fxP = await claimCreator("lat246p", 2400);
+const fxQ = await claimCreator("lat246q", 2400);
+const fxR = await claimCreator("lat246r", 2400);
+await admin("POST", "/api/admin/review/bulk", { userIds: [fxP.id, fxQ.id, fxR.id] });
+await Promise.all([runApprovalFanout246(), runApprovalFanout246()]);
+let concOk = true;
+for (const f of [fxP, fxQ, fxR]) if ((await approvalMailsFor(f.id)).length !== 1) concOk = false;
+check("two drains running at the same time send exactly one email per record (claim re-verified before the send)", concOk, "");
+
+// --- H: a job closed without sending settles nothing -----------
+console.log("== H: approve, reject, re-approve ==");
+const fxS = await claimCreator("lat246s", 2400);
+await admin("POST", "/api/admin/review", { userId: fxS.id, decision: "approve" });
+await admin("POST", "/api/admin/review", { userId: fxS.id, decision: "reject" });
+await runApprovalFanout246();
+const jobS = await jobFor(fxS.id);
+check("approve then reject before the drain: the job closes with nothing sent",
+  !!jobS && jobS.state === "done" && jobS.sent === false && (await approvalMailsFor(fxS.id)).length === 0, JSON.stringify(jobS));
+await admin("POST", "/api/admin/review", { userId: fxS.id, decision: "approve" });
+await runApprovalFanout246();
+check("re-approving after that delivers the approval email, exactly once",
+  (await approvalMailsFor(fxS.id)).length === 1, `mails=${(await approvalMailsFor(fxS.id)).length}`);
 
 unwrapStore();
 console.log(`\nverify-build246: ${passed} passed, ${failed} failed`);

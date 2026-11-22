@@ -8503,15 +8503,30 @@ async function recentApprovalSentByUser246(userIds) {
   }
   return out;
 }
+// Does an existing job record settle this record's fan-out?
+// Yes when work is in flight (pending or claimed) and when a
+// past run actually delivered (done with sent set). A job that
+// finished WITHOUT sending (the record was rejected again
+// before the drain reached it, so the drain closed the job
+// with nothing to send) settles nothing: a fresh approval must
+// be able to queue again, or that approval's email is lost
+// for good. A failed job likewise re-queues on a fresh
+// approval.
+function approvalJobSettles246(job) {
+  if (!job) return false;
+  if (job.state === "pending" || job.state === "claimed") return true;
+  if (job.state === "done" && job.sent) return true;
+  return false;
+}
 // Queue one record's approval fan-out. One job-record read, one
-// write; a record already queued, claimed, or done queues
-// nothing (that read IS the fast duplicate guard on the decision
-// path). A failed job (attempts exhausted) may be re-queued by a
-// fresh approval. Returns true when a job is queued.
+// write; a record whose fan-out is in flight or already
+// delivered queues nothing (that read IS the fast duplicate
+// guard on the decision path). Returns true when a job is
+// queued.
 async function queueApprovalFanout246(target, actor) {
   const key = approvalFanoutKey246(target.id);
   const existing = await store.get(key).catch(() => null);
-  if (existing && existing.state !== "failed") return false;
+  if (approvalJobSettles246(existing)) return false;
   await store.set(key, {
     userId: target.id, role: target.role, state: "pending",
     queuedAt: nowIso(), queuedBy: actor ? actor.id : null,
@@ -8544,7 +8559,6 @@ async function reconcileApprovalFanout246() {
   const stampKey = "config:approvalFanoutReconcile246";
   const prev = await store.get(stampKey).catch(() => null);
   if (prev && prev.at && Date.now() - Date.parse(prev.at) < APPROVAL_FANOUT_RECONCILE_MS246) return 0;
-  await store.set(stampKey, { at: nowIso() }).catch(() => {});
   const dayMs = 24 * 60 * 60 * 1000;
   const prefixes = [0, 1].map((back) => `event:${new Date(Date.now() - back * dayMs).toISOString().slice(0, 10)}:`);
   const keys = [];
@@ -8558,29 +8572,43 @@ async function reconcileApprovalFanout246() {
     seen.add(e.subjectId);
     approvedIds.push(e.subjectId);
   }
-  if (!approvedIds.length) return 0;
-  const sentRecently = await recentApprovalSentByUser246(approvedIds);
   let queued = 0;
-  for (const uid of approvedIds) {
-    if (sentRecently.has(uid)) continue;
-    const job = await store.get(approvalFanoutKey246(uid)).catch(() => null);
-    if (job) continue;
-    const target = await store.get(`user:${uid}`).catch(() => null);
-    if (!target || target.status !== "approved" || target.role === "admin") continue;
-    await store.set(approvalFanoutKey246(uid), {
-      userId: uid, role: target.role, state: "pending",
-      queuedAt: nowIso(), queuedBy: null,
-      attempts: 0, claimId: null, claimedAt: null, lastError: null, via: "reconcile",
-    });
-    queued += 1;
+  if (approvedIds.length) {
+    const sentRecently = await recentApprovalSentByUser246(approvedIds);
+    for (const uid of approvedIds) {
+      if (sentRecently.has(uid)) continue;
+      const job = await store.get(approvalFanoutKey246(uid)).catch(() => null);
+      // A settled job (in flight, or delivered) is left alone;
+      // a job that closed without sending settles nothing, so
+      // the record is re-queued here exactly as a fresh
+      // approval would queue it. A failed job stays parked:
+      // resurrecting it on every pass would retry a broken
+      // send forever (it is named by its park event instead).
+      if (approvalJobSettles246(job)) continue;
+      if (job && job.state === "failed") continue;
+      const target = await store.get(`user:${uid}`).catch(() => null);
+      if (!target || target.status !== "approved" || target.role === "admin") continue;
+      await store.set(approvalFanoutKey246(uid), {
+        userId: uid, role: target.role, state: "pending",
+        queuedAt: nowIso(), queuedBy: null,
+        attempts: 0, claimId: null, claimedAt: null, lastError: null, via: "reconcile",
+      });
+      queued += 1;
+    }
   }
+  // The throttle stamp is written only after a scan completes,
+  // so a scan that throws does not burn the window.
+  await store.set(stampKey, { at: nowIso() }).catch(() => {});
   return queued;
 }
 // The drain. Exported for the admin-home-refresh background
 // function (and the suites). Claims each due job before working
-// it and verifies the claim landed, so overlapping drains (the
-// schedule plus a nudge) can never run the same record twice;
-// a claim older than the stale window is reclaimable, so a
+// it, verifies the claim landed, and re-verifies claim
+// ownership immediately before the approval send (the store
+// has no compare-and-swap, so a claim can be overwritten
+// between another drain's write and read-back; the pre-send
+// re-verification is what makes overlapping drains safe).
+// A claim older than the stale window is reclaimable, so a
 // drain that died mid-job never strands the record.
 async function runApprovalFanout246() {
   const out = { reconciled: 0, due: 0, sent: 0, alreadySent: 0, failed: 0, skipped: 0 };
@@ -8614,7 +8642,10 @@ async function runApprovalFanout246() {
     try {
       const target = await store.get(`user:${job.userId}`);
       if (!target || target.status !== "approved" || target.role === "admin") {
-        await store.set(key, { ...verify, state: "done", claimId: null, claimedAt: null, doneAt: nowIso(), note: "Record is no longer approved; nothing to send." });
+        // Closed WITHOUT sending (sent: false): if this record
+        // is approved again later, that approval queues a fresh
+        // job — see approvalJobSettles246.
+        await store.set(key, { ...verify, state: "done", sent: false, claimId: null, claimedAt: null, doneAt: nowIso(), note: "Record is no longer approved; nothing to send." });
         out.skipped += 1;
         continue;
       }
@@ -8649,17 +8680,33 @@ async function runApprovalFanout246() {
         } else {
           mail = businessApprovalEmail(target);
         }
+        // Claim re-verification, immediately before the send:
+        // the store has no compare-and-swap, so two drains
+        // (the schedule plus a nudge, across instances) can
+        // both pass the claim check when one's claim lands
+        // between the other's write and read-back. The loser
+        // detects it HERE — its claimId is no longer on the
+        // job — and stands down before sending, which is what
+        // keeps the send exactly-once when drains overlap.
+        const stillMine = await store.get(key).catch(() => null);
+        if (!stillMine || stillMine.claimId !== claimId) { out.skipped += 1; continue; }
         const res = await deliverEmail("approval", target, mail.subject, mail.text, band);
         if (!res || !res.sent) throw new Error(`approval email not sent: ${(res && res.reason) || "unknown"}`);
         out.sent += 1;
       }
-      await store.set(key, { ...verify, state: "done", claimId: null, claimedAt: null, doneAt: nowIso(), lastError: null });
+      await store.set(key, { ...verify, state: "done", sent: true, claimId: null, claimedAt: null, doneAt: nowIso(), lastError: null });
     } catch (e) {
       const attempts = claimed.attempts || 1;
       const exhausted = attempts >= APPROVAL_FANOUT_MAX_ATTEMPTS246;
       console.error(`Magpie approval fan-out failed for ${job.userId} (attempt ${attempts}):`, (e && e.message) || e);
       await store.set(key, { ...verify, state: exhausted ? "failed" : "pending", claimId: null, claimedAt: null, lastError: String((e && e.message) || e) }).catch(() => {});
-      if (exhausted) out.failed += 1;
+      if (exhausted) {
+        out.failed += 1;
+        // A parked job is named in the event log, not just the
+        // console, so a stuck approval email is findable later
+        // (the daily trigger-email check reads these events).
+        try { await logEvent({ type: "approval_fanout_failed", actorId: null, actorRole: "system", subjectId: job.userId, data: { attempts, error: String((e && e.message) || e) } }); } catch (e2) { /* best-effort */ }
+      }
     }
   }
   return out;
