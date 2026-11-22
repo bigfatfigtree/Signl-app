@@ -81,7 +81,7 @@ const AGREE = { agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCo
 
 // ---------- unit level: the roster and the alias ----------
 const names = MARKETS.map((m) => m.name);
-check("roster has exactly 48 markets (37 of the reset + Miami restored in Build -59 + the 3 NZ markets of Build -117 + Dublin, Amsterdam, Copenhagen and Mexico City in Build -127 + New York City and Boston added since + Charlottesville restored in Build -207)", names.length === 48, String(names.length));
+check("roster has exactly 51 markets (37 of the reset + Miami restored in Build -59 + the 3 NZ markets of Build -117 + Dublin, Amsterdam, Copenhagen and Mexico City in Build -127 + New York City and Boston added since + Charlottesville restored in Build -207 + Sydney, Melbourne and Vancouver added in Build -251)", names.length === 51, String(names.length));
 check("Virginia Beach is a market; Hampton Roads is not a market name", names.includes("Virginia Beach") && !names.includes("Hampton Roads"));
 const vb = MARKETS.find((m) => m.name === "Virginia Beach");
 check("Virginia Beach keeps the stable id hampton-roads", !!vb && vb.id === "hampton-roads");
@@ -98,8 +98,8 @@ check("all 16 markets added 2026-10-23 are present", ADDED.every((n) => names.in
 // market after a creator signed up there and filed as not
 // listed. The other 15 removals of the 2026-10-23 reset still
 // stand.
-const REMOVED = ["Roanoke", "Greensboro", "Wilmington", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Sydney", "Melbourne", "Perth", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
-check("all 15 still-removed markets are gone (Miami restored in Build -59, Auckland in Build -117, Charlottesville in Build -207)", REMOVED.every((n) => !names.includes(n)));
+const REMOVED = ["Roanoke", "Greensboro", "Wilmington", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Perth", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
+check("all 13 still-removed markets are gone (Miami restored in Build -59, Auckland in Build -117, Charlottesville in Build -207, Sydney and Melbourne restored in Build -251)", REMOVED.every((n) => !names.includes(n)));
 check("Charlottesville is back on the roster (restored in Build -207)", names.includes("Charlottesville"));
 check("Miami is back on the roster (restored in Build -59)", names.includes("Miami"));
 // Build -117 (Jeff, 2026-11-03): New Zealand joins the roster.
@@ -174,8 +174,9 @@ try {
     canonical.r.status === 201 && !!canonical.r.data.user && canonical.r.data.user.market === "Virginia Beach");
 
   // The removed-market refusal fixture used Miami until Build
-  // -59 restored it; Sydney is still removed and carries the pin.
-  const removed = await quickClaim("removed@fixtures.dev", "removed757", "Sydney");
+  // -59 restored it, then Sydney until Build -251 restored it;
+  // Perth is still removed and carries the pin.
+  const removed = await quickClaim("removed@fixtures.dev", "removed757", "Perth");
   check("claim with a removed market is refused (400)", removed.r.status === 400, String(removed.r.status));
 
   const added = await quickClaim("toronto@fixtures.dev", "torontoeats", "Toronto");

@@ -326,5 +326,26 @@
   "source": "existing Magpie site bundle photo (signl-site assets/photos/city-new-york.jpg)",
   "license": "Magpie bundle asset",
   "page": null
+ },
+ "sydney": {
+  "source": "https://commons.wikimedia.org/wiki/File:Sydney_Opera_House_-_Dec_2008.jpg",
+  "license": "CC BY-SA 3.0",
+  "artist": "Diliff",
+  "page": "https://en.wikipedia.org/wiki/Sydney",
+  "file": "Sydney Opera House - Dec 2008.jpg"
+ },
+ "melbourne": {
+  "source": "https://commons.wikimedia.org/wiki/File:Melbourne_Docklands_-_Yarras_Edge_-_marina_panorama.jpg",
+  "license": "CC BY 2.5",
+  "artist": "Diliff",
+  "page": "https://en.wikipedia.org/wiki/Melbourne",
+  "file": "Melbourne Docklands - Yarras Edge - marina panorama.jpg"
+ },
+ "vancouver": {
+  "source": "https://commons.wikimedia.org/wiki/File:Vancouver_%28BC%2C_Canada%29%2C_Devonian_Harbour_Park_--_2022_--_2119.jpg",
+  "license": "CC BY-SA 4.0",
+  "artist": "Dietmar Rabich",
+  "page": "https://en.wikipedia.org/wiki/Vancouver",
+  "file": "Vancouver (BC, Canada), Devonian Harbour Park -- 2022 -- 2119.jpg"
  }
 }

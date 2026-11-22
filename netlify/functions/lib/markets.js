@@ -506,6 +506,49 @@ const MARKETS = [
     country: "Portugal",
     cities: ["Lisbon", "Amadora", "Oeiras", "Loures", "Cascais", "Sintra", "Almada", "Setúbal", "Barreiro", "Seixal", "Odivelas", "Vila Franca de Xira", "Mafra", "Montijo", "Palmela", "Sesimbra", "Moita", "Alcochete"],
   },
+  // Build -251 (Jeff, 2026-11-22: "Add them as city pages and
+  // markets in the app. Not a real blocker if we do that"):
+  // Sydney, Melbourne and Vancouver join the canonical roster
+  // as founding markets (not live for money; activation stays
+  // Jeff's tap). Sydney and Melbourne price in AUD: converted
+  // from the USD canon at USD/AUD 1.52 the London way (tiers
+  // end in 9 just under the straight conversion; floor and
+  // credit on clean points): $50 floor -> A$75 (76 at rate);
+  // $100 credit -> A$150; tiers $199/$349/$699 -> A$299 /
+  // A$529 / A$1,059 (302.5 / 530.5 / 1,062.5 at rate). First
+  // months: A$149 / A$379 / A$909. The founding book is
+  // AUD_PLANS. Vancouver prices in CAD like Toronto and
+  // Montreal (CA$70 floor, CAD_PLANS founding book).
+  {
+    id: "sydney",
+    name: "Sydney",
+    label: "Sydney, Australia",
+    country: "Australia",
+    currency: "AUD",
+    currencySymbol: "$",
+    paidFloor: 75,
+    cities: ["Sydney", "Parramatta", "North Sydney", "Chatswood", "Manly", "Bondi", "Newtown", "Surry Hills", "Randwick", "Hornsby", "Blacktown", "Penrith", "Liverpool", "Campbelltown", "Sutherland", "Cronulla", "Ryde", "Epping", "Bankstown", "Hurstville", "Auburn", "Strathfield", "Burwood", "Ashfield", "Marrickville", "Mosman", "Lane Cove", "Castle Hill"],
+  },
+  {
+    id: "melbourne",
+    name: "Melbourne",
+    label: "Melbourne, Australia",
+    country: "Australia",
+    currency: "AUD",
+    currencySymbol: "$",
+    paidFloor: 75,
+    cities: ["Melbourne", "Fitzroy", "Richmond", "Brunswick", "Northcote", "Coburg", "Preston", "Footscray", "Sunshine", "Essendon", "Moonee Ponds", "Prahran", "South Yarra", "St Kilda", "Brighton", "Box Hill", "Ringwood", "Dandenong", "Frankston", "Springvale", "Clayton", "Oakleigh", "Glen Waverley", "Doncaster", "Heidelberg", "Epping", "Werribee", "Hoppers Crossing", "Broadmeadows", "Cranbourne", "Pakenham", "Mordialloc"],
+  },
+  {
+    id: "vancouver",
+    name: "Vancouver",
+    label: "Vancouver, Canada",
+    country: "Canada",
+    currency: "CAD",
+    currencySymbol: "$",
+    paidFloor: 70,
+    cities: ["Vancouver", "Burnaby", "Richmond", "Surrey", "Langley", "Delta", "Tsawwassen", "Ladner", "Coquitlam", "Port Coquitlam", "Port Moody", "New Westminster", "North Vancouver", "West Vancouver", "Maple Ridge", "Pitt Meadows", "White Rock", "Anmore", "Belcarra"],
+  },
   {
     id: "toronto",
     name: "Toronto",
@@ -931,6 +974,57 @@ const NZD_PLANS = [
     ],
   },
 ];
+const AUD_PLANS = [
+  {
+    id: "self-service",
+    name: "Self-Service",
+    priceMonthly: 299,
+    foundingCredit: 150,
+    firstMonthPriceMonthly: 149,
+    minMonths: 3,
+    visitsPerMonth: 5,
+    vatNote: "Plus GST where it applies.",
+    features: [
+      "Book from the ranked local roster",
+      "5 creator visits a month",
+      "Comped visits, or paid at the creator's listed rate",
+      "Counted results on every visit",
+    ],
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    priceMonthly: 529,
+    foundingCredit: 150,
+    firstMonthPriceMonthly: 379,
+    minMonths: 3,
+    visitsPerMonth: 10,
+    vatNote: "Plus GST where it applies.",
+    features: [
+      "Everything in Self-Service",
+      "10 creator visits a month",
+      "Built for paid work and reuse",
+      "License library with renewal tracking",
+      "Priority access to top local creators",
+    ],
+  },
+  {
+    id: "managed",
+    name: "Managed",
+    priceMonthly: 1059,
+    foundingCredit: 150,
+    firstMonthPriceMonthly: 909,
+    minMonths: 3,
+    visitsPerMonth: 20,
+    vatNote: "Plus GST where it applies.",
+    features: [
+      "Everything in Growth",
+      "20 creator visits a month",
+      "We run the campaigns for you",
+      "Monthly results review with your team",
+    ],
+  },
+];
 const CAD_PLANS = [
   {
     id: "self-service",
@@ -1164,7 +1258,7 @@ const MXN_PLANS = [
     ],
   },
 ];
-const PLAN_BOOK = { USD: PLANS, GBP: GBP_PLANS, NZD: NZD_PLANS, CAD: CAD_PLANS, EUR: EUR_PLANS, DKK: DKK_PLANS, MXN: MXN_PLANS };
+const PLAN_BOOK = { USD: PLANS, GBP: GBP_PLANS, NZD: NZD_PLANS, CAD: CAD_PLANS, EUR: EUR_PLANS, DKK: DKK_PLANS, MXN: MXN_PLANS, AUD: AUD_PLANS };
 // London district race (Build -106, Tier 3 item 15b): the five
 // Tier 1 districts from the London launch strategy, each mapped
 // to its component areas exactly as they exist in the London
@@ -1446,4 +1540,4 @@ function resolveTypedCity(raw, hints, markets) {
   };
 }
 
-module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, currencyForMarket, paidFloorForMarket, DEFAULT_CURRENCY, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, GBP_PLANS, NZD_PLANS, CAD_PLANS, PLAN_BOOK, planBookFor, planInBook, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };
+module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, currencyForMarket, paidFloorForMarket, DEFAULT_CURRENCY, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, GBP_PLANS, NZD_PLANS, CAD_PLANS, AUD_PLANS, PLAN_BOOK, planBookFor, planInBook, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };
