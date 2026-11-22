@@ -27,13 +27,13 @@
 //      the ct199 treatment and data-labels.
 //   B. A bulk approve of 5 production-shaped records (4
 //      creators, 1 business) returns far inside the old 20s
-//      client deadline, with ZERO whole-log event reads, ZERO
-//      prospect scans, and ZERO emails sent on the request
-//      path — and 5 fan-out jobs queued. A second bulk (B2)
-//      re-measures, and stack capture on every user:/prospect:
-//      list proves none of them passes through the decision
-//      path (the stray user: lists in a window trace to Biz
-//      Dev's per-request preamble, never to the review code).
+//      client deadline, with ZERO prospect scans and ZERO
+//      emails sent on the request path — and 5 fan-out jobs
+//      queued. Stack capture on every event:/user:/prospect:
+//      read in the window proves none of them passes through
+//      the decision path or the guard walk (stray reads trace
+//      to fire-and-forget per-request preamble jobs, never to
+//      the review code). A second bulk (B2) re-measures.
 //   C. The drain then delivers exactly 5 approval emails (one
 //      per record, subjects intact), flips the recruiter
 //      prospects of the two LINKED creators, and skips the
@@ -232,11 +232,11 @@ check("fixture business registers", bizReg.status === 201 && !!bizId, `${bizReg.
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const orig = { get: store.get, set: store.set, del: store.del, list: store.list, listKeys: store.listKeys, getMany: store.getMany };
 let counters = null;
-function resetCounters() { counters = { get: 0, set: 0, del: 0, listKeys: [], list: [], getMany: 0, stacks: [] }; }
+function resetCounters() { counters = { get: 0, set: 0, del: 0, listKeys: [], list: [], getMany: 0, stacks: [], keyStacks: [] }; }
 store.get = async (k) => { if (counters) counters.get += 1; await sleep(40); return orig.get(k); };
 store.set = async (k, v) => { if (counters) counters.set += 1; await sleep(40); return orig.set(k, v); };
 store.del = async (k) => { if (counters) counters.del += 1; await sleep(40); return orig.del(k); };
-store.listKeys = async (p) => { if (counters) counters.listKeys.push(p); const out = await orig.listKeys(p); await sleep(40 * Math.max(1, Math.ceil(out.length / 1000))); return out; };
+store.listKeys = async (p) => { if (counters) { counters.listKeys.push(p); if (typeof p === "string" && p.startsWith("event:")) counters.keyStacks.push({ prefix: p, stack: new Error("trace").stack || "" }); } const out = await orig.listKeys(p); await sleep(40 * Math.max(1, Math.ceil(out.length / 1000))); return out; };
 store.list = async (p) => { if (counters) { counters.list.push(p); if (p === "user:" || p === "prospect:") counters.stacks.push({ prefix: p, stack: new Error("trace").stack || "" }); } const out = await orig.list(p); await sleep(40 * Math.max(1, Math.ceil(out.length / 1000))); return out; };
 store.getMany = async (keys) => { if (counters) counters.getMany += 1; await sleep(40 * Math.max(1, Math.ceil((keys || []).length / 12))); return orig.getMany(keys); };
 function unwrapStore() { Object.assign(store, orig); }
@@ -254,8 +254,13 @@ const bulk = await admin("POST", "/api/admin/review/bulk", { userIds: five });
 const bulkMs = Date.now() - t0;
 check("bulk approve of 5 returns 200 with approved=5", bulk.status === 200 && bulk.data.approved === 5 && bulk.data.total === 5, `${bulk.status} ${JSON.stringify(bulk.data).slice(0, 200)}`);
 check(`bulk approve returns far inside the old 20s client deadline (took ${bulkMs}ms)`, bulkMs < 20000, `${bulkMs}ms`);
-check("the request path read NO event-log keys (no whole-log guard scan)",
-  !counters.listKeys.some((p) => p === "event:" || p.startsWith("event:2")), JSON.stringify(counters.listKeys));
+check("no event-log read in the window came from the decision path or the guard walk (stacks)",
+  // Fire-and-forget preamble jobs can read today's event keys
+  // inside any request window (proven by stack capture: they
+  // trace to sweeps, never to the review code); what must
+  // never happen on this path is listEventsForSubject, the
+  // whole-log walk behind the -239 guard.
+  counters.keyStacks.every((s) => !s.stack.includes("applyReviewDecision243") && !s.stack.includes("listEventsForSubject")), JSON.stringify(counters.keyStacks.map((s) => s.prefix)));
 check("the request path ran NO prospect scan",
   !counters.list.some((p) => p === "prospect:"), JSON.stringify(counters.list));
 check("no user: or prospect: list in the window passed through the decision path (stacks)",
@@ -317,8 +322,8 @@ const bulk2nd = await admin("POST", "/api/admin/review/bulk", { userIds: five2 }
 const bulk2Ms = Date.now() - t2;
 check("second bulk approve of 5 returns 200 with approved=5", bulk2nd.status === 200 && bulk2nd.data.approved === 5, `${bulk2nd.status}`);
 check(`second bulk also returns far inside the deadline (took ${bulk2Ms}ms)`, bulk2Ms < 20000, `${bulk2Ms}ms`);
-check("second bulk: NO event-log reads, NO prospect scan, and no list through the decision path",
-  !counters.listKeys.some((p) => p === "event:" || p.startsWith("event:2"))
+check("second bulk: no guard walk, NO prospect scan, and no list through the decision path",
+  counters.keyStacks.every((s) => !s.stack.includes("applyReviewDecision243") && !s.stack.includes("listEventsForSubject"))
   && !counters.list.some((p) => p === "prospect:")
   && counters.stacks.every((s) => !s.stack.includes("applyReviewDecision243")), JSON.stringify({ listKeys: counters.listKeys, list: counters.list }));
 await runApprovalFanout246();
