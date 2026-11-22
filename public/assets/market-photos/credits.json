@@ -354,5 +354,12 @@
   "artist": "Dwayne Reilander",
   "page": "https://en.wikipedia.org/wiki/Calgary",
   "file": "A berm is built along the Bow river near downtown Calgary, Alberta, Canada in 2022.jpg"
+ },
+ "san-francisco": {
+  "source": "https://commons.wikimedia.org/wiki/File:San_Francisco_skyline_from_Potrero_Hill.jpg",
+  "license": "CC BY 3.0",
+  "artist": "Andreas Praefcke",
+  "page": "https://en.wikipedia.org/wiki/San_Francisco",
+  "file": "San Francisco skyline from Potrero Hill.jpg"
  }
 }

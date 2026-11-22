@@ -245,6 +245,13 @@ const MARKETS = [
     cities: ["San Diego", "Chula Vista", "Oceanside", "Escondido", "Carlsbad", "El Cajon", "Vista", "San Marcos", "Encinitas", "La Mesa", "Santee", "Poway", "National City", "Solana Beach", "Del Mar", "Coronado", "Imperial Beach", "Lemon Grove", "Fallbrook"],
   },
   {
+    id: "san-francisco",
+    name: "San Francisco",
+    label: "San Francisco, California",
+    country: "United States",
+    cities: ["San Francisco", "Oakland", "Berkeley", "Daly City", "San Mateo", "Fremont", "Hayward", "Richmond", "San Rafael", "Walnut Creek", "Concord"],
+  },
+  {
     id: "seattle",
     name: "Seattle",
     label: "Seattle, Washington",
@@ -1382,6 +1389,7 @@ const MARKET_STATES = {
   boston: ["MA"],
   charlottesville: ["VA"],
   "san-diego": ["CA"],
+  "san-francisco": ["CA"],
   seattle: ["WA"],
   tampa: ["FL"],
   phoenix: ["AZ"],
