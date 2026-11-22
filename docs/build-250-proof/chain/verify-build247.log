@@ -1,0 +1,24 @@
+  PASS  stamp: BUILD_ID is -247 or later
+  PASS  stamp: shell __SIGNL_BUILD__ is -247 or later
+  PASS  cut: POINTS_WHY_LONG is retired (no const, no render, nowhere in app.js)
+  PASS  cut: the long paragraph text itself is gone from the client
+  PASS  cut: the Earned-for prose paragraph is gone
+  PASS  panel: still renders the meter, the points pill, Ways to earn and Points history
+  PASS  panel: the floor fact survives as its own conditional line, not a paragraph tail
+  PASS  meter: all four levels still marked (Starter 0, Regular 100, Standout 300, Cornerstone 750)
+  PASS  meter: thresholds untouched (cap 750, check at 300)
+  PASS  meter: the computed gap line stays (EN + ES)
+  PASS  meter: the one list line stays (EN + ES)
+  PASS  tab: the number card stays with its next-step line
+  FAIL  sheet: the not-money line moved here (EN)
+  FAIL  sheet: the not-money line moved here (ES)
+  FAIL  sheet: the -245 sheet facts are intact (300, 18 hours early, never bought, EN + ES)
+  PASS  math: blueCheckFromPoints is still the pure ledger-points derive at the same threshold constant
+  PASS  canon: POINTS_WHY_SHORT still defined once and still rendered on its other surfaces
+  PASS  copy: no em dashes in the changed view or sheet
+
+verify-build247: 15 passed, 3 failed
+FAILURES:
+ - sheet: the not-money line moved here (EN)
+ - sheet: the not-money line moved here (ES)
+ - sheet: the -245 sheet facts are intact (300, 18 hours early, never bought, EN + ES)

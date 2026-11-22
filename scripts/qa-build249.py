@@ -86,7 +86,8 @@ try:
         )
         page = ctx.new_page()
         page.goto(BASE + "/", wait_until="networkidle")
-        page.wait_for_function("() => window.__SIGNL_BUILD__ === '2026.11.21-249' && typeof render === 'function'")
+        # Bundle -250: the merged tree carries the -250 stamp; the gate follows it.
+        page.wait_for_function("() => window.__SIGNL_BUILD__ === '2026.11.21-250' && typeof render === 'function'")
         check("app boots on the -249 stamp", True)
 
         # --- Screen 1 (welcome), as a stranger lands on it ---

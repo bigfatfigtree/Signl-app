@@ -1,0 +1,130 @@
+  ok [A: template] subject names the market
+  ok [A: template] greeting uses the first name only
+  ok [A: template] opener slot is filled
+  ok [A: template] legacy Hampton Roads recipient gets the Hampton Roads founding paragraph, with no launch date promised (Build -38)
+  ok [A: template] claim link is prefilled with handle + market
+  ok [A: template] founding email carries the approval status sentence
+  ok [A: template] founding pitch leads with both lanes: comp or the creator's own paid rate at 97%
+  ok [A: template] founding pitch keeps the mechanics after the lanes: 48 hours, no script, full disclosure, live founding profile
+  ok [A: template] founding email carries the local-reach line verbatim (Jeff, 2026-10-25)
+  ok [A: template] founding email carries the Momentum clause: on-time posts earn points that raise visibility
+  ok [A: template] local-reach paragraph sits between the both-lanes pitch and the market paragraph
+  ok [A: template] sign-off is Jeff, Founder, Magpie, with the tagline
+  ok [A: template] no last name anywhere in the email
+  ok [A: template] no em dashes anywhere in the email
+  ok [A: template] missing name falls back to Hi there,
+  ok [A: template] other markets get the founding paragraph
+  ok [A: template] other markets never mention Black Friday
+  ok [A: template] other-market claim link encodes its market
+  ok [B: auth] unauthenticated campaign status refused
+  ok [B: auth] unauthenticated sweep refused (no token configured)
+  ok [B: auth] creator registered for the refusal checks
+  ok [B: auth] creator refused on campaign status
+  ok [B: auth] creator refused on import
+  ok [B: auth] creator refused on arm
+  ok [B: auth] creator refused on disarm
+  ok [B: auth] creator refused on sweep
+  ok [C: import] import accepted
+  ok [C: import] 10 good recipients imported
+  ok [C: import] blocklist address recorded as skipped, not queued
+  ok [C: import] invalid email + missing opener refused as invalid
+  ok [C: import] re-import dedupes every existing address
+  ok [C: import] status shows the queue
+  ok [C: import] default campaign id + starts disarmed
+  ok [C: import] unknown campaign reads as an empty disarmed queue
+  ok [C: import] import events logged
+  ok [D: sweep gating] disarmed campaign sends nothing
+  ok [D: sweep gating] arm works
+  ok [D: sweep gating] campaign_armed event logged
+  ok [D: sweep gating] outside the window the sweep sends nothing
+  ok [D: sweep gating] first in-window sweep sends one batch of 8
+  ok [D: sweep gating] one campaign_email_sent event per send
+  ok [D: sweep gating] queue drains 8 sent / 2 queued
+  ok [D: sweep gating] recent sends carry timestamps + message refs
+  ok [D: sweep gating] still armed with queue remaining
+  ok [D: sweep gating] second sweep sends the remaining 2
+  ok [D: sweep gating] emptied queue auto-disarms
+  ok [D: sweep gating] queue-empty event logged
+  ok [E: failure stop] failure-test import queued 5
+  ok [E: failure stop] run stops after the 3rd failure (more than 2)
+  ok [E: failure stop] lastError is set on the campaign
+  ok [E: failure stop] failed recipients stay queued for a later retry (nothing burned)
+  ok [E: failure stop] one campaign_email_failed event per failure
+  ok [E: failure stop] manual disarm works
+  ok [E: failure stop] campaign_disarmed event logged
+  ok [F: daily ceiling] daily-test import queued 85
+  ok [F: daily ceiling] same-day sweeps stop when the global day total hits 40 (10 earlier + 30 here)
+  ok [F: daily ceiling] the zero-send sweep reports the ceiling honestly (sentToday 40 of 40, ceiling hit, not an error)
+  ok [F: daily ceiling] queue waits at 30 sent / 55 queued
+  ok [F: daily ceiling] hitting the ceiling is not an error: still armed, no lastError, no disarm reason
+  ok [F: daily ceiling] campaign view exposes the daily ceiling, today's count field, and the runaway backstop
+  ok [F: daily ceiling] no backstop event fired
+  ok [F: daily ceiling] the ceiling is global: the default campaign's 10 earlier sends count toward the same 40
+  ok [F: daily ceiling] the next ET day sends resume and stop at that day's 40
+  ok [F: daily ceiling] after day 2: 70 sent / 15 queued, still armed
+  ok [F: daily ceiling] day 3 sends the remaining 15
+  ok [F: daily ceiling] lifetime total passes the old 80 cap (85 sent) and the drained queue auto-disarms
+  ok [G: client copy] campaign tab wired in the client
+  ok [G: client copy] arm/pause control wired in the client
+  ok [G: client copy] paste-import box rendered in the campaign tab
+  ok [G: client copy] import handler posts the box payload to the endpoint
+  ok [G: client copy] served app.js carries the import box + handler
+  ok [H: paste-box import] box-shaped payload imports (explicit campaignId, name optional)
+  ok [H: paste-box import] imported pair queued on the default campaign
+  ok [H: paste-box import] campaign stays disarmed after a box import (import never arms)
+  ok [I: tester exclusion] tester candidate registered
+  ok [I: tester exclusion] registration stores tester: false by default
+  ok [I: tester exclusion] tester candidate approved
+  ok [I: tester exclusion] toggle refuses anonymous callers (401)
+  ok [I: tester exclusion] toggle refuses non-admin creators (403)
+  ok [I: tester exclusion] toggle refuses an unknown user (404)
+  ok [I: tester exclusion] toggle refuses a non-boolean flag (400)
+  ok [I: tester exclusion] admin flags the creator as tester
+  ok [I: tester exclusion] creator_marked_tester event logged
+  ok [I: tester exclusion] import skips the tester account address, queues the other two
+  ok [I: tester exclusion] tester-test queue: 2 queued, 1 skipped, 0 sent
+  ok [I: tester exclusion] late-flag creator registered
+  ok [I: tester exclusion] sweep sends only to the real prospect and prunes the newly flagged tester
+  ok [I: tester exclusion] exactly one campaign_email_sent event from the tester-test sweep
+  ok [I: tester exclusion] the pruned recipient is logged (campaign_recipient_skipped)
+  ok [I: tester exclusion] after the sweep: 1 sent, 2 skipped, queue empty, auto-disarmed
+  ok [I: tester exclusion] admin can move a tester back to the roster
+  ok [I: tester exclusion] creator_unmarked_tester event logged
+  ok [J: crossover campaign] crossover campaign id is the shipped one
+  ok [J: crossover campaign] crossover subject: national platforms plus a local layer in the market
+  ok [J: crossover campaign] crossover greeting uses the first name only
+  ok [J: crossover campaign] crossover opener slot is filled
+  ok [J: crossover campaign] platforms named the approved generic way
+  ok [J: crossover campaign] additive and non-exclusive: keep every national deal
+  ok [J: crossover campaign] local perks: comps, honest post within 48 hours, tracked public track record
+  ok [J: crossover campaign] local money route 1: own paid rate, keep 97 percent, business covers 3 percent, Magpie holds the payment, paid after the post is live and verified within 48 hours once payout details are set up
+  ok [J: crossover campaign] local money route 2: 15k+ followers first in line for paid cash campaigns
+  ok [J: crossover campaign] why local pays: the audience share in the market is the number Magpie leads with
+  ok [J: crossover campaign] founding mechanics: free profile, founding standing that never expires, founding-market paragraph (Build -242: sign-up order language removed)
+  ok [J: crossover campaign] crossover claim link is the full prefilled URL
+  ok [J: crossover campaign] crossover email carries the approval status sentence
+  ok [J: crossover campaign] crossover sign-off is Jeff, Founder, Magpie, with the tagline
+  ok [J: crossover campaign] no last name anywhere in the crossover email
+  ok [J: crossover campaign] no em dashes anywhere in the crossover email
+  ok [J: crossover campaign] crossover missing name falls back to Hi there,
+  ok [J: crossover campaign] crossover legacy Hampton Roads recipient gets the Hampton Roads founding paragraph, with no launch date promised (Build -38)
+  ok [J: crossover campaign] template dispatch: the crossover id renders the crossover subject
+  ok [J: crossover campaign] template dispatch: the founding id renders the founding subject
+  ok [J: crossover campaign] hello campaign id is the shipped one
+  ok [J: crossover campaign] template dispatch: the hello@ lane renders the founding email byte for byte
+  ok [J: crossover campaign] template dispatch: any other campaign keeps the founding template
+  ok [J: crossover campaign] crossover import queues the 45 fresh addresses
+  ok [J: crossover campaign] the founding-campaign address is skipped and reported as cross_campaign
+  ok [J: crossover campaign] crossover queue lives under its own campaign keys: 45 queued, 1 skipped, 0 sent
+  ok [J: crossover campaign] crossover starts disarmed (import never arms)
+  ok [J: crossover campaign] founding campaign counts untouched by the crossover import
+  ok [J: crossover campaign] re-import into crossover dedupes within the campaign
+  ok [J: crossover campaign] both real campaigns together stop at the day's 40
+  ok [J: crossover campaign] crossover did the bulk of the day's sending from its own queue
+  ok [J: crossover campaign] the ceiling sweep reports sentToday 40 with the ceiling hit, not an error
+  ok [J: crossover campaign] crossover stays armed with queue remaining and no lastError
+  ok [J: crossover campaign] campaign tab renders both campaign sections
+  ok [J: crossover campaign] crossover import posts the crossover campaign id
+  ok [J: crossover campaign] served app.js carries the crossover campaign
+
+Campaign verification: 128 passed, 0 failed

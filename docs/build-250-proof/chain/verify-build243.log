@@ -1,0 +1,40 @@
+== A: source pins ==
+  PASS  build stamp is >= 2026.11.21-243 and agrees in both homes
+  PASS  the shared decision core exists (applyReviewDecision243)
+  PASS  the decision write happens in exactly one place
+  PASS  the single route delegates to the core
+  PASS  the bulk route exists and calls the core per record, in order
+  PASS  the bulk route is approve only, capped, and refuses an empty selection
+  PASS  the bulk route logs one summary event
+  PASS  client: the toggle offers Card, List and Table
+  PASS  client: both pending renderers and the bulk flow exist
+  PASS  client: checkboxes and select-all are wired
+  PASS  client: the table carries the six review columns
+  PASS  client: under-500 records are flagged in card, list and table
+  PASS  client: the bulk confirm names the per-record email promise
+  PASS  client: no em dashes in the new Review copy
+== B: behavioral (bulk approval runs the single path per record) ==
+  PASS  admin signs in
+  PASS  fixture creator bulkone243 claims a spot
+  PASS  fixture creator bulktwo243 claims a spot
+  PASS  fixture creator bulkthree243 claims a spot
+  PASS  fixture under-minimum creator claims a spot
+  PASS  fixture business registers
+  PASS  bulk approve of 3 returns 200 with approved=3, held=0, total=3
+  PASS  every bulk result is its own approved outcome carrying the approved record
+  PASS  3 separate application_approved events ran, one per record
+  PASS  3 separate approval emails were sent, one per record, subject intact
+  PASS  one bulk summary event was logged for the batch
+  PASS  re-running the same bulk approves again but sends NO second approval email (the -239 guard)
+  PASS  mixed bulk: the bogus id is skipped, the under-minimum creator is held, the business is approved
+  PASS  the held creator stays pending, stamped underMinimum, with a held event and no approval email
+  PASS  the business in the bulk got its own approval email
+  PASS  an empty bulk selection is refused with a 400
+  PASS  a bulk rejection is refused with a 400 (rejections stay one at a time)
+  PASS  the refused bulk rejection left its target untouched and pending
+  PASS  a non-admin caller cannot use the bulk route
+  PASS  the single approval path still approves, with its approval email
+  PASS  the single rejection path still rejects, with its rejection email
+  PASS  the applications queue shows the held creator still pending and the approved trio gone
+
+verify-build243: 36 passed, 0 failed

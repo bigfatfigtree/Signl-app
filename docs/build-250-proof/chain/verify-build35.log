@@ -1,0 +1,56 @@
+  PASS  dev server boots
+  PASS  (4) a comped offer without a dollar value is refused before it exists
+[server] Magpie email not sent: kind=booking_confirmed profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=staff_notice profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=clock_started profile=default domain=fixtures.dev reason=transport_not_configured
+  PASS  (8) the counted result validates and stores on the offer
+  PASS  (8) the booking inherits the one number
+  PASS  (8) an unknown counted result falls back to door
+  PASS  (5) the business confirmation stores on the deal card
+  PASS  (5) the creator confirmation completes the card
+  PASS  (5) a stranger business gets 404, not the booking
+  PASS  (10) a business cannot confirm the creator's disclosure
+  PASS  (10) the creator's disclosure confirmation rides the booking
+  PASS  (2) with listed rates from 4 creators, the range is labeled guidance (150 to 300)
+[server] Magpie email not sent: kind=paid_booking_received profile=default domain=fixtures.dev reason=transport_not_configured
+  PASS  (1) the paid booking holds escrow with the rate stamped (the Paid on Post line's data)
+  PASS  (7) fee math: the creator nets 97% and SIGNL's creator-side cut is the other 3%
+[server] Magpie email not sent: kind=paid_booking_received profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=paid_booking_received profile=default domain=fixtures.dev reason=transport_not_configured
+  PASS  (2) with 3 distinct booked creators, the range comes from real bookings (150 to 300)
+  PASS  (8) a standalone audience offer creates
+  PASS  (8) creators in the market see the standalone offer
+  PASS  (8) taking an offer issues the creator a unique AUD- code
+  PASS  (8) taking twice returns the same code, never a second one
+  PASS  (8) creators cannot redeem audience codes
+  PASS  (8) a redemption logs as an audience event with its channel
+  PASS  (8) an offer attached to a booking issues that booking's creator a code at once
+  PASS  (8) audience redemptions feed the -34 receipt as counted events
+  PASS  (12) swaps stay shut while the visit is live
+  PASS  setup: the creator gives the spot back
+  PASS  setup: the booking reads cancelled
+  PASS  (12) suggestions come from the real roster, never the canceller, nearest local reach first
+  PASS  (12) one tap sends the same visit as a direct offer to the swap pick
+  PASS  (9) Admin can mark the real-people check
+  PASS  (9) the book-me payload shows the check where it is true
+  PASS  (9) an unchecked creator's payload shows false, never a borrowed badge
+  PASS  (9) the engine flags the anomalous account with plain reasons, Admin only
+  PASS  (9) a normal account is not in the flag queue
+  PASS  (9) the flag queue refuses non-admins
+  PASS  (9) flag data never reaches a public payload
+  PASS  (9) flag data never reaches the flagged creator's own record view
+  PASS  (3 rejected) no answer-deadline machinery exists in the offer or booking shape
+  PASS  client: the Deal Card renders in plain words with both confirmations
+  PASS  client: the Paid on Post promise line ships verbatim for held escrow
+  PASS  client: the Fee Line ships scaled from the lane math
+  PASS  client: the Rights Menu speaks in the one plain sentence
+  PASS  client: the rate range line ships with its two honest sources
+  PASS  client: the One Number pick ships in the composer and the payload
+  PASS  client: the comp nudge scales with the value
+  PASS  client: audience offers prompt with good ideas and channel taps
+  PASS  client: the code card asset + copy line ship for creators
+  PASS  client: the disclosure line is done for the creator, one tap to copy
+  PASS  client: the Real People line shows only where checked
+  PASS  client: the Swap Bench ships on cancelled visits
+
+verify-build35: 48 passed, 0 failed

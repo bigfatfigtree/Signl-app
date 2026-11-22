@@ -1,0 +1,44 @@
+  PASS  dev server boots and /api/bootstrap responds
+  PASS  creator fixture registers profile-complete
+  PASS  S2: setting 40 stores 40 on the creator record
+  PASS  S2: the Discover card profile carries the number
+  PASS  S2: the public profile payload carries the number beside local %
+  PASS  S2: 140 clamps to 100
+  PASS  S2: non-numeric input resolves to null without an error
+  PASS  S2: a save that omits the field leaves the stored value untouched
+  PASS  S2: clearing returns the field to null on the record and the public payload
+  PASS  S2: profile completion is untouched by the field (complete before, during, after)
+  PASS  S3: business PATCH stores preferredLanguage es
+  PASS  S3: Admin applications carry the business language flag
+  PASS  S3: an unsupported language is ignored, never an error, stored value kept
+  PASS  S3: switching back to English stores en
+  PASS  S3: a founding application carrying lang=es is accepted
+  PASS  S3: the application event records lang es
+  PASS  S3: an application without lang records no language
+  PASS  S3: the malformed-payload 400 contract is unchanged by the lang field
+  PASS  S3: Sig carries the business Spanish state line
+  PASS  S1: a quick claim arriving with lang=es registers
+  PASS  S1: the preference is stored on the creator record (user.lang)
+  PASS  S1: a claim without the signal stores nothing (English is the unmarked default)
+  PASS  S1: only the exact value es stores anything (fr ignored)
+  PASS  S1: completion is identical for the Spanish claim and the English claim
+  PASS  S1: the profile can clear the preference (lang en)
+  PASS  S1: the profile can set the preference (lang es)
+  PASS  S1: an unsupported profile lang is ignored, stored value kept
+  PASS  S1: Sig carries the creator Spanish state line
+  PASS  S4 setup: the unlisted Spanish claim registers
+  PASS  S4 setup: the campus lead registers as a current ODU student
+  PASS  S4: stats carries the layers block with the default 30-day window
+  PASS  S4: the unlisted city is its own market row (the LATAM radar)
+  PASS  S4: every creator in the world was claimed inside the window
+  PASS  S4: Spanish claims count the toggle, the stored preference, and the Spanish arrival
+  PASS  S4: Spanish-flagged and Spanish-% counts read the records
+  PASS  S4: Campus Leads aggregate per school with handles
+  PASS  S4: business language counts the S3 preference
+  PASS  S4: ?days= sets the window and the readout is read-only (repeat call identical)
+  PASS  S2: client ships the panel field, the save handler, and the display phrase
+  PASS  S3: client ships the business language control and Admin marker
+  PASS  S1: client ships the language capture, the T() helper, and the Spanish claim copy
+  PASS  S4: client ships the Stats layers panel
+
+Spanish layers verification: 42 passed, 0 failed

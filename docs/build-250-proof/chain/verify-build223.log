@@ -1,0 +1,43 @@
+== stamp ==
+  FAIL  build stamp is 2026.11.20-225 (lib + shell; bumped by Build -225) :: index count=0
+  PASS  no 2026.11.20-223 left in build.js or index.html
+== founding home hero ==
+  PASS  founding home slice found
+  PASS  hero (unlisted): founding creator + hold your place
+  PASS  hero (listed): founding creator in market
+  PASS  hero fallback: You are a founding creator.
+  PASS  founding home carries no 'on the founding roster' or 'founding spot'
+== pre-claim hook ==
+  PASS  hook slice found
+  PASS  count label (live): of your followers live in
+  PASS  count label (extrapolated): potential local followers in
+  PASS  founding line opener: Your place as a founding creator in
+  PASS  founding line second half (number-free, -250)
+  PASS  CTA: Claim my place
+  PASS  hook old labels gone
+== creator emails ==
+  PASS  email region slice found (benefits through recruiter kit, incl. approval + rejection)
+  PASS  approval subject, verbatim
+  PASS  no em dash in the new email subject
+  PASS  approval invite: founding circle + your standing
+  PASS  benefits: founding circle opener
+  PASS  benefits: credited to you
+  PASS  benefits: bigger circle + your standing
+  PASS  recruiter: founding creator in place
+  PASS  recruiter: founding creator either way
+  PASS  rejection: wave of founding creators
+  PASS  rejection: this round is being built around
+  PASS  rejection: we start with the creators closest
+  PASS  email region: old string absent: welcome to the Magpie founding roster
+  PASS  email region: old string absent: Grow your roster
+  PASS  email region: old string absent: credited to your roster
+  PASS  email region: old string absent: A bigger roster moves you up
+  PASS  email region: old string absent: roster standing is part of the order they see
+  PASS  email region: old string absent: You are on the Magpie founding roster
+  PASS  email region: old string absent: You are on the founding roster either way
+  PASS  email region: old string absent: wave of the founding roster
+  PASS  email region: old string absent: this round of the roster is being built around
+  PASS  email region: old string absent: founding rosters start with
+
+Build -223 verify: 35 passed, 1 failed
+FAILURES: build stamp is 2026.11.20-225 (lib + shell; bumped by Build -225)

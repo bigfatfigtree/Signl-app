@@ -1,0 +1,77 @@
+== A: source pins ==
+  FAIL  build stamp is 2026.11.21-246 and agrees in both homes
+  PASS  the deferred fan-out exists: queue, drain, reconcile
+  PASS  the drain is exported for the background function
+  PASS  the decision core sends NO approval email inline anymore
+  PASS  the decision core queues the fan-out for BOTH roles
+  PASS  the decision core holds NO fan-out calls at all (no ranks, no prospect flip, no roster drop)
+  PASS  the duplicate guard is checked at send time inside the drain
+  PASS  the bulk summary event is best-effort (guarded)
+  PASS  the background function runs the drain in its own guarded block
+  PASS  recruiters exposes the credit set for the linkage gate
+  PASS  client: api() accepts a per-call deadline
+  PASS  client: the bulk approve chunks by 10 with a 60s deadline and progress
+  PASS  client: a bulk timeout reads as partial progress, never total failure
+  PASS  client: the Review table carries ct199 and data-labels
+  PASS  admin signs in
+  PASS  fixture creator A claims a spot
+  PASS  fixture creator B claims a spot
+  PASS  fixture creator C claims a spot
+  PASS  fixture creator D claims a spot
+  PASS  fixture creator F claims a spot
+  PASS  fixture creator G claims a spot
+  PASS  fixture creator H claims a spot
+  PASS  fixture business registers
+  PASS  production scale seeded: 5,200 events, 1,300 prospects, 200 users
+== B: bulk approve of 5 under production latency ==
+  PASS  bulk approve of 5 returns 200 with approved=5
+  PASS  bulk approve returns far inside the old 20s client deadline (took 1511ms)
+  PASS  no event-log read in the window came from the decision path or the guard walk (stacks)
+  PASS  the request path ran NO prospect scan
+  PASS  no user: or prospect: list in the window passed through the decision path (stacks)
+  PASS  NO approval email was sent on the request path
+  PASS  5 fan-out jobs are queued, one per record
+== C: the drain delivers ==
+  PASS  the drain ran the 5 queued jobs
+  PASS  the expensive guard walk DID happen, here off the request path
+  PASS  each creator got exactly one approval email, subject intact
+  PASS  the business got exactly one approval email of its own
+  PASS  all 5 jobs are done after the drain
+  PASS  recruiter prospects flipped for the two LINKED creators (recruiterId and credit)
+  PASS  the UNLINKED creator's prospect was NOT flipped (the scan was skipped)
+== B2: second bulk approve of 5, strict counter profile ==
+  PASS  second-batch fixtures register
+  PASS  second bulk approve of 5 returns 200 with approved=5
+  PASS  second bulk also returns far inside the deadline (took 1391ms)
+  PASS  second bulk: no guard walk, NO prospect scan, and no list through the decision path
+  PASS  the second batch also lands exactly one approval email per record after the drain
+== D: duplicate safety ==
+  PASS  an identical re-submit approves again but sends ZERO additional emails (both roles)
+  PASS  a re-approval seconds after the first sends exactly ONE email, not two
+== E: reconciliation ==
+  PASS  the stranded fixture approved and queued
+  PASS  the drain's reconciliation re-queued the lost job and delivered exactly one email
+== F: send failure handling ==
+Magpie email not sent: kind=approval profile=default domain=fixtures.dev reason=stub_failure
+Magpie approval fan-out failed for 16e8e057-f2c5-43e0-9315-09ddfe32dcd4 (attempt 1): approval email not sent: stub_failure
+  PASS  a failing send leaves the job pending for retry, with no email sent
+Magpie email not sent: kind=approval profile=default domain=fixtures.dev reason=stub_failure
+Magpie approval fan-out failed for 16e8e057-f2c5-43e0-9315-09ddfe32dcd4 (attempt 2): approval email not sent: stub_failure
+Magpie email not sent: kind=approval profile=default domain=fixtures.dev reason=stub_failure
+Magpie approval fan-out failed for 16e8e057-f2c5-43e0-9315-09ddfe32dcd4 (attempt 3): approval email not sent: stub_failure
+Magpie email not sent: kind=approval profile=default domain=fixtures.dev reason=stub_failure
+Magpie approval fan-out failed for 16e8e057-f2c5-43e0-9315-09ddfe32dcd4 (attempt 4): approval email not sent: stub_failure
+Magpie email not sent: kind=approval profile=default domain=fixtures.dev reason=stub_failure
+Magpie approval fan-out failed for 16e8e057-f2c5-43e0-9315-09ddfe32dcd4 (attempt 5): approval email not sent: stub_failure
+  PASS  after 5 attempts the job parks as failed (never dropped, never sent)
+  PASS  the parked job is named by an approval_fanout_failed event in the log
+  PASS  a re-approval after the address is fixed delivers exactly one email
+== G: concurrent drains ==
+  PASS  two drains running at the same time send exactly one email per record (claim re-verified before the send)
+== H: approve, reject, re-approve ==
+  PASS  approve then reject before the drain: the job closes with nothing sent
+  PASS  re-approving after that delivers the approval email, exactly once
+
+verify-build246: 53 passed, 1 failed
+FAILURES:
+ - build stamp is 2026.11.21-246 and agrees in both homes

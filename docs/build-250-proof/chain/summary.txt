@@ -1,0 +1,15 @@
+verify-build249 :: exit=1 :: verify-build249: 60 passed, 1 failed
+verify-build248 :: exit=0 :: verify-build248: 20 passed, 0 failed
+verify-build247 :: exit=1 :: verify-build247: 15 passed, 3 failed
+verify-build245 :: exit=0 :: verify-build245: 81 passed, 0 failed
+verify-build244 :: exit=0 :: verify-build244: 32 passed, 0 failed
+verify-build243 :: exit=0 :: verify-build243: 36 passed, 0 failed
+verify-build223 :: exit=1 :: Build -223 verify: 35 passed, 1 failed
+verify-build189 :: exit=1 :: BUILD189 VERIFY: 97 passed, 6 failed
+verify-build48 :: exit=1 :: verify-build48: 21 passed, 3 failed
+verify-build49 :: exit=1 :: verify-build49: 29 passed, 2 failed
+verify-build43 :: exit=1 :: verify-build43: 44 passed, 6 failed
+verify-build35 :: exit=0 :: verify-build35: 48 passed, 0 failed
+verify-spanish :: exit=0 :: Spanish layers verification: 42 passed, 0 failed
+verify-campaign :: exit=0 :: Campaign verification: 128 passed, 0 failed
+DONE

@@ -1,0 +1,23 @@
+== Build -248: desktop parity + the filter-column correction ==
+  PASS  build stamp is >= 2026.11.21-248 and agrees in both homes
+  PASS  discover rail carries the column search at its top
+  PASS  column search writes through to the main search input
+  PASS  offers rail carries the column search at its top
+  PASS  offers column search refocuses the column field, not the main one
+  PASS  discover column order: Must-haves, then Category, then Match to a campaign
+  PASS  both rails end their groups with a desktop Clear all
+  PASS  column pieces are hidden below desktop width (mobile unchanged)
+  PASS  desktop column: 300px rail beside the grid on both feeds
+  PASS  desktop column: search group shows, main search row stands down
+  PASS  desktop feeds: cards two across beside the column, one across on narrow desktops
+  PASS  desktop Find creators: the Lineup panel stays out
+  PASS  the phone rail is still the bottom sheet (base drawer rules intact)
+  PASS  creator profile: two-column shell + Standout rail card hooks
+  PASS  business profile: two-column shell hook
+  PASS  wallet: money-top wrap hook
+  PASS  results: charts wrap hook
+  PASS  momentum: main + business-eye rail hooks
+  PASS  desktop CSS: profile, wallet, results and momentum grids present
+  PASS  desktop-only pieces stay hidden below desktop width
+
+verify-build248: 20 passed, 0 failed

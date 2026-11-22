@@ -1,0 +1,40 @@
+== A: source pins ==
+  PASS  build stamp is >= 2026.11.21-244 and agrees in both homes
+  PASS  the compute exists (refreshAdminStatsSummary244) and stores one record
+  PASS  the compute reads its figures from the home surfaces' own helpers
+  PASS  the exported background entry exists with the stampede guard
+  PASS  the endpoint serves the stored record only
+  PASS  the gate rides the Stats view permission
+  PASS  the endpoint shape-guards the stored record (a malformed record counts as absent)
+  PASS  no serial per-key get loop in the new compute block
+  PASS  the background refresh runs the stats compute alongside the home summary
+  PASS  client: Overview is the default Stats view with its own tab and container
+  PASS  client: the renderer covers all seven sections
+  PASS  client: the honest preparing state exists
+  PASS  client: the preparing state re-checks on a timer, as its copy promises
+  PASS  client: no em dashes in the new Overview copy (the Stats screen's null placeholder glyph aside)
+== B: behavioral (seeded store, real background compute, served record) ==
+  PASS  admin signs in
+  PASS  a signed-out read is refused
+  PASS  before the first compute the endpoint answers preparing, not zeroes
+Magpie admin home summary refresh: {"admins":1,"markets":48,"computedAt":"2026-11-22T04:33:06.721Z"}
+Magpie admin stats overview refresh: {"markets":48,"computedAt":"2026-11-22T04:33:06.750Z"}
+Magpie approval fan-out drain: {"reconciled":2,"due":2,"sent":2,"alreadySent":0,"failed":0,"skipped":0}
+Magpie signup fan-out drain: {"processed":0,"sent":0,"retried":0,"failed":0,"reconciled":0}
+  PASS  the background refresh runs and builds the stats record
+  PASS  after the compute the endpoint serves the record with an as-of time
+  PASS  creators: signed up / approved / pending / finished match the seed
+  PASS  markets: Nashville sorts first with its seed counts
+  PASS  businesses: signed up / approved match the seed
+  PASS  growth: claims and approvals over 30 days match the seed
+  PASS  growth: the review queue holds the two pending records
+  PASS  growth: claims by source bucket the recorded tags only
+  PASS  activity: the booking roll-up carries the business definitions
+  PASS  engagement: the creator-reported sums match the seeded post
+  PASS  revenue: nothing collected on an empty ledger, no invented numbers
+  PASS  downloads: the panel links the live store page
+  PASS  spot-check: Nashville approved matches a direct store read
+  PASS  spot-check: total creators matches a direct store read
+  PASS  a malformed stored record answers preparing, not zeroed numbers
+
+verify-build244: 32 passed, 0 failed

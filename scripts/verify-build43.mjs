@@ -302,8 +302,8 @@ try {
       ["score", "back", "week", "cameback", "costs", "media", "tally", "months", "visits", "creators", "forming"].every((t) => scoreBlock.includes(`roasInfoBtn("${t}")`))
       && scoreBlock.includes('roasBarRow("Back through your register", "back"') && scoreBlock.includes('roasBarRow("All in, what you put in", "putin"')
       && appSrc.includes("function showRoasInfo") && appSrc.includes('id="roas-info-pop"')],
-    ["roas: the info text exists for all twelve topics",
-      (() => { const a = appSrc.indexOf("const ROAS_INFO"); const b = appSrc.indexOf("function roasInfoBtn", a); const block = a > -1 && b > a ? appSrc.slice(a, b) : ""; return ["score", "back", "putin", "week", "cameback", "costs", "media", "tally", "months", "visits", "creators", "forming"].every((t) => new RegExp(`\\n  ${t}: \\{ title:`).test(block)) && (block.match(/title: "/g) || []).length === 12; })()],
+    ["roas: the info text exists for all thirteen topics (receipt added by Build -250, flagged re-pin)",
+      (() => { const a = appSrc.indexOf("const ROAS_INFO"); const b = appSrc.indexOf("function roasInfoBtn", a); const block = a > -1 && b > a ? appSrc.slice(a, b) : ""; return ["score", "back", "putin", "week", "cameback", "costs", "media", "tally", "months", "visits", "creators", "forming", "receipt"].every((t) => new RegExp(`\\n  ${t}: \\{ title:`).test(block)) && (block.match(/title: "/g) || []).length === 13; })()],
     ["credit: the three steps spell out how a visit earns its credit",
       creditBlock.includes("Every creator post carries that creator's own code") && creditBlock.includes("shows the code at the register when they pay") && creditBlock.includes("counts in your score, dollar by dollar")],
     ["credit: the tally is sold as about 30 seconds at close-out, linked to the visit cards",

@@ -86,7 +86,10 @@ check("tab: the number card stays with its next-step line",
   tab.includes("Your Momentum") && tab.includes("Next:") && tab.includes("momentumHtml(u)"));
 
 // ---------- the relocation ----------
-const sheet = slice(appJs, "function blueCheckSheet226Html()", "function openBlueCheck226()");
+// Build -250 re-pin (flagged): the sheet function gained (mode, points)
+// params for the state-aware wording; the slice anchor follows the new
+// signature. Every content pin below is unchanged and runs in full.
+const sheet = slice(appJs, "function blueCheckSheet226Html(", "function openBlueCheck226(");
 check("sheet: the not-money line moved here (EN)",
   sheet.includes("Points are not money, and they never promise a booking."));
 check("sheet: the not-money line moved here (ES)",

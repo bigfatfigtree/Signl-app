@@ -1,0 +1,122 @@
+== source pins ==
+  FAIL  stamp: BUILD_ID is 2026.11.17-189
+  FAIL  stamp: shell carries 2026.11.17-189 x5 (styles.css cache-bust moved with its content)
+  ok  PL-25: orange-red accent is gone from theme-v3
+  ok  PL-25: app background token is pure white
+  ok  PL-25: one font system (no Manrope anywhere)
+  ok  PL-25: styles.css gradient is the canon logo gradient
+  ok  PL-25: form group tint panels render white
+  ok  PL-26: ws-primary renders as the black pill
+  ok  PL-08: national rail set is the national destination set
+  ok  PL-08: the national in-page strip is retired
+  ok  PL-08: National Home leads with the Maggie card
+  ok  PL-08: no duplicate in-card New campaign button on National Home
+  ok  PL-08+44: National Home explains hand-raising in place
+  ok  PL-09: template list dedupes against the play cards
+  ok  PL-09: the one-off blue border on the Maggie guide box is gone
+  ok  PL-09: both composers carry the shared white form class
+  ok  PL-09: selected radio rows read dark on the selected fill
+  ok  PL-11: Admin Markets card defines the launch count in place
+  ok  PL-11: listed-from-elsewhere is explained on the card
+  ok  PL-11: server rows carry creatorsListedFromElsewhere
+  ok  PL-16: renderAdmin opens rooms on a skeleton
+  ok  PL-16: skeleton wrapper carries real height
+  ok  PL-33: syncAdminSecbar121 only ever removes the row
+  ok  PL-33: the secbar can never render under the admin shell
+  ok  PL-34: the partner in-page pill strip is retired
+  ok  PL-34: bar label for Performance is Reports
+  ok  PL-34: Businesses keeps its full name in the bar
+  ok  PL-34: the Performance page title is Reports
+  ok  PL-34: business Start reads Start a campaign
+  FAIL  PL-34: business Find reads Find creators
+  ok  PL-35: Partner Home title is Home with a greeting line
+  ok  PL-45: the modeled-share line lives on Wallet only, not Home
+  ok  PL-39: menu identity card carries the avatar
+  ok  PL-39: Everything rows mark the current destination
+  ok  PL-39: rails carry group labels
+  ok  PL-39: menu rows are quiet (no chevron, no heavy tile)
+  ok  PL-27: Find creators selects carry the app treatment
+  ok  PL-27: Biz Dev filter selects carry the app treatment
+  ok  PL-27: Stats filter selects carry the app treatment
+  ok  PL-27: the control treatment exists in CSS
+  ok  PL-28: no duplicated Find titles in the sub-header rows
+  ok  PL-29a: the pitch helper reads Maggie, never Sig
+  ok  PL-29b: five per-section save rows in the editor
+  ok  PL-29b: the save bar never clips content
+  FAIL  PL-30: no-photo cards carry the gradient local-% visual
+  FAIL  PL-30: the Find creators shelf tile gets the same treatment
+  ok  PL-31: receipts render in plain words
+  ok  PL-31: the UI-philosophy meta-paragraph is gone
+  ok  PL-31: the signups chart is a real chart (axis + fill)
+  ok  PL-32: demo/test loaders are behind the dev-only gate
+  ok  PL-32: the room names itself the finishing room
+  ok  PL-32: the Finish Engine renders as a card
+  ok  PL-36: designed empty states exist and carry actions
+  ok  PL-36: no bare one-line empties remain in the fresh book
+  ok  PL-38: a retired lane's stored error is labeled history
+  ok  PL-41: Status names what opens when, no dead-end line
+  ok  PL-43: a missing stored plan name falls back honestly
+  ok  PL-47: queue drops doors already on today's route
+  ok  PL-47: founding progress renders above Today's visits
+  ok  PL-49: home chips are bucketed decisions, messages, gaps, expiry, status
+  ok  PL-49: the home endpoint feeds the unread count
+  ok  PL-50: Deals and Folders explain themselves in place
+  ok  PL-51: the till question is asked in plain words everywhere
+  ok  PL-51: the founding badge carries no em dash
+  ok  PL-52: the business rail row is Applicants
+  ok  PL-52: the applicants page head is Applicants
+  ok  PL-53: Find creators market options respect the account
+  ok  PL-53: tiers are glossed in place
+  ok  PL-54: reports lead with the home vs listed distinction
+  ok  PL-55: a dead partner logo removes itself instead of showing broken
+  ok  PL-56: the Everything panel carries the Markets row
+  ok  PL-57: the BD drawer names Sell mode for the HQ seat
+  ok  PL-58: generic queue reasons are gone
+  ok  PL-58: specific reasons survive
+  ok  PL-60: an unknown category refuses the save, naming the values
+  ok  PL-62: unsupported payout country answers a concierge state
+  ok  PL-62: the client shows the concierge message as information
+  ok  PL-64: the floated brand lockup stands down beside the rail
+  ok  PL-65: the marketing footer never renders inside the app
+  ok  PL-66: national home goes two-column on desktop
+  ok  PL-67: phone body type steps up
+  ok  PL-69: empty categories hide; distance bands fold away
+  ok  PL-70: composer placeholders show real examples
+  ok  PL-08: the founding lock on national Find creators survives in the shell
+  ok  PL-71: the till prompt leaves the Next list when the checklist shows
+  ok  PL-71: founding Home drops its About nudge beside the checklist
+  ok  PL-72: neighborhood placeholders name the reader's own market
+  ok  PL-73: Stats selects size to their content
+  ok  PL-74: the Square panel states connection, not credentials
+  ok  PL-74: funnel bars carry the brand gradient
+  ok  PL-76: BD home header shows Viewing + seat
+  ok  PL-79: sticky bars are opaque, no blur
+== fixtures ==
+Magpie email not sent: kind=recruiter_kit profile=default domain=fixtures.dev reason=transport_not_configured
+== PL-11 counts fixture ==
+Magpie email not sent: kind=recruiter_kit profile=default domain=fixtures.dev reason=transport_not_configured
+Magpie email not sent: kind=recruiter_kit profile=default domain=fixtures.dev reason=transport_not_configured
+  ok  NYC approved (home-market definition) counts the NYC-home creator
+  ok  NYC listed count includes the creator listed from Nashville
+  ok  NYC row reports exactly 1 listed-from-elsewhere (the reconciliation)
+  ok  Nashville approved counts its home creator; its elsewhere count is 0
+== PL-60 categories fixture ==
+  ok  an unknown category refuses the save with a 400 naming it
+  ok  nothing was saved by the refused PATCH
+  ok  a fully canonical category list still saves
+== PL-62 payout concierge fixture ==
+  ok  Dubai payout start answers 200 with the concierge state, not a 503
+== PL-61 partner QR fixture ==
+  FAIL  partner QR renders an SVG on this codebase (the 501 premise does not reproduce) :: status=501 ct=application/json
+== PL-49 queue order unit ==
+  ok  decisions come before messages, messages before profile gaps
+  ok  no unread threads, no message chip is invented
+
+BUILD189 VERIFY: 97 passed, 6 failed
+FAILURES:
+ - stamp: BUILD_ID is 2026.11.17-189
+ - stamp: shell carries 2026.11.17-189 x5 (styles.css cache-bust moved with its content)
+ - PL-34: business Find reads Find creators
+ - PL-30: no-photo cards carry the gradient local-% visual
+ - PL-30: the Find creators shelf tile gets the same treatment
+ - partner QR renders an SVG on this codebase (the 501 premise does not reproduce) :: status=501 ct=application/json

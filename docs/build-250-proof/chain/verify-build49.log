@@ -1,0 +1,36 @@
+  PASS  canon: WHY_LONG retired in Build -247 (the const is gone)
+  PASS  canon: WHY_SHORT is defined verbatim, once
+  PASS  canon: WHY_POP is defined verbatim, once
+  PASS  surface (-247): Momentum panel carries no pasted paragraph: no WHY_LONG, no Earned-for line; the not-money fact lives in the blue check sheet
+  PASS  surface (-247): Momentum tab KPI card carries no WHY_LONG under the giant number
+  PASS  surface (-247): Points and Your Line panel carries no WHY_LONG under the level rows
+  PASS  surface: the Points panel actually loads (Build -49 fix: loadPointsCard called "/api/me/points" through the api() helper, which prefixes /api itself, so the card 404'd into its fallback text on every render since Build -36; no earlier suite rendered the card live)
+  PASS  surface: Golden Ticket panel pairs its +100/+25/+10/+3 table with WHY_SHORT and keeps the nothing-for-a-click line
+  PASS  surface: Momentum view carries the points explainer (Build -64: founding Home KPI grid demoted to the Momentum tab)
+  PASS  surface: Numbers tab Momentum KPI sub is WHY_SHORT [label renamed in Build -119; reverted to Momentum in Build -120]
+  PASS  surface: Momentum trend chart sub carries WHY_SHORT
+  PASS  surface: live Home Momentum card (above the Activity feed of earn lines) carries WHY_SHORT
+  PASS  surface: Grow your roster keeps its pinned line and appends WHY_SHORT
+  PASS  surface: public profile stat cell explains the number for the business reader; the old sources parenthetical is gone [label renamed in Build -119; reverted to Momentum points in Build -120]
+  FAIL  surface: Admin Your Line lookup intro carries WHY_SHORT for the team
+  PASS  surface: Sig operator lines carry WHY_SHORT inline in English (const + 3 Sig lines = 4 occurrences)
+  PASS  surface: Sig operator lines carry the why inline in Spanish (3 Sig lines)
+  PASS  surface: Sig Q&A canon now states the level effect with the verified thresholds and hours
+  PASS  aligned surfaces kept verbatim: the founding payoff card and the Deal Card rules already carried the why [payoff headline renamed in Build -119; reverted in Build -120]
+  PASS  mechanics: level thresholds and early-access hours in code match the copy (0/0h, 100/12h, 300/18h, 750/24h)
+  PASS  mechanics: total points carry the 0.20 stack weight in rankApplications
+  PASS  mechanics: invite finish points are still 100 / 25 / 10
+  PASS  mechanics: businesses can still sort the roster by Momentum
+  PASS  guard: the canonical lines promise no benefit absent from the verified mechanics
+  PASS  guard: the long line keeps the honesty tails (not money, never a promised booking)
+  PASS  guard: no new copy claims points order the creator's own offer feed
+  PASS  live: dev server boots
+  FAIL  live: bootstrap carries the -49 build stamp — 2026.11.21-250
+  PASS  live: fixture creator registers
+  PASS  live: /me/points still prices every award the panels print (100 / 25 / 10 / 10)
+  PASS  live: a new creator's level is Starter with no early access (the level lines' floor state)
+
+verify-build49: 29 passed, 2 failed
+FAILURES:
+ - surface: Admin Your Line lookup intro carries WHY_SHORT for the team
+ - live: bootstrap carries the -49 build stamp — 2026.11.21-250

@@ -29,3 +29,49 @@
   PASS  render ES: headline + steps + stat card in Spanish, still no number language
   PASS  render EN (no neighbor view): screen still complete without the stat card
 == C: register is fast and lands NOTHING downstream; the drain delivers exactly once ==
+  PASS  production scale seeded: 5,200 events, 1,300 prospects, 200 users, 900 campaign recipients
+  PASS  admin signs in
+  PASS  A: quick claim registers 201
+  .. A register round trip at production scale: 895ms (pre-249 measured 14,379ms cold / 1,305ms warm in the same model)
+  PASS  A: register returns fast (fan-out is off the path)
+  PASS  A: NO confirmation email has sent when the response lands
+  PASS  A: a signup fan-out job is queued, pending
+  PASS  A: the consent audit trail carries the new version + timestamp
+  PASS  A: the application_submitted event carries the consent version
+  PASS  B: quick claim registers 201
+  PASS  B: its queue write is gone (the stranding is real)
+  PASS  drain 1: reconciliation re-queued the stranded signup
+  PASS  A: exactly one confirmation email after the drain
+  PASS  B: exactly one confirmation email after reconciliation + drain
+  PASS  A + B: jobs settled done/sent
+  PASS  drain 2 (idempotence): still exactly one confirmation each
+  PASS  R: quick claim registers 201
+  PASS  R: two racing drains still send exactly one confirmation
+== D: the auto-decision lands in the drain, not on the request path ==
+  PASS  Rule A: registers 201 and the RESPONSE still reads pending (the decision moved off the path)
+  PASS  Rule A: no approval email and no decision event at response time
+  PASS  Rule A: the drain approved the evidenced claim
+  PASS  Rule A: exactly one approval email, and NO confirmation email
+== E: full-form completion + business confirmation land in the drain ==
+  PASS  full-form: registers 201
+  PASS  full-form: NO profile_completed event at response time
+  PASS  business: registers 201
+  PASS  business: NO confirmation email at response time
+  PASS  full-form: profile_completed fired exactly once, in the drain
+  PASS  full-form: exactly one confirmation email
+  PASS  business: exactly one confirmation email, in the drain
+== F: failure handling + the gates that must not move ==
+  PASS  F: failing-send signup registers 201
+Magpie email not sent: kind=signup_confirmation profile=default domain=fixtures.dev reason=stub_failure
+Magpie email not sent: kind=signup_confirmation profile=default domain=fixtures.dev reason=stub_failure
+Magpie email not sent: kind=signup_confirmation profile=default domain=fixtures.dev reason=stub_failure
+Magpie email not sent: kind=signup_confirmation profile=default domain=fixtures.dev reason=stub_failure
+Magpie email not sent: kind=signup_confirmation profile=default domain=fixtures.dev reason=stub_failure
+  PASS  F: zero confirmations sent to the failing address
+  PASS  F: the job parks as failed after 5 attempts, named by an event
+  PASS  gate: a signup without the post agreement is refused, in the new wording
+  PASS  gate: the zero-follower guard still refuses (the -215/-220 validation is intact)
+
+verify-build249: 60 passed, 1 failed
+FAILURES:
+ - build stamp is 2026.11.21-249 and agrees in both homes

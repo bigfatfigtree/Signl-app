@@ -1,0 +1,24 @@
+  PASS  app boots on the -249 stamp
+  PASS  screen 1 renders the claim welcome (handle field present)
+  PASS  screen 1: all images loaded
+  PASS  step 2: NO stall-capture email field
+  PASS  step 2: categories start with NONE checked
+  PASS  step 2: new category copy (tick what fits), old pre-tick copy gone
+  PASS  step 2: counted line is alive (3,200 counted)
+  PASS  step 2: no 'can't look up' confession anywhere
+  PASS  step 2: all images loaded
+  PASS  step 4: general post agreement text (per-offer terms), old specifics gone
+  PASS  step 4: exactly ONE email field in the whole flow form
+  PASS  step 4: NO push prompt inside the form
+  PASS  step 4: all images loaded
+  .. in-browser submit-to-done: 0.4s (local dev server, unloaded)
+  PASS  done: headline reads You've applied
+  PASS  done: the 3 steps render with the dashboard promise
+  PASS  done: stat card big number present and non-empty
+  PASS  done: stat card line names the market
+  PASS  done: founding standing with NO numbers (no first-100, no out-of-10, no order)
+  PASS  done: push reminder card now lives here
+  PASS  done: Maggie stack card present, compact
+  PASS  done: all images loaded
+
+qa-build249: 21 passed, 0 failed

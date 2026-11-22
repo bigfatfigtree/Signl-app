@@ -1,0 +1,72 @@
+  PASS  dev server boots
+  FAIL  stamp: API responses carry 2026.11.06-140 :: 2026.11.21-250
+  PASS  tickets: a finished creator issues a named ticket
+  PASS  tickets: exactly two exist; one out leaves one
+  PASS  tickets: the named claim registers through the ticket
+  PASS  tickets: the ticket flips to claimed
+  PASS  points: a finished invite in the line pays the gen-1 award (100)
+  PASS  points: the creator's own surface prices every award the panel prints
+  PASS  bench: launched market opens the roster and Casey is on it by default
+  PASS  bench: the viewer's own flag rides the payload, default on
+  PASS  bench: hiding flips the viewer's own payload flag
+  PASS  bench: hidden means off the roster
+  PASS  bench: hidden means out of exact search
+  PASS  bench: showing again restores roster and search
+  PASS  bench: the founding payload carries the same flag, default on
+  PASS  bench: the founding flag flips the same way
+[server] Magpie email not sent: kind=booking_confirmed profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=staff_notice profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=clock_started profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=proof_submitted profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=performance_reported profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=booking_confirmed profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=staff_notice profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=clock_started profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=proof_submitted profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=booking_confirmed profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=staff_notice profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=clock_started profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=proof_submitted profile=default domain=fixtures.dev reason=transport_not_configured
+  PASS  roas: the Score v2 math is untouched (615 back over 344 all in = 1.8)
+  PASS  roas: weekly counted buckets cover the month and sum to every dollar rung this month (615: firsts and the came-back together)
+  PASS  roas: the current month's summary carries what its expansion prints
+  PASS  roas: prior-month summaries carry the expansion fields too
+  PASS  fixA: Business Home carries Score v2 for its stat cell, the same figure as the Receipt
+  PASS  fixA: the legacy figure in the same payload is labeled a modeled estimate
+  FAIL  stamp: build stamp is 2026.11.06-140 on server and shell
+  PASS  tickets: the panel leads with the two seats being only yours to give
+  PASS  tickets: the panel prints the four real awards with the points surface's own labels
+  PASS  tickets: the panel states nothing is paid for a click or a share
+  PASS  tickets: the printed numbers still equal the server constants
+  PASS  bench: the Bench page renders its own visibility switch in both states
+  PASS  bench: the switch states the off consequence in one plain line
+  PASS  bench: the switch drives the same flag through the same PATCH
+  PASS  roas: the score leads with a visual figure and in-vs-back bars
+  PASS  roas: the counted-by-week chart renders from the payload series
+  PASS  roas: came-backs are visual (returns of firsts with the segment bar)
+  PASS  roas: months, visits and creators expand in place
+  PASS  roas: every figure carries an info button into one shared popover
+  FAIL  roas: the info text exists for all twelve topics
+  PASS  credit: the three steps spell out how a visit earns its credit
+  PASS  credit: the tally is sold as about 30 seconds at close-out, linked to the visit cards
+  FAIL  credit: the register plug-in uses the approved concierge words only
+  PASS  credit: nothing claims a live POS integration exists
+  PASS  copy: no em dashes in the new blocks
+  PASS  copy: the score block keeps the -39 honesty strings
+  PASS  fixA: no surface labels a legacy figure with the ROAS name
+  PASS  fixA: the legacy figures wear the modeled-estimate name where they render
+  FAIL  fixA: the Home cell renders v2 when the payload carries it
+  FAIL  fixA: the live Home snapshot carries the v2 figure under its name and state
+  PASS  fixA: the server labels only Score v2 with the ROAS name
+  PASS  fixB: no copy promises points for approving a license or being approved by a business
+  PASS  fixB: Sig canon and the Q&A state the real +25 trigger, a business running the post as an ad
+  PASS  fixB: the ledger itself is untouched (amounts and triggers unchanged)
+
+verify-build43: 44 passed, 6 failed
+FAILURES:
+ - stamp: API responses carry 2026.11.06-140
+ - stamp: build stamp is 2026.11.06-140 on server and shell
+ - roas: the info text exists for all twelve topics
+ - credit: the register plug-in uses the approved concierge words only
+ - fixA: the Home cell renders v2 when the payload carries it
+ - fixA: the live Home snapshot carries the v2 figure under its name and state

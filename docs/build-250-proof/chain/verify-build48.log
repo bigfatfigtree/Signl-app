@@ -1,0 +1,47 @@
+  PASS  dev server boots
+  FAIL  bootstrap carries the -48 build stamp — 2026.11.21-250
+[server] Magpie email not sent: kind=booking_confirmed profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=staff_notice profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=clock_started profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=proof_submitted profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=performance_reported profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=booking_confirmed profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=staff_notice profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=clock_started profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=proof_submitted profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=booking_confirmed profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=staff_notice profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=clock_started profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=proof_submitted profile=default domain=fixtures.dev reason=transport_not_configured
+  PASS  scored fixture: the payload behind the tabs is unchanged (615 counted, 344 all in, 1.8x)
+  PASS  scored fixture: every tab's data is in the one payload (weeks, cohorts, creators, visits, halo)
+  PASS  scored fixture: the ledger summary the Overview tab carries is present (firsts tracked; the $45 return rides its row)
+[server] Magpie email not sent: kind=booking_confirmed profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=staff_notice profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=clock_started profile=default domain=fixtures.dev reason=transport_not_configured
+[server] Magpie email not sent: kind=proof_submitted profile=default domain=fixtures.dev reason=transport_not_configured
+  PASS  forming fixture: one counted visit stays forming, with its reasons (tabs render, panels fill in)
+  PASS  fresh fixture: nothing counted means no score content, so the client keeps the no-tabs explainer
+  FAIL  stamp: build stamp is 2026.11.06-140 on server and shell
+  PASS  tabs: the Receipt renders the subtab bar with the five plain labels
+  PASS  tabs: five panels render in one pass, one per tab, switched by class
+  PASS  tabs: switching is state plus class toggles, never a rebuild (details and forms survive)
+  PASS  map: Overview holds the score head, media/tally lines, ledger summary and Google block
+  PASS  map: Over time holds the came-backs, week chart and months parts
+  PASS  map: Creators holds this month's visits and the per-creator bars
+  PASS  map: Costs holds the itemized all-in block, and the ledger pointer names the tab
+  FAIL  map: How it counts holds the credit panel, the capture-gap panel and the version line
+  PASS  map: the score returns named parts now, not the old single stacked page
+  PASS  popover: the shared info sheet renders once, outside every panel, and no longer inside the credit panel
+  PASS  founding: without a score the Receipt keeps its explainer layout and renders no tab bar
+  PASS  empty rule: a tab with nothing yet gets one plain fills-in line, never an empty panel
+  PASS  deep link: the Sig capture-gap action selects the How it counts tab before it scrolls
+  PASS  deep link: comp-cost saves re-render through loadReceipt, so the Creators tab selection persists
+  PASS  untouched: Proof Controls stays in the settings block below the Receipt, unmoved and unrenamed
+  PASS  untouched: the honesty strings ride along verbatim (floor line, split labels, forming reasons)
+
+verify-build48: 21 passed, 3 failed
+FAILURES:
+ - bootstrap carries the -48 build stamp — 2026.11.21-250
+ - stamp: build stamp is 2026.11.06-140 on server and shell
+ - map: How it counts holds the credit panel, the capture-gap panel and the version line

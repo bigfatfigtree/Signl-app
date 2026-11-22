@@ -1,0 +1,355 @@
+  ok [A: stamp + derive rule] build stamp is >= 2026.11.21-245 and agrees in both homes
+  ok [A: stamp + derive rule] BLUE_CHECK_POINTS is 300 and the band opens at 250
+  ok [A: stamp + derive rule] blueCheckFromPoints: 0 / 299 -> false, 300 / 750 -> true, junk -> false
+  ok [A: stamp + derive rule] fixture lands on exactly 299 points
+  ok [A: stamp + derive rule] 299 points: detailFor.blueCheck is false
+  ok [A: stamp + derive rule] 299 points: summaryFor.blueCheck is false
+  ok [A: stamp + derive rule] fixture lands on exactly 300 points
+  ok [A: stamp + derive rule] 300 points: detailFor.blueCheck is true
+  ok [A: stamp + derive rule] 300 points: summaryFor.blueCheck is true
+  ok [A: fastest step] a due review beats an equal-points profile step (real shape: done plus due)
+  ok [A: fastest step] a due report is offered even after the first report (never null)
+  ok [A: fastest step] a finished review with nothing due is not offered again
+  ok [A: fastest step] biggest open profile step wins, done steps skipped
+  ok [A: fastest step] steps that need a business or a booking are never offered
+  ok [A: Maggie facts + answers] fact sheet carries the blue check block
+  ok [A: Maggie facts + answers] gap is 30, inside both bands
+  ok [A: Maggie facts + answers] fastest step is the due review
+  ok [A: Maggie facts + answers] facts lines state the gap and the fastest step
+  ok [A: Maggie facts + answers] Maggie answers the blue check question with the real gap
+  ok [A: Maggie facts + answers] an earned creator hears she has it, and that it is never bought
+  ok [A: Maggie conversation] inside 50, a greeting works the gap in
+  ok [A: Maggie conversation] once raised in a conversation, the nudge stays silent
+  ok [A: Maggie conversation] a yes gets the fastest path with the real gap
+  ok [A: Maggie conversation] outside 100 points, no nudge
+  ok [A: Maggie conversation] at 300+, no nudge, plain points spot
+  ok [A: source pins] router derives the card check from the momentum summary
+  ok [A: source pins] router public profile derives from the same points
+  ok [A: source pins] lineup members carry the check from the card
+  ok [A: source pins] saved cards get the same momentum patch as discover
+  ok [A: source pins] bench cards derive from the ledger points beside the total
+  ok [A: source pins] the roster page handler passes a real momentum context
+  ok [A: source pins] the moments skip tester records
+  ok [A: source pins] public roster cards render the check when the payload carries it
+  ok [A: source pins] bookme payload copies the derived check
+  ok [A: source pins] the moments fire from the creator's own payload build
+  ok [A: source pins] both moment engines are named and in-app only
+  ok [A: source pins] no em dashes in the moment copy
+  ok [A: source pins] the check itself is a pure points comparison
+  ok [A: source pins] feed card name carries the check
+  ok [A: source pins] lineup rows and bench cards carry the check beside the name
+  ok [A: source pins] profile hero name carries the check
+  ok [A: source pins] public booking page name carries the check
+  ok [A: source pins] explainer sheet: Standout at 300, ways to earn, 18 hours early, never bought (EN)
+  ok [A: source pins] explainer sheet: full ES parity
+  ok [A: source pins] no em dashes in the explainer sheet
+  ok [A: source pins] ladder carries all four levels with the check at the 300 marker
+  ok [A: source pins] ladder keeps filling past the check and carries the one line
+  ok [A: source pins] no em dashes in the ladder copy
+  ok [A: source pins] CSS carries the check and the ladder
+  ok [A: source pins] Maggie canon teaches the blue check
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-0@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-1@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-10@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-11@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-12@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-13@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-2@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-3@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-4@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-5@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-6@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-7@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-8@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-bandcat245-9@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-0@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-1@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-10@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-11@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-12@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-13@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-14@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-15@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-16@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-17@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=recruiter_kit profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-18@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-2@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-3@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-4@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-5@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-6@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-7@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-8@test.io reason=transport_not_configured
+Magpie email not sent: kind=profile_completion_reminder profile=default domain=test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-crosscat245-9@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-0@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-1@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-10@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-11@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-12@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-13@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-14@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-15@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-16@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-17@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-18@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-19@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-2@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-20@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-3@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-4@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-5@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-6@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-7@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-8@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-overcat245-9@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-0@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-1@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-10@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-11@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-12@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-2@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-3@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-4@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-5@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-6@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-7@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-8@test.io reason=transport_not_configured
+[server] Magpie email not sent: kind=platform_message profile=default domain=test.io reason=transport_not_configured
+[server] Magpie platform message email not sent: to=u245-ref-undercat245-9@test.io reason=transport_not_configured
+  ok [B: band creator (250)] band creator logs in
+  ok [B: band creator (250)] band payload: 250 points, no check
+  ok [B: band creator (250)] band creator got exactly ONE platform message after login + two payload builds
+  ok [B: band creator (250)] band message names the real numbers
+  ok [B: band creator (250)] band message names invites as the fastest way, with the rates
+  ok [B: band creator (250)] band message names a real next step from the creator's own record
+  ok [B: band creator (250)] band message has no em dash
+  ok [B: band creator (250)] band stamp is on the record
+  ok [B: band creator (250)] band firing logged once, in-app only (no email)
+  ok [B: band creator (250)] band creator got NO earned note
+  ok [B: crossing creator (300)] crossing creator logs in
+  ok [B: crossing creator (300)] crossing payload: 300 points, check earned
+  ok [B: crossing creator (300)] crossing creator got exactly ONE platform message
+  ok [B: crossing creator (300)] congratulation says the check is earned and where it shows
+  ok [B: crossing creator (300)] congratulation has no em dash
+  ok [B: crossing creator (300)] exactly ONE blue_check_earned notification exists
+  ok [B: crossing creator (300)] the notification carries EN + ES text
+  ok [B: crossing creator (300)] crossing stamp is on the record
+  ok [B: crossing creator (300)] crossing creator never got the band message
+  ok [B: crossing creator (300)] no email left the building for the crossing
+  ok [B: already-earned + below-band creators] already-earned creator (stamp on record) got NO new message
+  ok [B: already-earned + below-band creators] below-band creator (249) got NO message and NO stamp
+  ok [B: already-earned + below-band creators] below-band payload: 249 points, no check
+  ok [B: Discover cards carry the derived check] business logs in
+  ok [B: Discover cards carry the derived check] discover responds
+  ok [B: Discover cards carry the derived check] crossing creator is on the roster with blueCheck true
+  ok [B: Discover cards carry the derived check] band creator is on the roster with blueCheck false
+  ok [B: book-me page carries the check at public tiers] book-me responds to an anonymous visitor
+  ok [B: book-me page carries the check at public tiers] book-me (anonymous, tier 0): the 300-point creator's blueCheck is true
+  ok [B: book-me page carries the check at public tiers] book-me (business viewer): blueCheck is true
+  ok [B: book-me page carries the check at public tiers] book-me (anonymous): the 250-point creator's blueCheck is false
+
+verify-build245: 81 passed, 0 failed
