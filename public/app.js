@@ -13479,7 +13479,7 @@ function claimApplyResolution() {
     input.value = String(d.stack.instagram);
     const note = document.getElementById("c85-counted-note");
     if (note && d.countedNote) { note.textContent = d.countedNote; note.style.display = ""; }
-    // A counted number replaces any "can't look up" note.
+    // A counted number replaces the fill-in note.
     const lookupNote = document.getElementById("c85-lookup-note");
     if (lookupNote && d.countedNote) { lookupNote.style.display = "none"; d.lookupNote = ""; }
     claimStackSync();
@@ -13839,9 +13839,19 @@ function claimWelcomeGo() {
 }
 
 // ---------- Screen 2: four quick facts ----------
+// Build -249 (Jeff, 2026-11-21): the -226 stall-capture email
+// field no longer renders on this screen. Email is asked once,
+// on the final step; asking here too confused people, and the
+// value never carried forward to the account screen anyway.
 function renderClaimFacts() {
   const d = claimDraftInit();
-  if (!d.catsSeeded && (state.boot.creatorCategories || []).length) { d.cats = [...state.boot.creatorCategories]; d.catsSeeded = true; }
+  // Build -249 (Jeff, 2026-11-21): categories start UNCHECKED.
+  // The old seed ticked all twelve for her ("we've ticked
+  // everything for you"), so a creator who tapped through
+  // submitted in every category. Nothing is pre-ticked now:
+  // catsSeeded just marks that the (empty) default is settled,
+  // and claimToggleCat / claimToggleAllCats track her own taps.
+  if (!d.catsSeeded) { d.catsSeeded = true; }
   // Build -173: no default market. pfMarket is the parsed
   // market, the unlisted label (unrecognized market string),
   // or "" when the link named none — and "" renders a "Pick
@@ -13866,7 +13876,6 @@ function renderClaimFacts() {
       ${claimDots(2)}
       <h2 class="c85-h2">${T("Four", "Cuatro")} <span class="c85-accent2">${T("quick facts.", "datos rápidos.")}</span></h2>
       <div id="c85-facts-warn"></div>
-      ${stallCapture226Html("creator_claim")}
       <div class="c85-fact">
         <p class="fg-kicker">${T("Your city", "Tu ciudad")}</p>
         <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOpts}</select><p class="small muted" style="margin:6px 0 0">${esc(marketHelp)}</p><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and Magpie walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every Magpie post.</p></div>
@@ -13882,7 +13891,7 @@ function renderClaimFacts() {
       <div class="c85-fact">
         <p class="fg-kicker">${T("What you post about", "De qué publicas")}</p>
         <h3 class="c85-cat-head" style="margin:4px 0 6px">${T("Almost everything you post counts here.", "Casi todo lo que publicas cuenta aquí.")}</h3>
-        <p class="small" style="margin:0 0 10px">${T("Your followers are mostly people near you, friends and family, and they'd love seeing you enjoy a meal, a haircut, a workout or a night out, not just one kind of post. So we've ticked everything for you. If your page is only ever about one thing, untick the rest and keep just yours.", "Tus seguidores son en su mayoría personas cerca de ti, amigos y familia, y les encantaría verte disfrutar una comida, un corte de pelo, un entrenamiento o una noche fuera, no solo un tipo de publicación. Por eso marcamos todo por ti. Si tu página es siempre de una sola cosa, desmarca el resto y deja solo la tuya.")}</p>
+        <p class="small" style="margin:0 0 10px">${T("Your followers are mostly people near you, friends and family, and they'd love seeing you enjoy a meal, a haircut, a workout or a night out, not just one kind of post. Tick everything that fits what you post. If your page is only ever about one thing, just keep that one.", "Tus seguidores son en su mayoría personas cerca de ti, amigos y familia, y les encantaría verte disfrutar una comida, un corte de pelo, un entrenamiento o una noche fuera, no solo un tipo de publicación. Marca todo lo que encaje con lo que publicas. Si tu página es siempre de una sola cosa, deja solo esa.")}</p>
         <div class="catpick" id="c85-cats"><label class="catpick-row catpick-allrow"><input type="checkbox" id="c85-cat-all" ${allCats.length && allCats.every((c) => d.cats.includes(c)) ? "checked" : ""} onchange="return claimToggleAllCats(this)"><span>${T("Select all", "Seleccionar todo")}</span></label>${cats}</div>
         <p class="small muted" style="margin:8px 0 0">${T("Every ticked category is another kind of local business that can find you.", "Cada categoría marcada es otro tipo de negocio local que puede encontrarte.")}</p>
         <p class="small" id="c85-cat-warn" style="display:none;color:#B3261E;margin:8px 0 0">${T("Pick at least one, so businesses can find you.", "Elige al menos una, para que los negocios te encuentren.")}</p>
@@ -14017,10 +14026,15 @@ async function claimCountLookup() {
     d.lookupNote = T(`We found this on your public profile: ${label} · @${handle} · ${claimFmtCount(res.count)} followers. Check it and fix it if it's off.`, `Lo encontramos en tu perfil público: ${label} · @${handle} · ${claimFmtCount(res.count)} seguidores. Revísalo y corrígelo si no está bien.`);
   } else if (res.reason === "manual") {
     // Instagram has its own counted-prefill path (claimResolve):
-    // when that already counted her, a "can't look up" note
-    // would contradict it, so it stays silent.
+    // when that already counted her, a second note would
+    // contradict it, so it stays silent.
     if (d.countedNote) return;
-    d.lookupNote = T(`We can't look up ${label} counts automatically — enter yours from your profile.`, `No podemos buscar los conteos de ${label} automáticamente: escribe el tuyo desde tu perfil.`);
+    // Build -249 (Jeff, 2026-11-21): no confession about what
+    // we cannot do. The note is a plain instruction: fill in
+    // your count. Where a lookup works (TikTok), the "found"
+    // branch above prefills the number and says where it came
+    // from; the rest she fills in herself.
+    d.lookupNote = T(`Enter your ${label} count from your profile. You can fix it any time.`, `Escribe tu conteo de ${label} desde tu perfil. Puedes corregirlo cuando quieras.`);
   } else {
     return;
   }
@@ -14217,6 +14231,10 @@ function claimBack(step) {
 }
 
 // ---------- Screen 3: make it yours ----------
+// Build -249 (Jeff, 2026-11-21): the -226 push reminder no
+// longer renders inside this form above the Finish button —
+// it read as part of the form. It moved to the confirmation
+// screen (renderClaimDone), after the signup is done.
 // Build -123: the claim draft is in-memory; the Google round
 // trip is a full-page leave and return, so the draft rides
 // localStorage for that one trip and init restores it.
@@ -14242,11 +14260,10 @@ function renderClaimAccount() {
       <form novalidate onsubmit="return doQuickClaim(event)">
         <div class="field"><label>${T("Email (how we reach you)", "Correo electrónico (así te contactamos)")}</label><input type="email" id="c85-email" required autocomplete="email" value="${esc(gp ? gp.email : "")}"></div>
         <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input type="password" id="c85-password" required minlength="10" autocomplete="new-password"></div>
-        <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-post" required><span>${T("I agree to the post agreement: when a business comps my visit, I will post 1 post or reel plus 1 story that shares the post, honest and disclosed, within 48 hours of the visit, and keep the post live for at least 30 days. Paid visits follow the posting terms on the booking.", "Acepto el acuerdo de publicación: cuando un negocio me dé una visita en cortesía, publicaré 1 publicación o reel más 1 historia que comparta la publicación, honesta y revelada, dentro de 48 horas de la visita, y mantendré la publicación activa al menos 30 días. Las visitas pagadas siguen los términos de publicación de la reserva.")}</span></label></div>
+        <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-post" required><span>${T("I agree to the post agreement: I will follow the terms of each offer I accept on Magpie. Every offer shows its own terms (what to post, when to post it, and how long it stays up) before I accept it.", "Acepto el acuerdo de publicación: seguiré los términos de cada oferta que acepte en Magpie. Cada oferta muestra sus propios términos (qué publicar, cuándo publicarlo y cuánto tiempo queda publicado) antes de aceptarla.")}</span></label></div>
         <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on Magpie on Magpie, and I agree Magpie can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en Magpie las reservas que empiezan en Magpie, y acepto que Magpie me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
         <button class="btn" type="submit" style="width:100%">${T("Finish — join the founding roster", "Terminar: únete a la lista de fundadores")}</button>
       </form>
-      ${pushReminder226Html("creator", "claim")}
       <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Once you are approved, you can update all your numbers and add every social channel you have, even ones not listed here.", "Una vez que te aprueben, puedes actualizar todos tus números y agregar todas tus redes sociales, incluso las que no aparecen aquí.")}</p>
       <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(3)">${T("Back", "Atrás")}</a></p>
     </div>
@@ -14261,7 +14278,7 @@ async function doQuickClaim(e) {
     window.scrollTo(0, 0);
   };
   if (!document.getElementById("c85-agree-terms").checked) { errBox(T("Please agree to the Terms of Service and email consent so we can reach you at launch.", "Acepta los Términos de Servicio y el consentimiento de correo para poder contactarte al lanzar, por favor.")); return false; }
-  if (!document.getElementById("c85-agree-post").checked) { errBox(T("Please agree to the post agreement: when a business comps your visit, you post honestly and disclose the comp, within 48 hours of the visit.", "Acepta el acuerdo de publicación: cuando un negocio te dé una visita en cortesía, publicas con honestidad y revelas la cortesía, dentro de 48 horas de la visita, por favor.")); return false; }
+  if (!document.getElementById("c85-agree-post").checked) { errBox(T("Please agree to the post agreement: follow the terms of each offer you accept.", "Acepta el acuerdo de publicación: sigue los términos de cada oferta que aceptes, por favor.")); return false; }
   const qcHandle = normalizeHandleClient(d.handle || "");
   if (!qcHandle) { state.claimStep = 1; render(); return false; }
   d.handle = qcHandle;
@@ -14411,6 +14428,32 @@ function magpieIgFollowHtml() {
   </div>`;
 }
 
+// Build -249 (Jeff, 2026-11-21, from his own signup test):
+// this screen used to say "You're in." over three paragraphs of
+// text. She is NOT in yet — she has APPLIED, and a person reads
+// that in the first second. The rebuild is visual-first: the
+// badge, the headline, a 3-step picture of what happens next
+// (with the dashboard-opens-on-approval step spelled out, as
+// Jeff asked by name), and the big local-followers stat card.
+// All number/position language is gone per Jeff's NO-NUMBER
+// RULE: no founding band, no founding order, no "N out of 10"
+// share line. Founding standing is stated without numbers.
+function claimNextSteps249Html() {
+  const row = (mark, markStyle, label, sub, last) => `
+    <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 2px;${last ? "" : "border-bottom:1px solid var(--line)"}">
+      <div style="flex:0 0 auto;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:700;${markStyle}">${mark}</div>
+      <div style="text-align:left">
+        <p style="margin:0;font-weight:600">${label}</p>
+        <p class="small muted" style="margin:2px 0 0">${sub}</p>
+      </div>
+    </div>`;
+  return `<div id="claim-next-steps" style="margin:0 0 18px">
+    ${row("✓", "background:var(--mint-pale);color:#1a7f4b", T("Applied", "Aplicaste"), T("We have your application.", "Ya tenemos tu solicitud."), false)}
+    ${row("2", "border:2px solid var(--blue);color:var(--blue)", T("We review by hand", "Revisamos a mano"), T("You'll hear back within two business days.", "Tendrás respuesta en dos días laborables."), false)}
+    ${row("3", "border:2px solid var(--line2);color:var(--ink2)", T("Approved", "Aprobada"), T("Your full dashboard opens: offers, visits, wallet and stats.", "Se abre tu panel completo: ofertas, visitas, billetera y estadísticas."), true)}
+  </div>`;
+}
+
 function renderClaimDone() {
   const done = state.claimDone || { firstName: "", total: 0, complete: false, under: false };
   const line2 = done.under
@@ -14422,19 +14465,14 @@ function renderClaimDone() {
   <section class="c85-wrap">
     <div class="c85-card" style="text-align:center">
       <div class="c85-done-badge">✓</div>
-      <h2 class="c85-h2">${done.firstName ? `${T("You're in,", "Ya estás dentro,")} <span class="c85-accent2">${esc(done.firstName)}.</span>` : `${T("You're", "Ya estás")} <span class="c85-accent2">${T("in.", "dentro.")}</span>`}</h2>
-      <p style="margin:0 0 10px">${T("We review every creator by hand. You'll hear back within two business days.", "Revisamos a cada creador a mano. Tendrás respuesta en dos días laborables.")}</p>
-      <p class="muted" style="margin:0 0 18px">${line2}</p>
-      <div id="claim-what-you-get" style="text-align:left;border-top:1px solid var(--hairline,#DFE7DF);padding-top:14px;margin:0 0 18px">
-        <p style="margin:0 0 8px"><strong>${T("What you get today", "Lo que obtienes hoy")}</strong></p>
-        <p class="small" style="margin:0 0 6px">${T("When you finish your profile, your page is live and on Google that day.", "Cuando termines tu perfil, tu página estará activa y en Google ese mismo día.")}</p>
-        <p class="small" style="margin:0 0 6px">${T("Your rates are public on your page, so businesses see what you charge before they book.", "Tus tarifas son públicas en tu página, así los negocios ven lo que cobras antes de reservar.")}</p>
-        <p class="small" style="margin:0">${T("Founding creators are recorded in founding order, and founding creators see offers first.", "Los creadores fundadores quedan registrados en orden de llegada, y ven las ofertas primero.")}</p>
-      </div>
+      <h2 class="c85-h2">${done.firstName ? `${T("You've applied,", "Ya aplicaste,")} <span class="c85-accent2">${esc(done.firstName)}.</span>` : `${T("You've", "Ya")} <span class="c85-accent2">${T("applied.", "aplicaste.")}</span>`}</h2>
+      <p class="muted" style="margin:0 0 14px">${line2}</p>
+      ${claimNextSteps249Html()}
       ${neighborPanelHtml()}
       <button class="btn" type="button" style="width:100%" onclick="return claimGoProfile()">${T("Add your rates and best work", "Agrega tus tarifas y tu mejor trabajo")}</button>
       <button class="btn ghost" type="button" style="width:100%;margin-top:10px" onclick="return claimGoDashboard()">${T("Go to my dashboard", "Ir a mi panel")}</button>
-      <p class="small muted" style="margin:10px 0 0">${T("Finish your profile there so businesses can find you — or just close this, and we'll email you.", "Termina tu perfil ahí para que los negocios puedan encontrarte, o cierra esto y te escribiremos por correo.")}</p>
+      <p class="small muted" style="margin:10px 0 0">${T("Finish your profile there so businesses can find you, or just close this, and we'll email you.", "Termina tu perfil ahí para que los negocios puedan encontrarte, o cierra esto y te escribiremos por correo.")}</p>
+      ${pushReminder226Html("creator", "claim")}
       ${signlInstallBannerHtml()}
       ${magpieIgFollowHtml()}
     </div>
@@ -14445,12 +14483,14 @@ function renderClaimDone() {
 // On the done screen Maggie prompts the stack ("Want a bigger
 // number? Add your TikTok"). Every added platform saves through
 // the same profile write as always, then the number recomputes
-// on screen. The FOUNDING rank locked at claim never moves, but
-// the panel shows only its band ("in the first 100"): the exact
-// rank and the market's checked count are never displayed, and
-// no live merit rank is shown either: a creator sees her own
-// numbers only, never her position against other creators
-// (Jeff, 2026-11-15, Build -177).
+// on screen. The FOUNDING rank locked at claim never moves.
+// Build -249 (Jeff, 2026-11-21, NO-NUMBER RULE): the panel no
+// longer shows the founding band ("one of the first 100") or
+// the "N out of 10 of your audience" share line. What remains
+// is the one number that is HERS — how many of her followers
+// live in her market — as a stat card, plus a number-free
+// founding line. A creator still never sees a position against
+// other creators (Jeff, 2026-11-15, Build -177).
 function neighborMissingPlatforms() {
   const stack = (state.user && state.user.creator && state.user.creator.audienceStack) || {};
   return CLAIM_STACK_PLATFORMS.filter((p) => !(Number(stack[p.id]) > 0));
@@ -14462,29 +14502,20 @@ function neighborPanelHtml() {
   const missing = neighborMissingPlatforms();
   const nextPlat = missing.length ? missing[0] : null;
   const f = nb.founding;
-  // Build -222: the local share in plain words, from the same
-  // localPct the server computed the count from (tenths of ten,
-  // the exact rounding neighborLocalWords uses server-side).
-  const nbTenths = nb.localPct === null || nb.localPct === undefined || !Number.isFinite(Number(nb.localPct)) ? null : Math.round(Number(nb.localPct) / 10);
-  const nbShareLine = nbTenths === null ? "" : nbTenths >= 10
-    ? T("That's 10 out of 10 of your audience, and it's exactly what local businesses are buying.", "Eso es 10 de cada 10 de tu audiencia, y es exactamente lo que compran los negocios locales.")
-    : nbTenths <= 0
-      ? T("That's fewer than 1 out of 10 of your audience, and it's exactly what local businesses are buying.", "Eso es menos de 1 de cada 10 de tu audiencia, y es exactamente lo que compran los negocios locales.")
-      : T(`That's ${nbTenths} out of 10 of your audience, and it's exactly what local businesses are buying.`, `Eso es ${nbTenths} de cada 10 de tu audiencia, y es exactamente lo que compran los negocios locales.`);
-  return `<div style="text-align:left;border-top:1px solid var(--hairline,#DFE7DF);padding-top:14px;margin:0 0 18px" id="nb-panel">
-    <p style="margin:0 0 8px" id="nb-big-label"><span style="font-size:32px;font-weight:800" id="nb-big">${claimFmtCount(nb.neighborCount)}</span> ${T("of your followers live in", "de tus seguidores viven en")} ${esc(marketLabel)}.</p>
-    ${nbShareLine ? `<p class="small" style="margin:0 0 10px">${nbShareLine}</p>` : ""}
-    ${f && f.band ? `<p class="small" style="margin:0 0 4px"><strong>${T(`You're one of the first ${f.band} founding creators in ${nb.market}.`, `Eres una de las primeras ${f.band} creadoras fundadoras de ${nb.market}.`)}</strong> ${T("Founding creators see offers first, and that never changes.", "Las creadoras fundadoras ven las ofertas primero, y eso nunca cambia.")}</p>` : ""}
-    ${nextPlat ? `<div class="notice blue" style="text-align:left">
-      <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Want a bigger number? Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Every platform you add recounts your local followers, right here.`, `¿Quieres un número más grande? Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}. Cada plataforma que agregas vuelve a contar tus seguidores locales, aquí mismo.`)}</p>
+  return `<div style="text-align:center;border:1px solid var(--line);border-radius:18px;padding:18px 16px;margin:0 0 18px" id="nb-panel">
+    <p style="margin:0" id="nb-big-label"><span style="font-size:42px;font-weight:800;line-height:1.05" id="nb-big">${claimFmtCount(nb.neighborCount)}</span></p>
+    <p style="margin:4px 0 0">${T("of your followers live in", "de tus seguidores viven en")} ${esc(marketLabel)}.</p>
+    ${f ? `<p class="small" style="margin:10px 0 0"><strong>${T(`You're a founding creator in ${marketLabel}.`, `Eres creadora fundadora en ${marketLabel}.`)}</strong> ${T("Founding creators see offers first, and that standing never expires.", "Las creadoras fundadoras ven las ofertas primero, y esa condición nunca vence.")}</p>` : ""}
+    ${nextPlat ? `<div class="notice blue" style="text-align:left;margin-top:14px">
+      <p style="margin:0 0 8px"><strong>Maggie:</strong> ${T(`Want a bigger number? Add your ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}.`, `¿Quieres un número más grande? Agrega tu ${nextPlat.label.replace(/ followers| subscribers| connections/g, "")}.`)}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
         <div class="field" style="margin:0"><label>${T("Platform", "Plataforma")}</label><select id="nb-plat">${missing.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join("")}</select></div>
         <div class="field" style="margin:0"><label>${T("Followers", "Seguidores")}</label><input type="number" id="nb-plat-count" min="1" inputmode="numeric" placeholder="0" style="width:130px"></div>
         <button type="button" class="btn" onclick="return neighborStackAdd()">${T("Add it", "Agregarla")}</button>
       </div>
       <p class="small" id="nb-stack-msg" style="margin:8px 0 0"></p>
-    </div>` : `<p class="small muted" style="margin:0 0 10px">${T("Every platform you post on is counted.", "Todas las plataformas donde publicas están contadas.")}</p>`}
-    <p style="margin:10px 0 0"><button type="button" class="btn small-btn ghost" onclick="return neighborCardSave()">${T("Save my local followers card", "Guardar mi tarjeta de seguidores locales")}</button></p>
+    </div>` : `<p class="small muted" style="margin:10px 0 0">${T("Every platform you post on is counted.", "Todas las plataformas donde publicas están contadas.")}</p>`}
+    <p style="margin:12px 0 0"><button type="button" class="btn small-btn ghost" onclick="return neighborCardSave()">${T("Save my local followers card", "Guardar mi tarjeta de seguidores locales")}</button></p>
   </div>`;
 }
 function neighborAnimateCount(el, from, to) {
@@ -14576,7 +14607,10 @@ function renderJoinCreator() {
   // state. The full founding profile form below stays one tap
   // away for creators who would rather do it all now.
   if (state.joinMode !== "full") return renderQuickClaim();
-  const cats = `<label class="catpick-row catpick-allrow"><input type="checkbox" id="c-cat-all" checked onchange="profileAllToggle('c-cat', this)"><span>${T("Select all", "Seleccionar todo")}</span></label>` + state.boot.creatorCategories.map((c) => `<label class="catpick-row"><input type="checkbox" name="c-cat" value="${esc(c)}" checked onchange="profileRowSync('c-cat');proHintSync('jc')"><span>${esc(c)}</span></label>`).join("");
+  // Build -249 (Jeff, 2026-11-21): nothing pre-ticked here
+  // either — the full form used to check all twelve categories
+  // for her, same as the claim door did. She picks her own.
+  const cats = `<label class="catpick-row catpick-allrow"><input type="checkbox" id="c-cat-all" onchange="profileAllToggle('c-cat', this)"><span>${T("Select all", "Seleccionar todo")}</span></label>` + state.boot.creatorCategories.map((c) => `<label class="catpick-row"><input type="checkbox" name="c-cat" value="${esc(c)}" onchange="profileRowSync('c-cat');proHintSync('jc')"><span>${esc(c)}</span></label>`).join("");
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const pf = state.prefill || {};
   // Build -173: same rule as the claim door — no parsed
@@ -14670,7 +14704,7 @@ function renderJoinCreator() {
       </div>
       <div class="fgroup">
         <p class="fg-kicker">${T("What you create", "Lo que creas")}</p>
-        <div class="field"><label>${T("What do you create in? (pick at least one)", "¿En qué categorías creas? (elige al menos una)")}</label><p class="small muted" style="margin:4px 0 8px">${T("We've ticked all of them — most creators here keep nearly all. Only untick what you'd never post about.", "Marcamos todas: la mayoría de los creadores aquí conserva casi todas. Solo desmarca lo que nunca publicarías.")}</p><div class="catpick">${cats}</div></div>
+        <div class="field"><label>${T("What do you create in? (pick at least one)", "¿En qué categorías creas? (elige al menos una)")}</label><p class="small muted" style="margin:4px 0 8px">${T("Tick everything that fits what you post. Most creators pick a few.", "Marca todo lo que encaje con lo que publicas. La mayoría elige unas cuantas.")}</p><div class="catpick">${cats}</div></div>
         <div class="field"><label>${T("Comps you would accept (optional)", "Cortesías que aceptarías (opcional)")}</label><div class="checkrow">${comps}</div></div>
         <div class="field" id="jc-paid-wrap" style="display:none">
           <label class="tgl-row"><input type="checkbox" class="sw" id="jc-paid"><span><strong>${T("Paid cash campaigns", "Campañas pagadas en efectivo")}</strong> ${T("(Headliners tier): separate from comps, businesses can hire me for paid campaigns when a business runs one.", "(nivel Headliners): aparte de las cortesías, los negocios pueden contratarme para campañas pagadas cuando un negocio lance una.")}</span></label>
@@ -14687,7 +14721,7 @@ function renderJoinCreator() {
           <li>${T("If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.", "Si una publicación nunca llega, la visita no cuenta, y las faltas repetidas pueden pausar tu cuenta. Aquí importa que cumplas.")}</li>
         </ul>
       </div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-compliance" required><span>${T("I agree to the post agreement: when a business comps my visit, I will post 1 post or reel plus 1 story that shares the post, honest and disclosed, within 48 hours of the visit, and keep the post live for at least 30 days. Paid visits follow the posting terms on the booking.", "Acepto el acuerdo de publicación: cuando un negocio me dé una visita en cortesía, publicaré 1 publicación o reel más 1 historia que comparta la publicación, honesta y revelada, dentro de 48 horas de la visita, y mantendré la publicación activa al menos 30 días. Las visitas pagadas siguen los términos de publicación de la reserva.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-compliance" required><span>${T("I agree to the post agreement: I will follow the terms of each offer I accept on Magpie. Every offer shows its own terms (what to post, when to post it, and how long it stays up) before I accept it.", "Acepto el acuerdo de publicación: seguiré los términos de cada oferta que acepte en Magpie. Cada oferta muestra sus propios términos (qué publicar, cuándo publicarlo y cuánto tiempo queda publicado) antes de aceptarla.")}</span></label></div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://magpielocal.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://magpielocal.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on Magpie on Magpie, and I agree Magpie can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en Magpie las reservas que empiezan en Magpie, y acepto que Magpie me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
       <div id="jc-save-warn"></div>
       <button class="btn" type="submit" style="width:100%">${T("Create my profile", "Crear mi perfil")}</button>
@@ -14827,7 +14861,7 @@ async function doRegisterCreator(e) {
     if (v > 0) stackFromForm[platform] = v;
   }
   if (!document.getElementById("jc-agree-terms").checked) { errBox(T("Please agree to the Terms of Service and email consent so we can reach you at launch.", "Acepta los Términos de Servicio y el consentimiento de correo para poder contactarte al lanzar, por favor.")); return false; }
-  if (!document.getElementById("jc-agree-compliance").checked) { errBox(T("Please agree to the post agreement: when a business comps your visit, you post honestly and disclose the comp, within 48 hours of the visit.", "Acepta el acuerdo de publicación: cuando un negocio te dé una visita en cortesía, publicas con honestidad y revelas la cortesía, dentro de 48 horas de la visita, por favor.")); return false; }
+  if (!document.getElementById("jc-agree-compliance").checked) { errBox(T("Please agree to the post agreement: follow the terms of each offer you accept.", "Acepta el acuerdo de publicación: sigue los términos de cada oferta que aceptes, por favor.")); return false; }
   // The primary social link is required (Jeff, 2026-10-26): it is
   // how businesses and our team view and verify the creator's
   // page. A pasted profile link normalizes to the clean handle.

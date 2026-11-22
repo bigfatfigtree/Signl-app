@@ -124,6 +124,12 @@ const claim = await dem("POST", "/api/auth/register", {
 });
 check("quick claim registers (201)", claim.status === 201, JSON.stringify(claim.data).slice(0, 200));
 const demId = claim.data.user && claim.data.user.id;
+// Build -249 re-pin: the claim confirmation no longer sends
+// on the register request path; it lands in the signup
+// fan-out drain. Run the drain, then the journey below reads
+// exactly as it did when the send was inline (one claim
+// email, and the finish moment's ping suppressed by it).
+await router.runSignupFanout249();
 {
   const sent = await emailsSentTo(demId);
   check("the claim fires exactly one email: the claim confirmation",

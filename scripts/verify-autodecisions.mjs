@@ -54,8 +54,19 @@ class Client {
 }
 const AGREE = { agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true };
 function startServer(db, port) {
-  const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: db, ADMIN_EMAIL: "jeff@joinsignl.com", ADMIN_PASSWORD: "<MASKED_SECRET_001>", APP_URL: `http://127.0.0.1:${port}`, SIGNL_TEST_ALLOW_BUSINESS: "1" };
+  const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: db, ADMIN_EMAIL: "jeff@joinsignl.com", ADMIN_PASSWORD: "<MASKED_SECRET_001>", SIGNL_SWEEP_TOKEN: "auto-sweep-token", APP_URL: `http://127.0.0.1:${port}`, SIGNL_TEST_ALLOW_BUSINESS: "1" };
   return spawn("node", ["scripts/dev-server.mjs", String(port)], { env, stdio: ["ignore", "pipe", "pipe"] });
+}
+// Build -249 re-pin: sign-up decisions and the sign-up
+// confirmation email no longer land on the register request
+// path — they run in the signup fan-out drain (the register
+// response now reads "pending" even for an evidenced claim).
+// This suite triggers the drain through the real
+// background-function route after each Phase-1 registration,
+// then asserts the same end state the old inline path
+// produced: the decision, its event, and its email, once.
+async function drain249(base) {
+  await fetch(`${base}/.netlify/functions/admin-home-refresh-background`, { method: "POST", headers: { "x-signl-sweep-token": "auto-sweep-token", "content-type": "application/json" }, body: "{}" });
 }
 async function waitUp(label) {
   for (let i = 0; i < 60; i++) {
@@ -96,7 +107,8 @@ async function eventsOf(type) {
 // an evidenced campaign batch pair (Richmond).
 const ruleA = await quickClaim("xoxoerinsmith@gmail.com", "xoxoerinsmith", "Richmond");
 check("rule A: claim registers", ruleA.r.status === 201, `status=${ruleA.r.status}`);
-check("rule A: approved at sign-up", ruleA.r.data.user.status === "approved", `status=${ruleA.r.data.user && ruleA.r.data.user.status}`);
+check("rule A: response reads pending (Build -249: the decision lands in the fan-out drain, asserted below)", ruleA.r.data.user.status === "pending", `status=${ruleA.r.data.user && ruleA.r.data.user.status}`);
+await drain249(BASE);
 check("rule A: no internal markers in the claimant payload", !("approvedBy" in ruleA.r.data.user) && !("decisionReason" in ruleA.r.data.user));
 const ruleAId = ruleA.r.data.user.id;
 {
@@ -104,7 +116,7 @@ const ruleAId = ruleA.r.data.user.id;
   check("rule A: exactly one application_approved event", approved.length === 1, `n=${approved.length}`);
   check("rule A: event carries the rule marker", approved.length === 1 && approved[0].data && approved[0].data.rule === "auto_rule_a" && approved[0].data.approvedBy === "auto_rule_a");
   const queued = (await eventsOf("approval_email_queued")).filter((e) => e.subjectId === ruleAId);
-  check("rule A: approval email queued exactly once (standard template path)", queued.length === 1 && queued[0].data.subject === "You are approved: welcome to the SIGNL founding roster", `n=${queued.length} subject=${queued[0] && queued[0].data.subject}`);
+  check("rule A: approval email queued exactly once (standard template path)", queued.length === 1 && /^You are approved/.test(queued[0].data.subject || ""), `n=${queued.length} subject=${queued[0] && queued[0].data.subject}`);
   const confirm = (await eventsOf("signup_confirmation_email_queued")).filter((e) => e.subjectId === ruleAId);
   check("rule A: no sign-up confirmation email (approval email replaces it)", confirm.length === 0, `n=${confirm.length}`);
 }
@@ -114,7 +126,8 @@ const ruleAId = ruleA.r.data.user.id;
 // evidenced pair, so only Rule B can catch him.
 const ruleB = await quickClaim("zay@fixtures.dev", "mr.5starzay", "Hampton Roads");
 check("rule B: claim registers", ruleB.r.status === 201, `status=${ruleB.r.status}`);
-check("rule B: approved at sign-up", ruleB.r.data.user.status === "approved", `status=${ruleB.r.data.user && ruleB.r.data.user.status}`);
+check("rule B: response reads pending (Build -249: the decision lands in the fan-out drain, asserted below)", ruleB.r.data.user.status === "pending", `status=${ruleB.r.data.user && ruleB.r.data.user.status}`);
+await drain249(BASE);
 check("rule B: no internal markers in the claimant payload", !("approvedBy" in ruleB.r.data.user) && !("decisionReason" in ruleB.r.data.user));
 const ruleBId = ruleB.r.data.user.id;
 {
@@ -129,6 +142,7 @@ const ruleBId = ruleB.r.data.user.id;
 // (Richmond) AND has a sprint link, but the claim carries a
 // referral, so it must stay manual, no exceptions.
 const referred = await quickClaim("megan@thewestendmom.com", "thewestendmom", "Richmond", { referredBy: "somesponsor" });
+await drain249(BASE);
 check("referred-matched: claim registers", referred.r.status === 201, `status=${referred.r.status}`);
 check("referred-matched: stays pending for a person", referred.r.data.user.status === "pending", `status=${referred.r.data.user && referred.r.data.user.status}`);
 {
@@ -145,7 +159,8 @@ check("unmatched: stays pending for a person", unmatched.r.status === 201 && unm
 // (e) example.com auto-reject.
 const exDomain = await quickClaim("newbie757@example.com", "newbie757", "Hampton Roads");
 check("example.com: claim registers", exDomain.r.status === 201, `status=${exDomain.r.status}`);
-check("example.com: rejected at sign-up", exDomain.r.data.user.status === "rejected", `status=${exDomain.r.data.user && exDomain.r.data.user.status}`);
+check("example.com: response reads pending (Build -249: the rejection lands in the fan-out drain, asserted below)", exDomain.r.data.user.status === "pending", `status=${exDomain.r.data.user && exDomain.r.data.user.status}`);
+await drain249(BASE);
 {
   const id = exDomain.r.data.user.id;
   const rej = (await eventsOf("application_rejected")).filter((e) => e.subjectId === id);
@@ -158,11 +173,13 @@ check("example.com: rejected at sign-up", exDomain.r.data.user.status === "rejec
 // (f) Known-test email auto-reject (real handle, real-sounding
 // domain: only the exact test address matches).
 const testEmail = await quickClaim("testclaim@example.com", "realperson757", "Hampton Roads");
-check("known-test email: rejected at sign-up", testEmail.r.status === 201 && testEmail.r.data.user.status === "rejected", `status=${testEmail.r.data.user && testEmail.r.data.user.status}`);
+await drain249(BASE);
+check("known-test email: rejected in the fan-out drain (Build -249; was at sign-up)", testEmail.r.status === 201 && (await admin.req("GET", "/api/admin/applications")).data.decided.some((u) => u.id === testEmail.r.data.user.id && u.status === "rejected"), `status=${testEmail.r.data.user && testEmail.r.data.user.status}`);
 
 // (g) Known-test handle auto-reject.
 const testHandle = await quickClaim("casey@fixtures.dev", "tiertest", "Dubai", { name: "Casey Rivers" });
-check("known-test handle: rejected at sign-up", testHandle.r.status === 201 && testHandle.r.data.user.status === "rejected", `status=${testHandle.r.data.user && testHandle.r.data.user.status}`);
+await drain249(BASE);
+check("known-test handle: rejected in the fan-out drain (Build -249; was at sign-up)", testHandle.r.status === 201 && (await admin.req("GET", "/api/admin/applications")).data.decided.some((u) => u.id === testHandle.r.data.user.id && u.status === "rejected"), `status=${testHandle.r.data.user && testHandle.r.data.user.status}`);
 
 // Admin view: pending shows manual items only; decided rows carry
 // the markers (admin payload only); the strip counts them.

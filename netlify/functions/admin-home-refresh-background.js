@@ -25,7 +25,7 @@
 // endpoint and the read-path nudges keep both summaries fresh
 // together. Each compute is guarded on its own: one failing
 // never blocks the other, and the answer reports both.
-const { runAdminHomeRefresh212, runAdminStatsSummary244, runApprovalFanout246 } = require("./lib/router");
+const { runAdminHomeRefresh212, runAdminStatsSummary244, runApprovalFanout246, runSignupFanout249 } = require("./lib/router");
 
 exports.handler = async (event) => {
   const token = process.env.SIGNL_SWEEP_TOKEN || "";
@@ -67,8 +67,21 @@ exports.handler = async (event) => {
     if (!firstError) firstError = e;
     console.error("Magpie approval fan-out drain failed:", e);
   }
-  if (firstError && !out && !statsOut && !fanoutOut) {
+  // Build -249: the signup fan-out drain rides the same run:
+  // register now queues its downstream work (recruiter credit,
+  // auto-decision, completion events, wishlist/roster moments,
+  // and the exactly-once confirmation email) instead of running
+  // it on the request path. Its own try/catch, same discipline.
+  let signupFanoutOut = null;
+  try {
+    signupFanoutOut = await runSignupFanout249();
+    console.log("Magpie signup fan-out drain:", JSON.stringify(signupFanoutOut));
+  } catch (e) {
+    if (!firstError) firstError = e;
+    console.error("Magpie signup fan-out drain failed:", e);
+  }
+  if (firstError && !out && !statsOut && !fanoutOut && !signupFanoutOut) {
     return { statusCode: 500, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: false, error: String((firstError && firstError.message) || firstError) }) };
   }
-  return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: true, refresh: out, statsRefresh: statsOut, approvalFanout: fanoutOut }) };
+  return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: true, refresh: out, statsRefresh: statsOut, approvalFanout: fanoutOut, signupFanout: signupFanoutOut }) };
 };

@@ -230,11 +230,26 @@ try {
   check("admin approves the full-form creator", approveFull.status === 200 && approveFull.data.user.status === "approved");
 
   const events1 = await admin("GET", "/api/admin/events?limit=500&type=signup_confirmation_email_queued");
-  check("claim confirmation email queued at sign-up", (events1.data.events || []).some((e) => e.subjectId === claimerId));
+  // Build -249 re-pin: the confirmation no longer queues on
+  // the register request path. Register queues a signup
+  // fan-out job; the background drain sends the email (the
+  // -249 suite proves the delivered-exactly-once behavior).
+  // This suite never triggers the drain (the same reason the
+  // -246 approval-queued check below has failed since -246),
+  // so the pin here is the new contract's visible half: no
+  // queued confirmation yet, and a pending fan-out job stored
+  // for the claimer.
+  const dbNow = JSON.parse(fs.readFileSync(DB, "utf8"));
+  const sfJob = dbNow[`signupfanout:${claimerId}`];
+  check("claim confirmation is queued as a signup fan-out job at sign-up (Build -249: the drain sends it)", !(events1.data.events || []).some((e) => e.subjectId === claimerId) && !!sfJob && sfJob.state === "pending", JSON.stringify(sfJob));
   const events2 = await admin("GET", "/api/admin/events?limit=500&type=approval_email_queued");
   check("approval email queued on approval", (events2.data.events || []).some((e) => e.subjectId === claimerId));
   const eventsPc = await admin("GET", "/api/admin/events?limit=500&type=profile_completed");
-  check("no profile_completed event for the quick claim yet (the full form has one)", !(eventsPc.data.events || []).some((e) => e.subjectId === claimerId) && (eventsPc.data.events || []).some((e) => e.subjectId === fullId));
+  // Build -249 re-pin: the full form's profile_completed also
+  // moved into the signup fan-out drain (this suite never
+  // triggers it), so at this point NEITHER signup has one; the
+  // quick claim's still arrives via the completion flip below.
+  check("no profile_completed event for either signup yet (Build -249: the full form's lands in the fan-out drain)", !(eventsPc.data.events || []).some((e) => e.subjectId === claimerId) && !(eventsPc.data.events || []).some((e) => e.subjectId === fullId));
 
   // ---------- the offer gate: approved but invisible ----------
   const anon = client();
@@ -364,7 +379,7 @@ try {
   check("Build -215: no 50% local default anywhere in the claim draft", !appJs.includes("localPct: 50") && appJs.includes("localTouched: pf.localpct !== undefined"));
   check("Build -215: local % explainer line ships in plain words", appJs.includes("This is the share of your followers who live in your city."));
   check("Build -215: unlisted option reads Add your city", appJs.includes(">Add your city</option>") && !appJs.includes(">My city is not listed yet</option>"));
-  check("Build -215: count lookup wired into the claim facts step", appJs.includes('"/count-lookup"') && appJs.includes("We found this on your public profile:") && appJs.includes("counts automatically — enter yours from your profile."));
+  check("Build -215: count lookup wired into the claim facts step (note re-pinned by Build -249: the can't-look-up confession is now a neutral fill-in instruction)", appJs.includes('"/count-lookup"') && appJs.includes("We found this on your public profile:") && appJs.includes("Enter your ${label} count from your profile. You can fix it any time.") && !appJs.includes("counts automatically — enter yours from your profile."));
   check("Build -215: hero-card params parsed (followers, localpct, city)", appJs.includes('params.get("followers")') && appJs.includes('params.get("localpct")') && appJs.includes('params.get("city")'));
 } finally {
   server.kill("SIGTERM");

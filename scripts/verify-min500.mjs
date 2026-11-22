@@ -69,7 +69,7 @@ class Client {
 }
 
 function startServer(db, port) {
-  const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: db, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", APP_URL: `http://127.0.0.1:${port}`, ADMIN_EMAIL, ADMIN_PASSWORD };
+  const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: db, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", SIGNL_SWEEP_TOKEN: "min500-sweep-token", APP_URL: `http://127.0.0.1:${port}`, ADMIN_EMAIL, ADMIN_PASSWORD };
   const s = spawn("node", ["scripts/dev-server.mjs", String(port)], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
   s.stderr.on("data", (d) => process.stderr.write("[server] " + d));
   return s;
@@ -163,10 +163,25 @@ const hold = await fullForm("holdme@fixtures.dev", "holdme757", "Virginia Beach"
 }
 
 // --- auto-decision hold (Rule A pair, under the minimum) ---
+// Build -249 re-pin: the auto-decision (and with it the
+// under-minimum hold + the confirmation email) runs in the
+// signup fan-out drain, not on the register request path.
+// The suite triggers the drain through the real
+// background-function route, then asserts the same end state.
+async function drain249(base) {
+  await fetch(`${base}/.netlify/functions/admin-home-refresh-background`, { method: "POST", headers: { "x-signl-sweep-token": "min500-sweep-token", "content-type": "application/json" }, body: "{}" });
+}
 const autoHold = await fullForm("xoxoerinsmith@gmail.com", "xoxoerinsmith", "Richmond", "Richmond", { followerCount: 300 });
 check("auto hold: matched 300 sign-up registers", autoHold.r.status === 201, `status=${autoHold.r.status}`);
 check("auto hold: NOT silently approved, stays pending", autoHold.r.data.user.status === "pending", `status=${autoHold.r.data.user.status}`);
-check("auto hold: under-minimum state rides the claimant payload", !!autoHold.r.data.user.underMinimum && autoHold.r.data.user.underMinimum.total === 300, JSON.stringify(autoHold.r.data.user.underMinimum));
+await drain249(BASE);
+{
+  // The hold stamp lives at the top level of the stored user
+  // record (u.underMinimum); the admin row does not project
+  // it, so the pin reads the stored record itself.
+  const stored = JSON.parse(fs.readFileSync(DB, "utf8"))[`user:${autoHold.r.data.user.id}`];
+  check("auto hold: under-minimum state lands on the record in the drain (Build -249; was on the response payload)", !!stored && !!stored.underMinimum && stored.underMinimum.total === 300, JSON.stringify(stored && stored.underMinimum));
+}
 {
   const id = autoHold.r.data.user.id;
   check("auto hold: no approval event", (await eventsOf("application_approved")).filter((e) => e.subjectId === id).length === 0);
@@ -181,8 +196,14 @@ check("auto hold: under-minimum state rides the claimant payload", !!autoHold.r.
 
 // --- auto-decision control (Rule A pair, above the minimum) ---
 const autoOk = await fullForm("919eats@gmail.com", "919eats", "Raleigh", "Raleigh", { followerCount: 800 });
-check("auto control: matched 800 approves at sign-up", autoOk.r.status === 201 && autoOk.r.data.user.status === "approved", `status=${autoOk.r.status}/${autoOk.r.data.user.status}`);
-check("auto control: no under-minimum state on the approved record", !autoOk.r.data.user.underMinimum);
+await drain249(BASE);
+{
+  const apps = await admin.req("GET", "/api/admin/applications");
+  const row = (apps.data.decided || []).find((u) => u.id === autoOk.r.data.user.id);
+  check("auto control: matched 800 approved in the fan-out drain (Build -249; was at sign-up)", autoOk.r.status === 201 && !!row && row.status === "approved", `status=${autoOk.r.status}/${row && row.status}`);
+  const storedOk = JSON.parse(fs.readFileSync(DB, "utf8"))[`user:${autoOk.r.data.user.id}`];
+  check("auto control: no under-minimum state on the approved record", !!storedOk && !storedOk.underMinimum);
+}
 server.kill("SIGTERM");
 await new Promise((r) => setTimeout(r, 400));
 

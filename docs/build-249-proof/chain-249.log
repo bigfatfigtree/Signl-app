@@ -1,0 +1,70 @@
+===== verify-build249 =====
+  PASS  gate: a signup without the post agreement is refused, in the new wording
+  PASS  gate: the zero-follower guard still refuses (the -215/-220 validation is intact)
+
+verify-build249: 61 passed, 0 failed
+===== verify-build248 =====
+  PASS  desktop CSS: profile, wallet, results and momentum grids present
+  PASS  desktop-only pieces stay hidden below desktop width
+
+verify-build248: 20 passed, 0 failed
+===== verify-build247 =====
+  PASS  canon: POINTS_WHY_SHORT still defined once and still rendered on its other surfaces
+  PASS  copy: no em dashes in the changed view or sheet
+
+verify-build247: 18 passed, 0 failed
+===== verify-build245 =====
+  ok [B: book-me page carries the check at public tiers] book-me (business viewer): blueCheck is true
+  ok [B: book-me page carries the check at public tiers] book-me (anonymous): the 250-point creator's blueCheck is false
+
+verify-build245: 81 passed, 0 failed
+===== verify-build244 =====
+  PASS  spot-check: total creators matches a direct store read
+  PASS  a malformed stored record answers preparing, not zeroed numbers
+
+verify-build244: 32 passed, 0 failed
+===== verify-build243 =====
+  PASS  the single rejection path still rejects, with its rejection email
+  PASS  the applications queue shows the held creator still pending and the approved trio gone
+
+verify-build243: 36 passed, 0 failed
+===== verify-spanish =====
+  PASS  S1: client ships the language capture, the T() helper, and the Spanish claim copy
+  PASS  S4: client ships the Stats layers panel
+
+Spanish layers verification: 42 passed, 0 failed
+===== verify-campaign =====
+  ok [J: crossover campaign] crossover import posts the crossover campaign id
+  ok [J: crossover campaign] served app.js carries the crossover campaign
+
+Campaign verification: 128 passed, 0 failed
+===== verify-build222 =====
+  PASS  stack toast names local followers
+  PASS  no em dash in the new copy
+
+Build -222 verify: 30 passed, 0 failed
+===== verify-build98 =====
+ - (3) renderer: before first setup the explainer shows, with Stripe's asks, 1099-K, the hold, the honesty line, and a Got it ack
+ - (4) Help links both new site pages for creators
+ - (4) Sig linking: the cr-terms walk opens the terms page, chips route the two new prompts to Profile, and the operator flows ship
+ - build stamp is 2026.11.06-140 on both sides
+===== verify-build85 =====
+  PASS  grandfather: a pre-ruling 300-total record still approves by hand (the hold never reaches it)
+
+verify-build85: 29 passed, 4 failed
+failures: facts screen: live counted line + the plain under-500 line | A: claim confirmation email queued (server behavior unchanged) | B: checklist audience detail states the minimum + the counted 300 | B: manual approval of a known 300 is refused 422 with the plain line
+===== verify-build158 =====
+  PASS  snoozed creator with 3 categories gets NO catbackfill (no card at all)
+  PASS  ladder-complete creator with a delivered booking and 3 categories gets NO catbackfill (no card at all)
+
+verify-build158: 39 passed, 0 failed
+===== verify-build230 =====
+  ok [live: dispute path] the creator is notified of the resolution
+  ok [live: dispute path] the business is notified of the resolution
+
+verify-build230: 39 passed, 0 failed
+===== verify-compliance =====
+  ok [H: client copy] weekly cap setting wired in the client
+  ok [H: client copy] booked-up state renders in the client
+
+Compliance verification: 122 passed, 0 failed

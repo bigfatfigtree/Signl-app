@@ -1,4 +1,10 @@
 // verify-build158.mjs — Build -158: Category default-all.
+// RE-PINNED by Build -249 (2026-11-21): Jeff's signup-test
+// directive reversed the SIGNUP doors' half of this build —
+// claim and full-form categories now start with NONE checked
+// (he found all-twelve-pre-ticked in his own test signup).
+// The Maggie finish-flow half (existing creators completing a
+// profile) is untouched and its pins below stand as written.
 //   Magpie ranks creators by local audience, not niche, so most
 //   creators belong in nearly ALL categories. This build:
 //   CLAIM: the claim draft seeds all 12 categories on first render
@@ -116,16 +122,16 @@ console.log("== E: source pins ==");
   const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
-  check("stamp 2026.11.09-158 on both asset URLs", (indexHtml.match(/2026\.11\.09-158/g) || []).length === 2, `count=${(indexHtml.match(/2026\.11\.09-158/g) || []).length}`);
+  check("stamp 2026.11.21-249 on the shell assets (re-pinned by Build -249)", (indexHtml.match(/2026\.11\.21-249/g) || []).length >= 5, `count=${(indexHtml.match(/2026\.11\.21-249/g) || []).length}`);
   check("claim draft carries the catsSeeded guard", appJs.includes("catsSeeded: false") && appJs.includes("d.catsSeeded = true"), "");
-  check("claim render seeds all categories from boot", appJs.includes("d.cats = [...state.boot.creatorCategories]"), "");
+  check("claim render seeds NOTHING (Build -249: categories start unchecked)", !appJs.includes("d.cats = [...state.boot.creatorCategories]"), "");
   check("claim headline copy present (EN + ES)", appJs.includes("Almost everything you post counts here.") && appJs.includes("Casi todo lo que publicas cuenta aquí."), "");
-  check("claim body + microline copy present", appJs.includes("So we've ticked everything for you.") && appJs.includes("Every ticked category is another kind of local business that can find you."), "");
+  check("claim body + microline copy present (Build -249 body: tick what fits)", appJs.includes("Tick everything that fits what you post.") && !appJs.includes("So we've ticked everything for you.") && appJs.includes("Every ticked category is another kind of local business that can find you."), "");
   const catLine = appJs.split("\n").find((l) => l.includes('name="c-cat"')) || "";
   const compLine = appJs.split("\n").find((l) => l.includes('name="c-comp"')) || "";
-  check("join form c-cat renders checked", catLine.includes("checked"), catLine.slice(0, 160));
+  check("join form c-cat renders UNCHECKED (Build -249)", catLine.length > 0 && !catLine.includes("checked"), catLine.slice(0, 160));
   check("join form c-comp is NOT pre-ticked (out of scope stays untouched)", compLine.length > 0 && !compLine.includes("checked"), compLine.slice(0, 160));
-  check("join form ticked-all helper present", appJs.includes("We've ticked all of them — most creators here keep nearly all."), "");
+  check("join form helper is the pick-your-own line (Build -249)", appJs.includes("Tick everything that fits what you post. Most creators pick a few.") && !appJs.includes("We've ticked all of them"), "");
   check("profile editor helper present", appJs.includes("More ticked categories means more kinds of businesses can find you."), "");
   check("Maggie finish flow: pre-seed + one-thing action + lock summary", appJs.includes("sel.push(...state.boot.creatorCategories)") && appJs.includes("My page is only about one thing") && appJs.includes("f.data.patch.categoriesLocked = true") && appJs.includes("Categories: settled"), "");
   check("Maggie finish flow: categories gap skipped when locked", appJs.includes('id === "categories" && (state.user.creator || {}).categoriesLocked === true'), "");

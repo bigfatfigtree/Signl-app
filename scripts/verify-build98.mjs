@@ -217,11 +217,12 @@ console.log("== Source checks ==");
   check("(0) receipt rename: the renderer slice verify-build34 inspects has no caused/generated/drove word and reads exp.exportedAt",
     !/caused|generated|drove/.test(receiptSlice) && receiptSlice.includes("exp.exportedAt") && receiptSlice.includes("line says came back"));
 
-  check("(1) claim done: the What you get today block lives inside the one done card, before the profile button, with the three facts and no counts",
-    appJs.includes('id="claim-what-you-get"')
-    && appJs.slice(appJs.indexOf("function renderClaimDone()"), appJs.indexOf("function claimGoProfile()")).includes("When you finish your profile, your page is live and on Google that day.")
-    && appJs.slice(appJs.indexOf("function renderClaimDone()"), appJs.indexOf("function claimGoProfile()")).includes("Your rates are public on your page")
-    && appJs.slice(appJs.indexOf("function renderClaimDone()"), appJs.indexOf("function claimGoProfile()")).includes("recorded in founding order")
+  check("(1) claim done (re-pinned by Build -249): the visual-first confirmation lives inside the one done card — You've applied headline, the 3-step what-happens-next, the stat panel, the install banner; the old What-you-get block and its founding-order line are gone",
+    !appJs.includes('id="claim-what-you-get"')
+    && appJs.slice(appJs.indexOf("function renderClaimDone()"), appJs.indexOf("function claimGoProfile()")).includes("You've applied,")
+    && appJs.slice(appJs.indexOf("function renderClaimDone()"), appJs.indexOf("function claimGoProfile()")).includes("claimNextSteps249Html()")
+    && appJs.slice(appJs.indexOf("function renderClaimDone()"), appJs.indexOf("function claimGoProfile()")).includes("neighborPanelHtml()")
+    && !appJs.slice(appJs.indexOf("function renderClaimDone()"), appJs.indexOf("function claimGoProfile()")).includes("recorded in founding order")
     && appJs.slice(appJs.indexOf("function renderClaimDone()"), appJs.indexOf("function claimGoProfile()")).includes("signlInstallBannerHtml()")
     && (appJs.slice(appJs.indexOf("function renderClaimDone()"), appJs.indexOf("function claimGoProfile()")).match(/c85-card/g) || []).length === 1);
 
