@@ -3954,7 +3954,15 @@ function dealView(deal, viewerRole) {
   const listed = typeof deal.creatorRate === "number" && deal.creatorRate > 0 ? deal.creatorRate : null;
   const curAmount = cur ? cur.amount : 0;
   const rateWord = viewerRole === "creator" ? "Your" : "Their";
-  const gap = listed !== null && cur && cur.by === "business" && curAmount !== listed
+  // Build -250: the under/over framing only makes sense against
+  // a cash rate. On a comped or coupon deal the proposal amount
+  // is the experience's value cap (or the coupon's face), not
+  // cash measured against the creator's listed rate; comparing
+  // them framed a comp as a cash discount ("Proposed $85. Your
+  // listed rate is $125, so this is $40 under it"). Those deals
+  // state their worth plainly on the card and carry no gap line.
+  const gapKind = (cur && cur.terms && cur.terms.kind) || deal.kind || "";
+  const gap = (gapKind === "paid" || gapKind === "mix") && listed !== null && cur && cur.by === "business" && curAmount !== listed
     ? { listedRate: listed, currentAmount: curAmount, under: listed - curAmount, line: curAmount < listed ? `Proposed $${fmtPriceS(curAmount)}. ${rateWord} listed rate is $${fmtPriceS(listed)}, so this is $${fmtPriceS(listed - curAmount)} under it.` : `Proposed $${fmtPriceS(curAmount)}. ${rateWord} listed rate is $${fmtPriceS(listed)}, so this is $${fmtPriceS(curAmount - listed)} over it.` }
     : null;
   return {
@@ -22335,9 +22343,30 @@ function blockLocalFollowers213(creatorUser, market) {
   const local = share === null || share === undefined || !total ? 0 : Math.round((total * Number(share)) / 100);
   return { total, share: share === null || share === undefined ? null : Number(share), local };
 }
+// Build -250: the ONE local-follower count the pitch lines and
+// the businesses-near list print. For the creator's HOME market
+// that is the canon per-platform model (localRateModel's
+// neighbor count: every platform at its own reported rate) —
+// the same number the discover cards and the profile print.
+// Those two surfaces used the helper above instead (stacked
+// total x headline %), so the same creator read 17,630 in the
+// feed and 17,221 on her card. For a market that is not the
+// creator's home, the market share of the total IS the canon
+// figure (it is what a card prints for that market), so the
+// helper's number stands there. Display only: the % and the
+// underlying audience data do not move.
+function canonLocalFollowers250(creatorUser, market) {
+  const lf = blockLocalFollowers213(creatorUser, market);
+  const home = canonicalMarketName(creatorUser && creatorUser.market);
+  if (home && canonicalMarketName(market) === home) {
+    const nb = neighborCountFor((creatorUser && creatorUser.creator) || {});
+    if (nb && nb.count > 0) return { total: lf.total, share: lf.share, local: nb.count };
+  }
+  return lf;
+}
 function blockMemberView213(bizUser, creatorUser) {
   const c = creatorUser.creator || {};
-  const lf = blockLocalFollowers213(creatorUser, bizUser.market);
+  const lf = canonLocalFollowers250(creatorUser, bizUser.market);
   const nb = neighborCountFor(c);
   const fitCats = ((CATEGORY_FIT[(bizUser.business || {}).category] || {}).primary) || [];
   const myCats = (c.categories || []).map((x) => canonicalFromList(x, CREATOR_CATEGORIES) || x);
@@ -22544,7 +22573,7 @@ async function runBlockPitchSweep213() {
       const key = `${biz.id}|${cand.c.id}`;
       if (pairRecent.has(key)) continue;
       pairRecent.add(key);
-      const facts = { band: cand.band, localFollowers: cand.lf.local, localPct: cand.lf.share, categoryFit: cand.categoryFit, market: marketName };
+      const facts = { band: cand.band, localFollowers: canonLocalFollowers250(cand.c, biz.market).local, localPct: cand.lf.share, categoryFit: cand.categoryFit, market: marketName };
       const texts = pitchTexts213(biz, cand.c, facts, await marketLiveOf(biz.market));
       const p = { id: crypto.randomUUID(), businessId: biz.id, creatorId: cand.c.id, market: marketName, reason: facts, textForBusiness: texts.forBusiness, textForCreator: texts.forCreator, status: "new", savedBy: [], createdAt: nowIso(), updatedAt: nowIso() };
       await store.set(`pitch:${p.id}`, p);
@@ -36277,7 +36306,7 @@ async function route(event) {
       const out = users
         .filter((x) => x.role === "business" && x.status === "approved" && !isTester(x) && x.business && marketNames.has(canonicalMarketName(x.market)))
         .map((x) => {
-          const lf = blockLocalFollowers213(user, x.market);
+          const lf = canonLocalFollowers250(user, x.market);
           const p = latestPitch.get(x.id) || null;
           return { businessId: x.id, businessName: x.business.businessName || "", category: x.business.category || "", market: canonicalMarketName(x.market), band: proximityBandFor(x, user), yourLocalFollowers: lf.local, yourLocalPct: lf.share, pitch: p ? { id: p.id, text: p.textForCreator, createdAt: p.createdAt, status: p.status } : null };
         })

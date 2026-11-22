@@ -2973,3 +2973,37 @@ h1, h2, h3, h4, strong, b { font-weight: 400 !important; }
   #discover-results .shelf-grid { grid-template-columns: 1fr; }
   #cr-findoffers .mirror-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- Build -250: journey screen cleanup (Jeff,
+   2026-11-21): the deal card's value hero, the visit code as a
+   gradient hero, the timeline as a stepper, separated sections
+   on the visit card, and the completion rate entry row. Pure
+   presentation: structure carries what paragraphs used to. */
+.deal-hero250 { margin: 12px 0 4px; }
+.deal-hero250 .j226-val { font-size: 2.1rem; }
+.deal-hero-sub { margin-top: 2px; }
+.deal-group250 { margin: 12px 0 0; font-size: .72rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink3, #8a978c); }
+.code-grad250 {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.j250-codehero { margin: 14px 0 0; padding: 14px; border: 1px solid var(--hairline, #dfe7df); border-radius: 18px; background: var(--surface, #fff); }
+.j250-codehero .code-display { margin-top: 8px; }
+.j250-audsec { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--hairline, #dfe7df); }
+.vt250 { margin: 14px 0 0; }
+.vt250-steps { margin-top: 8px; }
+.vt250-step { display: flex; gap: 10px; position: relative; padding: 0 0 14px 0; }
+.vt250-step:last-child { padding-bottom: 0; }
+.vt250-step::before { content: ""; position: absolute; left: 10px; top: 24px; bottom: 0; width: 2px; background: var(--hairline, #dfe7df); }
+.vt250-step:last-child::before { display: none; }
+.vt250-dot { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--hairline, #cfdacf); background: #fff; color: #fff; font-size: .72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; z-index: 1; }
+.vt250-step.done .vt250-dot { background: var(--grad); border-color: transparent; }
+.vt250-step.now .vt250-dot { border-color: #0a7d62; box-shadow: 0 0 0 3px rgba(10, 125, 98, .18); }
+.vt250-label { flex: 1; font-size: .92rem; padding-top: 2px; }
+.vt250-step.todo .vt250-label { color: var(--ink3, #8a978c); }
+.vt250-date { font-size: .8rem; color: var(--ink3, #8a978c); padding-top: 3px; }
+.j250-rate-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.j250-rate-row .j226-kicker { margin: 0; }

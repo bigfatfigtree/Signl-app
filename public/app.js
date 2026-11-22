@@ -1405,7 +1405,7 @@ function momentumMeter226Html(m) {
     ? `<span class="u226-bluecheck-static">${BLUE_CHECK_SVG_226}</span> ${J226("Blue check earned", "Insignia azul ganada")}`
     : `${fmtNum(gap)} ${J226("points to the blue check. Inviting creators is the fastest way.", "puntos para la insignia azul. Invitar creadoras es la forma más rápida.")}`;
   return `<div class="u226-meter" data-u226="momentum-meter">
-    <div class="u226-meter-track"><div class="u226-meter-fill" style="width:${fillPct}%"></div><button type="button" class="u226-meter-check${earned ? " on" : ""}" title="300" onclick="return openBlueCheck226()" aria-label="${esc(J226("Blue check: Standout, earned at 300 Momentum points", "Insignia azul: Standout, ganada con 300 puntos de Momentum"))}">${BLUE_CHECK_SVG_226}</button></div>
+    <div class="u226-meter-track"><div class="u226-meter-fill" style="width:${fillPct}%"></div><button type="button" class="u226-meter-check${earned ? " on" : ""}" title="300" onclick="return openBlueCheck226('${earned ? "earned" : "notyet"}', ${pts})" aria-label="${esc(J226("Blue check: Standout, earned at 300 Momentum points", "Insignia azul: Standout, ganada con 300 puntos de Momentum"))}">${BLUE_CHECK_SVG_226}</button></div>
     <div class="u226-meter-marks"><span class="u226-meter-mark first" style="left:0">Starter 0</span><span class="u226-meter-mark alt" style="left:13.3%">Regular 100</span><span class="u226-meter-mark" style="left:40%">Standout 300</span><span class="u226-meter-mark last" style="left:100%">Cornerstone 750</span></div>
     <p class="small" style="margin:8px 0 0">${status}</p>
     <p class="small muted" style="margin:2px 0 0">${J226("More Momentum, higher on the list businesses see.", "Más Momentum, más arriba en la lista que ven los negocios.")}</p>
@@ -8291,17 +8291,44 @@ async function submitReview226(bookingId, side) {
   return false;
 }
 /* Offer detail (reference 11): gradient hero, then the rows. */
+/* Build -250: Spanish twins for the two composed phrases on
+   the offer detail that termsOf226 hands over in English: the
+   deliverables phrase and the post-window words. Standard
+   shapes translate; anything else rides through as written. */
+function deliverablesEs250(text) {
+  const s = String(text || "");
+  const num = { one: "1", two: "2", three: "3", four: "4", five: "5" };
+  const m = s.match(/^(\d+|One|Two|Three|Four|Five) posts?(?:\s*(?:\+|and)\s*(\d+|one) stor(?:y|ies))?$/i);
+  if (!m) return s;
+  const n = num[m[1].toLowerCase()] || m[1];
+  let out = n + (n === "1" ? " publicación" : " publicaciones");
+  if (m[2]) out += " + 1 historia";
+  return out;
+}
+function windowWordsEs250(hours) {
+  const h = Number(hours) || 48;
+  if (h === 48) return "dos días";
+  if (h === 24) return "un día";
+  if (h % 24 === 0) return (h / 24) + " días";
+  return h + " horas";
+}
 function offerDetail226Html(o) {
   const t = termsOf226(o);
   const biz = o.businessName || "";
-  const what = o.kind === "paid" ? "Paid booking at " + money226(o.cashRate) + "."
+  // Build -250: full Spanish parity for this screen (the
+  // walkthrough found the labels and body copy in English under
+  // ?lang=es). Every composed sentence now goes through J226.
+  const what = o.kind === "paid" ? J226("Paid booking at " + money226(o.cashRate) + ".", "Reserva pagada a " + money226(o.cashRate) + ".")
     : o.kind === "coupon" ? (o.couponSummary || couponSummaryClient(o.coupon, biz))
-    : (o.whatComped || o.title || "") + (o.dollarCap != null ? ", worth " + money226(o.dollarCap) + ". You pay nothing." : ". You pay nothing.");
+    : (o.whatComped || o.title || "") + (o.dollarCap != null ? J226(", worth " + money226(o.dollarCap) + ". You pay nothing.", ", con un valor de " + money226(o.dollarCap) + ". No pagas nada.") : J226(". You pay nothing.", ". No pagas nada."));
   const where = [o.businessAddress, o.address, [o.businessNeighborhood, o.businessCity].filter(Boolean).join(", ")].filter(Boolean)[0] || o.visitWindow || "";
-  const when = o.windowStartAt ? fmtDay(o.windowStartAt) + " to " + fmtDay(o.windowEndAt) : (o.visitWindow || "Flexible window");
+  const when = o.windowStartAt ? fmtDay(o.windowStartAt) + " to " + fmtDay(o.windowEndAt) : (o.visitWindow || J226("Flexible window", "Ventana flexible"));
   const platLine = t.platformSource === "business"
-    ? "On " + t.platformName + ", the platform " + biz + " picked for this visit."
-    : "On " + t.platformName + ", where your local audience is biggest.";
+    ? J226("On " + t.platformName + ", the platform " + biz + " picked for this visit.", "En " + t.platformName + ", la plataforma que " + biz + " eligió para esta visita.")
+    : J226("On " + t.platformName + ", where your local audience is biggest.", "En " + t.platformName + ", donde tu audiencia local es mayor.");
+  const postLine = J226(
+    `${t.deliverablesText} within ${windowWords226(t.postWindowHours)} of your visit. ${platLine} Tag ${bizHandle226(o)} in both. Keep the post up for at least ${t.keepUpDays} days.`,
+    `${deliverablesEs250(t.deliverablesText)} dentro de ${windowWordsEs250(t.postWindowHours)} de tu visita. ${platLine} Etiqueta a ${bizHandle226(o)} en ambas. Mantén la publicación activa por lo menos ${t.keepUpDays} días.`);
   return `<div class="j226-hero">
       <p class="j226-hero-k">${o.businessId ? `<a href="#" onclick="return openBusiness226('${esc(o.businessId)}')">${esc(biz)}</a>` : esc(biz)}</p>
       <h2 class="j226-hero-h">${esc(o.title || "Visit")}</h2>
@@ -8311,12 +8338,12 @@ function offerDetail226Html(o) {
       <p class="j226-kicker">${J226("The offer", "La oferta")}</p>
       <p style="margin:4px 0 0">${esc(what)}</p>
       <div class="j226-rows">
-        <div class="j226-row"><span class="j226-rk">Where</span><span class="j226-rv">${esc(where)}${o.distanceBand ? " · " + esc(o.distanceBand) + " away" : ""}${where ? ` <a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(where + " " + biz)}" target="_blank" rel="noopener">${J226("Get directions", "Cómo llegar")}</a>` : ""}</span></div>
-        <div class="j226-row"><span class="j226-rk">When</span><span class="j226-rv">${esc(when)}</span></div>
-        <div class="j226-row"><span class="j226-rk">What to post</span><span class="j226-rv">${esc(t.deliverablesText)} within ${esc(windowWords226(t.postWindowHours))} of your visit. ${esc(platLine)} Tag ${esc(bizHandle226(o))} in both. Keep the post up for at least ${esc(String(t.keepUpDays))} days.</span></div>
-        <div class="j226-row"><span class="j226-rk">Using the post</span><span class="j226-rv">${t.licenseState === "included" ? "The standard license is included with this booking: repost and ad use, from the terms on the deal." : "Share only, with you tagged. Downloading or ad use takes your license, at your listed fee" + (t.licensePrice != null ? " of " + money226(t.licensePrice) : "") + ", and only with your yes."}</span></div>
+        <div class="j226-row"><span class="j226-rk">${J226("Where", "Dónde")}</span><span class="j226-rv">${esc(where)}${o.distanceBand ? " · " + esc(o.distanceBand) + J226(" away", " de distancia") : ""}${where ? ` <a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(where + " " + biz)}" target="_blank" rel="noopener">${J226("Get directions", "Cómo llegar")}</a>` : ""}</span></div>
+        <div class="j226-row"><span class="j226-rk">${J226("When", "Cuándo")}</span><span class="j226-rv">${esc(when)}</span></div>
+        <div class="j226-row"><span class="j226-rk">${J226("What to post", "Qué publicar")}</span><span class="j226-rv">${esc(postLine)}</span></div>
+        <div class="j226-row"><span class="j226-rk">${J226("Using the post", "Uso de la publicación")}</span><span class="j226-rv">${t.licenseState === "included" ? J226("The standard license is included with this booking: repost and ad use, from the terms on the deal.", "La licencia estándar está incluida con esta reserva: republicación y uso en anuncios, según los términos del trato.") : J226("Share only, with you tagged. Downloading or ad use takes your license, at your listed fee", "Solo compartir, con tu etiqueta. Descargar o usar en anuncios requiere tu licencia, a tu tarifa publicada") + (t.licensePrice != null ? J226(" of ", " de ") + money226(t.licensePrice) : "") + J226(", and only with your yes.", ", y solo con tu sí.")}</span></div>
       </div>
-      ${o.myApplication ? `<p style="margin:14px 0 0"><span class="badge ok">Applied</span> <span class="small muted">Your application is in. The business picks from the stack.</span></p>`
+      ${o.myApplication ? `<p style="margin:14px 0 0"><span class="badge ok">${J226("Applied", "Enviada")}</span> <span class="small muted">${J226("Your application is in. The business picks from the stack.", "Tu postulación ya está. El negocio elige entre las postulaciones.")}</span></p>`
         : `<div class="j226-cta"><button class="btn" type="button" onclick="return claimOffer226('${o.id}')">${J226("Claim this visit", "Reclamar esta visita")}</button></div>
       <p class="small muted" style="margin:10px 0 0">${J226("Claiming holds this visit for you. No one else can take it.", "Reclamar aparta esta visita para ti. Nadie más puede tomarla.")}</p>`}
     </section>`;
@@ -8385,7 +8412,7 @@ function walkthrough226Html(b) {
       <p class="small muted" style="margin:4px 0 0">${J226("Your honest take, in your words. Nobody approves it first. Three things go in:", "Tu opinión honesta, en tus palabras. Nadie la aprueba antes. Van tres cosas:")}</p>
       <div class="j226-steps">
         <div class="j226-step"><span class="j226-stepn">·</span><span>${J226("Tag", "Etiqueta a")} ${esc(bizHandle226(b))}</span></div>
-        <div class="j226-step"><span class="j226-stepn">·</span><span>${J226("Start the caption with #ad, so the free visit is disclosed, the way the rules require.", "Empieza el texto con #ad, para que la visita gratis quede declarada, como piden las reglas.")}</span></div>
+        <div class="j226-step"><span class="j226-stepn">·</span><span>${J226("Start the caption with #ad, so the comped visit is disclosed, the way the rules require.", "Empieza el texto con #ad, para que la visita por cortesía quede declarada, como piden las reglas.")}</span></div>
         <div class="j226-step"><span class="j226-stepn">·</span><span>${J226("Keep your Magpie code line in the caption", "Deja tu línea de código de Magpie en el texto")}${codeLine ? `: <strong>${esc(codeLine)}</strong>` : ` ${J226("(the line on your visit card)", "(la línea en tu tarjeta de visita)")}`}${codeLine ? "" : "."} ${J226("It is how this visit counts for both of you.", "Así es como esta visita cuenta para los dos.")}</span></div>
       </div>
       <div class="j226-cta"><a class="btn" href="https://${esc(platHost226(plat))}" target="_blank" rel="noopener">${J226("Open", "Abrir")} ${esc(plat)}</a></div>
@@ -8463,6 +8490,28 @@ async function submitPost226(e, bookingId) {
   } catch (err) { if (msg) msg.textContent = err.message; else alert(err.message); }
   return false;
 }
+/* Build -250: the completion's rate entry. The review used to
+   render as a second full card welded under the "post is live"
+   confirmation, so the screen read as two pages in one (Jeff,
+   2026-11-21). Now the confirmation stands alone, and the
+   review is its own step (the j226-review view), opened from
+   this one quiet row. The row shows only while a review is
+   still outstanding: the prompt's own gating decides. */
+function reviewEntry250Html(b, side) {
+  if (!reviewPrompt226Html(b, side)) return "";
+  const who = side === "creator" ? (b.businessName || "the business") : (firstName226(b.creatorName) || "the creator");
+  return `<section class="j226-card j250-rate-row" data-j226="review-entry"><div><p class="j226-kicker">${J226("How was", "¿Cómo fue")} ${esc(who)}?</p><p class="small muted" style="margin:2px 0 0">${J226("One tap, twenty seconds.", "Un toque, veinte segundos.")}</p></div><button class="btn ghost" type="button" onclick="return openReview226('${b.id}')">${J226("Rate this visit", "Califica esta visita")}</button></section>`;
+}
+function openReview226(id) { return j226Go("j226-review", id); }
+function reviewStep226Html(b) {
+  const side = state.user && state.user.role === "business" ? "business" : "creator";
+  const prompt = reviewPrompt226Html(b, side);
+  const back = side === "business"
+    ? `<p style="margin:0 0 12px"><a href="#" onclick="return openBizComplete226('${b.id}')">&lsaquo; ${J226("Back to the finished post", "Volver a la publicación terminada")}</a></p>`
+    : `<p style="margin:0 0 12px"><a href="#" onclick="return openTracked226('${b.id}')">&lsaquo; ${J226("Back to your post", "Volver a tu publicación")}</a></p>`;
+  if (prompt) return back + prompt;
+  return back + `<section class="j226-card"><h3 class="j226-h">${J226("All set.", "Listo.")}</h3><p class="small muted" style="margin:4px 0 0">${J226("Nothing else is needed on this visit.", "No hace falta nada más en esta visita.")}</p><div class="j226-cta"><button class="btn" type="button" onclick="return go('dashboard','${side === "business" ? "Visits & Posts" : "My Visits"}')">${J226("Done", "Listo")}</button></div></section>`;
+}
 /* Post tracked (reference 16). */
 function tracked226Html(b) {
   const t = termsOf226(b);
@@ -8487,7 +8536,7 @@ function tracked226Html(b) {
     ${p.url ? `<a class="btn ghost" href="${esc(p.url)}" target="_blank" rel="noopener">${J226("Open the post", "Abrir la publicación")}</a>` : ""}</div>
   </section>
   ${visitCompleteLine226Html(b, "creator")}
-  <div data-j226="review-slot">${reviewPrompt226Html(b, "creator")}</div>`;
+  ${reviewEntry250Html(b, "creator")}`;
 }
 /* Business completion (reference 17, both license states). */
 function bizComplete226Html(b) {
@@ -8517,7 +8566,7 @@ function bizComplete226Html(b) {
     <button class="btn ghost" type="button" onclick="return go('dashboard','Visits &amp; Posts')">Back to visits</button></div>
   </section>
   ${visitCompleteLine226Html(b, "business")}
-  <div data-j226="review-slot">${reviewPrompt226Html(b, "business")}</div>`;
+  ${reviewEntry250Html(b, "business")}`;
 }
 async function bizCompleteAsk226(bookingId) {
   const b = state.j226booking && state.j226booking.id === bookingId ? state.j226booking : null;
@@ -8832,7 +8881,7 @@ async function renderJourney226() {
     if (view === "j226-offer") {
       const o = await j226FetchOffer(id);
       if (!document.getElementById("j226-body")) return;
-      body.innerHTML = o ? `<p style="margin:0 0 12px"><a href="#" onclick="return go('dashboard','Find Offers')">&lsaquo; All visits</a></p>${offerDetail226Html(o)}` : `<div class="error-box">That offer is not on record anymore.</div>`;
+      body.innerHTML = o ? `<p style="margin:0 0 12px"><a href="#" onclick="return go('dashboard','Find Offers')">&lsaquo; ${J226("All visits", "Todas las visitas")}</a></p>${offerDetail226Html(o)}` : `<div class="error-box">${J226("That offer is not on record anymore.", "Esa oferta ya no está en el registro.")}</div>`;
       return;
     }
     const b = await j226FetchBooking(id);
@@ -8842,6 +8891,7 @@ async function renderJourney226() {
     else if (view === "j226-post") body.innerHTML = b.post ? tracked226Html(b) : walkthrough226Html(b);
     else if (view === "j226-tracked") body.innerHTML = tracked226Html(b);
     else if (view === "j226-bizcomplete") body.innerHTML = bizComplete226Html(b);
+    else if (view === "j226-review") body.innerHTML = reviewStep226Html(b);
     else if (view === "j226-report") {
       let events = [];
       try {
@@ -9436,11 +9486,19 @@ function blueCheck226Html(x, small) {
   // full 26px button wraps and paints over the next line.
   return `<button type="button" class="u226-bluecheck${small ? " sm" : ""}" data-u226="blue-check" onclick="return openBlueCheck226()" aria-label="${J226("Blue check. Standout creator. What is this?", "Insignia azul. Creadora Standout. ¿Qué es esto?")}">${BLUE_CHECK_SVG_226}</button>`;
 }
-function blueCheckSheet226Html() {
+function blueCheckSheet226Html(mode, points) {
+  // Build -250: the sheet's wording follows the viewer. Opened
+  // from an earned creator's badge it says "reached"; opened
+  // from the meter of a creator who has not earned it yet, it
+  // says where they stand and the gap. It used to headline
+  // "reached Standout" for both.
+  const notYet = mode === "notyet";
+  const pts = Math.max(0, Number(points) || 0);
+  const gap = Math.max(0, 300 - pts);
   return `<div data-u226="bluecheck-sheet">
     <p class="j226-kicker">${J226("The blue check", "La insignia azul")}</p>
-    <h3 class="j226-h"><span class="u226-bluecheck-static">${BLUE_CHECK_SVG_226}</span> ${J226("Standout, earned", "Standout, ganada")}</h3>
-    <p class="small" style="margin:6px 0 0">${J226("This creator reached Standout, the level at 300 Momentum points.", "Esta creadora llegó a Standout, el nivel de los 300 puntos de Momentum.")}</p>
+    <h3 class="j226-h"><span class="u226-bluecheck-static">${BLUE_CHECK_SVG_226}</span> ${notYet ? J226("Standout, not yet", "Standout, todavía no") : J226("Standout, earned", "Standout, ganada")}</h3>
+    <p class="small" style="margin:6px 0 0">${notYet ? J226(`The blue check marks Standout, the level at 300 Momentum points. You are at ${fmtNum(pts)} points, so ${fmtNum(gap)} to go.`, `La insignia azul marca Standout, el nivel de los 300 puntos de Momentum. Vas en ${fmtNum(pts)} puntos, así que te faltan ${fmtNum(gap)}.`) : J226("This creator reached Standout, the level at 300 Momentum points.", "Esta creadora llegó a Standout, el nivel de los 300 puntos de Momentum.")}</p>
     <p class="small" style="margin:8px 0 0">${J226("Momentum is earned by delivering posts on time, reviewing businesses, and inviting other creators. Inviting is the fastest way to earn.", "El Momentum se gana entregando publicaciones a tiempo, reseñando negocios e invitando a otras creadoras. Invitar es la forma más rápida de ganar.")}</p>
     <p class="small" style="margin:8px 0 0">${J226("Standout creators see new offers 18 hours early once their market is live.", "Las creadoras Standout ven las ofertas nuevas 18 horas antes cuando su mercado está activo.")}</p>
     <p class="small muted" style="margin:8px 0 0">${J226("The check is earned, never bought.", "La insignia se gana, nunca se compra.")}</p>
@@ -9448,8 +9506,8 @@ function blueCheckSheet226Html() {
     <div class="j226-cta"><button class="btn" type="button" onclick="return closeBlueCheck226()">${J226("Got it", "Entendido")}</button></div>
   </div>`;
 }
-function openBlueCheck226() {
-  if (typeof j226Sheet226 === "function") return j226Sheet226("j226-bluecheck-sheet", blueCheckSheet226Html());
+function openBlueCheck226(mode, points) {
+  if (typeof j226Sheet226 === "function") return j226Sheet226("j226-bluecheck-sheet", blueCheckSheet226Html(mode, points));
   return false;
 }
 function closeBlueCheck226() {
@@ -17228,6 +17286,7 @@ const ROAS_INFO = {
   visits: { title: "Visits, scored", body: "Each visit's counted register dollars against what that visit itself cost you, before your plan. Tap a visit for its counted customers, its cost, and how its number was counted." },
   creators: { title: "Who brought them", body: "Each creator's counted register dollars against their own visits' costs, before your plan. Tap a creator for their visits, customers, and came-backs. It is counted the same way for every creator." },
   forming: { title: "Why there is no score yet", body: "A score prints when a month has enough counted at the register to mean something: at least 3 visits counted at the register, at least 10 register events, every visit's cost on record, and your plan charge on record. Until then, you see the counted dollars themselves." },
+  receipt: { title: "How the receipt counts", body: "Counted means a customer showed the creator's code at your register, and it counts dollar by dollar. A come-back is a customer who first came in on a code and returns within 30 days. Your usual night is the comparison line: how a normal night does, so a visit night has something honest to beat. Nothing here is ever projected or padded." },
 };
 function roasInfoBtn(topic) {
   return `<button type="button" class="info-btn" aria-label="About this number" onclick="return showRoasInfo('${topic}')">i</button>`;
@@ -17458,12 +17517,12 @@ function receiptHtml(r) {
     ${base ? `<p style="margin:12px 0 0">${base.visitAvg !== null && base.visitAvg !== undefined ? `${esc(base.dayLabel)}s with a creator visit ran about <strong>${base.visitAvg}</strong> tables or customers, against your usual ${esc(base.dayLabel)} of about <strong>${base.usual}</strong>. Your numbers, your usual, counted from the night counts you saved.` : `Your usual ${esc(base.dayLabel)} is about <strong>${base.usual}</strong> tables or customers, recorded before your first visits. Save a night count after a visit and this line starts comparing.`}</p>` : ""}
     ${r.whoBrought && r.whoBrought.length ? `<h4 style="margin:14px 0 4px">Who brought them</h4>${r.whoBrought.map((w) => `<div class="lrow"><div style="flex:1"><span class="lname">@${esc(w.creatorHandle)}</span><div class="small muted">${w.visits} visit${w.visits === 1 ? "" : "s"} counted</div></div><span>${w.customers} customers · $${fmtMoney(w.spend)}${w.cameBacks ? ` · ${w.cameBacks} came back` : ""}</span></div>`).join("")}` : ""}
     ${r.mentions && r.mentions.month > 0 ? `<p class="small muted" style="margin:12px 0 0">Plus ${r.mentions.month} more customer${r.mentions.month === 1 ? "" : "s"} told your staff a post sent them. Told-us counts ride their own line and never mix into register money.</p>` : ""}
-    <div style="margin-top:14px"><h4 style="margin:0 0 4px">What it cost</h4>
-    <p style="margin:0">Every cost inside your score is itemized ${hasScore ? "under the Costs tab" : "in the score block above"}: your plan at what you actually paid, comps at your cost, paid creators at their rate plus your fee share, and code discounts as they were redeemed. Nothing else is in the number, and no cost is ever estimated for you.</p></div>
+    <div style="margin-top:14px"><h4 style="margin:0 0 4px">What it cost ${roasInfoBtn("costs")}</h4>
+    <p style="margin:0">Every cost inside your score is itemized ${hasScore ? "under the Costs tab" : "in the score block above"}.</p></div>
     <p style="margin:14px 0 0"><button class="btn" type="button" onclick="return receiptBookTop()">Book next month's creators</button></p>`
     : ((r.visitsLanded && (r.visitsLanded.redeemed > 0 || r.visitsLanded.delivered > 0))
       ? `<p class="wc-sub" style="margin:6px 0 0">Your visits have landed. The counted money starts with the first register event: a code redeemed at the till, or your tally on the visit. Until one lands, this receipt shows no money rather than an estimate.</p>`
-      : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be counted from something real, with its method beside it. Counted means a customer showed the creator's code at your register, and it counts dollar by dollar. A come-back is a customer who first came in on a code and returns within 30 days. Your usual night is the comparison line: how a normal night does, so a visit night has something honest to beat. Nothing here is ever projected or padded.${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`);
+      : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be counted from something real, with its method beside it. ${roasInfoBtn("receipt")}${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`);
   const googleHtml = g.current ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">People looking you up</h4><p class="small muted" style="margin:0 0 6px">Google's numbers, not ours. They corroborate a good month; they never add to tracked spend.</p>${gLine(g.current, g.previous, "searches")}${gLine(g.current, g.previous, "directions")}${gLine(g.current, g.previous, "calls")}${gLine(g.current, g.previous, "reviews")}</div>` : "";
   // Build -48: with a score on the page, the Receipt breaks
   // into subtabs (Overview / Over time / Creators / Costs /
@@ -17662,32 +17721,34 @@ function dealCardHtml(b, role) {
   const lane = b.paidLane || null;
   const counted = { door: "customers at the door with the code", link: "bookings from the link", orders: "orders with the code" }[b.countedResult || "door"];
   const rights = lane
-    ? "Rights: the standard license is included, repost and ad use for 90 days from the post date, never longer."
-    : "Rights: native share only, with credit. Ad use is a separate license at the creator's listed fee, only with their approval.";
+    ? "The standard license is included, repost and ad use for 90 days from the post date, never longer."
+    : "Native share only, with credit. Ad use is a separate license at the creator's listed fee, only with their approval.";
   let money;
   if (lane) {
     const signlGets = Math.round((lane.rate - lane.creatorNet) * 100) / 100;
-    money = `<div>Creator gets $${fmtMoney(lane.creatorNet)}. Magpie gets $${fmtMoney(signlGets)}. That is the whole fee.</div>`
+    money = `Creator gets $${fmtMoney(lane.creatorNet)}. Magpie gets $${fmtMoney(signlGets)}. That is the whole fee. `
       + (role === "creator"
-        ? (lane.escrowState === "held" ? `<div style="margin-top:4px"><strong>Money's in.</strong> Post by ${b.postDeadline ? fmtDate(b.postDeadline) : "the deadline on this card"}, paid the day it goes live.</div>` : lane.escrowState === "released" ? `<div style="margin-top:4px">Paid out: the post went live and the money moved.</div>` : `<div style="margin-top:4px">This booking was refunded to the business.</div>`)
-        : `<div style="margin-top:4px">Money is held by Magpie now and paid to the creator the day the post goes live.</div>`);
+        ? (lane.escrowState === "held" ? `Money's in. Post by ${b.postDeadline ? fmtDate(b.postDeadline) : "the deadline on this card"}, paid the day it goes live.` : lane.escrowState === "released" ? `Paid out: the post went live and the money moved.` : `This booking was refunded to the business.`)
+        : `Money is held by Magpie now and paid to the creator the day the post goes live.`);
   } else if (b.kind === "coupon") {
-    money = `<div>The coupon: ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? `, expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}. That coupon is the payment for this post. No cash changes hands on a coupon deal.</div>`;
+    money = `The coupon: ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? `, expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}. That coupon is the payment for this post. No cash changes hands on a coupon deal.`;
   } else {
-    money = `<div>The comp: ${esc(b.whatComped || "the experience")}, worth ${currencySymbolForMarket(b.market)}${fmtMoney(b.dollarCap)}. No cash changes hands on a comped visit.</div>`;
+    money = `The comp: ${esc(b.whatComped || "the experience")}, worth ${currencySymbolForMarket(b.market)}${fmtMoney(b.dollarCap)}. No cash changes hands on a comped visit.`;
   }
   const dc = b.dealCard || {};
   const mine = role === "business" ? dc.businessAt : dc.creatorAt;
   const theirs = role === "business" ? dc.creatorAt : dc.businessAt;
   const dv84 = deliverablesOfClient(b);
+  // Build -250: the same plain-words facts, carried by rows
+  // instead of a prose stack: one labelled line each.
   return `<div class="wcard" style="margin:12px 0 0">
     <p style="margin:0"><strong>The deal, in plain words</strong></p>
-    <div class="small" style="margin-top:6px">
-      <div>What gets posted: ${dv84.posts} post${dv84.posts === 1 ? "" : "s"}${dv84.story ? " plus 1 story that shares the post" : ", no story"}${b.postDeadline ? `, by ${fmtDate(b.postDeadline)}` : `, within ${windowPhraseClient(dv84.windowHours)} of the visit (a week at the outside)`}.</div>
-      <div>Edits: one round of small fixes if something factual is off. Nobody can require a positive post.</div>
-      <div>${rights}</div>
-      ${money}
-      <div>The one number we count: ${counted}.</div>
+    <div style="margin-top:4px">
+      <div class="lrow"><span>Posts</span><strong>${dv84.posts} post${dv84.posts === 1 ? "" : "s"}${dv84.story ? " + 1 story" : ""}${b.postDeadline ? `, by ${fmtDate(b.postDeadline)}` : `, within ${windowPhraseClient(dv84.windowHours)} of the visit`}</strong></div>
+      <div class="lrow"><span>Edits</span><strong>One round of small fixes if something factual is off. Nobody can require a positive post.</strong></div>
+      <div class="lrow"><span>Rights</span><strong>${rights}</strong></div>
+      <div class="lrow"><span>Money</span><strong>${money}</strong></div>
+      <div class="lrow"><span>Counted</span><strong>${counted.charAt(0).toUpperCase() + counted.slice(1)}.</strong></div>
     </div>
     <p style="margin:8px 0 0">${mine ? `<span class="badge ok">You confirmed: looks right</span>` : `<button class="btn small-btn" type="button" onclick="dealConfirm('${b.id}')">Looks right</button>`} ${theirs ? `<span class="badge ok">${role === "business" ? "Creator" : "Business"} confirmed</span>` : `<span class="small muted">Waiting on the ${role === "business" ? "creator" : "business"}.</span>`}</p>
   </div>`;
@@ -18234,14 +18295,14 @@ async function loadGoldenTickets() {
       : `A founding seat in ${esc(place)} is held in their name until the market launches.`;
   const rows = (data.tickets || []).map((t) => `<div class="lrow" style="margin-top:10px"><div style="flex:1"><span class="lname">${esc(t.name)}</span> ${statusLine(t)}<div class="small muted">${rowSub(t)}</div></div>${t.status === "issued" ? `<button type="button" class="btn small-btn ghost" onclick="return gtCopyLink('${t.id}', this)">Copy their link</button>` : ""}</div>`).join("");
   host.innerHTML = `<h3>Your Golden Tickets</h3>
-    <p class="wc-sub" style="margin:4px 0 0">${data.marketLive ? `Your two founding seats, on the record: who claimed theirs, and whose closed when ${esc(place)} launched.` : `Two seats, and only you can give them. You hold exactly two tickets. Nobody else can hand out your seats, and nobody can take them. Name a creator who should be founding with you and their seat in ${esc(place)} is held in their name until the market launches.`}</p>
+    <p class="wc-sub" style="margin:4px 0 0">${data.marketLive ? `Your two founding seats, on the record: who claimed theirs, and whose closed when ${esc(place)} launched.` : `Two founding seats, yours to give.`}</p>
+    ${data.marketLive ? "" : `<details class="deal-details" style="margin-top:6px"><summary class="small muted">How Golden Tickets work</summary><p class="small muted" style="margin:6px 0 0">Two seats, and only you can give them. You hold exactly two tickets. Nobody else can hand out your seats, and nobody can take them. Name a creator who should be founding with you and their seat in ${esc(place)} is held in their name until the market launches.</p><p class="small muted" style="margin:6px 0 0">The big points land when your person finishes: approved, profile complete, a founding creator like you. Points land on your total the moment they happen. ${POINTS_WHY_SHORT} Nothing is paid for a click or a share.</p></details>`}
     <div style="margin-top:10px">
       <div class="kv"><span>A creator you invite finishes signing up</span><b>+100 points</b></div>
       <div class="kv"><span>Their invites finish signing up</span><b>+25 points</b></div>
       <div class="kv"><span>An invite gets approved</span><b>+10 points</b></div>
       <div class="kv"><span>A creator joins through your link</span><b>+3 points</b></div>
     </div>
-    <p class="small muted" style="margin:8px 0 0">The big points land when your person finishes: approved, profile complete, a founding creator like you. Points land on your total the moment they happen. ${POINTS_WHY_SHORT} Nothing is paid for a click or a share.</p>
     ${rows}
     ${data.canIssue && data.remaining > 0 ? `<div class="field" style="margin-top:14px"><label>Name a person (${data.remaining} ticket${data.remaining === 1 ? "" : "s"} left)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="gt-name" placeholder="Their name" maxlength="80" style="flex:1;min-width:200px"><button type="button" class="btn small-btn" onclick="return gtIssue()">Hold their seat</button></div><p class="small muted" id="gt-note"></p></div>`
       : data.canIssue ? `<p class="small muted" style="margin-top:12px">Both of your tickets are out. Your points land when each person finishes signing up.</p>`
@@ -19181,13 +19242,15 @@ function laneControlsHtml(c) {
     <div class="lane-rate" id="lane-rate-row" style="display:${rate ? "block" : "none"}">
       <label for="lane-rate">Your paid rate (min ${ownCurrencySymbol()}${ownPaidFloor()})</label>
       <div class="lane-rate-flex"><input type="number" id="lane-rate" min="${ownPaidFloor()}" step="1" inputmode="numeric" placeholder="150" value="${rateShown}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
-      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of ${ownCurrencySymbol()}${fmtMoney(rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and Magpie holds the payment until your post is live. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.` : "This is a starting point, filled in because your rate was blank. Change it to whatever you charge, then save. You keep 97%, and Magpie holds the payment until your post is live. Paid bookings turn on when a rate is saved. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited."}</p>
+      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of ${ownCurrencySymbol()}${fmtMoney(rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%). A paid booking includes the standard license: 90 days of repost and ad use.` : "A starting point, filled in because your rate was blank. You keep 97%. A paid booking includes the standard license: 90 days of repost and ad use."}</p>
+      <details class="deal-details"><summary class="small muted">How the rate and license work</summary><p class="small muted" style="margin:6px 0 0">${rate ? `Magpie holds the payment until your post is live. The standard license lets the business repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.` : "Change the rate to whatever you charge, then save. You keep 97%, and Magpie holds the payment until your post is live. Paid bookings turn on when a rate is saved. The standard license lets the business repost your post and run it as an ad for 90 days from the post date, never longer, and never edited."}</p></details>
       <p class="small" id="lane-range-line"></p>
     </div>
     <div class="lrow lane-row"><div><span class="lname">Run my post as an ad</span> <span class="lline" id="lane-fee-line">— ${esc(laneFeeLine(c || {}))}</span></div></div>
     <div class="lane-rate">
       <div class="lane-rate-flex"><input type="number" id="lane-fee" min="1" step="1" inputmode="numeric" placeholder="75" value="${feeShown}"><button type="button" class="btn small-btn" onclick="return laneFeeSave()">Save fee</button></div>
-      <p class="small muted">One price, in plain words: what a business pays to repost your post and run it as an ad for 90 days. The 90 days start the day you approve a request, and the license ends when the 90 days end, never longer. You approve or decline every request; nothing runs without your yes. ${fee ? "" : "The amount in the box is a starting point because your fee was blank. Change it to whatever you charge, then save. Clear the box and save to keep comped posts native-share only."}</p>
+      <p class="small muted">One price for 90 days of repost and ad use. You approve every request; nothing runs without your yes.</p>
+      <details class="deal-details"><summary class="small muted">How this fee works</summary><p class="small muted" style="margin:6px 0 0">One price, in plain words: what a business pays to repost your post and run it as an ad for 90 days. The 90 days start the day you approve a request, and the license ends when the 90 days end, never longer. You approve or decline every request; nothing runs without your yes. ${fee ? "" : "The amount in the box is a starting point because your fee was blank. Change it to whatever you charge, then save. Clear the box and save to keep comped posts native-share only."}</p></details>
     </div>
     <p class="small lane-err" id="lane-err" style="display:none"></p>
     ${payoutsStepHtml(c)}
@@ -20757,6 +20820,19 @@ function dealAmountLine(terms, role) {
   if (terms.kind === "mix") return `A coupon worth $${fmtPrice(couponFaceOfTerms(terms))} plus $${fmtPrice(terms.cashTopUp || 0)} cash on top`;
   return "";
 }
+// Build -250: the deal card's value hero. The amount leads,
+// big and in the gradient, the way the offer cards lead; what
+// the creator keeps (or what the comp is worth) rides under it
+// in one short line. The old "You get" row is retired: the hero
+// carries it.
+function dealHero250(t, role) {
+  if (!t) return "";
+  if (t.kind === "paid") return `<div class="deal-hero250"><div class="j226-val">$${fmtPrice(t.cashRate || 0)}</div><div class="deal-hero-sub small muted">${role === "creator" ? `You keep $${fmtMoney(Math.round((t.cashRate || 0) * 0.97 * 100) / 100)}` : "The creator keeps 97%"}</div></div>`;
+  if (t.kind === "comp") return `<div class="deal-hero250"><div class="j226-val">$${fmtPrice(t.dollarCap || 0)}</div><div class="deal-hero-sub small muted">Comp value${t.whatComped ? ` &middot; ${esc(t.whatComped)}` : ""}</div></div>`;
+  if (t.kind === "coupon") return `<div class="deal-hero250"><div class="j226-val">$${fmtPrice(couponFaceOfTerms(t))}</div><div class="deal-hero-sub small muted">Coupon in spendable value</div></div>`;
+  if (t.kind === "mix") return `<div class="deal-hero250"><div class="j226-val">$${fmtPrice(couponFaceOfTerms(t))} + $${fmtPrice(t.cashTopUp || 0)}</div><div class="deal-hero-sub small muted">Coupon plus cash on top</div></div>`;
+  return "";
+}
 function couponFaceOfTerms(terms) {
   const cp = terms.coupon || {};
   if (cp.type === "percent_off") return cp.cap || 0;
@@ -20777,7 +20853,6 @@ function dealProposalCardHtml(deal, role) {
   const other = role === "creator" ? deal.businessName : (deal.creatorName || "The creator");
   const expires = cur.expiresAt ? new Date(cur.expiresAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
   const rows = `
-    <div class="lrow"><span>${role === "creator" ? "You get" : "They get"}</span><strong>${dealAmountLine(t, role)}</strong></div>
     <div class="lrow"><span>${role === "creator" ? "You post" : "They post"}</span><strong>${esc(dealDeliverablesLine(t.deliverables))}</strong></div>
     <div class="lrow"><span>When</span><strong>${dealPostingLine(t.postingTerms)}</strong></div>
     ${t.timingWindow ? `<div class="lrow"><span>Visit timing</span><strong>${esc(timingLabel137(t.timingWindow, t.visitDate))}</strong></div>` : ""}
@@ -20797,11 +20872,18 @@ function dealProposalCardHtml(deal, role) {
     actions = `<p class="small" style="margin:10px 0 0"><span class="badge">Withdrawn</span> The business withdrew this deal. Nothing is owed either way.</p>`;
   } else if (deal.canAct) {
     const countersLeft = role === "creator" ? deal.countersLeft.creator : deal.countersLeft.business;
+    // Build -250: the decline reasons lead with a reason that
+    // fits the deal kind. A comped or coupon deal has no rate,
+    // so "The rate does not work" is neither its default nor an
+    // option on those cards; paid and mix deals keep it first.
+    const reasonOpts = `${t.kind === "paid" || t.kind === "mix" ? `<option value="rate">The rate does not work</option>` : ""}<option value="timing">The timing does not work</option><option value="fit">Not the right fit</option><option value="booked">Already booked up</option><option value="other">Another reason</option>`;
     actions = `
-    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn" onclick="dealRespond('${deal.id}','accept')">Accept — book it at these terms</button>
-      ${countersLeft > 0 ? `<button class="btn ghost" onclick="dealToggleCounter('${deal.id}')">Counter once</button>` : ""}
-      <span style="display:inline-flex;gap:6px;align-items:center"><select id="deal-reason-${deal.id}" aria-label="Why are you declining?"><option value="rate">The rate does not work</option><option value="timing">The timing does not work</option><option value="fit">Not the right fit</option><option value="booked">Already booked up</option><option value="other">Another reason</option></select><button class="btn ghost" onclick="dealRespond('${deal.id}','decline')">Decline</button></span>
+    <div style="margin-top:14px">
+      <button class="btn" style="width:100%" onclick="dealRespond('${deal.id}','accept')">Accept — book it at these terms</button>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${countersLeft > 0 ? `<button class="btn ghost" onclick="dealToggleCounter('${deal.id}')">Counter once</button>` : ""}
+        <span style="display:inline-flex;gap:6px;align-items:center"><select id="deal-reason-${deal.id}" aria-label="Why are you declining?">${reasonOpts}</select><button class="btn ghost" onclick="dealRespond('${deal.id}','decline')">Decline</button></span>
+      </div>
     </div>
     <span id="deal-note-${deal.id}" class="saved"></span>
     <div id="deal-counter-${deal.id}" style="display:none;margin-top:12px">${dealCounterFormHtml(deal, role)}</div>`;
@@ -20816,7 +20898,9 @@ function dealProposalCardHtml(deal, role) {
       ${deal.gap ? `<div class="slot-meta"><span>${esc(deal.gap.line)}</span></div>` : ""}
       ${deal.midpoint != null ? `<div class="slot-meta"><span>Halfway between you both: <strong>$${fmtPrice(deal.midpoint)}</strong></span></div>` : ""}
     </div></div>
-    <div style="margin-top:8px">${rows}</div>
+    ${dealHero250(t, role)}
+    <p class="deal-group250">The terms</p>
+    <div>${rows}</div>
     <p class="small muted" style="margin:8px 0 0">${esc(deal.licenceLine || "")}</p>
     ${actions}
   </div>`;
@@ -20899,7 +20983,7 @@ async function loadDealsInto(hostId, role) {
   try {
     const d = await api("GET", "/deals");
     const deals = d.deals || [];
-    host.innerHTML = `<p class="small muted" style="margin:0 0 10px">A deal is a one-to-one offer between one business and one creator: the price, the post and the dates agreed between them, separate from campaigns and open offers.</p>` + (deals.length
+    host.innerHTML = `<details class="deal-details" style="margin:0 0 10px"><summary class="small muted">What is a deal?</summary><p class="small muted" style="margin:6px 0 0">A deal is a one-to-one offer between one business and one creator: the price, the post and the dates agreed between them, separate from campaigns and open offers.</p></details>` + (deals.length
       ? deals.map((x) => dealProposalCardHtml(x, role)).join("")
       : `<div class="empty-card"><div class="ec-t">No deals yet</div><div class="ec-s">${role === "creator" ? "When a business sends you structured terms instead of a plain invite, the deal lands here: accept it, counter it once, or decline with a reason. No messages, no haggling." : "Send a deal from a creator's profile with Make an offer: structured terms they can accept, counter once, or decline. Accepted deals book the visit at exactly those terms."}</div></div>`);
   } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
@@ -20984,6 +21068,11 @@ async function sendDeal(creatorId) {
   try {
     const d = await api("POST", "/deals", body);
     state.bookingSourceBrief = null;
+    // Build -250: land the sender where the deal lives. Your
+    // campaigns defaulted to the Live segment, where a sent deal
+    // never appears; the deal sits under Deals, so that is the
+    // segment the sender lands on next.
+    state.offersSeg = "deals";
     if (note) note.textContent = d.deal && d.deal.status === "accepted" ? "Their standing terms accepted it on the spot — the visit is booked." : d.deal && d.deal.status === "declined" ? "Their standing terms closed this one automatically: the numbers did not fit their floor." : "Deal sent. It sits in your Deals until they answer or it expires.";
   } catch (e) { if (note) note.textContent = e.message; }
 }
@@ -21785,7 +21874,11 @@ function segEmptyLine(seg, role) {
 function visitTimelineHtml(b) {
   const steps = (b.timeline || []).filter((s) => s.state !== "skip");
   if (!steps.length) return "";
-  return `<div class="visit-timeline" style="margin:10px 0"><h4 style="margin:0 0 6px">How this visit went</h4>${steps.map((s) => `<div class="lrow"><span>${s.state === "done" ? "✓" : s.state === "waiting" ? "→" : "·"} ${esc(s.label)}</span><span class="small muted">${s.at ? esc(fmtDate(s.at)) : ""}</span></div>`).join("")}</div>`;
+  // Build -250: the timeline reads as a stepper, not a text
+  // list: a filled gradient dot with a check for done, a ringed
+  // dot for the step the visit is on, a hollow dot for what is
+  // still ahead, joined by one line.
+  return `<div class="vt250"><h4 style="margin:0">How this visit went</h4><div class="vt250-steps">${steps.map((s) => `<div class="vt250-step ${s.state === "done" ? "done" : s.state === "waiting" ? "now" : "todo"}"><span class="vt250-dot">${s.state === "done" ? "&#10003;" : ""}</span><span class="vt250-label">${esc(s.label)}</span><span class="vt250-date">${s.at ? esc(fmtDate(s.at)) : ""}</span></div>`).join("")}</div></div>`;
 }
 
 function visitsRowWrap(b, role, seg) {
@@ -21860,7 +21953,7 @@ async function loadMyVisits(role) {
     const segTabs = wsTabs(segs.map(([id, label]) => ({ label, count: counts[id] || null, on: seg === id, onclick: `return visitsSetSeg('${id}')` })));
     let bodyHtml;
     if (seg === "codes" && rows.length) {
-      bodyHtml = `<div class="vx-stagger">${rows.map((b) => `<div class="wcard" style="text-align:center"><div class="kpi-label">${esc(b.businessName || "")} · ${esc(b.title || "Visit")}</div><div class="bigcode119" style="margin:8px 0">${esc(b.code)}</div><p class="small muted" style="margin:0">Show this code at the counter. Your visit counts the moment they enter it.</p></div>`).join("")}</div>`;
+      bodyHtml = `<div class="vx-stagger">${rows.map((b) => `<div class="wcard" style="text-align:center"><div class="kpi-label">${esc(b.businessName || "")} · ${esc(b.title || "Visit")}</div><div class="bigcode119 code-grad250" style="margin:8px 0">${esc(b.code)}</div><p class="small muted" style="margin:0">Show this code at the counter. Your visit counts the moment they enter it.</p></div>`).join("")}</div>`;
     } else if (!bookings.length) {
       bodyHtml = `<div class="empty-card"><div class="ec-t">No visits yet</div><div class="ec-s">${role === "creator" ? "When a business picks you, or you accept an invite, it lands here." : "When you select a creator or one accepts your invite, the visit lands here."}</div></div><p class="center">${role === "creator" ? `<button class="btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">Post an offer</button>`}</p>`;
     } else if (!rows.length) {
@@ -21943,6 +22036,29 @@ function visitCard(b, role) {
   }
   html += briefBlockHtml(b);
   html += dealCardHtml(b, role);
+  // Build -250: the one-time visit code is the hero of this
+  // card, high up and in the Magpie gradient (Jeff, 2026-11-21:
+  // "Make the code our gradient color"). It used to sit far
+  // below the audience code blocks, where the two codes read as
+  // one confusing stack; the audience code now lives in its own
+  // section further down. The check-in state (the walkthrough's
+  // 08a screen) is this same block after check-in, so the
+  // gradient covers both.
+  if (role === "creator" && b.codeStatus === "issued") {
+    html += `
+    <div class="j250-codehero">
+      <p class="ui-kicker" style="margin:0">Your one-time visit code</p>
+      <div class="grid cols-2">
+        <div>
+          <div class="code-display code-grad250">${esc(b.code)}</div>
+          <p class="small" style="margin:8px 0 0">Show this code at the visit. Staff redeem it in the app, and your post clock starts.</p>
+          ${b.redeemBy ? `<p class="small muted" style="margin:4px 0 0">Use by <strong>${esc(fmtDate(b.redeemBy))}</strong>. No appointment needed.</p>` : ""}
+          ${b.checkinAt ? `<p class="small" style="margin:8px 0 0">You checked in at ${fmtDate(b.checkinAt)}. Waiting for the business to confirm.</p>` : `<p style="margin:10px 0 0"><button class="btn small-btn ghost" onclick="checkIn('${b.id}')">I am here (check in)</button></p>`}
+        </div>
+        <div class="qr-box"><img src="/api/bookings/${b.id}/qr" alt="QR code for ${esc(b.code)}" onerror="this.parentElement.style.display='none'"></div>
+      </div>
+    </div>`;
+  }
   html += visitTimelineHtml(b);
   html += collabVisitHtml(b, role);
   if (role === "business" && b.status === "cancelled") html += swapBlockHtml(b);
@@ -21968,32 +22084,28 @@ function visitCard(b, role) {
     // on, 0 when they did not. At 0 the code is a counting code
     // only and the copy must never promise a percentage off.
     const pct = typeof b.discountPct === "number" ? b.discountPct : 0;
-    if (role === "creator") {
-      html += pct > 0
-        ? `
-    <div class="showcase-block">
-      <h4>Your audience code at ${esc(b.businessName)}: ${esc(b.creatorCode)}</h4>
-      <p class="small" style="margin:0">Share it in your post: your audience gets ${pct}% off when they use it at ${esc(b.businessName)}, and every use is tracked back to this visit. It is how the business sees the customers your post actually sent through the door, and it feeds your Magpie track record.</p>
-    </div>`
-        : `
-    <div class="showcase-block">
-      <h4>Your audience code at ${esc(b.businessName)}: ${esc(b.creatorCode)}</h4>
-      <p class="small" style="margin:0">Share it in your post so the business can count the customers it sends through the door: every use is tracked back to this visit, and it feeds your Magpie track record. This business has not turned on a code discount, so there is no percentage off to promise; the code is how your visit gets counted.</p>
-    </div>`;
-    } else {
-      html += pct > 0
-        ? `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong> (${pct}% off for customers who use it, your chosen code discount). It is rung up at your own register; report the tally on this card after the visit and it feeds this visit's modeled estimate.</p>`
-        : `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong>. You have not turned on a code discount, so it is a counting code only: no percentage off for customers who use it. It is rung up at your own register; the register events on this card are the record.</p>`;
-    }
     // Build -132 code centre: ONE code per booking, counted
     // totals from the one stream, the safety state in plain
     // words, share assets for the creator, and the owner's
     // controls (caps, discount expiry, revoke, regenerate).
     const ac = b.audienceCode || {};
     const acState = ac.state || {};
-    html += `<div class="showcase-block">
+    // Build -250: ONE audience section for this code. It used
+    // to render as two stacked blocks both presenting the code
+    // (an intro block, then the code centre), and the offer
+    // below repeated its label in its own header ("For the
+    // audience: For the audience"). Now: one section, set apart
+    // from the visit code hero above it, one short line about
+    // what the code does, then the counted facts and controls.
+    const audLine250 = role === "creator"
+      ? (pct > 0 ? `Share it in your post: your audience gets ${pct}% off at ${esc(b.businessName)}, and every use counts for this visit.` : `Share it in your post: every use is counted back to this visit. No discount rides on this code.`)
+      : (pct > 0 ? `Your chosen code discount: ${pct}% off for customers who use it, rung up at your own register.` : `A counting code only: no percentage off rides on it. It is rung up at your own register.`);
+    html += `<div class="j250-audsec">
+      <p class="ui-kicker" style="margin:0 0 8px">For your audience</p>
+      <div class="showcase-block">
       <h4>Audience code: ${esc(b.creatorCode)}</h4>
-      <p class="small" style="margin:0">${esc(ac.line || "")}</p>
+      <p class="small" style="margin:0">${audLine250}</p>
+      ${ac.line ? `<p class="small muted" style="margin:6px 0 0">${esc(ac.line)}</p>` : ""}
       <p class="small" style="margin:6px 0 0"><strong>${ac.counted || 0} customer${(ac.counted || 0) === 1 ? "" : "s"} counted</strong> through this code${ac.countedSpend ? ` &middot; $${fmtMoney(ac.countedSpend)} counted at the register` : ""}.</p>
       ${acState.revoked ? `<p class="small" style="margin:6px 0 0"><span class="badge warn">Revoked</span> This code no longer counts or discounts.</p>` : acState.closed ? `<p class="small" style="margin:6px 0 0"><span class="badge warn">Closed out</span> This code reached its set limit, so it no longer counts or discounts.</p>` : acState.discountExpired ? `<p class="small" style="margin:6px 0 0"><span class="badge info">Discount window ended</span> The code still counts every customer; it just no longer takes a percentage off.</p>` : ""}
       ${role === "creator" ? `<p style="margin:8px 0 0"><button class="btn small-btn ghost" type="button" onclick="loadCodeAssets('${b.id}')">Share assets for this code</button></p><div id="code-assets-${b.id}"></div>` : ""}
@@ -22010,7 +22122,7 @@ function visitCard(b, role) {
     // (attached at booking time); the business can take it off
     // with one tap, or put one on a booking that has none.
     if (b.audienceOffer) {
-      html += `<div class="showcase-block"><h4>For the audience: ${esc(b.audienceOffer.title || "For the audience")}</h4>
+      html += `<div class="showcase-block"><h4>${esc(b.audienceOffer.title || "Audience offer")}</h4>
       <p class="small" style="margin:0">${esc(b.audienceOffer.perk || "")} — with the code <strong>${esc(b.creatorCode)}</strong>. ${role === "creator" ? "Put the code line in your post so it counts for both of you." : "It rides this visit's code; there is no second code."}</p>
       ${role === "business" ? `<p style="margin:8px 0 0"><button class="btn small-btn ghost" type="button" onclick="removeAudienceOffer('${b.id}')">Take the audience offer off this visit</button> <span class="small" id="ao-note-${b.id}"></span></p>` : ""}
       </div>`;
@@ -22020,6 +22132,7 @@ function visitCard(b, role) {
       <div class="form-2col" style="margin-top:6px"><div class="field"><label>What their audience gets</label><input id="ao-perk-${b.id}" placeholder="Free appetizer with an entree"></div></div>
       <p style="margin:0"><button class="btn small-btn" type="button" onclick="attachAudienceOffer('${b.id}')">Attach the audience offer</button> <span class="small" id="ao-note-${b.id}"></span></p></div>`;
     }
+    html += `</div>`;
   }
   if (b.kind === "coupon" && b.couponSpend) {
     const cs = b.couponSpend;
@@ -22029,18 +22142,6 @@ function visitCard(b, role) {
       ${role === "creator" ? `<p class="small" style="margin:6px 0 0">At the register, show this spend code (separate from your visit code): <strong style="letter-spacing:0.06em">${esc(cs.code || "")}</strong></p>` : ""}
       ${role === "business" && cs.status !== "spent" && cs.status !== "expired" && cs.status !== "closed" ? `<div class="form-2col" style="margin-top:6px"><div class="field"><label>Record a spend against the coupon ($)</label><input type="number" id="csp-amt-${b.id}" min="0" step="0.01"></div></div><p style="margin:0"><button class="btn small-btn" type="button" onclick="recordCouponSpendUi('${b.id}', '${esc(cs.code || "")}')">Record the spend</button> <span class="small" id="csp-note-${b.id}"></span></p>` : ""}
       ${(cs.events || []).length ? `<div style="margin-top:6px">${cs.events.map((e) => `<div class="lrow"><span>$${fmtMoney(e.amount)} spent</span><span class="small muted">${esc(fmtDate(e.at))}${e.via ? ` · ${esc(e.via)}` : ""}</span></div>`).join("")}</div>` : ""}
-    </div>`;
-  }
-  if (role === "creator" && b.codeStatus === "issued") {
-    html += `
-    <div class="grid cols-2">
-      <div>
-        <p class="small muted" style="margin-bottom:0">Your one-time visit code. Show this at the visit; staff redeem it in the app and your post clock starts at that moment.</p>
-        <div class="code-display">${esc(b.code)}</div>
-        ${b.redeemBy ? `<p class="small"><strong>Use by ${esc(fmtDate(b.redeemBy))}</strong>. Come any time inside your window; no appointment needed. If the window passes unused, the offer expires and counts as a no-show.</p>` : ""}
-        ${b.checkinAt ? `<p class="small">You checked in at ${fmtDate(b.checkinAt)}. Waiting for the business to confirm.</p>` : `<button class="btn small-btn ghost" onclick="checkIn('${b.id}')">I am here (check in)</button>`}
-      </div>
-      <div class="qr-box"><img src="/api/bookings/${b.id}/qr" alt="QR code for ${esc(b.code)}" onerror="this.parentElement.style.display='none'"></div>
     </div>`;
   }
   if (role === "creator" && b.status === "expired") {
@@ -22055,7 +22156,7 @@ function visitCard(b, role) {
     <form onsubmit="return submitHonorReport(event, '${b.id}')">
       <div class="field"><label>Business didn't honor this comp?</label><input id="honor-${b.id}" maxlength="280" placeholder="What happened, in one line"></div>
       <button class="btn small-btn danger" type="submit">Report problem</button>
-      <p class="small muted">The business didn't honor this comp. Filing this voids the visit: no post is owed, the compliance clock stops, and it cannot hurt your standing. It flags the business for the Magpie team. It is never shown publicly.</p>
+      <p class="small muted">Filing this voids the visit and stops the clock. It cannot hurt your standing, and it is never shown publicly.</p>
     </form>`;
   }
   if (role === "business" && b.codeStatus === "issued") {
@@ -26209,6 +26310,9 @@ function foActiveCount() {
 }
 function foClearAll() {
   state.foKind = "all"; state.foCategory = ""; state.foDistance = ""; state.foFit = false; state.foSpots = false; state.foWhen = "";
+  // Build -250: Clear all also clears the search text. It did
+  // not, so a typed term kept filtering a "cleared" board.
+  state.foQ = ""; state.foQFocus = false;
   renderFindOffers();
   return false;
 }
@@ -27607,7 +27711,7 @@ function briefBlockHtml(x) {
   // 48-hour goal and the standards are the comped lane's; a paid
   // visit's brief carries its agreed posting terms instead
   // (they render in the deal rows above).
-  const scopeLine = kindOfClient(x) === "paid" ? "" : `<p class="small muted" style="margin:6px 0 0">The 48-hour goal and these standards apply to comped visits; paid visits follow the posting terms agreed on the booking.</p>`;
+  const scopeLine = kindOfClient(x) === "paid" ? "" : `<details class="deal-details" style="margin-top:8px"><summary class="small muted">About these standards</summary><p class="small muted" style="margin:6px 0 0">The 48-hour goal and these standards apply to comped visits; paid visits follow the posting terms agreed on the booking.</p></details>`;
   return `<div class="showcase-block"><h4>Your brief</h4><div class="stack-list">${rows.join("")}</div><p class="small muted" style="margin:6px 0 0">Key points, never a script. Post honestly, in your own words.</p>${scopeLine}</div>`;
 }
 // The asset packet block (creator visit view): the business's
