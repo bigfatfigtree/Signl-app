@@ -3213,6 +3213,15 @@ const BOOKING_STARTED_LINE = "This booking started on Magpie, so it runs through
 // ------------------------------------------------------------------
 const TEST_MODE = process.env.SIGNL_TEST_ALLOW_BUSINESS === "1";
 const TERMS_VERSION = "2026-10-19";
+// Build -249 (Jeff, 2026-11-21): the post agreement's text
+// version. The signup checkbox used to spell out one specific
+// deal's terms (1 post + 1 story, 48 hours, 30 days live);
+// Jeff replaced it with a general agreement to follow the
+// terms of each offer accepted, the specifics living on the
+// offer itself. The consent audit trail stamps this version
+// next to the acceptance timestamp so a record always shows
+// WHICH wording the creator agreed to.
+const POST_AGREEMENT_VERSION = "offers-v1-249";
 // Headliners tier (15k+) only: separate from comps, these creators can also be
 // hired for paid cash campaigns when a business runs one (Jeff, 2026-10-18).
 const PAID_COMP = "Paid cash campaigns";
@@ -8763,6 +8772,312 @@ async function runApprovalFanout246() {
     }
   }
   return out;
+}
+
+// ============================================================
+// Build -249: the signup fan-out queue (Jeff, 2026-11-21:
+// "it took a long while to hit submit and it go through" —
+// his own Finish tap on the claim form sat on "Working...").
+//
+// What register used to await AFTER the record committed, on
+// the request path, per signup: the recruiter prospect scan
+// (~1,300 records), the auto-decision's campaign-evidence scan
+// plus a full user list, the profile-completed event and the
+// finish moment, the wishlist alert and roster drop, a
+// founding-summary user list, and a live SMTP confirmation
+// send. Measured the -246 way (production scale, Blobs latency
+// model, mail transport stubbed): 14.4s cold-memo, 1.3s warm —
+// before real SMTP time. This is the -246 pattern applied to
+// register: commit the record, queue ONE job, respond; the
+// background drain (admin-home-refresh-background, next to the
+// -246 drain) runs the whole fan-out seconds later.
+//
+// Exactly ONE confirmation email per signup is a hard
+// requirement: the send runs under the same four-step claim
+// protocol as -246 (claim + read-back, "sending" + read-back,
+// a bounded sent-check over today's and yesterday's event
+// partitions, and a deliverEmail preSendCheck that re-reads
+// the job immediately before the transport fires). A
+// reconciliation pass re-queues any application_submitted from
+// the last two days whose fan-out never settled and whose
+// confirmation never sent, so a lost queue write cannot lose
+// the email. What data lands is unchanged: the drain runs the
+// same steps register ran, in the same order, on the fresh
+// record — only WHEN they run moved.
+// ============================================================
+const SIGNUP_FANOUT_PREFIX249 = "signupfanout:";
+const SIGNUP_FANOUT_MAX_ATTEMPTS249 = 5;
+const SIGNUP_FANOUT_CLAIM_STALE_MS249 = 10 * 60 * 1000;
+const SIGNUP_FANOUT_RUN_CAP249 = 50;
+let signupFanoutNudgeAt249 = 0;
+let signupFanoutReconcileAt249 = 0;
+
+function signupFanoutJob249(userId, role, quickClaim, via) {
+  return { userId, role, quickClaim: !!quickClaim, state: "pending", queuedAt: new Date().toISOString(), attempts: 0, claimId: null, via: via || "register" };
+}
+
+async function queueSignupFanout249(user, quickClaim) {
+  const key = SIGNUP_FANOUT_PREFIX249 + user.id;
+  const existing = await store.get(key);
+  if (existing && (existing.state === "pending" || existing.state === "claimed" || existing.state === "sending")) return existing;
+  const job = signupFanoutJob249(user.id, user.role, quickClaim, "register");
+  await store.set(key, job);
+  maybeNudgeSignupFanout249();
+  return job;
+}
+
+function maybeNudgeSignupFanout249() {
+  const now = Date.now();
+  if (now - signupFanoutNudgeAt249 < 60 * 1000) return;
+  signupFanoutNudgeAt249 = now;
+  fireAdminHomeRefresh212(false).catch(() => {});
+}
+
+// The confirmation-email sent check, bounded to today's and
+// yesterday's event partitions (the -246 guard shape): the
+// confirmation lands within minutes of the application, so
+// two days of partitions always cover it. Guards on _sent
+// only: a queued-but-failed attempt may be retried.
+async function signupConfirmationSent249(userId) {
+  const days = [new Date(), new Date(Date.now() - 24 * 60 * 60 * 1000)];
+  const keyLists = [];
+  for (const d of days) {
+    try { keyLists.push(await store.listKeys(`event:${d.toISOString().slice(0, 10)}`)); }
+    catch (e) { keyLists.push([]); }
+  }
+  const keys = [...new Set(keyLists.flat())];
+  if (!keys.length) return false;
+  const rows = await store.getMany(keys);
+  return rows.some((r) => r && r.value && r.value.type === "signup_confirmation_email_sent" && r.value.subjectId === userId);
+}
+
+// The drain. Exported for the background function and the
+// verify suite. Runs the register fan-out for each due job:
+// recruiter credit, auto-decision (which keeps its own inline
+// approval email and -239 guard), the full-form completion
+// event and finish moment, the wishlist alert and roster
+// drop, then the confirmation email under the claim protocol.
+async function runSignupFanout249() {
+  const out = { processed: 0, sent: 0, retried: 0, failed: 0, reconciled: 0 };
+  await reconcileSignupFanout249(out);
+  let rows = [];
+  try { rows = await store.list(SIGNUP_FANOUT_PREFIX249); } catch (e) { return out; }
+  const jobs = rows.map((r) => r && r.value).filter((j) => j && j.userId);
+  // Batch-read the job users ONCE for this drain (the -246
+  // drain rule); the only per-job reads after this are the
+  // claim protocol's own.
+  const userIds = [...new Set(jobs.map((j) => j.userId))];
+  const userRows = userIds.length ? await store.getMany(userIds.map((u) => `user:${u}`)) : [];
+  const userById = new Map();
+  userRows.forEach((r, i) => { if (r && r.value) userById.set(userIds[i], r.value); });
+  const now = Date.now();
+  const due = jobs.filter((j) => {
+    if (j.state === "pending") return true;
+    if ((j.state === "claimed" || j.state === "sending") && j.claimedAt && now - Date.parse(j.claimedAt) > SIGNUP_FANOUT_CLAIM_STALE_MS249) return true;
+    return false;
+  }).slice(0, SIGNUP_FANOUT_RUN_CAP249);
+  for (const job of due) {
+    // (1) Claim the job and verify the claim landed.
+    const claimId = `sf249_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    const claimed = { ...job, state: "claimed", claimId, claimedAt: new Date().toISOString(), attempts: (job.attempts || 0) + 1 };
+    await store.set(SIGNUP_FANOUT_PREFIX249 + job.userId, claimed);
+    const claimCheck = await store.get(SIGNUP_FANOUT_PREFIX249 + job.userId);
+    if (!claimCheck || claimCheck.claimId !== claimId) continue; // another drain holds it
+    out.processed += 1;
+    let user = userById.get(job.userId) || null;
+    try {
+      if (!user || isAccountDeleted(user) || user.role === "admin") {
+        await store.set(SIGNUP_FANOUT_PREFIX249 + job.userId, { ...claimed, state: "done", sent: false, finishedAt: new Date().toISOString() });
+        continue;
+      }
+      const id = user.id;
+      const quickClaim = job.quickClaim === true;
+      let autoDecision = null;
+      if (user.role === "creator") {
+        // Recruiter credit (Build -70), exactly as register ran
+        // it: best-effort, attribution never blocks anything.
+        try { await recruiters.onCreatorRegistered(user); } catch (e) { /* attribution is best-effort */ }
+        const afterCredit = await store.get(`user:${id}`);
+        if (afterCredit) { user = afterCredit; userById.set(id, afterCredit); }
+        // Standing-authority auto-decision (Jeff, 2026-10-22),
+        // best-effort as before; a decided claim skips the
+        // confirmation email below, exactly as it did inline.
+        try {
+          const evidence = await buildAutoEvidence();
+          autoDecision = await applyAutoDecision(user, await allUsers(), evidence);
+        } catch (e) { /* auto-decisions are best-effort; manual review remains */ }
+        const afterDecision = await store.get(`user:${id}`);
+        if (afterDecision) { user = afterDecision; userById.set(id, afterDecision); }
+        if (!quickClaim && profileCompleteOf(user) && (!autoDecision || autoDecision.action !== "rejected")) {
+          // A full-form registration IS the complete profile
+          // build (see the -249 note in handleRegister's old
+          // home for this block): the completion event fires
+          // here, under the same gate as before.
+          await logEvent({
+            type: "profile_completed",
+            actorId: id,
+            actorRole: "creator",
+            subjectId: id,
+            market: user.market,
+            data: {
+              handle: user.creator.handle,
+              city: user.city,
+              neighborhood: user.creator.neighborhood,
+              university: user.creator.university,
+              followerCount: user.creator.followerCount,
+              audienceStack: user.creator.audienceStack,
+              totalAudience: user.creator.totalAudience,
+              avgViews: user.creator.avgViews,
+              tierBand: normalizeTierBand(user.creator.tierBand),
+              localAudiencePct: user.creator.localAudiencePct,
+              localAudienceSource: user.creator.localAudienceSource,
+              categories: user.creator.categories,
+              compCategories: user.creator.compCategories,
+              topAudienceCities: user.creator.topAudienceCities,
+              hasTiktok: !!user.creator.tiktokHandle,
+              hasYoutube: !!user.creator.youtubeChannel,
+              facebookUrl: user.creator.facebookUrl,
+              xHandle: user.creator.xHandle,
+              xUrl: user.creator.xUrl,
+              linkedinUrl: user.creator.linkedinUrl,
+              hasPhoto: false,
+              agreedHonestPosts: user.creator.agreedHonestPosts === true,
+              agreedFtcDisclosure: user.creator.agreedFtcDisclosure === true,
+              agreedPostCompliance: user.creator.agreedPostCompliance === true,
+              agreedTerms: true,
+              termsVersion: TERMS_VERSION,
+              marketingEmailConsent: true,
+              openToPaidCampaigns: user.creator.openToPaidCampaigns,
+            },
+          });
+          // Finish Engine (BUILD -50): exactly once; the record
+          // stamp guards it.
+          try { await maybeFireFinishMoment(user, "signup"); } catch (e) { console.error("finish moment (signup) failed", e && e.message); }
+        }
+        // Build -91: wishlist "claimed" moment + roster drop,
+        // best-effort, fenced inside their helpers.
+        try { await alertWishlistBusinesses(user, "claimed"); } catch (e) { /* best-effort */ }
+        try { await recordRosterDrop(user, "signup"); } catch (e) { /* best-effort */ }
+      }
+      // The confirmation email. Same gates as the old inline
+      // send: a creator decided by the auto-decision (approved
+      // or rejected) gets no "in the review queue" confirmation
+      // — the approval email is the decision's own — and a
+      // creator no longer pending (decided before this build,
+      // reconciled job) is not re-confirmed. A business gets
+      // its application confirmation (Build -239).
+      let mail = null;
+      let mailBand = null;
+      if (user.role === "creator") {
+        if ((!autoDecision || autoDecision.action === "held_under_minimum") && user.status === "pending") {
+          const summary = await foundingSummary(user);
+          mailBand = foundingBand(summary && summary.queuePosition);
+          mail = quickClaim ? claimConfirmationEmail(user, mailBand) : signupConfirmationEmail(user, mailBand);
+        }
+      } else if (user.role === "business") {
+        const placeLine = user.market === UNLISTED ? "" : `${marketTalkName(user.market)} is a founding market, and founding businesses are the first ones local creators see when it opens.`;
+        mail = businessApplicationConfirmationEmail({
+          first: greetingName(user),
+          businessName: (user.business && user.business.businessName) || user.name || "your business",
+          placeLine,
+          hasAccount: true,
+        });
+      }
+      if (!mail) {
+        await store.set(SIGNUP_FANOUT_PREFIX249 + job.userId, { ...claimed, state: "done", sent: false, finishedAt: new Date().toISOString() });
+        continue;
+      }
+      // (2) Transition to "sending" and verify it landed.
+      const sending = { ...claimed, state: "sending" };
+      await store.set(SIGNUP_FANOUT_PREFIX249 + job.userId, sending);
+      const sendCheck = await store.get(SIGNUP_FANOUT_PREFIX249 + job.userId);
+      if (!sendCheck || sendCheck.claimId !== claimId || sendCheck.state !== "sending") continue;
+      // (3) Second guard pass at send time: the confirmation
+      // may already have gone out (an inline send from before
+      // this build, or a racing drain).
+      if (await signupConfirmationSent249(job.userId)) {
+        await store.set(SIGNUP_FANOUT_PREFIX249 + job.userId, { ...sending, state: "done", sent: true, finishedAt: new Date().toISOString() });
+        continue;
+      }
+      // (4) Send, with the claim gate re-verified inside
+      // deliverEmail immediately before the transport fires.
+      let sendFailed = false;
+      try {
+        const res = await deliverEmail("signup_confirmation", user, mail.subject, mail.text, mailBand, {
+          listUnsubscribe: true,
+          preSendCheck: async () => {
+            const cur = await store.get(SIGNUP_FANOUT_PREFIX249 + job.userId);
+            return !!cur && cur.claimId === claimId && cur.state === "sending";
+          },
+        });
+        if (res && res.sent === false && res.reason !== "automation_disabled" && !res.suppressed) sendFailed = true;
+      } catch (e) { sendFailed = true; }
+      if (sendFailed) throw new Error("signup confirmation send failed");
+      await store.set(SIGNUP_FANOUT_PREFIX249 + job.userId, { ...sending, state: "done", sent: true, finishedAt: new Date().toISOString() });
+      out.sent += 1;
+    } catch (e) {
+      const attempts = claimed.attempts || 1;
+      if (attempts >= SIGNUP_FANOUT_MAX_ATTEMPTS249) {
+        await store.set(SIGNUP_FANOUT_PREFIX249 + job.userId, { ...claimed, state: "failed", lastError: String((e && e.message) || e).slice(0, 200), finishedAt: new Date().toISOString() });
+        out.failed += 1;
+        try { await logEvent({ type: "signup_fanout_failed", actorId: null, actorRole: "system", subjectId: job.userId, market: (user && user.market) || null, data: { attempts, error: String((e && e.message) || e).slice(0, 200) } }); } catch (e2) { /* best-effort */ }
+      } else {
+        await store.set(SIGNUP_FANOUT_PREFIX249 + job.userId, { ...claimed, state: "pending", claimId: null, lastError: String((e && e.message) || e).slice(0, 200) });
+        out.retried += 1;
+      }
+    }
+  }
+  return out;
+}
+
+// Does an existing job settle a signup (the fan-out ran or is
+// running)? A failed job does NOT settle: its confirmation is
+// still owed, so reconciliation re-queues it.
+function signupJobSettles249(job) {
+  if (!job) return false;
+  if (job.state === "pending" || job.state === "claimed" || job.state === "sending") return true;
+  if (job.state === "done") return true;
+  return false;
+}
+
+// Reconciliation (throttled to one pass per 30 minutes per
+// warm instance, the -246 discipline): an application_submitted
+// from the last two days with no settling job and no
+// confirmation sent gets a job, so a lost queue write (or a
+// pre-249 signup whose inline send never landed) still gets
+// exactly one confirmation. Creators already decided before
+// this build are skipped: their fan-out ran inline at register
+// and nothing is owed.
+async function reconcileSignupFanout249(out) {
+  const now = Date.now();
+  if (now - signupFanoutReconcileAt249 < 30 * 60 * 1000) return;
+  signupFanoutReconcileAt249 = now;
+  try {
+    const days = [new Date(), new Date(Date.now() - 24 * 60 * 60 * 1000)];
+    const keyLists = [];
+    for (const d of days) {
+      try { keyLists.push(await store.listKeys(`event:${d.toISOString().slice(0, 10)}`)); }
+      catch (e) { keyLists.push([]); }
+    }
+    const keys = [...new Set(keyLists.flat())];
+    if (!keys.length) return;
+    const rows = await store.getMany(keys);
+    const subs = rows.map((r) => r && r.value).filter((e) => e && e.type === "application_submitted" && e.subjectId);
+    if (!subs.length) return;
+    const jobRows = await store.getMany([...new Set(subs.map((s) => SIGNUP_FANOUT_PREFIX249 + s.subjectId))]);
+    const jobById = new Map();
+    jobRows.forEach((r) => { if (r && r.value && r.value.userId) jobById.set(r.value.userId, r.value); });
+    for (const s of subs) {
+      if (signupJobSettles249(jobById.get(s.subjectId))) continue;
+      if (await signupConfirmationSent249(s.subjectId)) continue;
+      const u = await store.get(`user:${s.subjectId}`);
+      if (!u || isAccountDeleted(u) || u.role === "admin") continue;
+      if (u.role === "creator" && u.status !== "pending") continue;
+      if (u.role !== "creator" && u.role !== "business") continue;
+      await store.set(SIGNUP_FANOUT_PREFIX249 + s.subjectId, signupFanoutJob249(s.subjectId, u.role, !!(s.data && s.data.quickClaim), "reconcile"));
+      out.reconciled += 1;
+    }
+  } catch (e) { /* reconciliation is best-effort */ }
 }
 // Build -185: the last-activity stamp the win-back sweep reads.
 // user.updatedAt cannot serve (sweeps and backfills bump it, so
@@ -19746,7 +20061,7 @@ async function handleRegister(event, linkCtx) {
   // signup still gets the standing 409, and before any record
   // exists. See the note at the top of this handler.
   if (role === "creator" && b.agreedPostCompliance !== true) {
-    return err(400, "Please agree to the post agreement: when a business comps your visit, you post honestly and disclose the comp, within 48 hours of the visit.");
+    return err(400, "Please agree to the post agreement: follow the terms of each offer you accept on Magpie.");
   }
 
   const { salt, hash } = linkPrimary
@@ -19776,6 +20091,9 @@ async function handleRegister(event, linkCtx) {
     termsVersion: TERMS_VERSION,
     termsAcceptedAt: ts,
     postComplianceAcceptedAt: role === "creator" ? ts : null,
+    // Build -249: which post-agreement wording was accepted
+    // (the general per-offer agreement), beside the timestamp.
+    postAgreementVersion: role === "creator" ? POST_AGREEMENT_VERSION : null,
     marketingEmailConsent: true,
     marketingConsentAt: ts,
     creator: null,
@@ -19974,6 +20292,7 @@ async function handleRegister(event, linkCtx) {
       agreedHonestPosts: b.agreedHonestPosts === true,
       agreedFtcDisclosure: b.agreedFtcDisclosure === true,
       agreedPostCompliance: b.agreedPostCompliance === true,
+      postAgreementVersion: b.agreedPostCompliance === true ? POST_AGREEMENT_VERSION : null,
       agreedAt: b.agreedHonestPosts === true && b.agreedFtcDisclosure === true && b.agreedPostCompliance === true ? ts : null,
       agreedTerms: true,
       termsVersion: TERMS_VERSION,
@@ -20116,6 +20435,7 @@ async function handleRegister(event, linkCtx) {
       agreedHonestPosts: b.agreedHonestPosts === true,
       agreedFtcDisclosure: b.agreedFtcDisclosure === true,
       agreedPostCompliance: b.agreedPostCompliance === true,
+      postAgreementVersion: b.agreedPostCompliance === true ? POST_AGREEMENT_VERSION : null,
       agreedAt: b.agreedHonestPosts === true && b.agreedFtcDisclosure === true && b.agreedPostCompliance === true ? ts : null,
       agreedTerms: true,
       termsVersion: TERMS_VERSION,
@@ -20303,13 +20623,9 @@ async function handleRegister(event, linkCtx) {
     await store.set(`email:${email}`, { userId: id });
   }
   if (role === "creator") invalidateCheckedSets(); // Build -176: a new creator can join a market's checked set
-  // Staff recruiter credit (Build -70): a creator who signs up
-  // through a recruiter's link, or whose handle matches a prospect
-  // on that recruiter's list, credits the recruiter exactly once.
-  // Best-effort: attribution never blocks a signup.
-  if (role === "creator") {
-    try { await recruiters.onCreatorRegistered(user); } catch (e) { /* attribution is best-effort */ }
-  }
+  // Build -249: the recruiter credit that used to run here moved
+  // into the signup fan-out drain (runSignupFanout249) — see the
+  // note at the queue call below.
   await logEvent({
     type: "application_submitted",
     actorId: id,
@@ -20318,88 +20634,9 @@ async function handleRegister(event, linkCtx) {
     market: user.market,
     data:
       role === "creator"
-        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, primaryPlatform: primaryPlatformOf(user.creator), city: user.city, neighborhood: user.creator.neighborhood, area: creatorAreaOf(user.creator), university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, profession: user.creator.profession || "", agreedPostCompliance: user.creator.agreedPostCompliance === true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
+        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, primaryPlatform: primaryPlatformOf(user.creator), city: user.city, neighborhood: user.creator.neighborhood, area: creatorAreaOf(user.creator), university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, profession: user.creator.profession || "", agreedPostCompliance: user.creator.agreedPostCompliance === true, postAgreementVersion: user.creator.postAgreementVersion || null, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) },
   });
-  // Standing-authority auto-decision (Jeff, 2026-10-22): a creator
-  // claim that is an exact test/spam match is rejected here, and
-  // one that verifiably matches our outreach evidence is approved
-  // here, with the manual decision's exact side effects. Anything
-  // else stays pending for a person. A decided claim skips the
-  // "in the review queue" confirmation email below: an approved
-  // creator gets the approval email instead, and a rejected test
-  // claim gets nothing. Failure here must never fail a sign-up.
-  let autoDecision = null;
-  if (role === "creator") {
-    try {
-      const evidence = await buildAutoEvidence();
-      autoDecision = await applyAutoDecision(user, await allUsers(), evidence);
-    } catch (e) { /* auto-decisions are best-effort; manual review remains */ }
-  }
-  if (role === "creator" && !quickClaim && profileCompleteOf(user) && (!autoDecision || autoDecision.action !== "rejected")) {
-    // A full-form registration IS the complete profile build: the
-    // profile fields are all collected up front, so this fires
-    // here (and only when the record actually crosses the
-    // completion gate: since the 2026-11-01 minimum, a full-form
-    // sign-up under 500 total is built but NOT finished, and no
-    // completion is logged for it). A quick claim fires NO profile_completed event: the
-    // profile is finished later, and that flip is logged by the
-    // profile save when it lands. A photo can still be added
-    // afterwards (profile_photo_uploaded).
-    await logEvent({
-      type: "profile_completed",
-      actorId: id,
-      actorRole: "creator",
-      subjectId: id,
-      market: user.market,
-      data: {
-        handle: user.creator.handle,
-        city: user.city,
-        neighborhood: user.creator.neighborhood,
-        university: user.creator.university,
-        followerCount: user.creator.followerCount,
-        audienceStack: user.creator.audienceStack,
-        totalAudience: user.creator.totalAudience,
-        avgViews: user.creator.avgViews,
-        tierBand: normalizeTierBand(user.creator.tierBand),
-        localAudiencePct: user.creator.localAudiencePct,
-        localAudienceSource: user.creator.localAudienceSource,
-        categories: user.creator.categories,
-        compCategories: user.creator.compCategories,
-        topAudienceCities: user.creator.topAudienceCities,
-        hasTiktok: !!user.creator.tiktokHandle,
-        hasYoutube: !!user.creator.youtubeChannel,
-        facebookUrl: user.creator.facebookUrl,
-        xHandle: user.creator.xHandle,
-        xUrl: user.creator.xUrl,
-        linkedinUrl: user.creator.linkedinUrl,
-        hasPhoto: false,
-        agreedHonestPosts: user.creator.agreedHonestPosts === true,
-        agreedFtcDisclosure: user.creator.agreedFtcDisclosure === true,
-        agreedPostCompliance: user.creator.agreedPostCompliance === true,
-        agreedTerms: true,
-        termsVersion: TERMS_VERSION,
-        marketingEmailConsent: true,
-        openToPaidCampaigns: user.creator.openToPaidCampaigns,
-      },
-    });
-  }
-  if (role === "creator" && !quickClaim && profileCompleteOf(user) && (!autoDecision || autoDecision.action !== "rejected")) {
-    // Finish Engine (BUILD -50): a full-form registration crosses
-    // the completion gate at signup, so the finish moment fires
-    // here too (exactly once; the record stamp guards it).
-    try { await maybeFireFinishMoment(user, "signup"); } catch (e) { console.error("finish moment (signup) failed", e && e.message); }
-  }
-  if (role === "creator") {
-    // Build -91: this account appearing is the wishlist "claimed"
-    // moment for any business whose private list names the
-    // handle, and a signup that already reads finished + approved
-    // is a roster drop on the spot. Both are best-effort and
-    // fenced inside their helpers (tester/demo records trigger
-    // nothing).
-    try { await alertWishlistBusinesses(user, "claimed"); } catch (e) { /* best-effort */ }
-    try { await recordRosterDrop(user, "signup"); } catch (e) { /* best-effort */ }
-  }
   if (role === "business") {
     await logEvent({
       type: "plan_selected",
@@ -20410,42 +20647,23 @@ async function handleRegister(event, linkCtx) {
       data: { plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, source: "registration", billingStatus: user.business.billingStatus },
     });
   }
-
-  if (role === "creator" && (!autoDecision || autoDecision.action === "held_under_minimum")) {
-    // Sign-up confirmation email (Jeff, 2026-10-18). Queued as an event
-    // always; sent immediately when the SMTP transport is configured.
-    // An under-minimum hold is still pending, so it gets this
-    // confirmation (its pending screen carries the minimum
-    // message), never the approval email.
-    // Email trouble must never fail a registration, hence the try/catch.
-    try {
-      const summary = await foundingSummary(user);
-      const band = foundingBand(summary && summary.queuePosition);
-      const mail = quickClaim ? claimConfirmationEmail(user, band) : signupConfirmationEmail(user, band);
-      // Both step-one confirmations promise "unsubscribe at any
-      // time" in the copy, so the mail carries the List-Unsubscribe
-      // header that makes the promise real.
-      await deliverEmail("signup_confirmation", user, mail.subject, mail.text, band, { listUnsubscribe: true });
-    } catch (e) { /* email is best-effort; the queued events tell the story */ }
-  }
-
-  if (role === "business") {
-    // Build -239: a business registration gets its own
-    // confirmation, in business words. Before this build the
-    // applicant heard nothing at all until a decision landed.
-    // Same discipline as the creator confirmation: best-effort,
-    // the queued events tell the story.
-    try {
-      const placeLine = user.market === UNLISTED ? "" : `${marketTalkName(user.market)} is a founding market, and founding businesses are the first ones local creators see when it opens.`;
-      const mail = businessApplicationConfirmationEmail({
-        first: greetingName(user),
-        businessName: (user.business && user.business.businessName) || user.name || "your business",
-        placeLine,
-        hasAccount: true,
-      });
-      await deliverEmail("signup_confirmation", user, mail.subject, mail.text, null, { listUnsubscribe: true });
-    } catch (e) { /* email is best-effort; the queued events tell the story */ }
-  }
+  // Build -249: everything that used to fan out inline below
+  // this point — the recruiter credit (Build -70), the
+  // standing-authority auto-decision, the full-form
+  // profile_completed event and finish moment, the wishlist
+  // alert and roster drop, and the confirmation email (creator
+  // and business) — now runs in the background signup fan-out
+  // drain (runSignupFanout249), off this request path. The
+  // record is committed and application_submitted is logged;
+  // the response goes out now and the fan-out lands seconds
+  // later, the same trade Build -246 made for approvals. A
+  // lost queue write is backstopped by the drain's
+  // reconciliation, so the confirmation email cannot be lost
+  // with it. One visible consequence: an auto-approved
+  // full-form signup's immediate response still reads
+  // "pending"; the decision lands with the drain and the next
+  // load shows it.
+  try { await queueSignupFanout249(user, quickClaim); } catch (e) { /* the drain's reconciliation re-queues */ }
 
   // Google apply prefill (Build -123): an application that
   // started with Continue with Google carries the one-time
@@ -41012,4 +41230,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runAdminStatsSummary244, runApprovalFanout246, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226, BLUE_CHECK_POINTS, BLUE_CHECK_BAND50_POINTS, blueCheckFromPoints, blueCheckFastestStep245, maybeBlueCheckMoments245, __buildersForTest239: { businessApplicationConfirmationEmail, businessApprovalEmail, businessRejectionEmail } };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runAdminStatsSummary244, runApprovalFanout246, runSignupFanout249, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226, BLUE_CHECK_POINTS, BLUE_CHECK_BAND50_POINTS, blueCheckFromPoints, blueCheckFastestStep245, maybeBlueCheckMoments245, __buildersForTest239: { businessApplicationConfirmationEmail, businessApprovalEmail, businessRejectionEmail } };

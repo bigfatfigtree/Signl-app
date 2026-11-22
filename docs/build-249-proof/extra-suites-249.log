@@ -1,0 +1,59 @@
+Build -249 — register-timing suite sweep (builder, 2026-11-21 late)
+Method: every suite run on the -249 tree AND on a pristine -248
+worktree (ccf0192). A suite is "clean" when its -249 failure set
+equals its base failure set (pre-existing) or is empty.
+
+Solo timing run (production scale: 5,200 events / 1,300 prospects /
+200 users / 900 campaign recipients, Blobs latency injected, mail
+transport stubbed):
+  BEFORE (-248): register 14,379 ms cold-memo / 1,305 ms warm-memo,
+    confirmation email sent inline at response time.
+  AFTER  (-249): register 806 ms solo (1,054 ms inside the -249
+    suite fixture; 1,830 ms under heavy CPU contention),
+    0 confirmations at response time, signupfanout job pending,
+    drain 2,775 ms -> exactly 1 confirmation sent.
+
+verify-build249        61 passed, 0 failed
+verify-build248        20 passed, 0 failed
+verify-build247        18 passed, 0 failed
+verify-build245        81 passed, 0 failed
+verify-build244        32 passed, 0 failed
+verify-build243        36 passed, 0 failed
+verify-spanish         42 passed, 0 failed
+verify-campaign       128 passed, 0 failed
+verify-build222        30 passed, 0 failed  (re-pinned to -249 copy)
+verify-build158        39 passed, 0 failed  (re-pinned: doors none-checked)
+verify-build230        39 passed, 0 failed  (no re-pin needed)
+verify-compliance     122 passed, 0 failed  (no re-pin needed)
+
+Re-pinned register-timing suites (drain-trigger pattern: the suite
+sets SIGNL_SWEEP_TOKEN and POSTs the real background-function route,
+or calls the exported runSignupFanout249 in-process):
+verify-autodecisions   61 passed, 0 failed  (base was 60/1 — the
+                       re-pin also fixed the stale approval-subject pin)
+verify-min500          33 passed, 7 failed  == base set (7 "states the
+                       minimum" copy pins, pre-existing)
+verify-emaildedupe     30 passed, 3 failed  == base set (approval-path
+                       pins failing since -246)
+verify-build138        79 passed, 7 failed  == base set
+verify-quickclaim      65 passed, 9 failed  == base set (stale email-copy
+                       pins + the -246 approval-queued pin)
+verify-build85         30 passed, 3 failed  == base set
+verify-build98          7 failures          == base set (identical on both trees)
+
+NOT re-pinned (pre-existing breakage, identical on the pristine base;
+named here so the -250 crew is not surprised):
+verify-launch          crashes (ECONNRESET, its spawned server dies
+                       late in the run) and is heavily red at base
+                       (market count 45 vs 48, FTC refusal, queue
+                       positions, public-profile pins). Its final
+                       events block contains register-timing
+                       assertions (profile_completed >= 2,
+                       confirmation queued >= 4) that would need the
+                       same drain re-pin if the suite is revived.
+verify-build239        crashes at line 206 on BOTH trees:
+                       router.businessApprovalEmail is not a function
+                       (the suite expects a direct export; the code
+                       exposes it via __buildersForTest239). Its
+                       business-confirmation-at-register assertion
+                       (line ~288) is unreachable.

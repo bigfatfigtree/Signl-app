@@ -63,10 +63,10 @@ check("facts screen: per-platform rows for all 7 stack platforms", ["instagram",
 check("facts screen: live counted line + the plain under-500 line", slice.includes("Counted so far:") && slice.includes(MIN_LINE));
 check("facts screen: the local % is one number input with no pre-filled value (Build -215: the slider + its 50 default are gone)", slice.includes('type="number" id="c85-localpct"') && !slice.includes('type="range" class="c85-range" id="c85-localpct"'));
 check("account screen: Finish button + the founding-roster wording", slice.includes("Finish — join the founding roster"));
-check("done state: you're-in headline + the two-day line + the optional button (Build -222 copy)", slice.includes("You're in,") && slice.includes("We review every creator by hand. You'll hear back within two business days.") && slice.includes("Add your rates and best work"));
+check("done state: you've-applied headline + the review step + the optional button (Build -249 copy; was the -222 you're-in copy)", slice.includes("You've applied,") && slice.includes("We review by hand") && slice.includes("You'll hear back within two business days.") && slice.includes("Add your rates and best work"));
 check("submit: same register payload discipline (quickClaim + attribution)", slice.includes("quickClaim: true") && slice.includes("signupSource: storedSrc() || undefined") && slice.includes("referredBy: storedRef() || undefined") && slice.includes("goldenTicket: storedTicket() || undefined") && slice.includes('lang: state.lang === "es" ? "es" : undefined'));
 check("facts land through the existing profile write", slice.includes('api("PATCH", "/me/profile", patch)') && slice.includes("patch.audienceStack") && slice.includes("patch.localAudiencePct") && slice.includes("patch.categories"));
-check("stamp is 2026.11.06-140 on both sides", fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.06-140"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.06-140"));
+check("stamp is 2026.11.21-249 on both sides (re-pinned by Build -249; the -140 pin was stale)", fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.21-249"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.21-249"));
 
 // ---------- live: the exact client sequence ----------
 class Client {
@@ -82,7 +82,7 @@ class Client {
   }
 }
 function startServer(db, port) {
-  const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: db, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", APP_URL: `http://127.0.0.1:${port}`, ADMIN_EMAIL, ADMIN_PASSWORD };
+  const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: db, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", SIGNL_SWEEP_TOKEN: "b85-sweep-token", APP_URL: `http://127.0.0.1:${port}`, ADMIN_EMAIL, ADMIN_PASSWORD };
   const s = spawn("node", ["scripts/dev-server.mjs", String(port)], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
   s.stderr.on("data", (d) => process.stderr.write("[server] " + d));
   return s;
@@ -139,8 +139,15 @@ check("A: quick claim starts unfinished", a.r.data.user.creator.profileComplete 
   check("A: display name landed", u.name === "Maya Chen", u.name);
   const ev = await admin.req("GET", "/api/admin/events?type=profile_completed&limit=500");
   check("A: profile_completed event fired once", ((ev.data && ev.data.events) || []).filter((e) => e.subjectId === u.id).length === 1);
+  // Build -249 re-pin: the claim confirmation no longer sends
+  // on the register request path — register queues a signup
+  // fan-out job and the background drain sends it. Trigger the
+  // drain through the real background-function route (the same
+  // one Netlify's schedule and the register nudge call), then
+  // the queued-confirmation count is exactly one, as before.
+  await fetch(`${BASE}/.netlify/functions/admin-home-refresh-background`, { method: "POST", headers: { "x-signl-sweep-token": "b85-sweep-token", "content-type": "application/json" }, body: "{}" });
   const conf = await admin.req("GET", "/api/admin/events?type=signup_confirmation_email_queued&limit=500");
-  check("A: claim confirmation email queued (server behavior unchanged)", ((conf.data && conf.data.events) || []).filter((e) => e.subjectId === u.id).length === 1);
+  check("A: claim confirmation email queued exactly once (Build -249: via the signup fan-out drain)", ((conf.data && conf.data.events) || []).filter((e) => e.subjectId === u.id).length === 1);
 }
 
 // Claim B: a known 1..499 total (the under-minimum hold).

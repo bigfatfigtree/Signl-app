@@ -167,7 +167,7 @@ seed[`user:tulpend_${uq}`] = { id: `tulpend_${uq}`, role: "creator", status: "pe
 seed[`email:tulpend_${uq}@fixtures.dev`] = { userId: `tulpend_${uq}` };
 fs.writeFileSync(dbPath, JSON.stringify(seed));
 
-const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: dbPath, SIGNL_MAIL_STUB: "1", APP_URL: BASE, ADMIN_EMAIL, ADMIN_PASSWORD: ADMIN_PW, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_VERIFY_TOKEN: VERIFY_TOKEN };
+const env = { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: dbPath, SIGNL_MAIL_STUB: "1", SIGNL_SWEEP_TOKEN: "b138-sweep-token", APP_URL: BASE, ADMIN_EMAIL, ADMIN_PASSWORD: ADMIN_PW, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_VERIFY_TOKEN: VERIFY_TOKEN };
 for (const k of ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "RESEND_API_KEY", "POSTMARK_SERVER_TOKEN", "NOTIFY_EMAIL_PROVIDER", "STRIPE_SECRET_KEY", "FOUNDING_STRIPE_PRICES", "GA4_PROPERTY_ID", "GA_SERVICE_ACCOUNT_JSON"]) delete env[k];
 const server = spawn("node", ["scripts/dev-server.mjs", String(PORT)], { cwd: root, env, stdio: "ignore" });
 
@@ -246,13 +246,21 @@ try {
     && flat.find((e) => e.id === "approval")?.state === "always_on", `${auto.status} ${flat.length}`);
   const tglOff = await admin("POST", "/api/admin/automations/signup_confirmation/toggle", { on: false });
   check("toggle off accepted for a non-critical automation", tglOff.status === 200 && tglOff.data.state === "off", `${tglOff.status}`);
+  // Build -249 re-pin: the signup confirmation (and its
+  // automation-toggle suppression) runs in the signup fan-out
+  // drain, not on the register request path. This section
+  // triggers the drain through the real background-function
+  // route after each registration, then reads the same events.
+  const drain249 = async () => { await fetch(`${BASE}/.netlify/functions/admin-home-refresh-background`, { method: "POST", headers: { "x-signl-sweep-token": "b138-sweep-token", "content-type": "application/json" }, body: "{}" }); };
   const c1 = await regCreator("supp138", "Nashville", "Supp One");
+  await drain249();
   const supEvents = dbEvents("signup_confirmation_email_not_sent", (e) => e.subjectId === c1.id);
   check("with the toggle off, the signup email is suppressed with the reason on the event",
     supEvents.length >= 1 && supEvents[0].data && supEvents[0].data.reason === "automation_disabled"
     && dbEvents("signup_confirmation_email_sent", (e) => e.subjectId === c1.id).length === 0, JSON.stringify(supEvents[0] || {}).slice(0, 200));
   await admin("POST", "/api/admin/automations/signup_confirmation/toggle", { on: true });
   const c2 = await regCreator("live138", "Nashville", "Live Two");
+  await drain249();
   check("toggle back on: the next signup email flows",
     dbEvents("signup_confirmation_email_sent", (e) => e.subjectId === c2.id).length >= 1);
   const crit = await admin("POST", "/api/admin/automations/approval/toggle", { on: false });
@@ -268,6 +276,7 @@ try {
   const subj = await admin("POST", "/api/admin/templates/signup_confirmation/versions", { subject: "Welcome aboard, {firstName}", note: "138 test" });
   check("a subject-only override saves on a subject-level template", subj.status === 200 && subj.data.template && subj.data.template.currentVersion >= 1, `${subj.status} ${JSON.stringify(subj.data).slice(0, 160)}`);
   const c3 = await regCreator("ovr138", "Nashville", "Casey Three");
+  await drain249();
   const q3 = dbEvents("signup_confirmation_email_queued", (e) => e.subjectId === c3.id);
   check("the override subject is what actually gets queued for the next signup",
     q3.length >= 1 && q3[0].data && q3[0].data.subject === "Welcome aboard, Casey", String(JSON.stringify(q3[0] && q3[0].data)).slice(0, 200));
@@ -484,6 +493,8 @@ try {
   const unl = client();
   const ureg = await unl("POST", "/api/auth/register", { role: "creator", name: "Minnieapolis", email: `mpls138_${uq}@fixtures.dev`, password: PW, market: "Not listed yet", customCity: "Fargo", customState: "ND", customCountry: "United States", handle: `mpls138_${uq}`, categories: ["Food & Drink"], compCategories: ["Restaurant meals"], tierBand: "Locals", followerCount: 4000, avgViews: 1200, localAudiencePct: 55, ...AGREE });
   const unlId = ureg.data && ureg.data.user && ureg.data.user.id;
+  // Build -249: the confirmation lands via the fan-out drain.
+  await fetch(`${BASE}/.netlify/functions/admin-home-refresh-background`, { method: "POST", headers: { "x-signl-sweep-token": "b138-sweep-token", "content-type": "application/json" }, body: "{}" });
   check("an unlisted-city creator completes a FULL sign-up (no stub, no lesser record)",
     ureg.status === 201 && !!unlId && ureg.data.user.market === "Not listed yet" && ureg.data.user.city === "Fargo"
     && dbEvents("signup_confirmation_email_sent", (e) => e.subjectId === unlId).length >= 1,

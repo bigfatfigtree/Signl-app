@@ -24,6 +24,16 @@
 //     and the share card drop the old phrasing too.
 // No data, logic, counts or features change. Stamp
 // 2026.11.20-222.
+// Re-pinned by Build -249 (2026-11-21): Jeff's own signup test
+// replaced this screen's headline and stripped ALL
+// number/position language from it (his NO-NUMBER RULE):
+// "You've applied." replaces "You're in.", the review line
+// became step 2 of a visual 3-step "what happens next", the
+// What-you-get bullets and the founding band line and the
+// "out of 10" share line are gone, and the founding standing
+// is stated without numbers. The checks below assert the NEW
+// behavior; the twin-surface and server-wording checks are
+// unchanged (different surfaces).
 // Run: node scripts/verify-build222.mjs
 import fs from "node:fs";
 import path from "node:path";
@@ -45,18 +55,19 @@ function check(name, cond, extra) {
 }
 
 console.log("== stamp ==");
-check("build stamp is 2026.11.20-225 (lib + shell; bumped by Build -225)", buildJs.includes('BUILD_ID = "2026.11.20-225"') && (idxHtml.match(/2026\.11\.20-225/g) || []).length >= 5);
+check("build stamp is 2026.11.21-249 (lib + shell; re-pinned by Build -249)", buildJs.includes('BUILD_ID = "2026.11.21-249"') && (idxHtml.match(/2026\.11\.21-249/g) || []).length >= 5);
 check("no 2026.11.20-221 left in build.js or index.html", !buildJs.includes("2026.11.20-221") && !idxHtml.includes("2026.11.20-221"));
 
-console.log("== done screen: approved copy in, jargon out ==");
-const doneStart = appJs.indexOf("function renderClaimDone()");
+console.log("== done screen: applied copy in, number language out (Build -249) ==");
+const doneStart = appJs.indexOf("function claimNextSteps249Html()");
 const doneEnd = appJs.indexOf("function neighborMissingPlatforms()");
 const done = doneStart >= 0 && doneEnd > doneStart ? appJs.slice(doneStart, doneEnd) : "";
 check("done slice found", done.length > 1000, `len=${done.length}`);
-check("headline: You're in, (named) / You're in. (unnamed)", done.includes('T("You\'re in,"') && done.includes('T("in.", "dentro.")'));
-check("sub: by-hand review line, verbatim", done.includes("We review every creator by hand. You'll hear back within two business days."));
+check("headline: You've applied, (named) / You've applied. (unnamed); You're in is gone", done.includes('T("You\'ve applied,"') && done.includes('T("applied.", "aplicaste.")') && !done.includes('T("You\'re in,"'));
+check("review step: We review by hand + hear back within two business days", done.includes("We review by hand") && done.includes("You'll hear back within two business days."));
+check("approved step: the full dashboard opens, spelled out", done.includes("Your full dashboard opens: offers, visits, wallet and stats."));
 check("numbers line, verbatim", done.includes("Your numbers are in. The moment you're approved, businesses can find your page."));
-check("What you get today bullets unchanged", done.includes("When you finish your profile, your page is live and on Google that day.") && done.includes("Your rates are public on your page, so businesses see what you charge before they book.") && done.includes("Founding creators are recorded in founding order, and founding creators see offers first."));
+check("What-you-get bullets are GONE (Build -249 visual-first rebuild)", !done.includes('id="claim-what-you-get"') && !done.includes("When you finish your profile, your page is live and on Google that day.") && !done.includes("recorded in founding order"));
 check("done screen carries none of the old strings", !done.includes("on the roster") && !done.includes("four facts") && !done.includes("We review every creator personally"));
 
 console.log("== stat block (neighborPanelHtml) ==");
@@ -65,11 +76,10 @@ const pEnd = appJs.indexOf("function neighborAnimateCount");
 const panel = pStart >= 0 && pEnd > pStart ? appJs.slice(pStart, pEnd) : "";
 check("panel slice found", panel.length > 1000, `len=${panel.length}`);
 check("big line: count + 'of your followers live in' + market label", panel.includes("claimFmtCount(nb.neighborCount)") && panel.includes('T("of your followers live in"') && panel.includes("${esc(marketLabel)}"));
-check("share line: 'out of 10 of your audience' + buying line", panel.includes("out of 10 of your audience, and it's exactly what local businesses are buying."));
-check("share <N> derives from localPct with the server's tenths rounding", panel.includes("Math.round(Number(nb.localPct) / 10)"));
-check("founding line, verbatim shape with the locked band", panel.includes("You're one of the first ${f.band} founding creators in ${nb.market}.") && panel.includes("Founding creators see offers first, and that never changes."));
+check("share line is GONE (Build -249 NO-NUMBER RULE): no out-of-10, no tenths math", !panel.includes("out of 10 of your audience") && !panel.includes("nbShareLine") && !panel.includes("Math.round(Number(nb.localPct) / 10)"));
+check("founding line, number-free (Build -249)", panel.includes("You're a founding creator in ${marketLabel}.") && panel.includes("Founding creators see offers first, and that standing never expires.") && !panel.includes("one of the first") && !panel.includes("f.band"));
 check("panel carries none of the old strings", !panel.includes("Neighbor Number") && !panel.includes("neighbors in") && !panel.includes("You are in the first") && !panel.includes("founding spot is locked") && !panel.includes("is live: it is your own count"));
-check("stack prompt names the concept 'local followers'", panel.includes("recounts your local followers, right here."));
+check("stack card names the concept 'local followers' (the save button)", panel.includes("Save my local followers card"));
 
 console.log("== rendered panel output (stub render, fixture values) ==");
 {
@@ -87,8 +97,8 @@ console.log("== rendered panel output (stub render, fixture values) ==");
   const html = vm.runInContext("neighborPanelHtml()", sandbox);
   const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   check("renders '<count> of your followers live in <City>.'", text.includes("1,234 of your followers live in Virginia Beach (Hampton Roads)."), text.slice(0, 300));
-  check("renders 'That's 8 out of 10 of your audience...' for 80%", html.includes("That's 8 out of 10 of your audience, and it's exactly what local businesses are buying."), html.slice(0, 300));
-  check("renders the founding line with band 100, no exact rank", html.includes("You're one of the first 100 founding creators in Virginia Beach.") && html.includes("Founding creators see offers first, and that never changes."), html.slice(0, 400));
+  check("renders NO out-of-10 share line for 80% (Build -249)", !html.includes("out of 10"), html.slice(0, 300));
+  check("renders the number-free founding line (no band, no rank)", html.includes("You're a founding creator in Virginia Beach (Hampton Roads).") && html.includes("that standing never expires.") && !html.includes("first 100"), html.slice(0, 400));
   check("rendered panel has no jargon", !/Neighbor Number|on the roster|four facts|founding spot is locked|out of 10 of your followers/.test(html), html.slice(0, 300));
 }
 
