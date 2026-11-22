@@ -173,7 +173,7 @@ function probeServerBuild() {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) probeServerBuild(); });
 window.addEventListener("focus", probeServerBuild);
 
-async function api(method, path, body) {
+async function api(method, path, body, opts) {
   const isGet = method === "GET";
   if (!isGet) getCache.clear();
   if (isGet) {
@@ -185,8 +185,10 @@ async function api(method, path, body) {
     let res;
     // Build -202: real request deadline. 12s for GET, 20s for other
     // methods; an abort rejects so existing catches fire instead of
-    // a placeholder hanging forever.
-    const deadlineMs = isGet ? 12000 : 20000;
+    // a placeholder hanging forever. Build -246: a caller may pass
+    // opts.deadlineMs to give one call more room (the bulk approve
+    // chunks use it); the default deadlines are unchanged.
+    const deadlineMs = (opts && opts.deadlineMs) || (isGet ? 12000 : 20000);
     const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, deadlineMs) : null;
     try {
@@ -34236,17 +34238,17 @@ function adminAppTablePending243(pend, role) {
     const under = adminUnderMinTotal(u);
     return `<tr${under !== null ? ` class="apps-row-under243"` : ""}>
       <td><input type="checkbox" ${sel.has(u.id) ? "checked" : ""} onchange="adminAppToggleSel243('${role}', '${u.id}', this.checked)" aria-label="Select ${esc(u.name)}"></td>
-      <td>${adminAppNameCell243(u)}</td>
-      <td>${adminAppCityCell243(u)}</td>
-      <td>${adminAppFollowersCell243(u)}</td>
-      <td>${adminAppLocalCell243(u)}</td>
-      <td>${u.profileComplete ? "Complete" : "Not finished"}</td>
-      <td>${fmtDate(u.createdAt)}</td>
+      <td data-label="Name / handle">${adminAppNameCell243(u)}</td>
+      <td data-label="City">${adminAppCityCell243(u)}</td>
+      <td data-label="Followers">${adminAppFollowersCell243(u)}</td>
+      <td data-label="Local %">${adminAppLocalCell243(u)}</td>
+      <td data-label="Profile complete">${u.profileComplete ? "Complete" : "Not finished"}</td>
+      <td data-label="Claimed">${fmtDate(u.createdAt)}</td>
     </tr>`;
   }).join("");
   return `<h3>Pending (${pend.length})</h3>
     ${adminAppBulkBar243(role, pend.length)}
-    ${pend.length ? `<div class="table-wrap panel"><table class="apps-table apps-table-243"><colgroup><col style="width:4%"><col style="width:24%"><col style="width:16%"><col style="width:14%"><col style="width:12%"><col style="width:16%"><col style="width:14%"></colgroup><tr><th></th><th>Name / handle</th><th>City</th><th>Followers</th><th>Local %</th><th>Profile complete</th><th>Claimed</th></tr>${rows}</table></div>` : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}`;
+    ${pend.length ? `<div class="table-wrap ct199 panel"><table class="apps-table apps-table-243"><colgroup><col style="width:4%"><col style="width:24%"><col style="width:16%"><col style="width:14%"><col style="width:12%"><col style="width:16%"><col style="width:14%"></colgroup><tr><th></th><th>Name / handle</th><th>City</th><th>Followers</th><th>Local %</th><th>Profile complete</th><th>Claimed</th></tr>${rows}</table></div>` : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}`;
 }
 function adminAppSelRefresh243(role) {
   const sel = adminAppSel243[role];
@@ -34280,25 +34282,50 @@ async function adminAppApproveSelected243(role) {
   if (!ok) return;
   const btn = document.getElementById(`apps-approve-btn-${role}`);
   if (btn) { btn.disabled = true; btn.textContent = "Approving..."; }
+  // Build -246: the selection goes in chunks of 10, each with a
+  // 60 second deadline, and the button counts the progress. One
+  // slow chunk can no longer take the whole selection down with
+  // it, and a chunk that finishes stays finished.
+  const nameOf = (id) => {
+    const u = ((state.adminAppsByRole187 || {})[role] || { pend: [] }).pend.find((x) => x.id === id);
+    return u ? (u.role === "creator" && u.creator && u.creator.handle ? "@" + u.creator.handle : u.name) : id;
+  };
+  let approvedTotal = 0;
+  const heldNames = [];
+  let skippedTotal = 0;
   try {
-    const res = await api("POST", "/admin/review/bulk", { userIds: ids });
-    const nameOf = (id) => {
-      const u = ((state.adminAppsByRole187 || {})[role] || { pend: [] }).pend.find((x) => x.id === id);
-      return u ? (u.role === "creator" && u.creator && u.creator.handle ? "@" + u.creator.handle : u.name) : id;
-    };
-    const heldNames = (res.results || []).filter((r) => r.outcome === "held").map((r) => nameOf(r.userId));
-    const skippedCount = (res.results || []).filter((r) => r.outcome === "skipped").length;
-    let note = `Approved ${res.approved} of ${res.total}.`;
+    for (let at = 0; at < ids.length; at += 10) {
+      const chunkIds = ids.slice(at, at + 10);
+      if (btn && ids.length > 10) btn.textContent = `Approving ${Math.min(at + 10, ids.length)} of ${ids.length}...`;
+      const res = await api("POST", "/admin/review/bulk", { userIds: chunkIds }, { deadlineMs: 60000 });
+      approvedTotal += res.approved || 0;
+      for (const r of (res.results || [])) {
+        if (r.outcome === "held") heldNames.push(nameOf(r.userId));
+        if (r.outcome === "skipped") skippedTotal += 1;
+        if (r.outcome === "approved") adminAppSel243[role].delete(r.userId);
+      }
+      adminDeckSession.decided += res.approved || 0;
+      adminDeckSession.approved += res.approved || 0;
+    }
+    let note = `Approved ${approvedTotal} of ${ids.length}.`;
     if (heldNames.length) note += ` Held under the 500 minimum: ${heldNames.join(", ")}.`;
-    if (skippedCount) note += ` ${skippedCount} could not be approved and ${skippedCount === 1 ? "was" : "were"} skipped.`;
+    if (skippedTotal) note += ` ${skippedTotal} could not be approved and ${skippedTotal === 1 ? "was" : "were"} skipped.`;
     adminAppBulkNote243[role] = note;
-    adminAppBulkNoteBad243[role] = res.approved !== res.total;
-    adminDeckSession.decided += res.approved;
-    adminDeckSession.approved += res.approved;
-    for (const r of (res.results || [])) if (r.outcome === "approved") adminAppSel243[role].delete(r.userId);
+    adminAppBulkNoteBad243[role] = approvedTotal !== ids.length;
   } catch (e) {
-    adminAppBulkNote243[role] = e.message;
-    adminAppBulkNoteBad243[role] = true;
+    // A timeout is not a total failure: approvals commit one
+    // record at a time, so whatever finished before the
+    // connection gave up is saved. Say exactly that, and let
+    // the refreshed list below show what is still pending.
+    if (e && e.message === "We could not reach Magpie. Check your connection and try again.") {
+      adminAppBulkNote243[role] = approvedTotal
+        ? `The connection timed out partway through. ${approvedTotal} of ${ids.length} went through before it stopped. The list has been refreshed to show what is still pending.`
+        : "The connection timed out. Some approvals may have gone through, so the list has been refreshed to show what is still pending.";
+      adminAppBulkNoteBad243[role] = false;
+    } else {
+      adminAppBulkNote243[role] = e.message;
+      adminAppBulkNoteBad243[role] = true;
+    }
   }
   loadApplications();
 }

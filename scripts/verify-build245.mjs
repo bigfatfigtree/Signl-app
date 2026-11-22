@@ -60,9 +60,11 @@ const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 
 // ----------------------------------------------------------------
 part("A: stamp + derive rule");
-check("build stamp is 2026.11.21-245 in both homes",
-  read("netlify/functions/lib/build.js").includes('BUILD_ID = "2026.11.21-245"')
-  && read("public/index.html").includes('window.__SIGNL_BUILD__ = "2026.11.21-245"'), "");
+check("build stamp is >= 2026.11.21-245 and agrees in both homes",
+  // Relaxed at Build -246 (was exact-match -245): the -243/-244
+  // suites pin >= for the same reason, so a later build does
+  // not fail this suite on the stamp alone.
+  (() => { const a = read("netlify/functions/lib/build.js").match(/BUILD_ID = "2026\.11\.21-(\d+)"/); const b = read("public/index.html").match(/window\.__SIGNL_BUILD__ = "2026\.11\.21-(\d+)"/); return !!a && !!b && a[1] === b[1] && Number(a[1]) >= 245; })(), "");
 check("BLUE_CHECK_POINTS is 300 and the band opens at 250",
   router.BLUE_CHECK_POINTS === 300 && router.BLUE_CHECK_BAND50_POINTS === 250, "");
 check("blueCheckFromPoints: 0 / 299 -> false, 300 / 750 -> true, junk -> false",

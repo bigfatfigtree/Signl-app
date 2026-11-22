@@ -482,6 +482,15 @@ async function creditForUser(userId) {
   return rows.map((r) => r.value).find((c) => c && c.userId === userId) || null;
 }
 
+// Build -246: the set of creators carrying a recruiter credit,
+// read once per approval fan-out drain so the drain can skip
+// the prospect scan for creators with no recruiter linkage
+// without re-reading the credit list per record.
+async function creditUserIds() {
+  const rows = await store.list("rcredit:");
+  return rows.map((r) => r.value).filter(Boolean).map((c) => c.userId).filter(Boolean);
+}
+
 async function resolveProspectOwner(p, entities) {
   if (!p) return null;
   if (p.recruiterId && !String(p.recruiterId).startsWith("seat:")) {
@@ -1096,6 +1105,7 @@ module.exports = {
   handleAdminAdvertiserPermit,
   onCreatorRegistered,
   onCreatorApproved,
+  creditUserIds,
   ensureSeeds,
   inviteStaffRecruiter,
   buildDrafts,

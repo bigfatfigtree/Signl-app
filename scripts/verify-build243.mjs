@@ -51,6 +51,13 @@ fs.writeFileSync(DB_PATH, "{}");
 const require = createRequire(import.meta.url);
 const store = require("../netlify/functions/lib/store.js");
 const { handler } = require("../netlify/functions/api.js");
+// Build -246: approval fan-out (the approval email, recruiter
+// credit, roster drop) moved off the request path into a drain
+// the background function runs. This suite's contract is
+// unchanged (every approved record gets its own approval email,
+// exactly once, guard intact); it runs the drain at the points
+// where -243 expected the email to have landed inline.
+const { runApprovalFanout246 } = require("../netlify/functions/lib/router.js");
 const root = process.cwd();
 
 let passed = 0;
@@ -94,7 +101,7 @@ check("client: both pending renderers and the bulk flow exist",
   appSrc.includes("function adminAppListPending243(pend, role)")
   && appSrc.includes("function adminAppTablePending243(pend, role)")
   && appSrc.includes("function adminAppApproveSelected243(role)")
-  && appSrc.includes('api("POST", "/admin/review/bulk", { userIds: ids })'), "");
+  && appSrc.includes('api("POST", "/admin/review/bulk", { userIds: chunkIds }, { deadlineMs: 60000 })'), "");
 check("client: checkboxes and select-all are wired",
   appSrc.includes("onchange=\"adminAppToggleSel243('${role}', '${u.id}', this.checked)\"")
   && appSrc.includes("onchange=\"adminAppToggleAll243('${role}', this.checked)\"")
@@ -167,6 +174,7 @@ check("fixture business registers", bizReg.status === 201 && !!bizId, `${bizReg.
 
 // The headline proof: one bulk call, three separate approval paths.
 const bulk1 = await admin("POST", "/api/admin/review/bulk", { userIds: trio.map((f) => f.id) });
+await runApprovalFanout246();
 check("bulk approve of 3 returns 200 with approved=3, held=0, total=3",
   bulk1.status === 200 && bulk1.data.approved === 3 && bulk1.data.held === 0 && bulk1.data.total === 3,
   `${bulk1.status} ${JSON.stringify(bulk1.data).slice(0, 200)}`);
@@ -190,6 +198,7 @@ check("one bulk summary event was logged for the batch",
 
 // The -239 guard holds per record under bulk.
 const bulk2 = await admin("POST", "/api/admin/review/bulk", { userIds: trio.map((f) => f.id) });
+await runApprovalFanout246();
 let guardOk = bulk2.status === 200;
 for (const f of trio) {
   const mails = (await emailsSentTo(f.id)).filter((e) => e.type === "approval_email_sent");
@@ -199,6 +208,7 @@ check("re-running the same bulk approves again but sends NO second approval emai
 
 // A held record does not stop the batch, and the batch does not free it.
 const bulk3 = await admin("POST", "/api/admin/review/bulk", { userIds: ["usr_missing243", under.id, bizId] });
+await runApprovalFanout246();
 const outcomeOf = (id) => (bulk3.data.results || []).find((r) => r.userId === id) || {};
 check("mixed bulk: the bogus id is skipped, the under-minimum creator is held, the business is approved",
   bulk3.status === 200 && outcomeOf("usr_missing243").outcome === "skipped"
@@ -225,6 +235,7 @@ check("a non-admin caller cannot use the bulk route", nonAdmin.status >= 400, `$
 
 // The single path still works, both directions.
 const singleApprove = await admin("POST", "/api/admin/review", { userId: solo.id, decision: "approve" });
+await runApprovalFanout246();
 check("the single approval path still approves, with its approval email",
   singleApprove.status === 200 && singleApprove.data.user.status === "approved"
   && (await emailsSentTo(solo.id)).some((e) => e.type === "approval_email_sent"), `${singleApprove.status}`);

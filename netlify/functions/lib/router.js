@@ -8431,6 +8431,239 @@ async function mapPool234(items, limit, fn) {
   return out;
 }
 const SEGMENT_SEND_CONCURRENCY234 = 8;
+// ---------- Build -246: deferred approval fan-out ----------
+// Jeff's first real mass approval (2026-11-21, on -243) approved
+// one record per click and popped an error: applyReviewDecision243
+// committed each decision and then AWAITED the whole downstream
+// fan-out on the request path — the -239 duplicate guard's
+// whole-log event walk (listEventsForSubject opens with
+// store.listKeys("event:") and fetches values for up to 5,000
+// events), the recruiter prospect scan (~1,300 records), a full
+// user list for the founding-band rank, and a live SMTP send —
+// per record, sequentially, inside one bulk request the admin
+// client abandons at 20 seconds. Two creators were emailed twice
+// when a re-tap landed before the first send's event was visible
+// to the guard's scan.
+//
+// The fix keeps the -243 hard requirement (every record runs the
+// same per-record decision path and gets its OWN approval email,
+// exactly once) and moves everything after the decision OFF the
+// request path:
+//   - The decision path commits the status + the
+//     application_approved event, then writes ONE job record
+//     (approvalfanout:{userId}) and returns. Its only reads are
+//     that job record: a handful of store ops per record, no
+//     prefix scans, no SMTP.
+//   - The drain (runApprovalFanout246) runs inside the existing
+//     admin-home-refresh background function (the */5 schedule,
+//     plus a throttled nudge fired when a job is queued), claims
+//     each job so two drains can never send for the same record,
+//     and runs the three -243 chains there: recruiter credit,
+//     the approval email, the roster drop.
+//   - The duplicate guard is checked AT SEND TIME in the drain,
+//     where a race cannot hide it: the job record itself, then
+//     the full -239 event walk. A re-approval seconds after the
+//     first finds the job already queued, claimed, or done and
+//     queues nothing. The business branch rides the same queue,
+//     so it carries the same guard (on -243 it sent its approval
+//     email unconditionally — a re-submit emailed a business
+//     twice; parity is structural now, not a second check).
+//   - The drain also reconciles: an application_approved event
+//     from the last two days whose record has no job and no sent
+//     email gets a job queued, so a request that died between
+//     the decision commit and the queue write still delivers.
+//     The drain's send-time guard makes reconciliation safe: it
+//     can queue a job for an already-emailed record, never a
+//     second email.
+const APPROVAL_FANOUT_PREFIX246 = "approvalfanout:";
+const APPROVAL_FANOUT_MAX_ATTEMPTS246 = 5;
+const APPROVAL_FANOUT_CLAIM_STALE_MS246 = 10 * 60 * 1000;
+const APPROVAL_FANOUT_RUN_CAP246 = 50;
+const APPROVAL_FANOUT_RECONCILE_MS246 = 30 * 60 * 1000;
+function approvalFanoutKey246(userId) { return APPROVAL_FANOUT_PREFIX246 + userId; }
+// The batch form of the approval-sent read, for the drain's
+// reconciliation: ONE bounded read of today's and yesterday's
+// event keys (the -234 date-prefix pattern) answering "was an
+// approval email sent to any of these users in the last two
+// days". Anything older is the drain's full -239 walk's job,
+// checked per record at send time.
+async function recentApprovalSentByUser246(userIds) {
+  const out = new Set();
+  const wanted = new Set((userIds || []).filter(Boolean));
+  if (!wanted.size) return out;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const prefixes = [0, 1].map((back) => `event:${new Date(Date.now() - back * dayMs).toISOString().slice(0, 10)}:`);
+  const keys = [];
+  for (const p of prefixes) keys.push(...(await store.listKeys(p)));
+  const rows = await store.getMany(keys);
+  for (const r of rows) {
+    const e = r && r.value;
+    if (!e || e.type !== "approval_email_sent") continue;
+    for (const uid of [e.subjectId, e.actorId]) if (uid && wanted.has(uid)) out.add(uid);
+  }
+  return out;
+}
+// Queue one record's approval fan-out. One job-record read, one
+// write; a record already queued, claimed, or done queues
+// nothing (that read IS the fast duplicate guard on the decision
+// path). A failed job (attempts exhausted) may be re-queued by a
+// fresh approval. Returns true when a job is queued.
+async function queueApprovalFanout246(target, actor) {
+  const key = approvalFanoutKey246(target.id);
+  const existing = await store.get(key).catch(() => null);
+  if (existing && existing.state !== "failed") return false;
+  await store.set(key, {
+    userId: target.id, role: target.role, state: "pending",
+    queuedAt: nowIso(), queuedBy: actor ? actor.id : null,
+    attempts: 0, claimId: null, claimedAt: null, lastError: null, via: "review",
+  });
+  maybeNudgeApprovalFanout246();
+  return true;
+}
+// Throttled off-path nudge, the maybeRefreshAdminHome212 shape:
+// firing the background function runs the drain there; the */5
+// schedule is the guarantee, this is the bonus that makes a
+// just-queued approval email land in seconds, not minutes.
+let approvalFanoutNudgeAt246 = 0;
+let approvalFanoutNudging246 = false;
+function maybeNudgeApprovalFanout246() {
+  if (approvalFanoutNudging246) return;
+  if (Date.now() - approvalFanoutNudgeAt246 < 30 * 1000) return;
+  approvalFanoutNudgeAt246 = Date.now();
+  approvalFanoutNudging246 = true;
+  (async () => { try { await fireAdminHomeRefresh212(false); } catch (e) { /* the schedule is the guarantee */ } finally { approvalFanoutNudging246 = false; } })();
+}
+// Reconciliation: an approval whose queue write never landed
+// (the request died between the decision commit and the queue
+// write, or the approval predates this build and was re-decided)
+// still gets its fan-out. Bounded to the last two days of
+// application_approved events, throttled to twice an hour; the
+// drain's send-time guard means queueing a job for an
+// already-emailed record is harmless.
+async function reconcileApprovalFanout246() {
+  const stampKey = "config:approvalFanoutReconcile246";
+  const prev = await store.get(stampKey).catch(() => null);
+  if (prev && prev.at && Date.now() - Date.parse(prev.at) < APPROVAL_FANOUT_RECONCILE_MS246) return 0;
+  await store.set(stampKey, { at: nowIso() }).catch(() => {});
+  const dayMs = 24 * 60 * 60 * 1000;
+  const prefixes = [0, 1].map((back) => `event:${new Date(Date.now() - back * dayMs).toISOString().slice(0, 10)}:`);
+  const keys = [];
+  for (const p of prefixes) keys.push(...(await store.listKeys(p)));
+  const rows = await store.getMany(keys);
+  const approvedIds = [];
+  const seen = new Set();
+  for (const r of rows) {
+    const e = r && r.value;
+    if (!e || e.type !== "application_approved" || !e.subjectId || seen.has(e.subjectId)) continue;
+    seen.add(e.subjectId);
+    approvedIds.push(e.subjectId);
+  }
+  if (!approvedIds.length) return 0;
+  const sentRecently = await recentApprovalSentByUser246(approvedIds);
+  let queued = 0;
+  for (const uid of approvedIds) {
+    if (sentRecently.has(uid)) continue;
+    const job = await store.get(approvalFanoutKey246(uid)).catch(() => null);
+    if (job) continue;
+    const target = await store.get(`user:${uid}`).catch(() => null);
+    if (!target || target.status !== "approved" || target.role === "admin") continue;
+    await store.set(approvalFanoutKey246(uid), {
+      userId: uid, role: target.role, state: "pending",
+      queuedAt: nowIso(), queuedBy: null,
+      attempts: 0, claimId: null, claimedAt: null, lastError: null, via: "reconcile",
+    });
+    queued += 1;
+  }
+  return queued;
+}
+// The drain. Exported for the admin-home-refresh background
+// function (and the suites). Claims each due job before working
+// it and verifies the claim landed, so overlapping drains (the
+// schedule plus a nudge) can never run the same record twice;
+// a claim older than the stale window is reclaimable, so a
+// drain that died mid-job never strands the record.
+async function runApprovalFanout246() {
+  const out = { reconciled: 0, due: 0, sent: 0, alreadySent: 0, failed: 0, skipped: 0 };
+  try { out.reconciled = await reconcileApprovalFanout246(); } catch (e) { console.error("Magpie approval fan-out reconcile failed:", e); }
+  const rows = await store.list(APPROVAL_FANOUT_PREFIX246);
+  const nowMs = Date.now();
+  const due = rows.map((r) => r.value).filter((j) => {
+    if (!j || !j.userId) return false;
+    if (j.state === "pending") return true;
+    if (j.state === "claimed" && j.claimedAt && nowMs - Date.parse(j.claimedAt) > APPROVAL_FANOUT_CLAIM_STALE_MS246) return true;
+    return false;
+  }).sort((a, b) => String(a.queuedAt || "").localeCompare(String(b.queuedAt || ""))).slice(0, APPROVAL_FANOUT_RUN_CAP246);
+  out.due = due.length;
+  if (!due.length) return out;
+  // Batch reads, once per drain (never once per record): the
+  // founding-band ranks over the full user list, and the set of
+  // creators carrying a recruiter credit. On -243 both were
+  // re-read for every record in the batch.
+  let ranks246 = null;
+  let creditUserIds246 = null;
+  for (const job of due) {
+    const key = approvalFanoutKey246(job.userId);
+    const cur = await store.get(key).catch(() => null);
+    if (!cur || cur.state === "done") { out.skipped += 1; continue; }
+    if (cur.state === "claimed" && cur.claimId && cur.claimedAt && nowMs - Date.parse(cur.claimedAt) <= APPROVAL_FANOUT_CLAIM_STALE_MS246) { out.skipped += 1; continue; }
+    const claimId = crypto.randomUUID();
+    const claimed = { ...cur, state: "claimed", claimId, claimedAt: nowIso(), attempts: (cur.attempts || 0) + 1 };
+    await store.set(key, claimed);
+    const verify = await store.get(key).catch(() => null);
+    if (!verify || verify.claimId !== claimId) { out.skipped += 1; continue; }
+    try {
+      const target = await store.get(`user:${job.userId}`);
+      if (!target || target.status !== "approved" || target.role === "admin") {
+        await store.set(key, { ...verify, state: "done", claimId: null, claimedAt: null, doneAt: nowIso(), note: "Record is no longer approved; nothing to send." });
+        out.skipped += 1;
+        continue;
+      }
+      if (target.role === "creator") {
+        // Recruiter credit (Build -70): the prospect scan runs
+        // only when this creator carries recruiter linkage (a
+        // stamped recruiterId or a credit record); everyone
+        // else skips the ~1,300-record scan entirely. The flip
+        // itself is idempotent, exactly as the inline path ran
+        // it.
+        try {
+          if (creditUserIds246 === null) creditUserIds246 = new Set(await recruiters.creditUserIds());
+          if (target.recruiterId || creditUserIds246.has(target.id)) await recruiters.onCreatorApproved(target);
+        } catch (e) { /* best-effort, exactly as the inline path */ }
+        // Roster drop (Build -91): idempotent on its own record.
+        try { await recordRosterDrop(target, "approval"); } catch (e) { /* best-effort, exactly as the inline path */ }
+      }
+      // The approval email, guarded HERE at send time: the full
+      // -239 event walk, which a same-minute re-approval cannot
+      // outrun because the first send's event is already
+      // written when this check runs. Both roles carry the
+      // guard (the -243 business branch had none).
+      if (await approvalEmailAlreadySent239(target.id)) {
+        out.alreadySent += 1;
+      } else {
+        let mail = null;
+        let band = null;
+        if (target.role === "creator") {
+          if (!ranks246) ranks246 = creatorRanks(await allUsers());
+          band = foundingBand(ranks246.approvedRank.get(target.id));
+          mail = approvalEmail(target, band);
+        } else {
+          mail = businessApprovalEmail(target);
+        }
+        const res = await deliverEmail("approval", target, mail.subject, mail.text, band);
+        if (!res || !res.sent) throw new Error(`approval email not sent: ${(res && res.reason) || "unknown"}`);
+        out.sent += 1;
+      }
+      await store.set(key, { ...verify, state: "done", claimId: null, claimedAt: null, doneAt: nowIso(), lastError: null });
+    } catch (e) {
+      const attempts = claimed.attempts || 1;
+      const exhausted = attempts >= APPROVAL_FANOUT_MAX_ATTEMPTS246;
+      console.error(`Magpie approval fan-out failed for ${job.userId} (attempt ${attempts}):`, (e && e.message) || e);
+      await store.set(key, { ...verify, state: exhausted ? "failed" : "pending", claimId: null, claimedAt: null, lastError: String((e && e.message) || e) }).catch(() => {});
+      if (exhausted) out.failed += 1;
+    }
+  }
+  return out;
+}
 // Build -185: the last-activity stamp the win-back sweep reads.
 // user.updatedAt cannot serve (sweeps and backfills bump it, so
 // it would mark everyone active forever); this field moves on a
@@ -33730,39 +33963,21 @@ async function route(event) {
         } catch (e) { /* email is best-effort */ }
       }
       if (b.decision === "approve" && target.role === "creator") {
-        // Build -138 (speed): the decision itself is committed
-        // above; everything below is downstream fan-out (recruiter
-        // credit, the approval email with its founding-band rank
-        // read, the roster drop with its wishlist alerts). These
-        // three chains are independent, so they run CONCURRENTLY
-        // instead of one after another — the response now waits
-        // for the slowest single chain, not the sum of all three.
-        // Every chain keeps its own best-effort guard, exactly as
-        // when they ran in sequence.
-        await Promise.all([
-          // Staff recruiter credit (Build -70): an approval flips
-          // the credited recruiter prospect to approved, exactly
-          // once.
-          (async () => { try { await recruiters.onCreatorApproved(target); } catch (e) { /* best-effort */ } })(),
-          // Approval email auto-triggers (Jeff, 2026-10-18):
-          // queued as an event always, sent when the SMTP
-          // transport is configured.
-          (async () => {
-            try {
-              const { approvedRank } = creatorRanks(await allUsers());
-              const band = foundingBand(approvedRank.get(target.id));
-              const mail = approvalEmail(target, band);
-              if (!(await approvalEmailAlreadySent239(target.id))) {
-                await deliverEmail("approval", target, mail.subject, mail.text, band);
-              }
-            } catch (e) { /* email is best-effort */ }
-          })(),
-          // Build -91: approving a creator whose profile is
-          // already finished is the moment they become
-          // roster-visible — the roster drop lands here when the
-          // finish came first.
-          (async () => { try { await recordRosterDrop(target, "approval"); } catch (e) { /* best-effort */ } })(),
-        ]);
+        // Build -246: the decision itself is committed above;
+        // everything downstream (recruiter credit, the approval
+        // email with its founding-band rank read, the roster
+        // drop with its wishlist alerts) is QUEUED as one
+        // approval fan-out job and run by the drain in the
+        // admin-home-refresh background function — never awaited
+        // here. On -243 these three chains ran inline and, at
+        // production scale, a single record's fan-out could eat
+        // the client's whole 20-second deadline, which is what
+        // broke Jeff's first mass approval. The chains
+        // themselves are unchanged; they run in
+        // runApprovalFanout246 with the same best-effort guards,
+        // and the approval email keeps its -239 duplicate
+        // guard, checked at send time in the drain.
+        try { await queueApprovalFanout246(target, user); } catch (e) { console.error("Magpie approval fan-out queue failed:", e); }
       }
       if (b.decision === "reject" && target.role === "business") {
         // Build -239: businesses get the rejection email too,
@@ -33775,12 +33990,12 @@ async function route(event) {
       }
       if (b.decision === "approve" && target.role === "business") {
         // Build -239: the business approval email, carrying the
-        // profile and offers targets. Best-effort exactly like
-        // the creator's.
-        try {
-          const mail = businessApprovalEmail(target);
-          await deliverEmail("approval", target, mail.subject, mail.text, null);
-        } catch (e) { /* email is best-effort */ }
+        // profile and offers targets. Build -246: it rides the
+        // same deferred fan-out queue as the creator's, so it
+        // carries the same send-time duplicate guard — on -243
+        // this branch sent unconditionally and a re-submit
+        // emailed a business twice.
+        try { await queueApprovalFanout246(target, user); } catch (e) { console.error("Magpie approval fan-out queue failed:", e); }
       }
       return { user: publicUser(target) };
     }
@@ -33809,7 +34024,14 @@ async function route(event) {
       }
       const approvedCount = results.filter((r) => r.outcome === "approved").length;
       const heldCount = results.filter((r) => r.outcome === "held").length;
-      await logEvent({ type: "applications_bulk_approved", actorId: user.id, actorRole: "admin", subjectId: null, data: { requested: ids.length, approved: approvedCount, held: heldCount, skipped: ids.length - approvedCount - heldCount } });
+      // Build -246: the summary event is bookkeeping, never a
+      // reason to fail a batch whose approvals have already
+      // committed — on -243 this await sat outside any guard,
+      // so one failed write reported a fully committed batch
+      // as a 500 and invited a re-submit.
+      try {
+        await logEvent({ type: "applications_bulk_approved", actorId: user.id, actorRole: "admin", subjectId: null, data: { requested: ids.length, approved: approvedCount, held: heldCount, skipped: ids.length - approvedCount - heldCount } });
+      } catch (e) { console.error("Magpie bulk approval summary event failed:", e); }
       return json(200, { results, approved: approvedCount, held: heldCount, total: ids.length });
     }
     // Profile backfill on demand (Jeff, 2026-10-20): recompute the
@@ -40669,4 +40891,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runAdminStatsSummary244, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226, BLUE_CHECK_POINTS, BLUE_CHECK_BAND50_POINTS, blueCheckFromPoints, blueCheckFastestStep245, maybeBlueCheckMoments245, __buildersForTest239: { businessApplicationConfirmationEmail, businessApprovalEmail, businessRejectionEmail } };
+module.exports = { route, runSuggestionBoardRefresh211, runAdminHomeRefresh212, runAdminStatsSummary244, runApprovalFanout246, runLearnSync202, maybeRefileCharlottesville207, passwordResetEmail, recruiterWelcomeEmail, partnerWelcomeEmail, teamWelcomeEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runWinbackSweep, winBackEmail, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, completionGaps221, launchNudgeBody221, runLaunchNudges221, gapListText221, PRIMARY_PLATFORMS, normalizePrimaryPlatform, normalizeHandle, runHandleRepair151, nameLooksLikeUrlJunk, cityLooksLikeLanguage218, discoverReconciliation218, displayBusinessName, plausibleBizName, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, campaignStoredMailbox, CAMPAIGN_RETIRED_MAILBOXES, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, maybeBackfillMsgCampaigns163, MSG_CAMPAIGN_BACKFILLS_163, peerDisplayName163, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, softDeleteAccount, restoreAccount219c, isAccountDeleted, accountDeletionEmail, termsFor226, postReportFor226, postNudgeFor226, postNudgesFor226, performanceReportWindow226, normalizeChips226, engagementFor226, largestLocalPlatform226, normalizePlatformId226, cancelBooking226, bookingLane226, runPostFollowupSweep226, reviewOverdue226, businessDaysBetween226, creatorMessagedBeforeExpiry226, channelsFor226, channelsForBusiness226, showcaseView226, normalizeShowcase226, businessPhotoCountOf, businessPhotoUrlsFor, businessCard226, savedOfferCard226, savedSets226, matchInputs226, matchView226, defaultMatch226, BLUE_CHECK_POINTS, BLUE_CHECK_BAND50_POINTS, blueCheckFromPoints, blueCheckFastestStep245, maybeBlueCheckMoments245, __buildersForTest239: { businessApplicationConfirmationEmail, businessApprovalEmail, businessRejectionEmail } };

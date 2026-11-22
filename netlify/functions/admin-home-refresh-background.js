@@ -25,7 +25,7 @@
 // endpoint and the read-path nudges keep both summaries fresh
 // together. Each compute is guarded on its own: one failing
 // never blocks the other, and the answer reports both.
-const { runAdminHomeRefresh212, runAdminStatsSummary244 } = require("./lib/router");
+const { runAdminHomeRefresh212, runAdminStatsSummary244, runApprovalFanout246 } = require("./lib/router");
 
 exports.handler = async (event) => {
   const token = process.env.SIGNL_SWEEP_TOKEN || "";
@@ -53,8 +53,22 @@ exports.handler = async (event) => {
     if (!firstError) firstError = e;
     console.error("Magpie admin stats overview refresh failed:", e);
   }
-  if (firstError && !out && !statsOut) {
+  // Build -246: the approval fan-out drain rides this same
+  // background run (the */5 schedule plus the review routes'
+  // nudge), so approval emails, recruiter credit, and roster
+  // drops queued by the review decision path are delivered
+  // here, off the request path. Its own try/catch, like the
+  // two runs above: a drain failure never fails the refresh.
+  let fanoutOut = null;
+  try {
+    fanoutOut = await runApprovalFanout246();
+    console.log("Magpie approval fan-out drain:", JSON.stringify(fanoutOut));
+  } catch (e) {
+    if (!firstError) firstError = e;
+    console.error("Magpie approval fan-out drain failed:", e);
+  }
+  if (firstError && !out && !statsOut && !fanoutOut) {
     return { statusCode: 500, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: false, error: String((firstError && firstError.message) || firstError) }) };
   }
-  return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: true, refresh: out, statsRefresh: statsOut }) };
+  return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: true, refresh: out, statsRefresh: statsOut, approvalFanout: fanoutOut }) };
 };

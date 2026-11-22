@@ -79,7 +79,11 @@ check("the compute reads its figures from the home surfaces' own helpers",
   && routerSrc.includes("const money = ccMoneyAgg(P);"), "");
 check("the exported background entry exists with the stampede guard",
   routerSrc.includes("async function runAdminStatsSummary244(opts)")
-  && routerSrc.includes("runAdminStatsSummary244, runLearnSync202"), "");
+  // Build -246: runApprovalFanout246 joined the exports between
+  // runAdminStatsSummary244 and runLearnSync202; the pin checks
+  // both names are exported rather than their adjacency.
+  && routerSrc.includes("runAdminStatsSummary244,")
+  && routerSrc.includes("runLearnSync202,"), "");
 check("the endpoint serves the stored record only",
   routerSrc.includes('if (seg[1] === "stats-overview" && seg.length === 2 && method === "GET")')
   && routerSrc.includes("const rec = await loadAdminStatsSummary244();")
