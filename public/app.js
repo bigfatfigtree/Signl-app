@@ -12006,11 +12006,25 @@ function sigB1AskPacket() {
     { label: ST("Leave it off", "No adjuntar"), primary: !dflt, run: () => sigOpPick(ST("Leave it off", "No adjuntar"), async () => { f.data.packetAttach = false; sigB1Summary(); }) },
   ]);
 }
+// Free first campaign (Jeff, 2026-11-23): the credit reads
+// available when the record carries it as available, and also
+// when the record predates the field (the server grants it the
+// same way). Reserved or completed reads not available.
+function ffcAvailableClient() {
+  const b = state.user && state.user.business ? state.user.business : null;
+  if (!b) return false;
+  const c = b.freeFirstCampaign;
+  if (!c) return true;
+  return c.state === "available";
+}
 function sigB1SummaryText() {
   const d = state.sigFlow.data;
   const bizName = (state.user.business && state.user.business.businessName) || "";
   const lines = [
     ST("Here is the campaign. Nothing posts until you say yes:", "Esta es la campaña. Nada se publica hasta que digas que sí:"),
+    ...(ffcAvailableClient() ? [d.useFreeFirst
+      ? ST("Free first campaign: ON for this offer. Your first campaign is free — you still pay or comp your creator as normal, we just take nothing.", "Primera campaña gratis: ACTIVADA para esta oferta. Tu primera campaña es gratis: sigues pagando o compensando a tu creador como siempre, nosotros no tomamos nada.")
+      : ST("Free first campaign: available. Your first campaign is free — use it on this offer and Magpie takes nothing on it.", "Primera campaña gratis: disponible. Tu primera campaña es gratis: úsala en esta oferta y Magpie no toma nada en ella.")] : []),
     ...(d.play && sigPlay(d.play) ? [`Play: ${sigPlay(d.play).name}`] : []),
     `${ST("Offer", "Oferta")}: "${d.title}" (${d.lane === "direct" ? ST(`direct to ${d.creatorName || "one creator"}`, `directa a ${d.creatorName || "un creador"}`) : ST("open to your market", "abierta a tu mercado")})`,
     d.kind === "paid" ? `${ST("Paid", "Pago")}: $${fmtPrice(d.rate)} cash${d.lane === "direct" && d.creatorRate ? ST(" at their listed rate", " a su tarifa publicada") : ""}` : d.kind === "coupon" ? `${ST("Coupon", "Cupón")}: ${couponSummaryClient(sigB1CouponOf(), bizName)}${d.cexpires ? ` · ${ST("expires", "vence")} ${fmtDay(d.cexpires)}` : ""}` : `${ST("Comp", "Cortesía")}: ${d.comped} (cap $${fmtMoney(d.cap)}, covers ${d.covers})`,
@@ -12035,8 +12049,10 @@ function sigB1Summary() {
   const yesLabel = state.user && state.user.role === "business" && isFoundingBusiness(state.user)
     ? ST("Yes, save it for opening day", "Sí, guárdala para el día de apertura")
     : ST("Yes, post it", "Sí, publícala");
+  const ffcToggle = ffcAvailableClient() ? [{ label: (state.sigFlow.data.useFreeFirst ? ST("Free first campaign: ON — tap to take it off this offer", "Primera campaña gratis: ACTIVADA — toca para quitarla de esta oferta") : ST("Use my free first campaign on this offer", "Usar mi primera campaña gratis en esta oferta")), run: () => sigOpPick(ST("Free first campaign", "Primera campaña gratis"), async () => { state.sigFlow.data.useFreeFirst = !state.sigFlow.data.useFreeFirst; sigB1Summary(); }) }] : [];
   sigOpAsk(sigB1SummaryText(), [
     { label: yesLabel, primary: true, run: () => sigOpPick(yesLabel, async () => sigB1Commit()) },
+    ...ffcToggle,
     { label: ST("Edit the brief", "Editar el brief"), run: () => sigOpPick(ST("Edit the brief", "Editar el brief"), async () => sigB1DraftBrief()) },
     { label: ST("Start over", "Empezar de nuevo"), run: () => sigOpPick(ST("Start over", "Empezar de nuevo"), async () => { state.sigFlow = null; sigB1Start(); }) },
   ]);
@@ -12064,6 +12080,9 @@ async function sigB1Commit() {
   // by sigB1Start from the briefed list's matchBrief) persists
   // on the offer; absent when the booking had no brief context.
   if (d.sourceBrief) payload.sourceBrief = d.sourceBrief;
+  // Free first campaign: the summary step's toggle designates
+  // this offer; the server reserves the credit against it.
+  if (d.useFreeFirst) payload.freeFirstCampaign = true;
   // Build -84: the deliverables set in the deliverables step
   // ride every commit, and a coupon commit carries the coupon.
   payload.deliverables = sigB1DeliverablesOf();
@@ -15034,6 +15053,7 @@ function renderForBusinesses() {
     <div class="form-head">
     <h2>For Businesses: join the founding list</h2>
     <p><strong>Free to join. No card taken. We turn your account on by hand when your city opens.</strong></p>
+    <p><strong>Your first campaign is free.</strong> You still pay or comp your creator as normal, we just take nothing.</p>
     <p>Join the founding business list. We hold your place while your market's roster is built. Founding pricing is locked while you stay subscribed, and activation runs in application order.</p>
     <p class="small">How this works: one short form, about 2 minutes. First tell us where you operate, then a few facts about your business, then you are done. After you join, you land on a page that explains exactly what happens next. We review every application by hand.</p>
     </div>
@@ -15088,7 +15108,7 @@ function renderForBusinesses() {
         <p class="small muted" style="margin:0 0 8px">Last step. Pick the plan you would start on when your city opens. Nothing is charged today, and founding pricing locks while you stay subscribed.</p>
         <div class="plan-cards">${plans}</div>
       </div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on Magpie on Magpie, and to account and marketing emails from Magpie.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, and to account and marketing emails from Magpie. I also agree that booking a creator I met on Magpie off the platform breaks this agreement.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
     </form>
     <p class="small muted" style="margin-top:16px">Rather talk it through? <a class="tlink" href="#" id="jb-convo-start" onclick="jbConvoStart(); return false">Apply by conversation</a>: Maggie asks one question at a time and files the same founding application this form files.</p>
@@ -15228,7 +15248,7 @@ function jbConvoRender() {
   if (step.type === "chips") {
     inputHtml = `<div class="chip-row">${step.options().map((o) => `<button type="button" class="chip" onclick="jbConvoAnswer('${esc(step.key)}', '${esc(o.value)}', '${esc(o.label)}')">${esc(o.label)}</button>`).join("")}</div>`;
   } else if (step.type === "terms") {
-    inputHtml = `<label class="ckrow" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" class="ckbox" id="jb-convo-terms"><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on Magpie on Magpie, and to account and marketing emails from Magpie.</span></label>
+    inputHtml = `<label class="ckrow" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" class="ckbox" id="jb-convo-terms"><span>I agree to the Terms of Service and Privacy Policy, and to account and marketing emails from Magpie. I also agree that booking a creator I met on Magpie off the platform breaks this agreement.</span></label>
       <div id="jb-convo-error"></div>
       <button class="btn mt" type="button" onclick="jbConvoFile()">File my founding application</button>`;
   } else {
@@ -15471,6 +15491,7 @@ function renderBusinessFoundingStatus() {
       <div class="ui-row"><span class="k">Plan interest</span><span class="v">${esc(bz.planName || "")}</span></div>
       <div class="ui-row"><span class="k">Category spot</span><span class="v">Your ${esc(bz.category || "business")} spot is held in application order</span></div>
       <div class="ui-row"><span class="k">Founding pricing</span><span class="v">Locked while you stay subscribed</span></div>
+      <div class="ui-row"><span class="k">First campaign</span><span class="v">Your first campaign is free. You still pay or comp your creator as normal, we just take nothing.</span></div>
       <div class="ui-row"><span class="k">Payment</span><span class="v">Nothing is due now. Payment stays concierge: Jeff, Magpie's founder, sends the payment step by hand at activation</span></div>
     </div>
     <h3 class="mt">What happens next</h3>
@@ -16709,6 +16730,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${p.musician && (p.musicPerform || p.musicCreate) ? `<p class="small muted">${[p.musicPerform ? "Open to live performances" : "", p.musicCreate ? "Open to creating music for businesses" : ""].filter(Boolean).join(" &middot; ")}</p>` : ""}
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
     ${platformLinksHtml(c)}
+    ${c.handlesRevealed === false ? `<p class="small muted">Social handles unlock when a booking with ${esc(firstName)} is accepted. Their posts and numbers are all here — everything happens inside Magpie until then.</p>` : ""}
     <div class="pdp248-railslot">${accounts226Html(c, { app: true })}</div>
     <div class="pdp248-railslot pdp248-onlyd">${pdpStandout248Html(c)}</div>
     ${showcase226Html(c, { app: true })}

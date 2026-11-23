@@ -3416,6 +3416,43 @@ function paidMath(rate) {
   };
 }
 
+// ---------- Free first campaign (Jeff, 2026-11-23) ----------
+// Every business, every market, gets its first campaign free:
+// Magpie takes nothing on the first completed creator campaign
+// (one creator, one visit). The business still pays the
+// creator's listed rate in full or comps them as normal, and
+// the creator always chooses whether to accept. The credit
+// lives on the business record as freeFirstCampaign:
+//   { state: "available" | "reserved" | "completed",
+//     grantedAt, offerId, bookingId, completedAt }
+// "reserved" = designated on one offer (and, once booked, tied
+// to that booking); "completed" = the visit checked in (the
+// booking redeemed), which is the only moment the credit is
+// spent. A business record written before this build carries
+// no field: it reads as available (legacy) and is stamped the
+// first time it is used, so no migration or backfill exists.
+function freeFirstMath(rate) {
+  const r = Math.round(Number(rate) * 100) / 100;
+  return { rate: r, businessTotal: r, creatorNet: r, platformFee: 0 };
+}
+function freeFirstCreditOf(bizUser) {
+  const b = bizUser && bizUser.business ? bizUser.business : null;
+  if (!b) return null;
+  if (b.freeFirstCampaign && typeof b.freeFirstCampaign === "object" && b.freeFirstCampaign.state) return b.freeFirstCampaign;
+  return { state: "available", grantedAt: null, offerId: null, bookingId: null, completedAt: null, legacy: true };
+}
+async function completeFreeFirstCampaign(booking) {
+  if (!booking || booking.freeFirstCampaign !== true) return;
+  const biz = await store.get(`user:${booking.businessId}`);
+  if (!biz || !biz.business) return;
+  const credit = biz.business.freeFirstCampaign;
+  if (!credit || credit.state === "completed") return;
+  biz.business.freeFirstCampaign = { ...credit, state: "completed", bookingId: booking.id, completedAt: nowIso() };
+  biz.updatedAt = nowIso();
+  await store.set(`user:${biz.id}`, biz);
+  await logEvent({ type: "free_first_campaign_completed", actorId: biz.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, offerId: booking.offerId || null } });
+}
+
 // ---------- Build -89: London #ad + GBP creator money ----------
 // Currency comes from the market (markets.js currencyForMarket):
 // London creators set, see, and are paid against £ with a £40
@@ -11629,6 +11666,18 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     platformRequired: platformRequiredOf226(offer),
   };
   booking.resolvedPlatformName = resolvePlatform226(booking, creator, null).name;
+  // Free first campaign (Jeff, 2026-11-23): a booking made from
+  // the business's designated offer carries the credit when the
+  // credit is still unspent and no earlier booking holds it.
+  // Exactly one booking per business ever carries it: the first
+  // booking off the designated offer. Later bookings off the
+  // same offer (extra spots) run at normal terms.
+  let freeFirstBooking = false;
+  if (offer.freeFirstCampaign === true && business && business.business) {
+    const credit = freeFirstCreditOf(business);
+    if (credit && credit.state !== "completed" && !credit.bookingId) freeFirstBooking = true;
+  }
+  if (freeFirstBooking) booking.freeFirstCampaign = true;
   if (kind === "coupon") {
     // Coupon deal (Build -84): no cash, no escrow, no split.
     // The coupon snapshot rides the booking, so the visit card,
@@ -11667,7 +11716,10 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     // Standard Visit package. The escrow ledger is exactly the
     // paid-booking ledger: rate + 3% from the business, 97% to
     // the creator, held until the post is live (+48h hold).
-    const math = paidMath(Number(offer.cashRate));
+    // Free first campaign: Magpie takes nothing — the business
+    // pays the creator's rate exactly, the creator keeps all of
+    // it, and the platform fee is zero.
+    const math = freeFirstBooking ? freeFirstMath(Number(offer.cashRate)) : paidMath(Number(offer.cashRate));
     booking.kind = "paid";
     // Phase C: the booking snapshots the offer's posting terms,
     // so the exact terms the creator accepted are the terms the
@@ -11680,6 +11732,7 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
       businessTotal: math.businessTotal,
       creatorNet: math.creatorNet,
       platformFee: math.platformFee,
+      ...(freeFirstBooking ? { freeFirstCampaign: true } : {}),
       licenseDays: LICENSE_WINDOW_DAYS,
       licenseNote: "Standard license included: repost + ad use for 90 days from the post date, never longer.",
       escrowState: "held",
@@ -11692,6 +11745,16 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     };
   }
   await store.set(`booking:${booking.id}`, booking);
+  if (freeFirstBooking && business && business.business) {
+    // The credit now holds this booking. It completes only when
+    // the visit checks in (redemption); a booking cancelled
+    // before check-in hands it back (see cancelBooking226).
+    const credit = freeFirstCreditOf(business);
+    business.business.freeFirstCampaign = { state: "reserved", grantedAt: (credit && credit.grantedAt) || ts, offerId: offer.id, bookingId: booking.id, completedAt: null };
+    business.updatedAt = nowIso();
+    await store.set(`user:${business.id}`, business);
+    await logEvent({ type: "free_first_campaign_booked", actorId: business.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, offerId: offer.id, kind } });
+  }
   await store.set(`code:${code}`, { bookingId: booking.id });
   await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
   await ensureUnifiedAcode(booking);
@@ -11735,6 +11798,13 @@ async function rankApplications(apps) {
   const [bookings, posts, reviews, bizReviews] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
   const momentum = createMomentum({ users, bookings, posts, reviews, bizReviews });
   const { approvedRank } = creatorRanks(users);
+  // Handle gating reveal sets, memoized per business over the
+  // bookings this call already loaded.
+  const revealedCache = new Map();
+  const revealedIdsFor = (businessId) => {
+    if (!revealedCache.has(businessId)) revealedCache.set(businessId, businessRevealedCreatorIds(bookings, businessId));
+    return revealedCache.get(businessId);
+  };
   const reviewsByCreator = new Map();
   for (const r of reviews) {
     if (!reviewsByCreator.has(r.creatorId)) reviewsByCreator.set(r.creatorId, []);
@@ -11768,7 +11838,12 @@ async function rankApplications(apps) {
       creator: {
         userId: c.id,
         name: c.name,
-        handle: c.creator.handle,
+        // Handle gating (Jeff, 2026-11-23): an applicant's
+        // @handle stays hidden from the business until a
+        // booking between the pair is accepted; a selected
+        // applicant (booking exists) reads revealed.
+        handle: revealedIdsFor(app.businessId).has(c.id) ? c.creator.handle : null,
+        handlesRevealed: revealedIdsFor(app.businessId).has(c.id),
         university: universityOfRecord(c),
         universityStatus: universityStatusOfRecord(c),
         campusBadge: campusBadgeFor(c),
@@ -12414,8 +12489,12 @@ async function discoverCards(query, viewer, opts) {
     }
   }
   const out = [];
+  // Handle gating: the revealed set for a business viewer is
+  // computed once from the bookings this function already
+  // loaded — never a per-card store scan.
+  const discoverGateOpts = viewer && viewer.role === "business" ? { revealedIds: businessRevealedCreatorIds(bookings, viewer.id) } : undefined;
   for (const c of creators) {
-    const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null, marketName);
+    const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null, marketName, discoverGateOpts);
     // Proximity (Build -31): a business viewer gets a coarse
     // distance BAND per card, computed from ZIP centroids. The
     // band is a label only: no distance, no ZIP, no pin ever
@@ -12599,7 +12678,57 @@ async function discoverCards(query, viewer, opts) {
   };
 }
 
-async function publicCreator(u, viewer, foundingPriority, marketContext) {
+// ---------- Handle gating (Jeff, 2026-11-23) ----------
+// A business browsing creators sees the creator's content
+// in-app (showcase + best work, playable), and every decision
+// stat (local %, per-platform local counts, totals, rate,
+// rating, past visits). What it does NOT see is the creator's
+// social @handles or any outbound social link: those unlock
+// for that business only when a booking between the pair has
+// been accepted (a live booking exists). Creator-side, admin
+// and public website views never pass through this gate.
+// Callers that already hold the bookings list pass the
+// revealed set in; the gate fails CLOSED (handles hidden) for
+// a business viewer whenever the set is absent.
+function businessRevealedCreatorIds(bookings, businessId) {
+  const ids = new Set();
+  for (const b of bookings || []) {
+    if (!b || b.businessId !== businessId || !b.creatorId) continue;
+    const st = String(b.status || "");
+    if (st.includes("cancel") || st === "expired") continue;
+    ids.add(b.creatorId);
+  }
+  return ids;
+}
+function gateCreatorForBusiness(card, revealed) {
+  card.handlesRevealed = revealed === true;
+  if (revealed) return card;
+  if (card.profile) {
+    const p = { ...card.profile };
+    p.handle = null;
+    p.primaryProfileUrl = null;
+    p.instagramUrl = null;
+    p.tiktokHandle = null;
+    p.tiktokUrl = null;
+    p.youtubeChannel = null;
+    p.facebookUrl = null;
+    p.xHandle = null;
+    p.xUrl = null;
+    p.linkedinUrl = null;
+    p.platformLinks = {};
+    p.platformSync = {};
+    card.profile = p;
+  }
+  if (Array.isArray(card.audienceStack)) {
+    card.audienceStack = card.audienceStack.map((e) => ({ ...e, url: undefined, handle: undefined }));
+  }
+  if (Array.isArray(card.channels)) {
+    card.channels = card.channels.map((e) => ({ ...e, handle: null, url: null }));
+  }
+  return card;
+}
+
+async function publicCreator(u, viewer, foundingPriority, marketContext, gateOpts) {
   const history = await creatorHistory(u.id);
   // Multi-market context (2026-11-01): when a card is built for
   // a specific market (discovery in that market), the local
@@ -12619,7 +12748,7 @@ async function publicCreator(u, viewer, foundingPriority, marketContext) {
   if (viewer && viewer.role === "business") {
     isFavorite = !!(await store.get(`favorite:${viewer.id}:${u.id}`));
   }
-  return {
+  const card = {
     userId: u.id,
     name: u.name,
     market: normalizeMarketName(u.market),
@@ -12673,6 +12802,15 @@ async function publicCreator(u, viewer, foundingPriority, marketContext) {
     haveBack: viewer && viewer.role === "business" ? await haveBackFor(viewer, u.id) : null,
     bookedUp: visitsThisWeek(await allBookings(), u.id, Date.now()) >= maxVisitsPerWeekOf(u),
   };
+  // Handle gating (Jeff, 2026-11-23): business viewers only.
+  // The creator's own view, admin views, and creator viewers
+  // are never gated.
+  if (viewer && viewer.role === "business" && viewer.id !== u.id) {
+    const revealed = !!(gateOpts && gateOpts.revealedIds && gateOpts.revealedIds.has(u.id));
+    return gateCreatorForBusiness(card, revealed);
+  }
+  card.handlesRevealed = true;
+  return card;
 }
 
 // ---------- public creator profile ----------
@@ -13643,6 +13781,19 @@ async function cancelBooking226(booking, { byRole, actor, reason = "", status })
   if (status === "cancelled_by_business") booking.swapEligible = true;
   booking.updatedAt = nowIso();
   await store.set(`booking:${booking.id}`, booking);
+  // Free first campaign: a booking cancelled before check-in
+  // never spent the credit — hand it back so the business can
+  // designate another offer. A redeemed (checked-in) booking
+  // already completed it, and completion stands.
+  if (booking.freeFirstCampaign === true && !booking.redeemedAt) {
+    const biz = await store.get(`user:${booking.businessId}`);
+    if (biz && biz.business && biz.business.freeFirstCampaign && biz.business.freeFirstCampaign.state === "reserved" && biz.business.freeFirstCampaign.bookingId === booking.id) {
+      biz.business.freeFirstCampaign = { ...biz.business.freeFirstCampaign, state: "available", bookingId: null };
+      biz.updatedAt = nowIso();
+      await store.set(`user:${biz.id}`, biz);
+      await logEvent({ type: "free_first_campaign_released", actorId: actor ? actor.id : null, actorRole: byRole, subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId, reason: "booking_cancelled_before_checkin" } });
+    }
+  }
   await refundPaidEscrow(booking, byRole === "business" ? "business_cancelled" : "creator_declined", { escrowRefunded: 0 });
   await logEvent({ type: "booking_cancelled", actorId: actor ? actor.id : null, actorRole: byRole, subjectId: booking.id, market: booking.market, data: { offerId: booking.offerId || null, businessId: booking.businessId, creatorId: booking.creatorId, lane, reason: booking.cancelReason, byRole, status } });
   await cancelCompanionForPrimary(booking);
@@ -17356,6 +17507,9 @@ async function performCounterRedeem(booking, actor) {
   booking.postDeadline = isPaidBooking(booking) ? postingDeadlineFor(booking) : new Date(Date.parse(ts) + postWindowHours(booking) * 3600 * 1000).toISOString();
   booking.updatedAt = ts;
   await store.set(`booking:${booking.id}`, booking);
+  // Free first campaign completes at check-in: the visit code
+  // was redeemed, so the counted visit exists.
+  await completeFreeFirstCampaign(booking);
   await logEvent({ type: "code_redeemed", actorId: actor.id, actorRole: actor.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "counter_code", via: actor.via, postDeadline: booking.postDeadline, dollarCap: booking.dollarCap, test: booking.test === true } });
   // Build -91: a TEST redemption (the proof kit's practice run)
   // notifies nobody — there is no creator and no real visit. It
@@ -20549,6 +20703,9 @@ async function handleRegister(event, linkCtx) {
       country: typeof b.country === "string" ? b.country : undefined,
     }, { nowIso, termsVersion: TERMS_VERSION, managedTalentBudgetDefault: MANAGED_TALENT_BUDGET_DEFAULT });
     user.business = natRec.business;
+    // Free first campaign (Jeff, 2026-11-23): national signups
+    // carry the same credit as every other business.
+    user.business.freeFirstCampaign = { state: "available", grantedAt: ts, offerId: null, bookingId: null, completedAt: null };
     user.business.category = BUSINESS_CATEGORIES.includes(b.category) ? b.category : "Other";
     user.city = "";
   } else {
@@ -20632,6 +20789,10 @@ async function handleRegister(event, linkCtx) {
       // Managed talent budget: every business record carries the
       // field; it only spends on the Managed plan. Not a deposit.
       monthlyTalentBudget: MANAGED_TALENT_BUDGET_DEFAULT,
+      // Free first campaign (Jeff, 2026-11-23): every business
+      // in every market starts with the credit available. See
+      // freeFirstCreditOf for the lifecycle.
+      freeFirstCampaign: { state: "available", grantedAt: ts, offerId: null, bookingId: null, completedAt: null },
     };
   }
 
@@ -23264,7 +23425,7 @@ function scoreV2Cohort(user, monthKey, ctx) {
     const paid = isPaidVisit(b);
     let directCost = null;
     let costState = "entered";
-    if (paid) { directCost = roasRound2(b.paidLane.rate * 1.03); costState = "paid_rate"; }
+    if (paid) { directCost = roasRound2(Number.isFinite(Number(b.paidLane.businessTotal)) ? Number(b.paidLane.businessTotal) : b.paidLane.rate * 1.03); costState = "paid_rate"; }
     else if (b.compCostEntry && typeof b.compCostEntry.amount === "number" && Number.isFinite(b.compCostEntry.amount)) { directCost = roasRound2(b.compCostEntry.amount); costState = b.compCostEntry.confirmedZero ? "confirmed_zero" : "entered"; }
     else costState = "missing";
     const disc = money.source === "events" ? discountCostForEvents(b, bEvents) : 0;
@@ -36867,10 +37028,14 @@ async function route(event) {
       // creators, so it carries the same Momentum patch (points
       // and the derived blue check), exactly like discoverCards.
       const favMomCtx = sets.creators.length ? await momentumContext() : null;
+      // Handle gating: a business viewer's Saved cards gate the
+      // same way Discover does; the revealed set comes from one
+      // bookings list for the whole request.
+      const favGateOpts = user.role === "business" && sets.creators.length ? { revealedIds: businessRevealedCreatorIds(await allBookings(), user.id) } : undefined;
       for (const id of sets.creators) {
         const c = sets.byId.get(id);
         if (c && profileCompleteOf(c)) {
-          const card = await publicCreator(c, user);
+          const card = await publicCreator(c, user, null, null, favGateOpts);
           if (favMomCtx) {
             card.momentum = favMomCtx.momentum.summaryFor(c);
             card.blueCheck = !!card.momentum.blueCheck;
@@ -37287,7 +37452,30 @@ async function route(event) {
         });
         if (existing) return json(409, { error: "This offer is already open", existingOfferId: existing.id });
       }
+      // Free first campaign (Jeff, 2026-11-23): the business may
+      // designate this offer as its free first campaign. The
+      // credit reserves against this one offer; a reservation
+      // held by an offer that has since closed or expired is
+      // stale and is taken over, so a business is never trapped
+      // by a dead offer. One credit per business, ever: once it
+      // completes (the visit checks in), it never comes back.
+      if (b.freeFirstCampaign === true) {
+        const credit = freeFirstCreditOf(user);
+        if (!credit || credit.state === "completed") return err(400, "Your first campaign is already used. This offer posts at the normal terms.");
+        if (credit.state === "reserved" && credit.offerId && credit.offerId !== offer.id) {
+          const holder = await store.get(`offer:${credit.offerId}`);
+          if (holder && (holder.status === "open" || holder.status === "draft")) return err(400, "Your free first campaign is already on another offer. Close that offer first, or post this one at the normal terms.");
+        }
+        offer.freeFirstCampaign = true;
+      }
       await store.set(`offer:${offer.id}`, offer);
+      if (offer.freeFirstCampaign === true) {
+        const credit = freeFirstCreditOf(user);
+        user.business.freeFirstCampaign = { state: "reserved", grantedAt: (credit && credit.grantedAt) || ts, offerId: offer.id, bookingId: null, completedAt: null };
+        user.updatedAt = nowIso();
+        await store.set(`user:${user.id}`, user);
+        await logEvent({ type: "free_first_campaign_reserved", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { kind, via: "offer_create" } });
+      }
       await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category, windowMode: offer.windowMode, lane, kind, cashRate, covers, hasBrief: !!paidBrief, targetTiers, templateId: offer.templateId, status: offer.status, strength: offerStrength(offer).score } });
       // Build -148: an offer created from a Maggie campaign
       // prompt closes the prompt's outcome chain.
@@ -38457,7 +38645,8 @@ async function route(event) {
         businessImageIsLogo: biz && biz.business ? (!biz.business.hasPhoto && !!(biz.business.assetPacket && biz.business.assetPacket.logoUrl)) : false,
         distanceBand: biz ? proximityBandFor(biz, user) : null,
         businessTrackRecord: biz ? (bizTrackCache[biz.id] !== undefined ? bizTrackCache[biz.id] : (bizTrackCache[biz.id] = businessTrackRecordFor(biz.id, bookings, posts))) : null,
-        paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
+        paidMath: kindOf(o) === "paid" ? (o.freeFirstCampaign === true ? freeFirstMath(Number(o.cashRate)) : paidMath(Number(o.cashRate))) : null,
+        freeFirstCampaign: o.freeFirstCampaign === true,
         // Build -84: the coupon in one plain line (the coupon
         // object and deliverables ride the spread above).
         couponSummary: kindOf(o) === "coupon" ? couponSummary(couponOf(o), o.businessName) : null,
@@ -39348,6 +39537,9 @@ async function route(event) {
     booking.postDeadline = isPaidBooking(booking) ? postingDeadlineFor(booking) : new Date(Date.parse(ts) + postWindowHours(booking) * 3600 * 1000).toISOString();
     booking.updatedAt = ts;
     await store.set(`booking:${booking.id}`, booking);
+    // Free first campaign completes at check-in (business
+    // confirm is the other redemption door).
+    await completeFreeFirstCampaign(booking);
     await logEvent({ type: "visit_confirmed_by_business", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, postDeadline: booking.postDeadline } });
     await logEvent({ type: "code_redeemed", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "business_confirm", postDeadline: booking.postDeadline } });
     await sendStaffNotice(booking, "redeem");
