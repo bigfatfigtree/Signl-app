@@ -83,8 +83,20 @@ function creator(id, email, handle, extra) {
 biz("q255-bizA", "a@b255qa.dev", "Alpha Eats");
 biz("q255-bizC", "c@b255qa.dev", "Gamma Goods");
 biz("q255-bizD", "d@b255qa.dev", "Delta Diner");
+biz("q255-bizE", "e@b255qa.dev", "Expiry Eats");
+biz("q255-bizF", "f@b255qa.dev", "Decline Diner");
+biz("q255-bizG", "g@b255qa.dev", "Lineup Lunches");
 creator("q255-crA", "cra@b255qa.dev", "qa255alpha");
 creator("q255-crB", "crb@b255qa.dev", "qa255beta");
+creator("q255-crC", "crc@b255qa.dev", "qa255gamma");
+creator("q255-crD", "crd@b255qa.dev", "qa255delta");
+creator("q255-crE", "cre@b255qa.dev", "qa255epsilon");
+creator("q255-crF", "crf@b255qa.dev", "qa255zeta");
+// B9 seeds: a business whose free booking's window already
+// lapsed, so the compliance sweep must expire it and hand the
+// credit back.
+biz("q255-bizH", "h@b255qa.dev", "Lapsed Lunches", { freeFirstCampaign: { state: "reserved", grantedAt: NOW, offerId: "q255-offerH", bookingId: "q255-bookingH", completedAt: null } });
+data["booking:q255-bookingH"] = { id: "q255-bookingH", offerId: "q255-offerH", applicationId: null, businessId: "q255-bizH", businessName: "Lapsed Lunches", creatorId: "q255-crC", creatorName: "Creator qa255gamma", creatorHandle: "qa255gamma", market: "Nashville", kind: "paid", title: "Lapsed paid visit", status: "booked", codeStatus: "issued", code: "Q255H", freeFirstCampaign: true, redeemedAt: null, redeemBy: "2020-01-01T00:00:00.000Z", createdAt: NOW, updatedAt: NOW, compliance: {} };
 data["config:markets"] = { flags: { Nashville: true, Austin: true } };
 const DB = path.join(os.tmpdir(), `signl-verify-b255-${Date.now()}.json`);
 fs.writeFileSync(DB, JSON.stringify(data));
@@ -191,6 +203,52 @@ try {
   check("business cancels before check-in", cancelD.status === 200, `${cancelD.status}`);
   const meD = await req("GET", "/api/auth/me", null, D);
   check("credit returned to available after cancel", meD.j.user.business.freeFirstCampaign.state === "available" && !meD.j.user.business.freeFirstCampaign.bookingId, JSON.stringify(meD.j.user.business.freeFirstCampaign));
+  part("B9. Expiry releases the credit (review fix)");
+  const bizH = await login("h@b255qa.dev");
+  const H = bizH.setCookie;
+  check("expiry setup: boot data seeds a reserved credit on a booked, lapsed free booking", data["user:q255-bizH"].business.freeFirstCampaign.state === "reserved" && data["booking:q255-bookingH"].status === "booked" && data["booking:q255-bookingH"].freeFirstCampaign === true);
+  const adm = await req("POST", "/api/auth/login", { email: "admin@b255.dev", password: "qa-admin-pass-255" });
+  const sweep = await req("POST", "/api/admin/compliance/sweep", {}, adm.setCookie);
+  check("compliance sweep runs", sweep.status === 200, `${sweep.status} ${JSON.stringify(sweep.j).slice(0, 160)}`);
+  const dbAfter = JSON.parse(fs.readFileSync(DB, "utf8"));
+  check("sweep expired the lapsed booking", dbAfter["booking:q255-bookingH"] && dbAfter["booking:q255-bookingH"].status === "expired", dbAfter["booking:q255-bookingH"] && dbAfter["booking:q255-bookingH"].status);
+  const meH = await req("GET", "/api/auth/me", null, H);
+  check("credit returned to available after the booking expired unredeemed", meH.j.user.business.freeFirstCampaign.state === "available", JSON.stringify(meH.j.user.business.freeFirstCampaign));
+
+  part("B10. Creator decline releases the credit (review fix)");
+  const bizF = await login("f@b255qa.dev"); const crD = await login("crd@b255qa.dev");
+  const F = bizF.setCookie, RD = crD.setCookie;
+  const offerF = await req("POST", "/api/offers", { title: "Decline free-test paid visit", whatComped: "Dinner", kind: "paid", cashRate: 100, spots: 1, freeFirstCampaign: true }, F);
+  await req("POST", `/api/offers/${offerF.j.offer.id}/apply`, {}, RD);
+  const stackF = await req("GET", `/api/offers/${offerF.j.offer.id}/applications`, null, F);
+  const applicantF = ((stackF.j && stackF.j.applications) || [])[0];
+  const appIdF = applicantF && (applicantF.id || applicantF.applicationId);
+  const selF = await req("POST", `/api/offers/${offerF.j.offer.id}/select`, { applicationId: appIdF }, F);
+  check("decline setup: free booking made", (selF.status === 200 || selF.status === 201) && !!(selF.j.booking || selF.j).freeFirstCampaign, `${selF.status}`);
+  const decF = await req("POST", `/api/applications/${appIdF}/decline`, {}, RD);
+  check("creator gives the spot back", decF.status === 200, `${decF.status} ${JSON.stringify(decF.j).slice(0, 160)}`);
+  const meF = await req("GET", "/api/auth/me", null, F);
+  check("credit returned to available after creator decline", meF.j.user.business.freeFirstCampaign.state === "available", JSON.stringify(meF.j.user.business.freeFirstCampaign));
+
+  part("B11. Lineup carries no handles before a booking (review fix)");
+  const bizG = await login("g@b255qa.dev"); const crE = await login("cre@b255qa.dev");
+  const G = bizG.setCookie, RE = crE.setCookie;
+  const lu1 = await req("GET", "/api/lineup", null, G);
+  const members1 = lu1.j && lu1.j.lineup ? lu1.j.lineup.creators : [];
+  check("lineup exists with 2+ members", members1.length >= 2, JSON.stringify(lu1.j).slice(0, 200));
+  check("no lineup member handle leaks pre-booking", members1.length >= 2 && members1.every((m) => !m.handle), JSON.stringify(members1.map((m) => m.handle)));
+  const offerG = await req("POST", "/api/offers", { title: "Lineup comp visit", whatComped: "Dinner for two", kind: "comp", dollarCap: 85, covers: 2, spots: 1 }, G);
+  await req("POST", `/api/offers/${offerG.j.offer.id}/apply`, {}, RE);
+  const stackG = await req("GET", `/api/offers/${offerG.j.offer.id}/applications`, null, G);
+  const applicantG = ((stackG.j && stackG.j.applications) || []).find((a) => a.creatorId === "q255-crE" || (a.creator && a.creator.userId === "q255-crE")) || ((stackG.j && stackG.j.applications) || [])[0];
+  const selG = await req("POST", `/api/offers/${offerG.j.offer.id}/select`, { applicationId: applicantG && (applicantG.id || applicantG.applicationId) }, G);
+  check("lineup business books a member", selG.status === 200 || selG.status === 201, `${selG.status}`);
+  const lu2 = await req("GET", "/api/lineup", null, G);
+  const members2 = lu2.j && lu2.j.lineup ? lu2.j.lineup.creators : [];
+  const bookedM = members2.find((m) => m.userId === "q255-crE");
+  const otherM = members2.find((m) => m.userId !== "q255-crE");
+  check("booked member's handle revealed in the lineup", !!bookedM && bookedM.handle === "qa255epsilon", bookedM ? String(bookedM.handle) : "member missing");
+  check("unbooked members stay gated in the lineup", !!otherM && !otherM.handle, otherM ? String(otherM.handle) : "no other member");
 } finally {
   server.kill();
   try { fs.unlinkSync(DB); } catch (e) { /* already gone */ }

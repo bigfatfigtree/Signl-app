@@ -3441,6 +3441,22 @@ function freeFirstCreditOf(bizUser) {
   if (b.freeFirstCampaign && typeof b.freeFirstCampaign === "object" && b.freeFirstCampaign.state) return b.freeFirstCampaign;
   return { state: "available", grantedAt: null, offerId: null, bookingId: null, completedAt: null, legacy: true };
 }
+// Hand the credit back when a free-first booking dies before
+// check-in (cancel, expiry, creator decline — any door). A
+// redeemed booking already completed the credit; completion
+// stands. Safe to call from any path: it no-ops unless this
+// exact booking still holds the reservation.
+async function releaseFreeFirstCampaign(booking, actorId, actorRole, reason) {
+  if (!booking || booking.freeFirstCampaign !== true || booking.redeemedAt) return;
+  const biz = await store.get(`user:${booking.businessId}`);
+  if (!biz || !biz.business || !biz.business.freeFirstCampaign) return;
+  const credit = biz.business.freeFirstCampaign;
+  if (credit.state !== "reserved" || credit.bookingId !== booking.id) return;
+  biz.business.freeFirstCampaign = { ...credit, state: "available", bookingId: null };
+  biz.updatedAt = nowIso();
+  await store.set(`user:${biz.id}`, biz);
+  await logEvent({ type: "free_first_campaign_released", actorId: actorId || null, actorRole: actorRole || null, subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId, reason: reason || "booking_ended_before_checkin" } });
+}
 async function completeFreeFirstCampaign(booking) {
   if (!booking || booking.freeFirstCampaign !== true) return;
   const biz = await store.get(`user:${booking.businessId}`);
@@ -13785,15 +13801,7 @@ async function cancelBooking226(booking, { byRole, actor, reason = "", status })
   // never spent the credit — hand it back so the business can
   // designate another offer. A redeemed (checked-in) booking
   // already completed it, and completion stands.
-  if (booking.freeFirstCampaign === true && !booking.redeemedAt) {
-    const biz = await store.get(`user:${booking.businessId}`);
-    if (biz && biz.business && biz.business.freeFirstCampaign && biz.business.freeFirstCampaign.state === "reserved" && biz.business.freeFirstCampaign.bookingId === booking.id) {
-      biz.business.freeFirstCampaign = { ...biz.business.freeFirstCampaign, state: "available", bookingId: null };
-      biz.updatedAt = nowIso();
-      await store.set(`user:${biz.id}`, biz);
-      await logEvent({ type: "free_first_campaign_released", actorId: actor ? actor.id : null, actorRole: byRole, subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId, reason: "booking_cancelled_before_checkin" } });
-    }
-  }
+  await releaseFreeFirstCampaign(booking, actor ? actor.id : null, byRole, "booking_cancelled_before_checkin");
   await refundPaidEscrow(booking, byRole === "business" ? "business_cancelled" : "creator_declined", { escrowRefunded: 0 });
   await logEvent({ type: "booking_cancelled", actorId: actor ? actor.id : null, actorRole: byRole, subjectId: booking.id, market: booking.market, data: { offerId: booking.offerId || null, businessId: booking.businessId, creatorId: booking.creatorId, lane, reason: booking.cancelReason, byRole, status } });
   await cancelCompanionForPrimary(booking);
@@ -15663,6 +15671,10 @@ async function runComplianceSweep() {
     booking.updatedAt = nowIso();
     await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "offer_expired", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemBy: booking.redeemBy } });
+    // Free first campaign (-255 review fix): an expired free
+    // booking never checked in, so the credit returns to the
+    // business instead of stranding on the dead booking.
+    await releaseFreeFirstCampaign(booking, null, "system", "booking_expired_before_checkin");
     summary.expired += 1;
     // Build -226 (13e): the business hears the visit expired the
     // moment it happens. The status flip makes this exactly once.
@@ -22683,7 +22695,13 @@ function lineupMemberView(card, userRec) {
     userId: card.userId,
     name: card.name || (userRec && userRec.name) || "",
     blueCheck: !!card.blueCheck,
-    handle: (c.handle || card.handle || ""),
+    // Handle gating (Jeff, 2026-11-23; -255 review fix): the
+    // Lineup is built from Discover cards, which are already
+    // gated for this business — the handle comes from the
+    // GATED card only, never from the raw record, so a member
+    // the business has not booked yet shows no handle.
+    handle: card.handlesRevealed === true && card.profile ? (card.profile.handle || "") : "",
+    handlesRevealed: card.handlesRevealed === true,
     photoUrl: card.photoUrl || null,
     why: promptWhyLine(card),
     matchScore: card.matchScore,
@@ -22739,6 +22757,11 @@ async function lineupSnapshotFor(bizUser, memberIds, targetCreator) {
   if (ids.length < 2 || ids.length > 5) return null;
   if (!targetCreator || !ids.includes(targetCreator.id)) return null;
   const members = [];
+  // Handle gating (Jeff, 2026-11-23; -255 review fix): the
+  // snapshot rides the offer to business-facing surfaces, so a
+  // member's handle is stamped only when a live booking
+  // already ties the pair; everyone else reads name-only.
+  const snapshotRevealed = businessRevealedCreatorIds(await allBookings(), bizUser.id);
   for (const id of ids) {
     const u = await store.get(`user:${id}`);
     if (!u || u.role !== "creator" || u.status !== "approved" || isTester(u) || !profileCompleteOf(u)) return null;
@@ -22747,7 +22770,7 @@ async function lineupSnapshotFor(bizUser, memberIds, targetCreator) {
     members.push({
       userId: u.id,
       name: u.name || "",
-      handle: c.handle || "",
+      handle: snapshotRevealed.has(u.id) ? (c.handle || "") : "",
       photoUrl: c.hasPhoto ? `/api/users/${u.id}/photo` : null,
       neighborCount: nb.count,
       neighborExtrapolated: nb.extrapolated,
@@ -38744,6 +38767,10 @@ async function route(event) {
         booking.updatedAt = nowIso();
         await store.set(`booking:${booking.id}`, booking);
         await refundPaidEscrow(booking, "creator_declined", { escrowRefunded: 0 });
+        // Free first campaign (-255 review fix): the credit
+        // returns when the selected creator gives the spot back
+        // before check-in, same as a cancel.
+        await releaseFreeFirstCampaign(booking, user.id, "creator", "creator_declined_before_checkin");
         await logEvent({ type: "booking_cancelled", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: booking.market, data: { offerId: app.offerId, businessId: app.businessId, via: "application_decline" } });
         // Build -42: a +1 was a guest on this visit; the spot
         // closing takes the companion with it (a cancellation,
@@ -41299,6 +41326,11 @@ async function route(event) {
       // session. Newest booking wins; a direct offer is next.
       const ctxBookings = await allBookings();
       const ctxOffers = await allOffers();
+      // Handle gating (Jeff, 2026-11-23; -255 review fix): a
+      // business reading its thread list sees a creator's
+      // handle only when a live booking already ties the pair —
+      // a thread can exist on a direct offer alone.
+      const threadReveal255 = user.role === "business" ? businessRevealedCreatorIds(ctxBookings, user.id) : null;
       // Build -202: index context by participant pair once, instead of scanning full lists per thread.
       const pairKey202 = (x, y) => [x, y].sort().join("__");
       const bookingByPair202 = new Map(); for (const b of ctxBookings) { if (!b.businessId || !b.creatorId) continue; const k = pairKey202(b.businessId, b.creatorId); const cur = bookingByPair202.get(k); if (!cur || String(b.createdAt || "") > String(cur.createdAt || "")) bookingByPair202.set(k, b); }
@@ -41331,7 +41363,7 @@ async function route(event) {
           : other.business && other.business.assetPacket && other.business.assetPacket.logoUrl ? other.business.assetPacket.logoUrl
           : other.creator && other.creator.hasPhoto ? `/api/users/${other.id}/photo`
           : null;
-        threads.push({ ...view, otherName: other ? other.name : "Unknown", otherRole: other ? other.role : null, otherBusinessName: other && other.business ? other.business.businessName : null, otherHandle: other && other.creator ? other.creator.handle : null, otherPhotoUrl, contextTitle: pairBooking ? (pairBooking.title || null) : pairOffer ? (pairOffer.title || null) : null });
+        threads.push({ ...view, otherName: other ? other.name : "Unknown", otherRole: other ? other.role : null, otherBusinessName: other && other.business ? other.business.businessName : null, otherHandle: other && other.creator ? (threadReveal255 && !threadReveal255.has(other.id) ? null : other.creator.handle) : null, otherPhotoUrl, contextTitle: pairBooking ? (pairBooking.title || null) : pairOffer ? (pairOffer.title || null) : null });
       }
       threads.sort((a, b) => (a.lastMessage.createdAt < b.lastMessage.createdAt ? 1 : -1));
       return json(200, { threads });
