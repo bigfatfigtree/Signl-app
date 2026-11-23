@@ -5447,6 +5447,64 @@ function audienceTotalOf(creator) {
   return Object.values(stack).reduce((s, n) => s + n, 0);
 }
 
+// ---------- Local followers, Jeff's per-platform method ----------
+// (Jeff's ruling, 2026-11-23 12:57): a creator's local followers are
+// counted platform by platform off the audience stack and the
+// per-platform local % map the creator reported — never one headline
+// % spread across the whole stacked audience. Per creator:
+//   strict       = sum over platforms carrying a stated local % of
+//                  followers x that platform's %
+//   unrated      = followers on platforms with no stated %
+//   creatorLocal = strict + unrated x the creator's own
+//                  follower-weighted local % (strict / rated
+//                  followers), when they stated a % anywhere.
+// A creator who stated ONLY a headline local % (attached to no
+// platform) gets that % applied to their whole reported stack —
+// their stated share, on their stated audience. A creator who
+// stated no % anywhere counts 0 here; the % is never invented and
+// no record is ever rewritten by this math (read-only, like every
+// totals definition in this file). Rounded per creator, matching
+// the platform totals convention.
+// Population: the PUBLIC ROSTER — approved, profile-complete,
+// tester records excluded. The same finished creators whose public
+// pages are live; pending and half-finished sign-ups are not a
+// public claim yet. This is the figure the marketing site's
+// homepage band fetches (GET /api/public/totals) and the figure
+// the offline recount of 2026-11-23 measured at 6,256,636 strict
+// per-platform (6,269,530 with the discovered-accounts layer,
+// which refreshes separately and is NOT part of this live figure).
+function localFollowersByPlatform(users) {
+  let creators = 0;
+  let totalFollowers = 0;
+  let localFollowers = 0;
+  for (const u of users || []) {
+    if (!u || u.role !== "creator" || isTester(u)) continue;
+    if (u.status !== "approved" || !profileCompleteOf(u)) continue;
+    creators += 1;
+    const c = u.creator || {};
+    const stack = audienceStackOf(c);
+    const rates = normalizePlatformLocalPct(c.platformLocalPct);
+    let rated = 0;
+    let strict = 0;
+    let total = 0;
+    for (const p of Object.keys(stack)) {
+      const n = stack[p] || 0;
+      total += n;
+      if (Object.prototype.hasOwnProperty.call(rates, p)) {
+        rated += n;
+        strict += (n * rates[p]) / 100;
+      }
+    }
+    totalFollowers += total;
+    if (rated > 0) {
+      localFollowers += Math.round(strict + ((total - rated) * strict) / rated);
+    } else if (typeof c.localAudiencePct === "number" && Number.isFinite(c.localAudiencePct)) {
+      localFollowers += Math.round((total * c.localAudiencePct) / 100);
+    }
+  }
+  return { creators, totalFollowers, localFollowers };
+}
+
 // ---------- Platform totals (Build -126) ----------
 // THE one definition behind the Admin home totals strip and
 // Sig's admin grounding. "Creators signed up" = unique creators
@@ -6000,7 +6058,13 @@ async function handleVerifyCounts(event) {
   // the stranded unlisted records were filed.
   let refile207 = null;
   try { refile207 = await store.get(REFILE207_DIAG_KEY); } catch (e) { refile207 = null; }
-  return json(200, { totals, markets, recount, agree, invariantViolations, bdev: bdev167, staff: staff169, minfix: minfix172, marketfix: marketfix173, refile207 });
+  // Hero band (2026-11-23): Jeff's per-platform local-followers
+  // figure over the public roster rides the checker surface too,
+  // so the daily health check can watch the number the homepage
+  // prints. Additive only: totals/markets/recount/agree above are
+  // untouched, so the checker's agreement is exactly as before.
+  const byPlatform = localFollowersByPlatform(users);
+  return json(200, { totals, markets, recount, agree, invariantViolations, bdev: bdev167, staff: staff169, minfix: minfix172, marketfix: marketfix173, refile207, byPlatform });
 }
 
 // The Admin home preview tabs' targets (Build -126), resolved in
@@ -28800,6 +28864,29 @@ async function route(event) {
     }
     await logEvent({ type: "message_sent", actorId: user.id, actorRole: user.role, subjectId: msg.id, market: user.market, data: { toId: target.id, toRole: "creator", threadId, bodyLength: body.length, via: "bookme_page" } });
     return json(201, { message: msg, threadId });
+  }
+
+  // Platform totals for the marketing site (2026-11-23): the
+  // homepage's local-followers band fetches its count here, live,
+  // so the printed number is always the current roster's — no site
+  // redeploy when it moves. Jeff's per-platform counting method
+  // (his ruling, 2026-11-23 12:57) over the public roster
+  // (approved, profile-complete creators; see
+  // localFollowersByPlatform). Aggregate counts only: no per-creator
+  // data, nothing a checker key or a login could add. Same
+  // cross-origin allowance as the other public site feeds.
+  if (seg[0] === "public" && seg[1] === "totals" && seg.length === 2) {
+    const cors = Object.assign(foundingApplicationCors(event), { "Access-Control-Allow-Methods": "GET, OPTIONS" });
+    if (method === "OPTIONS") return { statusCode: 204, headers: cors, body: "" };
+    if (method !== "GET") return json(405, { error: "Method not allowed" }, cors);
+    const t = localFollowersByPlatform(await allUsers());
+    return json(200, {
+      creators: t.creators,
+      totalFollowers: t.totalFollowers,
+      localFollowers: t.localFollowers,
+      method: "per-platform",
+      asOf: new Date().toISOString(),
+    }, Object.assign({}, cors, { "Cache-Control": "public, max-age=300" }));
   }
 
   // The Local List (Build -31, Jeff, 2026-10-29): the public,
