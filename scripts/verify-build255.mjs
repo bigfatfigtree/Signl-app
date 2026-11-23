@@ -89,6 +89,7 @@ biz("q255-bizA", "a@b255qa.dev", "Alpha Eats");
 biz("q255-bizC", "c@b255qa.dev", "Gamma Goods");
 biz("q255-bizD", "d@b255qa.dev", "Delta Diner");
 biz("q255-bizE", "e@b255qa.dev", "Expiry Eats");
+biz("q255-bizI", "i@b255qa.dev", "Idle Eats");
 biz("q255-bizF", "f@b255qa.dev", "Decline Diner");
 biz("q255-bizG", "g@b255qa.dev", "Lineup Lunches");
 creator("q255-crA", "cra@b255qa.dev", "qa255alpha");
@@ -266,6 +267,44 @@ try {
   check("plan pick records through the existing door", pick.status === 200 && pick.j.user && pick.j.user.business && pick.j.user.business.plan === "growth", `${pick.status} ${JSON.stringify(pick.j).slice(0, 160)}`);
   const third = await req("POST", "/api/offers", { title: "Alpha second campaign after pick", whatComped: "Dinner", kind: "paid", cashRate: 100, spots: 1 }, A);
   check("second campaign opens after the pick", third.status === 201 || third.status === 200, `${third.status} ${JSON.stringify(third.j).slice(0, 160)}`);
+
+  part("B13. Review round 2: remaining surfaces gated, gate on every campaign door");
+  const bizI = await login("i@b255qa.dev");
+  const I = bizI.setCookie;
+  const block = await req("GET", "/api/block", null, I);
+  const roster = (block.j && block.j.roster) || [];
+  check("block roster returns creators", roster.length >= 2, String(roster.length));
+  check("block roster: NO handles for a business with no bookings", roster.every((m) => !m.handle), JSON.stringify(roster.map((m) => m.handle)));
+  const fav = await req("POST", "/api/favorites", { kind: "creator", id: "q255-crA" }, I);
+  check("favorite saved", fav.status === 200 && fav.j && fav.j.saved === true, `${fav.status} ${JSON.stringify(fav.j).slice(0, 120)}`);
+  const home = await req("GET", "/api/me/business-home", null, I);
+  const prompts = (home.j && (home.j.rebookPrompts || (home.j.home && home.j.home.rebookPrompts))) || [];
+  const favPrompt = prompts.find((p) => p.creatorId === "q255-crA");
+  check("home rebook prompt lists the favorite", !!favPrompt && favPrompt.source === "favorite", JSON.stringify(prompts).slice(0, 200));
+  check("favorite rebook prompt carries NO handle", !!favPrompt && !favPrompt.handle, favPrompt ? String(favPrompt.handle) : "missing");
+  const swap = await req("GET", `/api/bookings/${bookingD.id}/swap`, null, D);
+  const sugg = (swap.j && swap.j.suggestions) || [];
+  check("swap suggestions return", swap.status === 200 && sugg.length >= 1, `${swap.status} ${JSON.stringify(swap.j).slice(0, 160)}`);
+  check("swap suggestions carry NO handles", sugg.every((s) => !s.handle), JSON.stringify(sugg.map((s) => s.handle)));
+  // A second completed-test business hits the gate on every other door.
+  const bizE2 = await login("e@b255qa.dev"); const crC2 = await login("crc@b255qa.dev");
+  const E2 = bizE2.setCookie, RC2 = crC2.setCookie;
+  const offerE2 = await req("POST", "/api/offers", { title: "Doors free-test paid visit", whatComped: "Dinner", kind: "paid", cashRate: 100, spots: 1, freeFirstCampaign: true }, E2);
+  await req("POST", `/api/offers/${offerE2.j.offer.id}/apply`, {}, RC2);
+  const stackE2 = await req("GET", `/api/offers/${offerE2.j.offer.id}/applications`, null, E2);
+  const applicantE2 = ((stackE2.j && stackE2.j.applications) || [])[0];
+  const selE2 = await req("POST", `/api/offers/${offerE2.j.offer.id}/select`, { applicationId: applicantE2 && (applicantE2.id || applicantE2.applicationId) }, E2);
+  const bookingE2 = selE2.j && (selE2.j.booking || selE2.j);
+  const confE2 = await req("POST", `/api/bookings/${bookingE2.id}/confirm`, {}, E2);
+  check("doors setup: second business completes its free campaign", confE2.status === 200, `${confE2.status}`);
+  const dealTry = await req("POST", "/api/deals", { creatorId: "q255-crC" }, E2);
+  check("gate: POST /deals refused", dealTry.status === 403 && dealTry.j && dealTry.j.code === "plan_choice_required", `${dealTry.status} ${JSON.stringify(dealTry.j).slice(0, 140)}`);
+  const blockTry = await req("POST", "/api/block/book", { creatorIds: ["q255-crC"], kind: "comp", title: "Doors block", whatComped: "Dinner for two" }, E2);
+  check("gate: POST /block/book refused", blockTry.status === 403 && blockTry.j && blockTry.j.code === "plan_choice_required", `${blockTry.status} ${JSON.stringify(blockTry.j).slice(0, 140)}`);
+  const paidTry = await req("POST", "/api/bookings/paid", { creatorId: "q255-crC" }, E2);
+  check("gate: POST /bookings/paid refused", paidTry.status === 403 && paidTry.j && paidTry.j.code === "plan_choice_required", `${paidTry.status} ${JSON.stringify(paidTry.j).slice(0, 140)}`);
+  const rebookTry = await req("POST", "/api/offers/rebook", { creatorId: "q255-crC" }, E2);
+  check("gate: POST /offers/rebook refused", rebookTry.status === 403 && rebookTry.j && rebookTry.j.code === "plan_choice_required", `${rebookTry.status} ${JSON.stringify(rebookTry.j).slice(0, 140)}`);
 } finally {
   server.kill();
   try { fs.unlinkSync(DB); } catch (e) { /* already gone */ }

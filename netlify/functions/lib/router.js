@@ -3474,6 +3474,23 @@ async function releaseFreeFirstCampaign(booking, actorId, actorRole, reason) {
   await store.set(`user:${biz.id}`, biz);
   await logEvent({ type: "free_first_campaign_released", actorId: actorId || null, actorRole: actorRole || null, subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId, reason: reason || "booking_ended_before_checkin" } });
 }
+// A designated offer that dies with no booking (window ended,
+// selection deadline passed, business closed it) must not
+// strand the credit in "reserved": hand it back so the business
+// can designate a fresh offer. A credit already tied to a
+// booking is untouched (that booking's own end releases or
+// completes it).
+async function releaseReservedCreditForDeadOffer(offer) {
+  if (!offer || offer.freeFirstCampaign !== true) return;
+  const biz = await store.get(`user:${offer.businessId}`);
+  if (!biz || !biz.business || !biz.business.freeFirstCampaign) return;
+  const credit = biz.business.freeFirstCampaign;
+  if (credit.state !== "reserved" || credit.offerId !== offer.id || credit.bookingId) return;
+  biz.business.freeFirstCampaign = { ...credit, state: "available", offerId: null };
+  biz.updatedAt = nowIso();
+  await store.set(`user:${biz.id}`, biz);
+  await logEvent({ type: "free_first_campaign_released", actorId: null, actorRole: "system", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, reason: "designated_offer_closed_unbooked" } });
+}
 async function completeFreeFirstCampaign(booking) {
   if (!booking || booking.freeFirstCampaign !== true) return;
   const biz = await store.get(`user:${booking.businessId}`);
@@ -11708,7 +11725,14 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
   let freeFirstBooking = false;
   if (offer.freeFirstCampaign === true && business && business.business) {
     const credit = freeFirstCreditOf(business);
-    if (credit && credit.state !== "completed" && !credit.bookingId) freeFirstBooking = true;
+    // Attribution (-255 review round 2): the credit is consumed
+    // only by a booking off the offer it is currently reserved
+    // on. After a takeover designation the old offer still
+    // carries its flag, but its bookings run at normal terms.
+    // (A released credit has bookingId null and offerId still
+    // pointing at its own offer, so the cancel-then-backfill
+    // booking on that same offer still carries the credit.)
+    if (credit && credit.state !== "completed" && !credit.bookingId && (!credit.offerId || credit.offerId === offer.id)) freeFirstBooking = true;
   }
   if (freeFirstBooking) booking.freeFirstCampaign = true;
   if (kind === "coupon") {
@@ -15904,6 +15928,7 @@ async function runOfferSweep() {
       offer.updatedAt = nowIso();
       await store.set(`offer:${offer.id}`, offer);
       summary.offersExpired += 1;
+      await releaseReservedCreditForDeadOffer(offer);
       await logEvent({ type: "offer_expired_window", actorId: null, actorRole: "system", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId } });
       // Build -226 (13e): if the window closed with no live
       // booking filling a spot, the business hears it the moment
@@ -15929,6 +15954,7 @@ async function runOfferSweep() {
       offer.updatedAt = nowIso();
       await store.set(`offer:${offer.id}`, offer);
       summary.offersExpired += 1;
+      await releaseReservedCreditForDeadOffer(offer);
       await logEvent({ type: "offer_selection_deadline_passed", actorId: null, actorRole: "system", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, released: waiting.length } });
       await notifyUser(offer.businessId, "offer_deadline", `The selection deadline passed on "${offer.title}", so the waiting applications were released. Repost any time; picking applicants inside the window keeps the stack.`, { offerId: offer.id });
       continue;
@@ -19348,11 +19374,17 @@ async function businessHome(user) {
     if (!c) continue;
     rebookPrompts.push({ creatorId, name: c.name, handle: c.creator ? c.creator.handle : b.creatorHandle, isFavorite: favIds.has(creatorId), source: "delivered", lastTitle: b.title, lastWhatComped: b.whatComped, lastDollarCap: b.dollarCap });
   }
+  // Handle gating (Jeff, 2026-11-23; -255 review round 2): a
+  // merely favorited creator has no booking with this business,
+  // so the favorite branch shows the handle only when a live
+  // booking elsewhere ties the pair. The delivered branch above
+  // is post-booking by definition and keeps its handle.
+  const homeRevealed255 = businessRevealedCreatorIds(bookings, user.id);
   for (const creatorId of favIds) {
     if (deliveredCreators.has(creatorId)) continue;
     const c = await store.get(`user:${creatorId}`);
     if (!c || c.role !== "creator") continue;
-    rebookPrompts.push({ creatorId, name: c.name, handle: c.creator ? c.creator.handle : "", isFavorite: true, source: "favorite", lastTitle: null, lastWhatComped: null, lastDollarCap: null });
+    rebookPrompts.push({ creatorId, name: c.name, handle: homeRevealed255.has(creatorId) && c.creator ? c.creator.handle : "", isFavorite: true, source: "favorite", lastTitle: null, lastWhatComped: null, lastDollarCap: null });
   }
   rebookPrompts.sort((a, b) => (Number(b.isFavorite) - Number(a.isFavorite)) || (a.source === b.source ? 0 : a.source === "delivered" ? -1 : 1));
 
@@ -22847,7 +22879,7 @@ function canonLocalFollowers250(creatorUser, market) {
   }
   return lf;
 }
-function blockMemberView213(bizUser, creatorUser) {
+function blockMemberView213(bizUser, creatorUser, revealedIds) {
   const c = creatorUser.creator || {};
   const lf = canonLocalFollowers250(creatorUser, bizUser.market);
   const nb = neighborCountFor(c);
@@ -22856,7 +22888,11 @@ function blockMemberView213(bizUser, creatorUser) {
   return {
     userId: creatorUser.id,
     name: creatorUser.name || "",
-    handle: c.handle || "",
+    // Handle gating (Jeff, 2026-11-23; -255 review round 2):
+    // the Block roster is a business-facing surface, so the
+    // handle shows only for creators this business has a live
+    // booking with. Callers pass the reveal set; no set = gated.
+    handle: revealedIds && revealedIds.has(creatorUser.id) ? (c.handle || "") : "",
     photoUrl: c.hasPhoto ? `/api/users/${creatorUser.id}/photo` : null,
     band: proximityBandFor(bizUser, creatorUser),
     totalAudience: lf.total,
@@ -22884,9 +22920,10 @@ async function blockRosterFor213(bizUser) {
   if (!bizUser || bizUser.role !== "business" || !bizUser.market) return null;
   const marketName = (marketByName(bizUser.market) || {}).name || normalizeMarketName(bizUser.market);
   const users = await allUsers();
+  const revealedIds = businessRevealedCreatorIds(await allBookings(), bizUser.id);
   const members = users
     .filter((u) => isRosterCreator(u) && !isTester(u) && profileCompleteOf(u) && standingState(u) !== "banned" && isListedInMarket(u, marketName))
-    .map((u) => blockMemberView213(bizUser, u))
+    .map((u) => blockMemberView213(bizUser, u, revealedIds))
     .sort(blockSort213);
   return { market: marketName, members };
 }
@@ -36746,6 +36783,11 @@ async function route(event) {
     }
     if (method === "POST" && seg[1] === "book" && seg.length === 2) {
       if (user.role !== "business") return err(403, "Businesses only");
+      // Post-test conversion gate (Jeff, 2026-11-23; -255 review
+      // round 2): a Block booking starts campaigns too.
+      if (planChoiceRequired255(user)) {
+        return json(403, { error: PLAN_CHOICE_ERROR_255, code: "plan_choice_required" });
+      }
       const b = parseBody(event);
       const ids = [...new Set((Array.isArray(b.creatorIds) ? b.creatorIds : []).filter((x) => typeof x === "string"))];
       if (!ids.length || ids.length > 5) return err(400, "Pick between 1 and 5 creators for one Block booking.");
@@ -36782,16 +36824,20 @@ async function route(event) {
         const cu = await store.get(`user:${id}`);
         if (cu) members.push(cu);
       }
-      const memberViews = members.map((cu) => blockMemberView213(user, cu));
+      const bookRevealed = businessRevealedCreatorIds(await allBookings(), user.id);
+      const memberViews = members.map((cu) => blockMemberView213(user, cu, bookRevealed));
       const totals = lineupTotals(memberViews.map((m) => ({ neighborCount: m.neighborCount, neighborExtrapolated: m.neighborExtrapolated, compOpen: m.compOpen, paidRate: m.paidRate })));
       const blockRec = { id: crypto.randomUUID(), businessId: user.id, market: user.market, kind, title, memberIds: ids, createdAt: nowIso(), sent: 0, drafted: 0, skipped: 0 };
       const snapshot = { businessName: (user.business || {}).businessName || "", members: memberViews.map((m) => ({ userId: m.userId, name: m.name, handle: m.handle, photoUrl: m.photoUrl, neighborCount: m.neighborCount, neighborExtrapolated: m.neighborExtrapolated })), combinedNeighbors: totals.combinedNeighbors, anyExtrapolated: totals.anyExtrapolated, at: blockRec.createdAt };
       const results = [];
       for (const cu of members) {
         const r = await createBlockOffer213(user, cu, spec, blockRec, snapshot);
-        if (r.offer) { results.push({ creatorId: cu.id, handle: (cu.creator || {}).handle || "", status: r.offer.status, offerId: r.offer.id }); if (r.offer.status === "open") blockRec.sent += 1; else blockRec.drafted += 1; }
-        else if (r.skipped) { results.push({ creatorId: cu.id, handle: (cu.creator || {}).handle || "", status: "skipped", reason: r.skipped, offerId: r.offerId }); blockRec.skipped += 1; }
-        else { results.push({ creatorId: cu.id, handle: (cu.creator || {}).handle || "", status: "refused", reason: r.error || "Could not send" }); blockRec.skipped += 1; }
+        // Handle gating (-255 review round 2): results report
+        // the gated member view's handle, never the raw record.
+        const gatedHandle = bookRevealed.has(cu.id) ? ((cu.creator || {}).handle || "") : "";
+        if (r.offer) { results.push({ creatorId: cu.id, handle: gatedHandle, status: r.offer.status, offerId: r.offer.id }); if (r.offer.status === "open") blockRec.sent += 1; else blockRec.drafted += 1; }
+        else if (r.skipped) { results.push({ creatorId: cu.id, handle: gatedHandle, status: "skipped", reason: r.skipped, offerId: r.offerId }); blockRec.skipped += 1; }
+        else { results.push({ creatorId: cu.id, handle: gatedHandle, status: "refused", reason: r.error || "Could not send" }); blockRec.skipped += 1; }
       }
       await store.set(`block:${blockRec.id}`, blockRec);
       await logEvent({ type: "block_booked", actorId: user.id, actorRole: "business", subjectId: blockRec.id, market: user.market, data: { title, kind, memberIds: ids, sent: blockRec.sent, drafted: blockRec.drafted, skipped: blockRec.skipped } });
@@ -37810,6 +37856,10 @@ async function route(event) {
       offer.status = "closed";
       offer.updatedAt = nowIso();
       await store.set(`offer:${offer.id}`, offer);
+      // Free first campaign (-255 review round 2): closing the
+      // designated offer before any booking hands the credit
+      // back immediately, not just at the next designation.
+      await releaseReservedCreditForDeadOffer(offer);
       await logEvent({ type: "offer_closed", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: {} });
       const mine = (await allApplications()).filter((a) => a.offerId === offer.id && (a.status === "applied" || a.status === "backfill_offered"));
       for (const app of mine) await releaseApplication(app, "offer_closed", { id: user.id, role: "business" });
@@ -38253,6 +38303,11 @@ async function route(event) {
       // (the founding gate); a deal that books itself on
       // acceptance must not slip one through before activation.
       if (isFoundingBusiness(user)) return err(403, foundingBusinessMessage187(user));
+      // Post-test conversion gate (Jeff, 2026-11-23; -255 review
+      // round 2): a deal is a campaign start too.
+      if (planChoiceRequired255(user)) {
+        return json(403, { error: PLAN_CHOICE_ERROR_255, code: "plan_choice_required" });
+      }
       const b = parseBody(event);
       let terms = null;
       let creator = null;
@@ -39273,6 +39328,11 @@ async function route(event) {
   // a paid visit is a per-visit purchase on top.
   if (seg[0] === "bookings" && seg.length === 2 && seg[1] === "paid" && method === "POST") {
     if (user.role !== "business") return err(403, "Businesses only");
+    // Post-test conversion gate (Jeff, 2026-11-23; -255 review
+    // round 2): a direct paid booking is a campaign start too.
+    if (planChoiceRequired255(user)) {
+      return json(403, { error: PLAN_CHOICE_ERROR_255, code: "plan_choice_required" });
+    }
     if (!(await isMarketLive(user.market))) return err(403, "Magpie is not live in your market yet, so paid bookings open with the market.");
     const b = parseBody(event);
     const creator = await store.get(`user:${b.creatorId}`);
@@ -41200,7 +41260,17 @@ async function route(event) {
         const dist = origLocal !== null && lp !== null ? Math.abs(lp - origLocal) : 50;
         return { u, catMatch, dist };
       }).sort((a, b2) => a.catMatch - b2.catMatch || a.dist - b2.dist);
-      return json(200, { suggestions: scored.slice(0, 3).map(({ u }) => ({ creatorId: u.id, handle: u.creator.handle, name: u.name, localAudiencePct: u.creator.localAudiencePct, categories: u.creator.categories || [] })) });
+      // Handle gating (Jeff, 2026-11-23; -255 review round 2):
+      // swap suggestions are replacement creators this business
+      // has not booked, so their handles stay hidden unless a
+      // live booking elsewhere ties the pair.
+      const swapRevealed = businessRevealedCreatorIds(await allBookings(), user.id);
+      return json(200, { suggestions: scored.slice(0, 3).map(({ u }) => ({ creatorId: u.id, handle: swapRevealed.has(u.id) ? u.creator.handle : null, name: u.name, localAudiencePct: u.creator.localAudiencePct, categories: u.creator.categories || [] })) });
+    }
+    // Post-test conversion gate (Jeff, 2026-11-23; -255 review
+    // round 2): a swap sends a new campaign offer too.
+    if (planChoiceRequired255(user)) {
+      return json(403, { error: PLAN_CHOICE_ERROR_255, code: "plan_choice_required" });
     }
     const b = parseBody(event);
     const target = await store.get(`user:${String(b.creatorId || "")}`);
