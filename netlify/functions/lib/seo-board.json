@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-11-20T19:01:09.806Z",
+  "generatedAt": "2026-11-23T18:59:40.197Z",
   "totals": {
     "searchPages": 24,
-    "sitePages": 439,
+    "sitePages": 471,
     "lastUpdated": "2026-11-19"
   },
   "nextUp": "Boutiques x remaining 4 core markets (Miami, Atlanta, Toronto, Hampton Roads).",
@@ -13,7 +13,11 @@
     "Storytime gap pages (Group: food and drink brands national, bar creator nights, fashion, hotels, in-person visits platform page, nano influencer marketing, micro influencer platform landing), in the order listed in the phrase map.",
     "Magpie vs TryNearby, on trigger only.",
     "Salons x Austin + tier-2.",
-    "Case studies, still blocked on real usage, never invented."
+    "Case studies, still blocked on real usage, never invented.",
+    "Boutiques x remaining 4 core markets: Miami, Atlanta, Toronto, Hampton Roads (learn/influencer-marketing-for-{miami,atlanta,toronto,hampton-roads}-boutiques.html), house format, one unique verified hero per page.",
+    "Then bars and nightlife x 7, then Business-type Tranche 2.",
+    "Boutiques x remaining 4 core markets: Miami, Atlanta, Toronto, Hampton Roads (learn/influencer-marketing-for-{miami,atlanta,toronto,hampton-roads}-boutiques.html), house format, one unique verified hero per page.",
+    "Then bars and nightlife x 7, then Business-type Tranche 2 (25 types, Group F)."
   ],
   "tracking": {
     "checkDate": "2026-11-18",
@@ -211,7 +215,7 @@
     }
   ],
   "inventory": {
-    "total": 439,
+    "total": 471,
     "groups": [
       {
         "name": "Main pages",
@@ -244,6 +248,11 @@
           {
             "title": "College Creators: Free Meals Near Campus for Honest Posts",
             "url": "https://magpielocal.com/for-students.html",
+            "date": null
+          },
+          {
+            "title": "CPG Influencer Marketing: Local Creators Who Buy Off the Shelf",
+            "url": "https://magpielocal.com/for-cpg-brands.html",
             "date": null
           },
           {
@@ -324,6 +333,11 @@
           {
             "title": "Influencer Marketing for Coffee Shops",
             "url": "https://magpielocal.com/for-coffee-shop-roastery.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for DTC Brands: Local Creators, Real Homes",
+            "url": "https://magpielocal.com/for-dtc-brands.html",
             "date": null
           },
           {
@@ -427,8 +441,18 @@
             "date": null
           },
           {
+            "title": "Micro-Influencer Marketing for Boutiques",
+            "url": "https://magpielocal.com/for-boutique.html",
+            "date": null
+          },
+          {
             "title": "Micro-Influencer Marketing for Restaurants, Cafes and Food Trucks",
             "url": "https://magpielocal.com/for-restaurants.html",
+            "date": null
+          },
+          {
+            "title": "Music Street Teams, City by City: Local Creators Promoting Releases and Shows",
+            "url": "https://magpielocal.com/for-record-labels.html",
             "date": null
           },
           {
@@ -494,6 +518,11 @@
           {
             "title": "Brand Deals in Washington DC: Local Creators, Local Businesses",
             "url": "https://magpielocal.com/brand-deals-washington-dc.html",
+            "date": null
+          },
+          {
+            "title": "Chicago Creators to Watch",
+            "url": "https://magpielocal.com/chicago-creators-to-watch.html",
             "date": null
           },
           {
@@ -927,6 +956,11 @@
             "date": null
           },
           {
+            "title": "Local Creator Marketing in San Francisco",
+            "url": "https://magpielocal.com/markets/san-francisco.html",
+            "date": null
+          },
+          {
             "title": "Local Creator Marketing in San Juan",
             "url": "https://magpielocal.com/markets/san-juan.html",
             "date": null
@@ -937,8 +971,18 @@
             "date": null
           },
           {
+            "title": "Local Creator Marketing in Seoul",
+            "url": "https://magpielocal.com/markets/seoul.html",
+            "date": null
+          },
+          {
             "title": "Local Creator Marketing in Tampa",
             "url": "https://magpielocal.com/markets/tampa.html",
+            "date": null
+          },
+          {
+            "title": "Local Creator Marketing in Tokyo",
+            "url": "https://magpielocal.com/markets/tokyo.html",
             "date": null
           },
           {
@@ -977,6 +1021,11 @@
             "date": null
           },
           {
+            "title": "London Creators to Watch",
+            "url": "https://magpielocal.com/london-creators-to-watch.html",
+            "date": null
+          },
+          {
             "title": "Marketing de Influencers en Miami: Lista Fundadora de Magpie",
             "url": "https://magpielocal.com/miami-es.html",
             "date": "2026-10-28"
@@ -1004,6 +1053,11 @@
           {
             "title": "Raleigh Creators to Watch",
             "url": "https://magpielocal.com/raleigh-creators-to-watch.html",
+            "date": null
+          },
+          {
+            "title": "Seattle Creators to Watch",
+            "url": "https://magpielocal.com/seattle-creators-to-watch.html",
             "date": null
           }
         ]
@@ -1037,14 +1091,14 @@
             "date": "2026-11-02"
           },
           {
+            "title": "Charlotte Salons, Gyms and Studios: Local Creators for Slow Days",
+            "url": "https://magpielocal.com/learn/charlotte-salons-gyms-and-studios-local-creators-for-slow-days.html",
+            "date": "2026-11-23"
+          },
+          {
             "title": "Creator Red Flags and Green Flags: What Gets You Booked in 2026",
             "url": "https://magpielocal.com/learn/creator-red-flags-and-green-flags.html",
             "date": "2026-10-22"
-          },
-          {
-            "title": "Dallas–Fort Worth Creators to Watch",
-            "url": "https://magpielocal.com/learn/dallas-fort-worth-creators-to-watch.html",
-            "date": "2026-11-08"
           },
           {
             "title": "DC Restaurants: Creator Visits for Less Than One Influencer Post",
@@ -1120,6 +1174,11 @@
             "title": "Hampton Roads Salons and Barbers: Filling Weekday Chairs With Local Creators",
             "url": "https://magpielocal.com/learn/hampton-roads-salons-and-barbers-filling-weekday-chairs.html",
             "date": "2026-11-17"
+          },
+          {
+            "title": "How a Local Business Should Pick Its First Five Creators",
+            "url": "https://magpielocal.com/learn/how-a-local-business-should-pick-its-first-five-creators.html",
+            "date": "2026-11-21"
           },
           {
             "title": "How beauty creators get booked in Atlanta",
@@ -1867,6 +1926,11 @@
             "date": "2026-10-22"
           },
           {
+            "title": "How to Read a Brand Brief in Five Minutes",
+            "url": "https://magpielocal.com/learn/how-to-read-a-brand-brief-in-five-minutes.html",
+            "date": "2026-11-23"
+          },
+          {
             "title": "How to Run a Comped Creator Visit at Your Business",
             "url": "https://magpielocal.com/learn/how-to-run-a-comped-creator-visit.html",
             "date": "2026-11-15"
@@ -1895,6 +1959,11 @@
             "title": "How to Turn One Comped Visit Into a Paid Regular Gig",
             "url": "https://magpielocal.com/learn/how-to-turn-a-comped-visit-into-paid-work.html",
             "date": "2026-10-22"
+          },
+          {
+            "title": "Influencer Marketing for Atlanta Boutiques and Retail",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-atlanta-boutiques.html",
+            "date": "2026-11-23"
           },
           {
             "title": "Influencer Marketing for Atlanta Cafes and Coffee Shops",
@@ -1940,6 +2009,11 @@
             "title": "Influencer Marketing for Denver Restaurants",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-denver-restaurants.html",
             "date": "2026-11-15"
+          },
+          {
+            "title": "Influencer Marketing for Hampton Roads Boutiques and Retail",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-hampton-roads-boutiques.html",
+            "date": "2026-11-23"
           },
           {
             "title": "Influencer Marketing for Hampton Roads Cafes and Coffee Shops",
@@ -1990,6 +2064,11 @@
             "title": "Influencer Marketing for Los Angeles Spas and Med Spas",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-los-angeles-spas-and-med-spas.html",
             "date": "2026-11-20"
+          },
+          {
+            "title": "Influencer Marketing for Miami Boutiques and Retail",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-miami-boutiques.html",
+            "date": "2026-11-23"
           },
           {
             "title": "Influencer Marketing for Miami Cafes and Coffee Shops",
@@ -2122,6 +2201,11 @@
             "date": "2026-11-15"
           },
           {
+            "title": "Influencer Marketing for Toronto Boutiques and Retail",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-toronto-boutiques.html",
+            "date": "2026-11-23"
+          },
+          {
             "title": "Influencer Marketing for Toronto Cafes and Coffee Shops",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-toronto-cafes-and-coffee-shops.html",
             "date": "2026-11-19"
@@ -2167,6 +2251,11 @@
             "date": "2026-11-16"
           },
           {
+            "title": "Local Influencer Marketing: The Complete Definition and Guide",
+            "url": "https://magpielocal.com/learn/local-influencer-marketing.html",
+            "date": "2026-11-23"
+          },
+          {
             "title": "Local Influencer Platform or DM Creators Yourself?",
             "url": "https://magpielocal.com/learn/local-influencer-platform-vs-dming-creators.html",
             "date": "2026-11-16"
@@ -2187,6 +2276,11 @@
             "date": null
           },
           {
+            "title": "Magpie vs Afluencer: A City Roster or a Collab Board?",
+            "url": "https://magpielocal.com/learn/magpie-vs-afluencer.html",
+            "date": "2026-11-22"
+          },
+          {
             "title": "Magpie vs Collabstr: A Local Roster or a Global Marketplace?",
             "url": "https://magpielocal.com/learn/magpie-vs-collabstr.html",
             "date": "2026-11-18"
@@ -2197,9 +2291,19 @@
             "date": "2026-11-20"
           },
           {
+            "title": "Magpie vs Heepsy: A City Roster or a Search Engine?",
+            "url": "https://magpielocal.com/learn/magpie-vs-heepsy.html",
+            "date": "2026-11-22"
+          },
+          {
             "title": "Magpie vs Hummingbirds: Which Local Creator Platform Fits?",
             "url": "https://magpielocal.com/learn/magpie-vs-hummingbirds.html",
             "date": "2026-11-15"
+          },
+          {
+            "title": "Magpie vs Insense: Local Visits or Ordered Content?",
+            "url": "https://magpielocal.com/learn/magpie-vs-insense.html",
+            "date": "2026-11-23"
           },
           {
             "title": "Magpie vs Mustard: Automated Campaigns or a Local Roster?",
@@ -2212,9 +2316,19 @@
             "date": "2026-11-18"
           },
           {
+            "title": "Magpie vs Social Cat: A Local Roster or a Gifting Matchmaker?",
+            "url": "https://magpielocal.com/learn/magpie-vs-social-cat.html",
+            "date": "2026-11-22"
+          },
+          {
             "title": "Magpie vs Storytime: Local Creator Visits, Compared",
             "url": "https://magpielocal.com/learn/magpie-vs-storytime.html",
             "date": "2026-11-15"
+          },
+          {
+            "title": "Magpie: The Facts",
+            "url": "https://magpielocal.com/learn/magpie-facts.html",
+            "date": "2026-11-22"
           },
           {
             "title": "Micro Influencers vs. Big Influencers for Local Businesses",
@@ -2247,9 +2361,9 @@
             "date": "2026-11-06"
           },
           {
-            "title": "Raleigh Creators to Watch",
-            "url": "https://magpielocal.com/learn/raleigh-creators-to-watch.html",
-            "date": "2026-11-08"
+            "title": "Raleigh Coffee Shops and Bakeries: Weekday Creator Visits That Fill Quiet Hours",
+            "url": "https://magpielocal.com/learn/raleigh-coffee-shops-and-bakeries-weekday-creator-visits.html",
+            "date": "2026-11-22"
           },
           {
             "title": "Reels vs. Photo Posts for a Local Business: What Actually Gets Saved and Shared",
@@ -2372,6 +2486,11 @@
             "date": "2026-10-26"
           },
           {
+            "title": "When Should a Creator Raise Their Rate?",
+            "url": "https://magpielocal.com/learn/when-should-a-creator-raise-their-rate.html",
+            "date": "2026-11-22"
+          },
+          {
             "title": "Which Influencer Marketing Platform Is Best for Salons and Spas?",
             "url": "https://magpielocal.com/learn/best-influencer-platform-for-salons-and-spas.html",
             "date": "2026-11-16"
@@ -2390,6 +2509,11 @@
             "title": "Your Creator Profile Is Your Rate Card",
             "url": "https://magpielocal.com/learn/your-creator-profile-is-your-rate-card.html",
             "date": "2026-10-27"
+          },
+          {
+            "title": "Your First 30 Days on a Creator Platform: A Simple Checklist",
+            "url": "https://magpielocal.com/learn/your-first-30-days-on-a-creator-platform.html",
+            "date": "2026-11-21"
           }
         ]
       },
@@ -2402,6 +2526,11 @@
             "date": null
           },
           {
+            "title": "Credits",
+            "url": "https://magpielocal.com/credits.html",
+            "date": null
+          },
+          {
             "title": "Marketing de Influencers Local para Negocios y Creadores Locales",
             "url": "https://magpielocal.com/es.html",
             "date": null
@@ -2409,6 +2538,16 @@
           {
             "title": "Marketing de Influencers para Negocios Locales y Restaurantes",
             "url": "https://magpielocal.com/negocios.html",
+            "date": null
+          },
+          {
+            "title": "Marketing Local para Creadores: Te Pagan Cuando Publicas, Te Quedas con el 97%",
+            "url": "https://magpielocal.com/creadores.html",
+            "date": null
+          },
+          {
+            "title": "Precios para Creadores y Negocios",
+            "url": "https://magpielocal.com/precios.html",
             "date": null
           },
           {
@@ -2424,6 +2563,31 @@
           {
             "title": "Terms of Use",
             "url": "https://magpielocal.com/terms.html",
+            "date": null
+          },
+          {
+            "title": "The Local List",
+            "url": "https://magpielocal.com/local-list.html",
+            "date": null
+          },
+          {
+            "title": "The Local List: Denver",
+            "url": "https://magpielocal.com/local-list-denver.html",
+            "date": null
+          },
+          {
+            "title": "The Local List: Miami",
+            "url": "https://magpielocal.com/local-list-miami.html",
+            "date": null
+          },
+          {
+            "title": "The Local List: Nashville",
+            "url": "https://magpielocal.com/local-list-nashville.html",
+            "date": null
+          },
+          {
+            "title": "The Local List: Virginia Beach",
+            "url": "https://magpielocal.com/local-list-virginia-beach.html",
             "date": null
           }
         ]
