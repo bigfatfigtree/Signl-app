@@ -57,6 +57,11 @@ check("server: applicant stack gates the handle until selection",
 check("client: composer toggle + payload flag + gated-profile note",
   app.includes("function ffcAvailableClient()") && app.includes("payload.freeFirstCampaign = true")
   && app.includes("Social handles unlock when a booking with"));
+check("server: post-test plan gate exists and carries the prompt code",
+  router.includes("function planChoiceRequired255(user)") && router.includes("plan_choice_required"));
+check("client: conversion prompt renders plan rows from the bootstrap book, no em dashes in the prompt copy",
+  app.includes("function planChoiceCard255()") && app.includes("function openPlanChoice255()")
+  && app.includes("Pick a plan to keep going") && !app.slice(app.indexOf("function planChoiceRows255"), app.indexOf("function sigB1SummaryText")).includes("—"));
 
 part("B. Behavioral over HTTP");
 const PORT = 9255;
@@ -249,6 +254,18 @@ try {
   const otherM = members2.find((m) => m.userId !== "q255-crE");
   check("booked member's handle revealed in the lineup", !!bookedM && bookedM.handle === "qa255epsilon", bookedM ? String(bookedM.handle) : "member missing");
   check("unbooked members stay gated in the lineup", !!otherM && !otherM.handle, otherM ? String(otherM.handle) : "no other member");
+  part("B12. Post-test conversion gate (Jeff, 2026-11-23 17:05)");
+  const boot = await req("GET", "/api/bootstrap");
+  const plans = (boot.j && boot.j.plans) || [];
+  const planNums = plans.map((p) => [p.id, p.priceMonthly, p.firstMonthPriceMonthly, p.visitsPerMonth]);
+  check("plan book verified: 199/99/5, 349/249/10, 699/599/20",
+    JSON.stringify(planNums) === JSON.stringify([["self-service", 199, 99, 5], ["growth", 349, 249, 10], ["managed", 699, 599, 20]]), JSON.stringify(planNums));
+  const second = await req("POST", "/api/offers", { title: "Alpha second campaign", whatComped: "Dinner", kind: "paid", cashRate: 100, spots: 1 }, A);
+  check("second campaign blocked before a post-test plan pick", second.status === 403 && second.j && second.j.code === "plan_choice_required", `${second.status} ${JSON.stringify(second.j).slice(0, 200)}`);
+  const pick = await req("POST", "/api/me/plan", { planId: "growth" }, A);
+  check("plan pick records through the existing door", pick.status === 200 && pick.j.user && pick.j.user.business && pick.j.user.business.plan === "growth", `${pick.status} ${JSON.stringify(pick.j).slice(0, 160)}`);
+  const third = await req("POST", "/api/offers", { title: "Alpha second campaign after pick", whatComped: "Dinner", kind: "paid", cashRate: 100, spots: 1 }, A);
+  check("second campaign opens after the pick", third.status === 201 || third.status === 200, `${third.status} ${JSON.stringify(third.j).slice(0, 160)}`);
 } finally {
   server.kill();
   try { fs.unlinkSync(DB); } catch (e) { /* already gone */ }

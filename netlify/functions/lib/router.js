@@ -3441,6 +3441,23 @@ function freeFirstCreditOf(bizUser) {
   if (b.freeFirstCampaign && typeof b.freeFirstCampaign === "object" && b.freeFirstCampaign.state) return b.freeFirstCampaign;
   return { state: "available", grantedAt: null, offerId: null, bookingId: null, completedAt: null, legacy: true };
 }
+// Post-test conversion (Jeff, 2026-11-23): once the free first
+// campaign completes, the next campaign waits until the
+// business picks a plan AFTER the test. The pick rides the
+// existing POST /me/plan (plan recorded, no card charged,
+// billing starts at launch), which stamps planSelectedAt, so a
+// post-test pick is a planSelectedAt at or after the credit's
+// completedAt. A plan picked at signup predates the completion
+// and does not count: the prompt asks them to confirm a plan
+// with the test behind them.
+function planChoiceRequired255(user) {
+  if (!user || user.role !== "business" || !user.business) return false;
+  const credit = freeFirstCreditOf(user);
+  if (!credit || credit.state !== "completed" || !credit.completedAt) return false;
+  const sel = user.business.planSelectedAt;
+  return !(sel && Date.parse(sel) >= Date.parse(credit.completedAt));
+}
+const PLAN_CHOICE_ERROR_255 = "Your first campaign is done. Pick a plan to start your next campaign. Nothing is due until your market launches.";
 // Hand the credit back when a free-first booking dies before
 // check-in (cancel, expiry, creator decline — any door). A
 // redeemed booking already completed the credit; completion
@@ -37184,6 +37201,13 @@ async function route(event) {
       const delivered = myBookings.filter((bk) => posts.some((p) => p.bookingId === bk.id)).sort((a, b2) => (a.createdAt < b2.createdAt ? 1 : -1))[0];
       const last = delivered || myBookings.sort((a, b2) => (a.createdAt < b2.createdAt ? 1 : -1))[0];
       const ts = nowIso();
+      // Post-test conversion gate (Jeff, 2026-11-23): the free
+      // campaign is done and no plan has been picked since, so a
+      // new campaign waits for the pick. The client opens the
+      // plan prompt on this code.
+      if (planChoiceRequired255(user)) {
+        return json(403, { error: PLAN_CHOICE_ERROR_255, code: "plan_choice_required" });
+      }
       const offer = {
         id: crypto.randomUUID(),
         businessId: user.id,
@@ -37490,6 +37514,16 @@ async function route(event) {
           if (holder && (holder.status === "open" || holder.status === "draft")) return err(400, "Your free first campaign is already on another offer. Close that offer first, or post this one at the normal terms.");
         }
         offer.freeFirstCampaign = true;
+      }
+      // Post-test conversion gate (Jeff, 2026-11-23): after the
+      // designation checks above (a completed credit still
+      // refuses designation on its own 400) and before anything
+      // is stored, a business whose free campaign is complete
+      // and who has not picked a plan since cannot start the
+      // next campaign. The client opens the plan prompt on this
+      // code.
+      if (planChoiceRequired255(user)) {
+        return json(403, { error: PLAN_CHOICE_ERROR_255, code: "plan_choice_required" });
       }
       await store.set(`offer:${offer.id}`, offer);
       if (offer.freeFirstCampaign === true) {

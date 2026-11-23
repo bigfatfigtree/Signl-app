@@ -12017,6 +12017,73 @@ function ffcAvailableClient() {
   if (!c) return true;
   return c.state === "available";
 }
+// Post-test conversion prompt (Jeff, 2026-11-23): when the free
+// first campaign completes, the business picks a plan before
+// the next campaign. The pick counts only when it happens after
+// the test (the server gates offer creation on the same rule):
+// a plan picked at signup predates the completion. Prices and
+// monthly creator counts come from the bootstrap plan book, the
+// same objects the join form prices from. No em dashes.
+function ffcPlanPromptNeeded() {
+  const u = state.user;
+  if (!u || u.role !== "business" || !u.business) return false;
+  const c = u.business.freeFirstCampaign;
+  if (!c || c.state !== "completed" || !c.completedAt) return false;
+  const sel = u.business.planSelectedAt;
+  return !(sel && Date.parse(sel) >= Date.parse(c.completedAt));
+}
+function planChoiceRows255() {
+  const plans = (state.boot && state.boot.plans) || [];
+  return plans.map((p) => `<div class="rp-plan">
+      <div class="rp-plan-name">${esc(p.name)}</div>
+      <div class="rp-plan-price">$${fmtPrice(p.priceMonthly)}<span class="muted"> / month</span></div>
+      <div class="small">$${fmtPrice(p.firstMonthPriceMonthly)} a month for your first 3 months</div>
+      <div class="small">${p.visitsPerMonth} creators a month</div>
+      <div style="margin-top:8px"><button type="button" class="btn small-btn" onclick="return choosePlan255('${p.id}')">Choose ${esc(p.name)}</button></div>
+    </div>`).join("");
+}
+function planChoiceCard255() {
+  if (!ffcPlanPromptNeeded()) return "";
+  return `<section class="wcard">
+    <p class="ui-kicker">Your first campaign is done</p>
+    <h3>Pick a plan to keep going</h3>
+    <p class="wc-sub">Your free first campaign is complete. Pick a plan to start your next campaign. Nothing is due until your market launches.</p>
+    <div class="rp-plans">${planChoiceRows255()}</div>
+  </section>`;
+}
+function openPlanChoice255() {
+  closePlanChoice255();
+  const el = document.createElement("div");
+  el.id = "ffc-plan-sheet";
+  el.className = "sheet-overlay";
+  el.innerHTML = `<div class="sheet" role="dialog" aria-label="Pick a plan">
+    <p class="ui-kicker">Your first campaign is done</p>
+    <h3>Pick a plan to keep going</h3>
+    <p class="wc-sub">Pick a plan to start your next campaign. Nothing is due until your market launches.</p>
+    <div class="rp-plans">${planChoiceRows255()}</div>
+    <button type="button" class="btn ghost" onclick="return closePlanChoice255()">Not yet</button>
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closePlanChoice255(); });
+  document.body.appendChild(el);
+  return false;
+}
+function closePlanChoice255() {
+  const el = document.getElementById("ffc-plan-sheet");
+  if (el) el.remove();
+  return false;
+}
+async function choosePlan255(planId) {
+  try {
+    const data = await api("POST", "/me/plan", { planId });
+    if (data && data.user) state.user = data.user;
+    closePlanChoice255();
+    showToast("Plan saved. Nothing is due until your market launches.");
+    render();
+  } catch (e) {
+    showToast(e.message || "That did not save. Try again.");
+  }
+  return false;
+}
 function sigB1SummaryText() {
   const d = state.sigFlow.data;
   const bizName = (state.user.business && state.user.business.businessName) || "";
@@ -12126,6 +12193,16 @@ async function sigB1Commit() {
       { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
     ]);
   } catch (err) {
+    if (err.data && err.data.code === "plan_choice_required") {
+      // Post-test conversion (Jeff, 2026-11-23): the free
+      // campaign is done, so the next campaign starts with the
+      // plan prompt, not an error.
+      state.sigFlow = null;
+      state.sigOpData = null;
+      sigOpSay(ST("Your first campaign is done. Pick a plan to start your next one. Nothing is due until your market launches.", "Tu primera campaña terminó. Elige un plan para empezar la siguiente. No se debe nada hasta que abra tu mercado."), []);
+      openPlanChoice255();
+      return;
+    }
     if (err.data && err.data.existingOfferId) {
       // Double-confirm guard: the 409 IS the dedupe. Nothing
       // new was created; point at the one that exists.
@@ -22880,6 +22957,7 @@ async function loadFoundingBusinessHome() {
   ${wsHead("Home", { sub: "Start here.", subKey: "biz-home" })}
   <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz137.businessName || u.name || "")}</div><div class="hg-line serif-line">Your founding spot is held. ${esc(foundingBizPlace(u))} opens soon, and we email you the day it does.</div></div>
   ${sigHero137Html(`You are on the founding roster for ${foundingBizPlace(u)}. Nothing is due and nothing is charged. Get your page ready and draft your first campaign now; it goes out the day your market opens.`)}
+  ${planChoiceCard255()}
   ${bizGuideStartersHtml()}
   ${sqNoticeHtml()}
   <div id="fbz-highlights"></div>
@@ -24324,6 +24402,7 @@ async function loadBusinessHome() {
     ${sqNoticeHtml()}
     ${sigHero137Html(briefBiz)}
     ${promptSlotHtml()}
+    ${planChoiceCard255()}
     ${bizGuideStartersHtml()}
     ${highlights137Html([
       { label: "Creators waiting", sub: "Waiting on your answer", value: String(waiting.length) },
@@ -28341,6 +28420,14 @@ async function campaignGuideConfirm() {
       ? `Saved. "${d.title}" is a draft in Your campaigns. Nothing was sent to a creator.`
       : `Saved. "${d.title}" is in Your campaigns.`);
   } catch (err) {
+    if (err.data && err.data.code === "plan_choice_required") {
+      // Post-test conversion (Jeff, 2026-11-23): open the plan
+      // prompt instead of an error.
+      cg.step = "summary";
+      campaignGuideSay("Your first campaign is done. Pick a plan to start your next one. Nothing is due until your market launches.", []);
+      openPlanChoice255();
+      return;
+    }
     cg.step = "summary";
     campaignGuideSay(`${err.message || "That did not save."} Nothing was saved. Check the summary and try again, or start over.`, [
       { label: "Try again", field: "confirm", value: "yes", primary: true },
