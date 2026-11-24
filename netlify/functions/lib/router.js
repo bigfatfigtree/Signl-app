@@ -5552,13 +5552,14 @@ function audienceTotalOf(creator) {
 // no record is ever rewritten by this math (read-only, like every
 // totals definition in this file). Rounded per creator, matching
 // the platform totals convention.
-// Population: the PUBLIC ROSTER — approved, profile-complete,
-// tester records excluded. The same finished creators whose public
-// pages are live; pending and half-finished sign-ups are not a
-// public claim yet. This is the figure the marketing site's
-// homepage band fetches (GET /api/public/totals) and the figure
-// the offline recount of 2026-11-23 measured at 6,256,636 strict
-// per-platform (6,269,530 with the discovered-accounts layer,
+// Population: ALL SIGNED-UP creators — approved or pending,
+// tester records excluded (Jeff's order, 2026-11-24; the same
+// signed-up definition as platformTotals126). Pending and
+// half-finished sign-ups now count. This is the figure the
+// marketing site's homepage band fetches (GET /api/public/totals)
+// and the figure the offline recount of 2026-11-23 measured at
+// 6,256,636 strict per-platform over the previous public-roster
+// population (6,269,530 with the discovered-accounts layer,
 // which refreshes separately and is NOT part of this live figure).
 function localFollowersByPlatform(users) {
   let creators = 0;
@@ -5566,7 +5567,7 @@ function localFollowersByPlatform(users) {
   let localFollowers = 0;
   for (const u of users || []) {
     if (!u || u.role !== "creator" || isTester(u)) continue;
-    if (u.status !== "approved" || !profileCompleteOf(u)) continue;
+    if (u.status !== "approved" && u.status !== "pending") continue;
     creators += 1;
     const c = u.creator || {};
     const stack = audienceStackOf(c);
@@ -6146,7 +6147,7 @@ async function handleVerifyCounts(event) {
   let refile207 = null;
   try { refile207 = await store.get(REFILE207_DIAG_KEY); } catch (e) { refile207 = null; }
   // Hero band (2026-11-23): Jeff's per-platform local-followers
-  // figure over the public roster rides the checker surface too,
+  // figure over all signed-up creators rides the checker surface too,
   // so the daily health check can watch the number the homepage
   // prints. Additive only: totals/markets/recount/agree above are
   // untouched, so the checker's agreement is exactly as before.
@@ -29106,13 +29107,14 @@ async function route(event) {
 
   // Platform totals for the marketing site (2026-11-23): the
   // homepage's local-followers band fetches its count here, live,
-  // so the printed number is always the current roster's — no site
-  // redeploy when it moves. Jeff's per-platform counting method
-  // (his ruling, 2026-11-23 12:57) over the public roster
-  // (approved, profile-complete creators; see
-  // localFollowersByPlatform). Aggregate counts only: no per-creator
-  // data, nothing a checker key or a login could add. Same
-  // cross-origin allowance as the other public site feeds.
+  // so the printed number is always the current signed-up
+  // creators' — no site redeploy when it moves. Jeff's per-platform
+  // counting method (his ruling, 2026-11-23 12:57) over all
+  // signed-up creators (approved or pending, tester records
+  // excluded; see localFollowersByPlatform). Aggregate counts
+  // only: no per-creator data, nothing a checker key or a login
+  // could add. Same cross-origin allowance as the other public
+  // site feeds.
   if (seg[0] === "public" && seg[1] === "totals" && seg.length === 2) {
     const cors = Object.assign(foundingApplicationCors(event), { "Access-Control-Allow-Methods": "GET, OPTIONS" });
     if (method === "OPTIONS") return { statusCode: 204, headers: cors, body: "" };
