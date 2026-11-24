@@ -1,23 +1,18 @@
 {
-  "generatedAt": "2026-11-23T18:59:40.197Z",
+  "generatedAt": "2026-11-24T19:02:05.241Z",
   "totals": {
     "searchPages": 24,
-    "sitePages": 471,
+    "sitePages": 480,
     "lastUpdated": "2026-11-19"
   },
-  "nextUp": "Boutiques x remaining 4 core markets (Miami, Atlanta, Toronto, Hampton Roads).",
+  "nextUp": "Bars and nightlife x 7 core markets.",
   "queue": [
-    "Boutiques x remaining 4 core markets (Miami, Atlanta, Toronto, Hampton Roads).",
     "Bars and nightlife x 7 core markets.",
-    "Business-type Tranche 2 (25 types, Group F), built a few pages per run.",
-    "Storytime gap pages (Group: food and drink brands national, bar creator nights, fashion, hotels, in-person visits platform page, nano influencer marketing, micro influencer platform landing), in the order listed in the phrase map.",
+    "Business-type Tranche 2 (25 types, Group F), a few pages per run.",
+    "Storytime gap pages in phrase-map order.",
     "Magpie vs TryNearby, on trigger only.",
     "Salons x Austin + tier-2.",
-    "Case studies, still blocked on real usage, never invented.",
-    "Boutiques x remaining 4 core markets: Miami, Atlanta, Toronto, Hampton Roads (learn/influencer-marketing-for-{miami,atlanta,toronto,hampton-roads}-boutiques.html), house format, one unique verified hero per page.",
-    "Then bars and nightlife x 7, then Business-type Tranche 2.",
-    "Boutiques x remaining 4 core markets: Miami, Atlanta, Toronto, Hampton Roads (learn/influencer-marketing-for-{miami,atlanta,toronto,hampton-roads}-boutiques.html), house format, one unique verified hero per page.",
-    "Then bars and nightlife x 7, then Business-type Tranche 2 (25 types, Group F)."
+    "Case studies, still blocked on real usage, never invented."
   ],
   "tracking": {
     "checkDate": "2026-11-18",
@@ -215,7 +210,7 @@
     }
   ],
   "inventory": {
-    "total": 471,
+    "total": 480,
     "groups": [
       {
         "name": "Main pages",
@@ -1611,6 +1606,11 @@
             "date": "2026-11-16"
           },
           {
+            "title": "How to Find Micro Influencers in Nashville",
+            "url": "https://magpielocal.com/learn/how-to-find-micro-influencers-in-nashville.html",
+            "date": "2026-11-24"
+          },
+          {
             "title": "How to Follow Up on a Brand Deal Pitch Without Being Pushy",
             "url": "https://magpielocal.com/learn/how-to-follow-up-on-a-brand-deal-pitch.html",
             "date": "2026-11-20"
@@ -1941,6 +1941,11 @@
             "date": "2026-10-31"
           },
           {
+            "title": "How to Say No to a Brand Deal That Is Not a Fit",
+            "url": "https://magpielocal.com/learn/how-to-say-no-to-a-brand-deal-that-is-not-a-fit.html",
+            "date": "2026-11-24"
+          },
+          {
             "title": "How to Start Being an Influencer in 2026: The Step-by-Step Guide",
             "url": "https://magpielocal.com/learn/how-to-start-being-an-influencer-in-2026.html",
             "date": "2026-10-22"
@@ -1959,6 +1964,11 @@
             "title": "How to Turn One Comped Visit Into a Paid Regular Gig",
             "url": "https://magpielocal.com/learn/how-to-turn-a-comped-visit-into-paid-work.html",
             "date": "2026-10-22"
+          },
+          {
+            "title": "Influencer Marketing for Atlanta Bars and Nightlife",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-atlanta-bars-and-nightlife.html",
+            "date": "2026-11-24"
           },
           {
             "title": "Influencer Marketing for Atlanta Boutiques and Retail",
@@ -2011,6 +2021,11 @@
             "date": "2026-11-15"
           },
           {
+            "title": "Influencer Marketing for Hampton Roads Bars and Nightlife",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-hampton-roads-bars-and-nightlife.html",
+            "date": "2026-11-24"
+          },
+          {
             "title": "Influencer Marketing for Hampton Roads Boutiques and Retail",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-hampton-roads-boutiques.html",
             "date": "2026-11-23"
@@ -2041,6 +2056,11 @@
             "date": "2026-11-15"
           },
           {
+            "title": "Influencer Marketing for Los Angeles Bars and Nightlife",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-los-angeles-bars-and-nightlife.html",
+            "date": "2026-11-24"
+          },
+          {
             "title": "Influencer Marketing for Los Angeles Boutiques and Retail",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-los-angeles-boutiques.html",
             "date": "2026-11-18"
@@ -2066,6 +2086,11 @@
             "date": "2026-11-20"
           },
           {
+            "title": "Influencer Marketing for Miami Bars and Nightlife",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-miami-bars-and-nightlife.html",
+            "date": "2026-11-24"
+          },
+          {
             "title": "Influencer Marketing for Miami Boutiques and Retail",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-miami-boutiques.html",
             "date": "2026-11-23"
@@ -2084,6 +2109,11 @@
             "title": "Influencer Marketing for Miami Spas and Med Spas",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-miami-spas-and-med-spas.html",
             "date": "2026-11-20"
+          },
+          {
+            "title": "Influencer Marketing for Nashville Bars and Nightlife",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-nashville-bars-and-nightlife.html",
+            "date": "2026-11-24"
           },
           {
             "title": "Influencer Marketing for Nashville Boutiques and Retail",
@@ -2114,6 +2144,11 @@
             "title": "Influencer Marketing for New Orleans Restaurants",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-new-orleans-restaurants.html",
             "date": "2026-11-15"
+          },
+          {
+            "title": "Influencer Marketing for New York City Bars and Nightlife",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-new-york-city-bars-and-nightlife.html",
+            "date": "2026-11-24"
           },
           {
             "title": "Influencer Marketing for New York City Boutiques and Retail",
@@ -2199,6 +2234,11 @@
             "title": "Influencer Marketing for Tampa Restaurants",
             "url": "https://magpielocal.com/learn/influencer-marketing-for-tampa-restaurants.html",
             "date": "2026-11-15"
+          },
+          {
+            "title": "Influencer Marketing for Toronto Bars and Nightlife",
+            "url": "https://magpielocal.com/learn/influencer-marketing-for-toronto-bars-and-nightlife.html",
+            "date": "2026-11-24"
           },
           {
             "title": "Influencer Marketing for Toronto Boutiques and Retail",
