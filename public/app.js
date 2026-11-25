@@ -10088,6 +10088,14 @@ async function render() {
 // the existing one, unchanged.
 const INTRO_CUT = "/assets/intro/intro-film-v5.mp4";
 const INTRO_POSTER = "/assets/intro/intro-film-v5-firstframe.jpg";
+// Desktop cut (Jeff, 2026-11-25): wide viewports get a landscape
+// (16:9) montage built from Jeff's own clips instead of the portrait
+// v5 film, which cropped faces on desktop. The breakpoint matches
+// the one the old CSS crop fix used: at or above 9:16 the landscape
+// cut plays; below it (every phone, the app) the portrait v5 film
+// and its behavior are exactly as before.
+const INTRO_CUT_DESKTOP = "/assets/intro/intro-film-desktop-v1.mp4";
+const INTRO_POSTER_DESKTOP = "/assets/intro/intro-film-desktop-firstframe.jpg";
 const INTRO_HARD_MS = 14000; // fallback: never strand a visitor on the film (v5 runs 11.4s)
 
 let introTimers = [];
@@ -10129,10 +10137,13 @@ function renderIntro() {
     // over the poster still. Sign-in is never made to wait.
     return renderSignin();
   }
+  const wideIntro = typeof window.matchMedia === "function" && window.matchMedia("(min-aspect-ratio: 9/16)").matches;
+  const introCut = wideIntro ? INTRO_CUT_DESKTOP : INTRO_CUT;
+  const introPoster = wideIntro ? INTRO_POSTER_DESKTOP : INTRO_POSTER;
   app.innerHTML = `
   <section class="intro-stage" id="intro-stage" aria-label="Welcome to Magpie">
-    <img class="intro-poster" src="${INTRO_POSTER}" alt="" onerror="this.style.display='none'">
-    <video class="intro-video" id="intro-video" autoplay muted playsinline preload="auto" poster="${INTRO_POSTER}" src="${INTRO_CUT}"></video>
+    <img class="intro-poster" src="${introPoster}" alt="" onerror="this.style.display='none'">
+    <video class="intro-video" id="intro-video" autoplay muted playsinline preload="auto" poster="${introPoster}" src="${introCut}"></video>
     <button class="intro-skip" type="button" onclick="return introSkip()">Skip</button>
   </section>`;
   const video = document.getElementById("intro-video");
