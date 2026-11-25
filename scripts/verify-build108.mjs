@@ -125,7 +125,13 @@ const stub = http.createServer((req, res) => {
   }
   if (/^\/ig-[a-z]\/insights$/.test(u.pathname)) {
     const cities = STUB_CITIES[u.searchParams.get("access_token") || ""] || {};
-    return send(Object.keys(cities).length ? { data: [{ name: "audience_city", period: "lifetime", values: [{ value: cities }] }] } : { data: [] });
+    if (u.searchParams.get("metric") === "reach") {
+      return send({ data: [{ name: "reach", period: "day", values: [{ value: 10, end_time: "2026-11-24T00:00:00+0000" }] }] });
+    }
+    // Current Meta shape (audience_city was retired 2023-12-11):
+    // follower_demographics, total_value breakdowns keyed by
+    // dimension_keys ["timeframe", "city"].
+    return send(Object.keys(cities).length ? { data: [{ name: "follower_demographics", period: "lifetime", total_value: { breakdowns: [{ dimension_keys: ["timeframe", "city"], results: Object.entries(cities).map(([city, value]) => ({ dimension_values: ["this_month", city], value })) }] } }] } : { data: [] });
   }
   res.writeHead(404, { "content-type": "application/json" });
   res.end(JSON.stringify({ error: "stub 404 " + u.pathname }));

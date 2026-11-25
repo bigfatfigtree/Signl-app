@@ -379,44 +379,91 @@ async function fetchInstagramProfile(accessToken) {
   };
 }
 
-// The geography fetch: Graph audience_city insights (lifetime).
-// Returns { status: "ok", cities: { "<City, ST>": count } } or a
-// plain non-ok status: "no_data" when Meta returns no city rows
-// (new accounts, under-100 audiences, the ~48h lag), "error" when
-// the provider could not be read. Token refresh mirrors the
-// YouTube lane: once, when expired or rejected.
+// The geography fetch: Graph follower_demographics insights
+// (lifetime, city breakdown). Meta retired the audience_city
+// metric on 2023-12-11 in every API version: city geography now
+// comes from metric=follower_demographics with
+// metric_type=total_value, breakdown=city and a timeframe, and
+// the counts land in total_value.breakdowns[].results[], whose
+// dimension_values are ordered by dimension_keys (["timeframe",
+// "city"], so the city is NOT index 0). Returns
+// { status: "ok", cities: { "<City, ST>": count } } or a plain
+// non-ok status: "no_data" when Meta returns no city rows
+// (new accounts, under-100 audiences, the ~48h lag), "error"
+// when the provider could not be read. The Graph error body is
+// kept on the connection record (conn.lastSyncError, never the
+// token) so a failure says why it failed. Token refresh mirrors
+// the YouTube lane: once, when expired or rejected.
 async function fetchInstagramAudienceCities(conn) {
   try {
     if (!conn.accessToken || (conn.tokenExpiresAt && Date.now() > conn.tokenExpiresAt - 60000)) {
       await refreshInstagramAccessToken(conn);
     }
     const read = async () => {
-      const url = `${instagramGraphBase()}/${encodeURIComponent(conn.accountId || "me")}/insights?metric=audience_city&period=lifetime&access_token=${encodeURIComponent(conn.accessToken)}`;
+      const url = `${instagramGraphBase()}/${encodeURIComponent(conn.accountId || "me")}/insights?metric=follower_demographics&period=lifetime&metric_type=total_value&breakdown=city&timeframe=this_month&access_token=${encodeURIComponent(conn.accessToken)}`;
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`Instagram insights request failed (HTTP ${res.status})`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const err = new Error(`Instagram insights request failed (HTTP ${res.status})`);
+        err.graphError = body && body.error ? { code: body.error.code != null ? body.error.code : null, type: body.error.type || null, message: body.error.message || null, subcode: body.error.error_subcode != null ? body.error.error_subcode : null } : null;
+        throw err;
+      }
       return res.json().catch(() => null);
     };
     let data;
-    try { data = await read(); } catch (e) { await refreshInstagramAccessToken(conn); data = await read(); }
-    const row = data && Array.isArray(data.data) ? data.data.find((r) => r && r.name === "audience_city") || data.data[0] : null;
-    const value = row && Array.isArray(row.values) && row.values[0] ? row.values[0].value : (row && row.total_value && row.total_value.breakdowns && row.total_value.breakdowns[0] && row.total_value.breakdowns[0].results ? Object.fromEntries(row.total_value.breakdowns[0].results.map((r) => [(r.dimension_values || [])[0], r.value])) : null);
+    try { data = await read(); } catch (e1) {
+      // One refresh + retry, mirroring the YouTube lane. If the
+      // retry also fails, surface the FIRST error: its Graph
+      // body is the diagnosable one (a refresh refusal, e.g. a
+      // token under 24 hours old, would otherwise mask it).
+      try { await refreshInstagramAccessToken(conn); data = await read(); }
+      catch (e2) { throw (e1 && e1.graphError ? e1 : e2); }
+    }
+    const row = data && Array.isArray(data.data) ? data.data.find((r) => r && r.name === "follower_demographics") || data.data[0] : null;
+    let value = null;
+    if (row && Array.isArray(row.values) && row.values[0] && row.values[0].value && typeof row.values[0].value === "object") {
+      value = row.values[0].value; // legacy values[] shape (pre-2024 responses and old test stubs)
+    } else if (row && row.total_value && Array.isArray(row.total_value.breakdowns) && row.total_value.breakdowns[0] && Array.isArray(row.total_value.breakdowns[0].results)) {
+      const bd = row.total_value.breakdowns[0];
+      const keys = Array.isArray(bd.dimension_keys) ? bd.dimension_keys : [];
+      let idx = keys.indexOf("city");
+      if (idx < 0) idx = bd.results.length && Array.isArray(bd.results[0].dimension_values) ? bd.results[0].dimension_values.length - 1 : 0;
+      value = Object.fromEntries(bd.results.map((r) => [(r.dimension_values || [])[idx], r.value]).filter(([k]) => k != null && k !== ""));
+    }
     if (!value || typeof value !== "object" || !Object.keys(value).length) {
       conn.lastSyncStatus = "no_data";
       conn.lastSyncAt = new Date().toISOString();
+      conn.lastSyncError = null;
       await saveConnection(conn);
       return { status: "no_data" };
     }
     conn.lastSyncStatus = "ok";
     conn.lastSyncAt = new Date().toISOString();
+    conn.lastSyncError = null;
     await saveConnection(conn);
     return { status: "ok", cities: value };
   } catch (e) {
+    // A failed geography call must not leave the insights
+    // permission unexercised or the failure invisible: probe
+    // with the simplest current insights call (reach, period
+    // day). If the probe lands, Meta has registered a successful
+    // insights call on this connection (what the App Review
+    // test-call counter counts) and the honest geography state
+    // for this pass is "no_data"; the demographics error stays
+    // on the record either way. If the probe also fails, this
+    // is a provider failure and stays "error".
+    let probeOk = false;
     try {
-      conn.lastSyncStatus = "error";
+      const probe = await fetch(`${instagramGraphBase()}/${encodeURIComponent(conn.accountId || "me")}/insights?metric=reach&period=day&access_token=${encodeURIComponent(conn.accessToken)}`);
+      probeOk = probe.ok;
+    } catch (ignored) { /* a failed probe leaves probeOk false */ }
+    try {
+      conn.lastSyncStatus = probeOk ? "no_data" : "error";
       conn.lastSyncAt = new Date().toISOString();
+      conn.lastSyncError = e && e.graphError ? e.graphError : { message: String((e && e.message) || e) };
       await saveConnection(conn);
     } catch (ignored) { /* the status report below is the contract */ }
-    return { status: "error" };
+    return probeOk ? { status: "no_data" } : { status: "error" };
   }
 }
 
