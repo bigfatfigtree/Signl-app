@@ -1,13 +1,12 @@
 {
-  "generatedAt": "2026-11-24T19:02:05.241Z",
+  "generatedAt": "2026-11-25T19:00:34.860Z",
   "totals": {
     "searchPages": 24,
-    "sitePages": 480,
+    "sitePages": 488,
     "lastUpdated": "2026-11-19"
   },
-  "nextUp": "Bars and nightlife x 7 core markets.",
+  "nextUp": "Business-type Tranche 2 (25 types, Group F), a few pages per run.",
   "queue": [
-    "Bars and nightlife x 7 core markets.",
     "Business-type Tranche 2 (25 types, Group F), a few pages per run.",
     "Storytime gap pages in phrase-map order.",
     "Magpie vs TryNearby, on trigger only.",
@@ -210,7 +209,7 @@
     }
   ],
   "inventory": {
-    "total": 480,
+    "total": 488,
     "groups": [
       {
         "name": "Main pages",
@@ -231,6 +230,11 @@
             "date": null
           },
           {
+            "title": "Bar Marketing Ideas for Sports Bars",
+            "url": "https://magpielocal.com/for-sports-bar.html",
+            "date": null
+          },
+          {
             "title": "Book Local Influencers for a Grand Opening",
             "url": "https://magpielocal.com/for-grand-opening.html",
             "date": null
@@ -238,6 +242,11 @@
           {
             "title": "Brand Deals With 500 Followers: The Neighbors Tier",
             "url": "https://magpielocal.com/brand-deals-small-following.html",
+            "date": null
+          },
+          {
+            "title": "Brewery Influencer Marketing",
+            "url": "https://magpielocal.com/for-brewery-taproom.html",
             "date": null
           },
           {
@@ -268,6 +277,11 @@
           {
             "title": "Find Micro Influencers for a Yoga Studio",
             "url": "https://magpielocal.com/for-yoga-studio.html",
+            "date": null
+          },
+          {
+            "title": "Find Nightlife Influencers for a Bar",
+            "url": "https://magpielocal.com/for-cocktail-bar.html",
             "date": null
           },
           {
@@ -351,6 +365,11 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for Live Music Venues",
+            "url": "https://magpielocal.com/for-live-music-venue.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Local Businesses and Restaurants",
             "url": "https://magpielocal.com/businesses.html",
             "date": null
@@ -381,6 +400,11 @@
             "date": "2026-10-22"
           },
           {
+            "title": "Influencer Marketing for Rooftop Bars",
+            "url": "https://magpielocal.com/for-rooftop-bar.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Salons",
             "url": "https://magpielocal.com/for-hair-salon.html",
             "date": null
@@ -398,6 +422,11 @@
           {
             "title": "Influencer Marketing for Sushi Restaurants",
             "url": "https://magpielocal.com/for-sushi-omakase.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Wine Bars",
+            "url": "https://magpielocal.com/for-wine-bar.html",
             "date": null
           },
           {
@@ -1606,6 +1635,11 @@
             "date": "2026-11-16"
           },
           {
+            "title": "How to Find Micro Influencers in Hampton Roads",
+            "url": "https://magpielocal.com/learn/how-to-find-micro-influencers-in-hampton-roads.html",
+            "date": "2026-11-25"
+          },
+          {
             "title": "How to Find Micro Influencers in Nashville",
             "url": "https://magpielocal.com/learn/how-to-find-micro-influencers-in-nashville.html",
             "date": "2026-11-24"
@@ -2489,6 +2523,11 @@
             "title": "What Businesses See Before They Book You: A Tour of Your Own Profile",
             "url": "https://magpielocal.com/learn/what-businesses-see-before-they-book-you.html",
             "date": "2026-11-19"
+          },
+          {
+            "title": "What Counts as a Deliverable? Getting the Job in Writing",
+            "url": "https://magpielocal.com/learn/what-counts-as-a-deliverable.html",
+            "date": "2026-11-25"
           },
           {
             "title": "What Is a Comped Creator Visit?",
