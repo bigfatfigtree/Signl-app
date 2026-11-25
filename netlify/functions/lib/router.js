@@ -28410,6 +28410,15 @@ async function route(event) {
     // claim. Claimed-flag guarded, single-flight, chains the
     // whole Biz Dev ladder first; best-effort like every loader.
     (async () => { try { await bizdev.maybeUnifySharedBooks20261112(); } catch (e) { /* shared books unification is best-effort */ } })(),
+    // Build -257 (Jeff's order, 2026-11-25): Tony's book
+    // rebuilt — Nashville off his seat, Hampton Roads built
+    // out from the 82-business HQ list, Richmond + Miami
+    // starter books loaded for him, and the approved founding
+    // email scripts stamped into every lead playbook in his
+    // book. Claimed-flag guarded, single-flight, chains the
+    // whole Biz Dev ladder first; best-effort like every
+    // loader here.
+    (async () => { try { await bizdev.maybeTonyBook257(); } catch (e) { /* Tony book rebuild is best-effort */ } })(),
     // Build -161: Jeff's own seller seat (HQ-JEFF) + his Hampton
     // Roads working copies + the Nashville book. Runs after the
     // -157 enrichment settles so the copies carry their playbooks;

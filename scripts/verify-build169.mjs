@@ -112,6 +112,15 @@ console.log("== A: source pins ==");
 
 // --- B: Miss 1 — duplicate same-name records (prod shape) -----
 console.log("== B: Miss 1 — the duplicate-name shape ==");
+// Build -257 pin, set BEFORE the first request: the -257
+// Tony-book loader post-dates this fixture's world (it takes
+// Nashville off Tony's seat and loads three market packs
+// into his book); pinned done so this fixture keeps proving
+// Build -169. The -257 loader has its own fixture
+// (verify-build257.mjs). It must land before any traffic —
+// the preamble fires the loader on the first request, and a
+// run already in flight never re-reads its flag.
+await store.set("config:bdevTonyBook257", { done: true, at: "2026-11-09T00:00:00.000Z" });
 let JEFF_ID = null;
 {
   const r = await admin("POST", "/api/auth/login", { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD });

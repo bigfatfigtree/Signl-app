@@ -90,6 +90,12 @@ await user(TONY, "creator", "Tony Johnson", "tony@langstondigital.com", TONY_PW)
 const seatRec = (userId, repCode, extra = {}) => ({ userId, repCode, region: "Hampton Roads", marketId: "hampton-roads", marketName: "Hampton Roads", markets: ["hampton-roads"], active: true, seatState: "probation", assignedAt: "2026-11-01T00:00:00.000Z", ...extra });
 await store.set(`bdevrep:${TONY}`, seatRec(TONY, "HR-TONY"));
 await store.set(`bdevrep:${ADMIN}`, seatRec(ADMIN, "HQ-JEFF", { hqSeat: true, markets: ["hampton-roads", "nashville"], seatState: "active" }));
+// Build -257 pin: the -257 Tony-book loader post-dates this
+// fixture's world (it takes Nashville off Tony's seat and
+// loads three market packs into his book); pinned done so
+// this fixture keeps proving Build -170. The -257 loader
+// has its own fixture (verify-build257.mjs).
+await store.set("config:bdevTonyBook257", { done: true, at: "2026-11-09T00:00:00.000Z" });
 // Loader gates closed so no loader mutates the fixture mid-run.
 for (const k of ["bdevSeed155", "bdevEnrich157", "bdevLoadDest20261109", "bdevJeffSeat161"]) await store.set(`config:${k}`, { done: true, at: "2026-11-09T00:00:00.000Z" });
 
