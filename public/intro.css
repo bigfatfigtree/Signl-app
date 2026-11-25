@@ -33,6 +33,22 @@
   background: #ffffff;
 }
 
+/* Desktop crop fix (2026-11-25): the film is portrait (720x1280,
+   9:16). On a viewport as wide as or wider than the film's own
+   shape, cover scales it up to fill the width and throws away
+   most of the height — at 1440x900 only ~35% of the frame showed
+   and faces were cut off at the top. In that range, show the
+   whole frame (contain); the stage behind it is the page's own
+   white, so the sides read as page, not bars. Portrait viewports
+   (every phone, the app) sit below 9:16 and keep the cover
+   rendering above, byte for byte. */
+@media (min-aspect-ratio: 9/16) {
+  .intro-video,
+  .intro-poster {
+    object-fit: contain;
+  }
+}
+
 /* Visible Skip control: a solid pale pill, readable over any
    frame of the film, clear of the phone's top safe area. */
 .intro-skip {
