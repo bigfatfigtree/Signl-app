@@ -1,13 +1,14 @@
 {
-  "generatedAt": "2026-11-25T19:00:34.860Z",
+  "generatedAt": "2026-11-26T18:56:50.329Z",
   "totals": {
     "searchPages": 24,
-    "sitePages": 488,
+    "sitePages": 496,
     "lastUpdated": "2026-11-19"
   },
-  "nextUp": "Business-type Tranche 2 (25 types, Group F), a few pages per run.",
+  "nextUp": "Business-type Tranche 2 remainder (19 types): restaurants rest (chef-driven fine dining, steakhouse, seafood, ramen, burgers, fried chicken, sandwich shop/deli, diner, donut shop, dessert bar, private chef/supper club), hospitality (boutique hotel, inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
   "queue": [
-    "Business-type Tranche 2 (25 types, Group F), a few pages per run.",
+    "Business-type Tranche 2 remainder (19 types): restaurants rest (chef-driven fine dining, steakhouse, seafood, ramen, burgers, fried chicken, sandwich shop/deli, diner, donut shop, dessert bar, private chef/supper club), hospitality (boutique hotel, inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
+    "Business-type Tranche 3 (39 types).",
     "Storytime gap pages in phrase-map order.",
     "Magpie vs TryNearby, on trigger only.",
     "Salons x Austin + tier-2.",
@@ -209,7 +210,7 @@
     }
   ],
   "inventory": {
-    "total": 488,
+    "total": 496,
     "groups": [
       {
         "name": "Main pages",
@@ -290,6 +291,11 @@
             "date": null
           },
           {
+            "title": "Food Influencer Marketing for Fine Dining",
+            "url": "https://magpielocal.com/for-chef-driven-fine-dining.html",
+            "date": null
+          },
+          {
             "title": "Food Truck Marketing Ideas With Local Creators",
             "url": "https://magpielocal.com/for-food-truck.html",
             "date": null
@@ -335,8 +341,18 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for Burger Restaurants",
+            "url": "https://magpielocal.com/for-burgers.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Cafes, Bakeries and Coffee Shops",
             "url": "https://magpielocal.com/for-cafes.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Chicken Restaurants",
+            "url": "https://magpielocal.com/for-fried-chicken.html",
             "date": null
           },
           {
@@ -395,6 +411,11 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for Ramen Restaurants",
+            "url": "https://magpielocal.com/for-ramen.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Realtors and Brokerages",
             "url": "https://magpielocal.com/for-realtors.html",
             "date": "2026-10-22"
@@ -415,8 +436,18 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for Seafood Restaurants",
+            "url": "https://magpielocal.com/for-seafood-restaurant.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Spas, Massage Therapists and Wellness Studios",
             "url": "https://magpielocal.com/for-spas.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Steakhouses",
+            "url": "https://magpielocal.com/for-steakhouse.html",
             "date": null
           },
           {
@@ -1335,6 +1366,11 @@
             "date": "2026-11-15"
           },
           {
+            "title": "How Local Businesses Should Handle a Creator Running Late",
+            "url": "https://magpielocal.com/learn/what-to-do-when-a-creator-posts-late.html",
+            "date": "2026-11-26"
+          },
+          {
             "title": "How Local Creators Find Paid Brand Deals With Local Businesses",
             "url": "https://magpielocal.com/learn/how-local-creators-find-paid-brand-deals.html",
             "date": "2026-11-16"
@@ -1343,6 +1379,11 @@
             "title": "How Many Revisions Should a Brand Get?",
             "url": "https://magpielocal.com/learn/how-many-revisions-should-a-brand-get.html",
             "date": "2026-11-09"
+          },
+          {
+            "title": "How Much Do Local Influencers Charge in Nashville?",
+            "url": "https://magpielocal.com/learn/how-much-do-local-influencers-charge-in-nashville.html",
+            "date": "2026-11-26"
           },
           {
             "title": "How Much Do Local Micro-Influencers Cost?",
