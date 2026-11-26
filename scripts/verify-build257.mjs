@@ -104,7 +104,8 @@ console.log("== A: source pins ==");
   const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
   check("loader + flag exist", bizJs.includes("maybeTonyBook257") && bizJs.includes('"config:bdevTonyBook257"'), "");
   check("preamble fires it un-awaited", routerJs.includes("bizdev.maybeTonyBook257()"), "");
-  check("build stamp -257 in build.js + index.html", buildJs.includes("2026.11.25-257") && indexHtml.includes("2026.11.25-257"), "");
+  const stamp = (buildJs.match(/BUILD_ID = "([^"]+)"/) || [])[1];
+  check("build stamps agree (build.js == index.html) and are at least -257", !!stamp && stamp >= "2026.11.25-257" && indexHtml.includes(stamp), `stamp=${stamp}`);
   check("packs on disk: HR 82, Richmond >= 20, Miami >= 20", hrPack.leads.length === 82 && richPack.leads.length >= 20 && miamiPack.leads.length >= 20, `hr=${hrPack.leads.length} rich=${richPack.leads.length} miami=${miamiPack.leads.length}`);
   check("every pack lead carries a published email", [...hrPack.leads, ...richPack.leads, ...miamiPack.leads].every((l) => l.email && l.email.includes("@")), "");
 }

@@ -96,6 +96,7 @@ await store.set(`bdevrep:${ADMIN}`, seatRec(ADMIN, "HQ-JEFF", { hqSeat: true, ma
 // this fixture keeps proving Build -170. The -257 loader
 // has its own fixture (verify-build257.mjs).
 await store.set("config:bdevTonyBook257", { done: true, at: "2026-11-09T00:00:00.000Z" });
+await store.set("config:bdevTonyBook258", { done: true, at: "2026-11-09T00:00:00.000Z" });
 // Loader gates closed so no loader mutates the fixture mid-run.
 for (const k of ["bdevSeed155", "bdevEnrich157", "bdevLoadDest20261109", "bdevJeffSeat161"]) await store.set(`config:${k}`, { done: true, at: "2026-11-09T00:00:00.000Z" });
 

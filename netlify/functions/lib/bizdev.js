@@ -2714,6 +2714,21 @@ const TONY_BOOK_FLAG_257 = "config:bdevTonyBook257";
 let tonyBookDone257 = false;
 const tonyBookFlight257 = {};
 
+// The three -257 packs, required with LITERAL paths at
+// module level (the ENRICH157 pattern at the top of this
+// file): Netlify's bundler traces literal requires into
+// the function bundle. The first -257 pass required them
+// through a variable inside the loader — untraceable — so
+// in production all three packs read as missing (recorded
+// in the -257 loader status, 2026-11-25 19:01 ET) even
+// though the local fixture, running unbundled, loaded
+// them fine. Build -258 (below) holds the requires here
+// and finishes the job.
+let TONY_PACK_HR_257 = null, TONY_PACK_RICHMOND_257 = null, TONY_PACK_MIAMI_257 = null;
+try { TONY_PACK_HR_257 = require("./bizdev-tony-hr-257.json"); } catch (e) { TONY_PACK_HR_257 = null; }
+try { TONY_PACK_RICHMOND_257 = require("./bizdev-tony-richmond-257.json"); } catch (e) { TONY_PACK_RICHMOND_257 = null; }
+try { TONY_PACK_MIAMI_257 = require("./bizdev-tony-miami-257.json"); } catch (e) { TONY_PACK_MIAMI_257 = null; }
+
 function industryPage257(lead) {
   const cat = String((lead && lead.category) || "");
   const hay = `${cat} ${String((lead && lead.subType) || "")}`.toLowerCase();
@@ -2793,6 +2808,30 @@ function newLead257(seat, market, s, order, byLine) {
   }
   return lead;
 }
+// One pack load, deduped by business identity (normalized
+// name + city) against whatever the market already holds.
+// Hampton Roads adds join the shared book (shared market);
+// Richmond / Miami leads are Tony's alone (not shared
+// markets, so the flag is inert there — assignment is what
+// puts them in his book).
+async function loadPack257(seat, pack, market, byLine) {
+  const rows = pack && Array.isArray(pack.leads) ? pack.leads : null;
+  if (!rows) return { added: 0, skipped: 0, error: `pack missing or unreadable for market ${market.marketId}` };
+  const existing = await leadsOfMarket(market.marketId, { fresh: true });
+  const identities = new Set(existing.map((l) => `${normName(l.name)}||${normName(l.city || "")}`));
+  let added = 0, skipped = 0, order = 0;
+  for (const s of rows) {
+    order += 1;
+    const identity = `${normName(s.name)}||${normName(s.city || "")}`;
+    if (identities.has(identity)) { skipped += 1; continue; }
+    identities.add(identity);
+    const lead = newLead257(seat, market, s, order, byLine);
+    if (market.marketId === "hampton-roads") { lead.sharedBook = true; lead.sharedGroup = SHARED_GROUP; }
+    await store().set(`bdevlead:${lead.id}`, lead);
+    added += 1;
+  }
+  return { added, skipped };
+}
 const maybeTonyBook257 = singleFlight(async function () {
   if (tonyBookDone257) return true;
   const flag = await store().get(TONY_BOOK_FLAG_257);
@@ -2841,31 +2880,11 @@ const maybeTonyBook257 = singleFlight(async function () {
     nashvilleReassigned += 1;
   }
 
-  // 3 + 4. The pack loads, deduped by business identity
-  // against whatever the market already holds.
-  const loadPack257 = async (packFile, market, byLine) => {
-    let pack = null;
-    try { pack = require(packFile); } catch (e) { pack = null; }
-    const rows = pack && Array.isArray(pack.leads) ? pack.leads : null;
-    if (!rows) return { added: 0, skipped: 0, error: `pack missing or unreadable: ${packFile}` };
-    const existing = await leadsOfMarket(market.marketId, { fresh: true });
-    const identities = new Set(existing.map((l) => `${normName(l.name)}||${normName(l.city || "")}`));
-    let added = 0, skipped = 0, order = 0;
-    for (const s of rows) {
-      order += 1;
-      const identity = `${normName(s.name)}||${normName(s.city || "")}`;
-      if (identities.has(identity)) { skipped += 1; continue; }
-      identities.add(identity);
-      const lead = newLead257(tonySeat, market, s, order, byLine);
-      if (market.marketId === "hampton-roads") { lead.sharedBook = true; lead.sharedGroup = SHARED_GROUP; }
-      await store().set(`bdevlead:${lead.id}`, lead);
-      added += 1;
-    }
-    return { added, skipped };
-  };
-  const hrRes = await loadPack257("./bizdev-tony-hr-257.json", { marketId: "hampton-roads", marketName: "Hampton Roads" }, "HQ load (Build -257 HR build-out)");
-  const richRes = await loadPack257("./bizdev-tony-richmond-257.json", { marketId: "richmond", marketName: "Richmond" }, "HQ load (Build -257 Richmond starter)");
-  const miamiRes = await loadPack257("./bizdev-tony-miami-257.json", { marketId: "miami", marketName: "Miami" }, "HQ load (Build -257 Miami starter)");
+  // 3 + 4. The pack loads (module-level literal requires
+  // above; dedupe inside loadPack257).
+  const hrRes = await loadPack257(tonySeat, TONY_PACK_HR_257, { marketId: "hampton-roads", marketName: "Hampton Roads" }, "HQ load (Build -257 HR build-out)");
+  const richRes = await loadPack257(tonySeat, TONY_PACK_RICHMOND_257, { marketId: "richmond", marketName: "Richmond" }, "HQ load (Build -257 Richmond starter)");
+  const miamiRes = await loadPack257(tonySeat, TONY_PACK_MIAMI_257, { marketId: "miami", marketName: "Miami" }, "HQ load (Build -257 Miami starter)");
 
   // 5. The approved scripts, stamped into every lead in
   // Tony's book as it now stands.
@@ -2923,6 +2942,143 @@ const maybeTonyBook257 = singleFlight(async function () {
   await logEvent({ type: "bdev_tony_book_257", actorId: null, actorRole: "system", subjectId: tonyId, market: "Hampton Roads", data: counts });
   return true;
 }, tonyBookFlight257, "tonyBook257");
+
+// ---------------- Build -258: Tony's book, completed (2026-11-25) ----------------
+// The -257 loader's production run (2026-11-25 19:00-19:01
+// ET, recorded in its loader status) landed the seat edit
+// (Nashville off, Richmond + Miami on), closed Tony's
+// Nashville door (production held NO Nashville leads
+// assigned to Tony — since the shared-books unification
+// his Nashville access was the shared door alone, and all
+// 76 stored Nashville records sit with Jeff), and stamped
+// the scripts into his Hampton Roads book — but its three
+// data packs read as "missing or unreadable": the loader
+// required them through a variable, which Netlify's
+// bundler cannot trace, so the JSON never shipped in the
+// function bundle. The local fixture runs unbundled and
+// could not see it. This completion pass, in the same
+// established pattern (claimed-flag guarded, single-flight,
+// chains -257 first):
+//   1. Re-checks the seat (the -257 end state; the same
+//      in-place markets edit if it ever differs — pinHash
+//      and every other field ride untouched) and re-runs
+//      the Nashville reassignment sweep (a no-op when
+//      production's door-only shape holds).
+//   2. Loads the three packs from the module-level literal
+//      requires (loadPack257 dedupes by business identity,
+//      so Hampton Roads converges on the 82-business list
+//      and Richmond + Miami load in full).
+//   3. Re-stamps the approved scripts into every lead in
+//      Tony's book (idempotent — identical content) and
+//      re-runs the rendered proof (one playbook per market
+//      through repLeadPayload), recording the counts in
+//      the flag and the loader status.
+// Store cost: the same bounded prefix lists as -257;
+// writes happen once ever, behind the done flag.
+const TONY_BOOK_FLAG_258 = "config:bdevTonyBook258";
+let tonyBookDone258 = false;
+const tonyBookFlight258 = {};
+const maybeTonyBook258 = singleFlight(async function () {
+  if (tonyBookDone258) return true;
+  const flag = await store().get(TONY_BOOK_FLAG_258);
+  if (flag && flag.done) {
+    tonyBookDone258 = true;
+    await noteLoaderStatus("tonyBook258", { state: "done", detail: "Tony book completion flag done", tonyBookByMarket: flag.tonyBookByMarket || null, scriptsStamped: flag.scriptsStamped != null ? flag.scriptsStamped : null });
+    return true;
+  }
+  await maybeTonyBook257(); // the -257 pass first (flag-gated no-op once done)
+  const seatRows = (await store().list("bdevrep:")).map((r) => r.value).filter(Boolean);
+  const pickSeat258 = (code) => seatRows.filter((s) => s.active && s.repCode === code)
+    .sort((a, b) => String(a.assignedAt || "").localeCompare(String(b.assignedAt || "")))[0];
+  const tonySeat = pickSeat258("HR-TONY");
+  const jeffSeat = pickSeat258("HQ-JEFF");
+  if (!tonySeat || !jeffSeat) {
+    await noteLoaderStatus("tonyBook258", { state: "waiting", detail: `seats not ready (HR-TONY: ${!!tonySeat}, HQ-JEFF: ${!!jeffSeat})` });
+    return false;
+  }
+  const tonyId = tonySeat.userId, jeffId = jeffSeat.userId;
+  await store().set(TONY_BOOK_FLAG_258, { claimedAt: nowIso(), done: false, running: true });
+
+  // 1. Seat + Nashville sweeps (the -257 steps, idempotent).
+  const seatMarketsBefore = seatMarkets(tonySeat).map((m) => m.marketId);
+  const markets = seatMarkets(tonySeat).filter((m) => m.marketId !== "nashville");
+  for (const m of [{ marketId: "richmond", marketName: "Richmond" }, { marketId: "miami", marketName: "Miami" }]) {
+    if (!markets.some((x) => x.marketId === m.marketId)) markets.push(m);
+  }
+  if (JSON.stringify(markets.map((m) => m.marketId)) !== JSON.stringify(seatMarketsBefore)) {
+    tonySeat.markets = markets;
+    await store().set(`bdevrep:${tonyId}`, tonySeat);
+    const tonyUser = await store().get(`user:${tonyId}`);
+    if (tonyUser) {
+      tonyUser.bizdevSeat = { active: true, marketId: tonySeat.marketId, marketName: tonySeat.marketName, repCode: tonySeat.repCode, markets: tonySeat.markets };
+      await store().set(`user:${tonyId}`, tonyUser);
+    }
+  }
+  let leads = await allLeads({ fresh: true });
+  let nashvilleReassigned = 0;
+  for (const lead of leads.filter((l) => l.marketId === "nashville" && l.assignedRepId === tonyId)) {
+    lead.migratedFrom257 = { fromUserId: tonyId, fromRepCode: "HR-TONY", at: nowIso(), reason: "Build -258 completion: Nashville leaves Tony's book (Jeff's order, 2026-11-25)" };
+    lead.assignedRepId = jeffId;
+    if (lead.attribution) lead.attribution = { ...lead.attribution, repCode: "HQ-JEFF" };
+    await saveLead(lead);
+    nashvilleReassigned += 1;
+  }
+
+  // 2. The pack loads, from the literal requires this time.
+  const hrRes = await loadPack257(tonySeat, TONY_PACK_HR_257, { marketId: "hampton-roads", marketName: "Hampton Roads" }, "HQ load (Build -258 HR build-out)");
+  const richRes = await loadPack257(tonySeat, TONY_PACK_RICHMOND_257, { marketId: "richmond", marketName: "Richmond" }, "HQ load (Build -258 Richmond starter)");
+  const miamiRes = await loadPack257(tonySeat, TONY_PACK_MIAMI_257, { marketId: "miami", marketName: "Miami" }, "HQ load (Build -258 Miami starter)");
+
+  // 3. Scripts re-stamped across the whole book, then proof.
+  leads = await allLeads({ fresh: true });
+  const book = leads.filter((l) => leadInSeatBook(l, tonySeat));
+  let scriptsStamped = 0;
+  for (const lead of book) {
+    const sc = scripts257(lead);
+    lead.playbook = { ...(lead.playbook && typeof lead.playbook === "object" ? lead.playbook : {}), introEmail: sc.introEmail, followupEmail: sc.followupEmail };
+    lead.scripts258 = { at: nowIso(), source: "Build -258 completion: approved scripts (Jeff, 2026-11-25)" };
+    await saveLead(lead);
+    scriptsStamped += 1;
+  }
+  leads = await allLeads({ fresh: true });
+  const bookNow = leads.filter((l) => leadInSeatBook(l, tonySeat));
+  const tonyBookByMarket = {};
+  for (const l of bookNow) tonyBookByMarket[l.marketId] = (tonyBookByMarket[l.marketId] || 0) + 1;
+  const nashvilleTotal = leads.filter((l) => l.marketId === "nashville").length;
+  const jeffNashvilleAfter = leads.filter((l) => l.marketId === "nashville" && leadInSeatBook(l, jeffSeat)).length;
+  const samples = [];
+  for (const mid of ["hampton-roads", "richmond", "miami"]) {
+    const sample = bookNow.find((l) => l.marketId === mid && l.playbook && l.playbook.introEmail);
+    if (!sample) { samples.push({ market: mid, ok: false, detail: "no stamped lead found" }); continue; }
+    const rendered = repLeadPayload(sample, { full: true, viewerRepCode: "HR-TONY" });
+    const intro = rendered && rendered.playbook && rendered.playbook.introEmail;
+    const follow = rendered && rendered.playbook && rendered.playbook.followupEmail;
+    const cityName = sample.marketName || mid;
+    const wantSubject = `${possessive257(cityName)} first local influencer platform is about to launch`;
+    const ok = !!(intro && follow
+      && intro.subject === wantSubject
+      && intro.body.includes(`magpielocal.com/${industryPage257(sample)}`)
+      && intro.body.includes(`${cityName} is one of our first launch markets`)
+      && follow.subject === `Re: ${wantSubject}`
+      && follow.body.includes(`Founding spots in ${cityName} are open`)
+      && !intro.body.includes("—") && !follow.body.includes("—"));
+    samples.push({ market: mid, ok, leadId: sample.id, name: sample.name, subject: intro ? intro.subject : null });
+  }
+  const counts = {
+    seatMarketsBefore, seatMarketsAfter: seatMarkets(tonySeat).map((m) => m.marketId),
+    nashvilleReassigned, nashvilleTotal, jeffNashvilleAfter,
+    tonyNashvilleAfter: tonyBookByMarket["nashville"] || 0,
+    hrAdded: hrRes.added, hrSkippedExisting: hrRes.skipped, hrError: hrRes.error || null,
+    richmondAdded: richRes.added, richmondSkippedExisting: richRes.skipped, richmondError: richRes.error || null,
+    miamiAdded: miamiRes.added, miamiSkippedExisting: miamiRes.skipped, miamiError: miamiRes.error || null,
+    tonyBookByMarket, scriptsStamped, samples,
+  };
+  await store().set(TONY_BOOK_FLAG_258, { claimedAt: nowIso(), done: true, at: nowIso(), seatUserId: tonyId, ...counts });
+  tonyBookDone258 = true;
+  await noteLoaderStatus("tonyBook258", { state: "done", detail: "Tony's book completed: the three packs loaded from literal requires, scripts re-stamped, Nashville still 0", ...counts });
+  await logEvent({ type: "bdev_tony_book_258", actorId: null, actorRole: "system", subjectId: tonyId, market: "Hampton Roads", data: counts });
+  return true;
+}, tonyBookFlight258, "tonyBook258");
 
 // The daily sweep (POST /admin/bdev/sweep): one alarm record per
 // rep per day while follow-ups sit overdue (same-day overwrite =
@@ -4071,7 +4227,7 @@ async function waitingCounts212() {
 }
 
 module.exports = {
-  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, maybeLoadTonyNashville20261112, maybeUnifySharedBooks20261112, maybeTonyBook257, runBizdevSweep, bdevHealth, waitingCounts212,
+  init, handleBizdevApi, handleAdminBizdevApi, maybeSeedBizdev, maybeEnrich157, maybeLoadDest20261109, maybeLoadJeffSeat161, maybeCleanup169, maybeCleanupTony170, maybeLoadTonyNashville20261112, maybeUnifySharedBooks20261112, maybeTonyBook257, maybeTonyBook258, runBizdevSweep, bdevHealth, waitingCounts212,
   claimPageHtml, seatOf, KIT,
   _test: { rateForMonth, vestingOf, keptBookAt, normName, digits, reachLine, OUTCOME_STAGE, STATUSES, statusOf, weekWindow, queueCandidates, creatorsToShow, seatMarkets, seatHasMarket, effectiveSeat, kitFor, jeffKit161, practiceFor157, renderPlaybookLinks, claimUrlAbs, findAccountStable, leadInSeatBook, workClaimOf, SHARED_MARKETS, revoicePlaybookForViewer, repLeadPayload },
 };

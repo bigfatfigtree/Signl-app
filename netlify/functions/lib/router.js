@@ -28419,6 +28419,15 @@ async function route(event) {
     // whole Biz Dev ladder first; best-effort like every
     // loader here.
     (async () => { try { await bizdev.maybeTonyBook257(); } catch (e) { /* Tony book rebuild is best-effort */ } })(),
+    // Build -258 (2026-11-25): the -257 completion pass —
+    // its production run landed the seat + Nashville +
+    // Hampton Roads scripts but the three data packs never
+    // shipped in the bundle (a variable require the bundler
+    // cannot trace). -258 loads them from module-level
+    // literal requires and finishes the book. Claimed-flag
+    // guarded, single-flight, chains -257 first; best-effort
+    // like every loader here.
+    (async () => { try { await bizdev.maybeTonyBook258(); } catch (e) { /* Tony book completion is best-effort */ } })(),
     // Build -161: Jeff's own seller seat (HQ-JEFF) + his Hampton
     // Roads working copies + the Nashville book. Runs after the
     // -157 enrichment settles so the copies carry their playbooks;

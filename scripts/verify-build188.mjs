@@ -156,12 +156,13 @@ const seatRec = (userId, repCode, extra = {}) => ({ userId, repCode, region: "Ha
 await store.set(`bdevrep:${TONY}`, seatRec(TONY, "HR-TONY", { lastMarketId: "nashville" }));
 await store.set(`bdevrep:${ADMIN}`, seatRec(ADMIN, "HQ-JEFF", { hqSeat: true, seatState: "active" }));
 // Loader gates pinned done for this fixture's world —
-// including bdevTonyBook257 (Build -257): that loader
-// post-dates this world (it takes Nashville off Tony's
-// seat and loads three market packs into his book), so it
-// is pinned done here and proven in its own fixture
-// (verify-build257.mjs) instead.
-for (const k of ["bdevSeed155", "bdevEnrich157", "bdevLoadDest20261109", "bdevJeffSeat161", "bdevSharedBooks20261112", "bdevTonyNashville20261112", "bdevCleanup169", "bdevCleanupTony170", "bdevTonyBook257"]) await store.set(`config:${k}`, { done: true, at: "2026-11-09T00:00:00.000Z" });
+// including bdevTonyBook257 / bdevTonyBook258 (Builds
+// -257/-258): those loaders post-date this world (they
+// take Nashville off Tony's seat and load three market
+// packs into his book), so they are pinned done here and
+// proven in their own fixtures (verify-build257.mjs /
+// verify-build258.mjs) instead.
+for (const k of ["bdevSeed155", "bdevEnrich157", "bdevLoadDest20261109", "bdevJeffSeat161", "bdevSharedBooks20261112", "bdevTonyNashville20261112", "bdevCleanup169", "bdevCleanupTony170", "bdevTonyBook257", "bdevTonyBook258"]) await store.set(`config:${k}`, { done: true, at: "2026-11-09T00:00:00.000Z" });
 
 function creatorRec(id, market, complete, extra = {}) {
   return {

@@ -121,6 +121,7 @@ console.log("== B: Miss 1 — the duplicate-name shape ==");
 // the preamble fires the loader on the first request, and a
 // run already in flight never re-reads its flag.
 await store.set("config:bdevTonyBook257", { done: true, at: "2026-11-09T00:00:00.000Z" });
+await store.set("config:bdevTonyBook258", { done: true, at: "2026-11-09T00:00:00.000Z" });
 let JEFF_ID = null;
 {
   const r = await admin("POST", "/api/auth/login", { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD });
