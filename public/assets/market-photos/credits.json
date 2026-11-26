@@ -361,5 +361,26 @@
   "artist": "Andreas Praefcke",
   "page": "https://en.wikipedia.org/wiki/San_Francisco",
   "file": "San Francisco skyline from Potrero Hill.jpg"
+ },
+ "edinburgh": {
+  "source": "https://commons.wikimedia.org/wiki/File:Edinburgh_Skyline_Panorama.jpg",
+  "license": "CC BY 2.0",
+  "artist": "Strevo",
+  "page": "https://en.wikipedia.org/wiki/Edinburgh",
+  "file": "Edinburgh Skyline Panorama.jpg"
+ },
+ "belfast": {
+  "source": "https://commons.wikimedia.org/wiki/File:Belfast_Skyline_City_Quays.png",
+  "license": "CC0",
+  "artist": "Davidw1406",
+  "page": "https://en.wikipedia.org/wiki/Belfast",
+  "file": "Belfast Skyline City Quays.png"
+ },
+ "birmingham-uk": {
+  "source": "https://commons.wikimedia.org/wiki/File:Skyline,_Birmingham,_England,_UK.jpg",
+  "license": "CC BY-SA 2.0",
+  "artist": "Arne Müseler",
+  "page": "https://en.wikipedia.org/wiki/Birmingham",
+  "file": "Skyline, Birmingham, England, UK.jpg"
  }
 }

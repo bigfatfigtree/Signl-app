@@ -407,6 +407,76 @@ const MARKETS = [
     cities: ["Manchester", "Salford", "Stockport", "Bolton", "Bury", "Oldham", "Rochdale", "Altrincham", "Sale", "Stretford", "Ashton-under-Lyne", "Wigan", "Eccles", "Prestwich", "Middleton", "Hyde", "Stalybridge", "Wilmslow", "Macclesfield", "Denton"],
   },
   {
+    // Build -259 (Jeff, 2026-11-26): Edinburgh joins the roster
+    // as a founding market only, roster-only like San Francisco
+    // (Build -253) and Calgary (Build -252): it starts NOT live
+    // like every unlaunched market — founding sign-ups only.
+    // Edinburgh carries the identical GBP override as London
+    // (Build -89) and Manchester (Build -118) — every UK market
+    // prices in pounds: £40 paid floor, GBP founding book
+    // (planBookFor("GBP")).
+    id: "edinburgh",
+    name: "Edinburgh",
+    label: "Edinburgh, United Kingdom",
+    country: "United Kingdom",
+    currency: "GBP",
+    currencySymbol: "£",
+    paidFloor: 40,
+    cities: ["Edinburgh", "Musselburgh", "Dalkeith", "Bonnyrigg", "Loanhead", "Penicuik", "Gorebridge", "Tranent", "Prestonpans", "Haddington", "North Berwick", "Dunbar", "Livingston", "Broxburn", "Bathgate", "Linlithgow", "Whitburn", "Armadale", "South Queensferry", "Kirkliston", "Ratho", "Currie", "Balerno", "East Calder", "Mid Calder", "Falkirk"],
+  },
+  {
+    // Build -259 (Jeff, 2026-11-26): Belfast joins the roster
+    // as a founding market only, roster-only like San Francisco
+    // (Build -253) and Calgary (Build -252): it starts NOT live
+    // like every unlaunched market — founding sign-ups only.
+    // Belfast carries the identical GBP override as London
+    // (Build -89) and Manchester (Build -118) — every UK market
+    // prices in pounds: £40 paid floor, GBP founding book
+    // (planBookFor("GBP")). NAMING TIE, BY DESIGN: "Belfast"
+    // already sits in the Christchurch (New Zealand) market's
+    // city list below as the Christchurch suburb, and it stays
+    // there untouched — a typed "Belfast" is a two-market tie
+    // broken by the country hint in resolveTypedCity, the same
+    // designed outcome as Wellington/London in the header notes
+    // above (United Kingdom picks this market, New Zealand
+    // picks Christchurch).
+    id: "belfast",
+    name: "Belfast",
+    label: "Belfast, United Kingdom",
+    country: "United Kingdom",
+    currency: "GBP",
+    currencySymbol: "£",
+    paidFloor: 40,
+    cities: ["Belfast", "Lisburn", "Newtownabbey", "Bangor", "Newtownards", "Holywood", "Carrickfergus", "Antrim", "Ballyclare", "Dundonald", "Castlereagh", "Carryduff", "Glengormley", "Jordanstown", "Whiteabbey", "Greenisland", "Dunmurry", "Hillsborough", "Crumlin", "Templepatrick", "Randalstown", "Larne", "Comber", "Donaghadee", "Saintfield", "Moira", "Dromore"],
+  },
+  {
+    // Build -259 (Jeff, 2026-11-26): Birmingham UK joins the
+    // roster as a founding market only, roster-only like San
+    // Francisco (Build -253) and Calgary (Build -252): it
+    // starts NOT live like every unlaunched market — founding
+    // sign-ups only. Birmingham carries the identical GBP
+    // override as London (Build -89) and Manchester
+    // (Build -118) — every UK market prices in pounds: £40
+    // paid floor, GBP founding book (planBookFor("GBP")).
+    // NAMING, BY DESIGN: the id is "birmingham-uk" (NOT
+    // "birmingham") so this market is distinct; the name stays
+    // "Birmingham" (the claim-link market string and picker
+    // value) while the label "Birmingham, United Kingdom" is
+    // what the invite screen shows, keeping it unambiguous vs
+    // Birmingham, Alabama. "Birmingham" also sits in Detroit's
+    // city list as the Michigan suburb, and it stays there
+    // untouched — the tie is by design, broken by the
+    // country/state hint in resolveTypedCity.
+    id: "birmingham-uk",
+    name: "Birmingham",
+    label: "Birmingham, United Kingdom",
+    country: "United Kingdom",
+    currency: "GBP",
+    currencySymbol: "£",
+    paidFloor: 40,
+    cities: ["Birmingham", "Solihull", "Wolverhampton", "Dudley", "Walsall", "West Bromwich", "Sutton Coldfield", "Smethwick", "Oldbury", "Halesowen", "Stourbridge", "Tipton", "Wednesbury", "Bilston", "Willenhall", "Brierley Hill", "Bromsgrove", "Redditch", "Tamworth", "Lichfield", "Cannock", "Kidderminster", "Coventry", "Nuneaton", "Warwick", "Leamington Spa"],
+  },
+  {
     // Build -127 (Jeff, 2026-11-04): Dublin joins the roster in
     // the expansion wave ("whatever it takes... i want all of
     // it... just go"). Dublin is ONE market: the city plus its
