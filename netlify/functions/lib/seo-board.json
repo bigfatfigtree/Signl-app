@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-11-26T18:56:50.329Z",
+  "generatedAt": "2026-11-27T18:57:49.049Z",
   "totals": {
     "searchPages": 24,
-    "sitePages": 496,
+    "sitePages": 504,
     "lastUpdated": "2026-11-19"
   },
-  "nextUp": "Business-type Tranche 2 remainder (19 types): restaurants rest (chef-driven fine dining, steakhouse, seafood, ramen, burgers, fried chicken, sandwich shop/deli, diner, donut shop, dessert bar, private chef/supper club), hospitality (boutique hotel, inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
+  "nextUp": "Business-type Tranche 2 remainder (13 types): restaurants rest (sandwich shop/deli, diner, donut shop, dessert bar, private chef/supper club), hospitality (boutique hotel, inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
   "queue": [
-    "Business-type Tranche 2 remainder (19 types): restaurants rest (chef-driven fine dining, steakhouse, seafood, ramen, burgers, fried chicken, sandwich shop/deli, diner, donut shop, dessert bar, private chef/supper club), hospitality (boutique hotel, inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
+    "Business-type Tranche 2 remainder (13 types): restaurants rest (sandwich shop/deli, diner, donut shop, dessert bar, private chef/supper club), hospitality (boutique hotel, inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
     "Business-type Tranche 3 (39 types).",
     "Storytime gap pages in phrase-map order.",
     "Magpie vs TryNearby, on trigger only.",
@@ -210,7 +210,7 @@
     }
   ],
   "inventory": {
-    "total": 496,
+    "total": 504,
     "groups": [
       {
         "name": "Main pages",
@@ -273,6 +273,11 @@
           {
             "title": "Creator Moms: Get Comped at Local Family Spots",
             "url": "https://magpielocal.com/for-moms.html",
+            "date": null
+          },
+          {
+            "title": "Donut Shop Marketing Ideas With Local Creators",
+            "url": "https://magpielocal.com/for-donut-shop.html",
             "date": null
           },
           {
@@ -361,6 +366,21 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for Delis",
+            "url": "https://magpielocal.com/for-sandwich-shop-deli.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Dessert Shops",
+            "url": "https://magpielocal.com/for-dessert-bar.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Diners",
+            "url": "https://magpielocal.com/for-diner.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for DTC Brands: Local Creators, Real Homes",
             "url": "https://magpielocal.com/for-dtc-brands.html",
             "date": null
@@ -373,6 +393,11 @@
           {
             "title": "Influencer Marketing for Gyms and Fitness Studios",
             "url": "https://magpielocal.com/for-fitness.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Hotels",
+            "url": "https://magpielocal.com/for-boutique-hotel.html",
             "date": null
           },
           {
@@ -408,6 +433,11 @@
           {
             "title": "Influencer Marketing for Pizza Restaurants",
             "url": "https://magpielocal.com/for-pizza.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Private Chefs",
+            "url": "https://magpielocal.com/for-private-chef-supper-club.html",
             "date": null
           },
           {
@@ -1224,6 +1254,11 @@
             "title": "Get Paid to Post: How Local Creators Earn From Their Own Posts",
             "url": "https://magpielocal.com/learn/get-paid-to-post.html",
             "date": "2026-11-19"
+          },
+          {
+            "title": "Hampton Roads Restaurants: The Best Way to Work With Local Creators",
+            "url": "https://magpielocal.com/learn/hampton-roads-restaurants-best-way-to-work-with-local-creators.html",
+            "date": "2026-11-27"
           },
           {
             "title": "Hampton Roads Salons and Barbers: Filling Weekday Chairs With Local Creators",
@@ -2489,6 +2524,11 @@
             "title": "Richmond Bakeries, Salons and Studios: A Creator Visit Playbook",
             "url": "https://magpielocal.com/learn/richmond-bakeries-salons-and-studios-creator-visit-playbook.html",
             "date": "2026-11-15"
+          },
+          {
+            "title": "Saves, Shares, and Comments: Reading a Creator Post Like an Owner",
+            "url": "https://magpielocal.com/learn/saves-shares-and-comments-reading-a-creator-post-like-an-owner.html",
+            "date": "2026-11-27"
           },
           {
             "title": "Should I Give Influencers Free Food for Posting?",
