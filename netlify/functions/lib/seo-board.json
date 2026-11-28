@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-11-27T18:57:49.049Z",
+  "generatedAt": "2026-11-28T19:02:15.907Z",
   "totals": {
     "searchPages": 24,
-    "sitePages": 504,
+    "sitePages": 513,
     "lastUpdated": "2026-11-19"
   },
-  "nextUp": "Business-type Tranche 2 remainder (13 types): restaurants rest (sandwich shop/deli, diner, donut shop, dessert bar, private chef/supper club), hospitality (boutique hotel, inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
+  "nextUp": "Business-type Tranche 2 remainder (7 types): hospitality rest (inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
   "queue": [
-    "Business-type Tranche 2 remainder (13 types): restaurants rest (sandwich shop/deli, diner, donut shop, dessert bar, private chef/supper club), hospitality (boutique hotel, inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
+    "Business-type Tranche 2 remainder (7 types): hospitality rest (inn/B&B, short-term rental host), events rest (new menu/product launch, happy hour relaunch, seasonal/holiday pop-up, ticketed tasting/event, festival vendor), a few pages per run.",
     "Business-type Tranche 3 (39 types).",
     "Storytime gap pages in phrase-map order.",
     "Magpie vs TryNearby, on trigger only.",
@@ -210,7 +210,7 @@
     }
   ],
   "inventory": {
-    "total": 504,
+    "total": 513,
     "groups": [
       {
         "name": "Main pages",
@@ -321,6 +321,11 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for a Product Launch",
+            "url": "https://magpielocal.com/for-new-menu-product-launch.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Barbershops",
             "url": "https://magpielocal.com/for-barbershop.html",
             "date": null
@@ -391,6 +396,11 @@
             "date": null
           },
           {
+            "title": "Influencer Marketing for Festivals",
+            "url": "https://magpielocal.com/for-festival-vendor.html",
+            "date": null
+          },
+          {
             "title": "Influencer Marketing for Gyms and Fitness Studios",
             "url": "https://magpielocal.com/for-fitness.html",
             "date": null
@@ -403,6 +413,11 @@
           {
             "title": "Influencer Marketing for Ice Cream Shops",
             "url": "https://magpielocal.com/for-ice-cream-gelato.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Inns and B&Bs",
+            "url": "https://magpielocal.com/for-inn-bed-and-breakfast.html",
             "date": null
           },
           {
@@ -433,6 +448,11 @@
           {
             "title": "Influencer Marketing for Pizza Restaurants",
             "url": "https://magpielocal.com/for-pizza.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Pop-Ups",
+            "url": "https://magpielocal.com/for-seasonal-holiday-pop-up.html",
             "date": null
           },
           {
@@ -483,6 +503,16 @@
           {
             "title": "Influencer Marketing for Sushi Restaurants",
             "url": "https://magpielocal.com/for-sushi-omakase.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Ticketed Events",
+            "url": "https://magpielocal.com/for-ticketed-tasting-event.html",
+            "date": null
+          },
+          {
+            "title": "Influencer Marketing for Vacation Rentals",
+            "url": "https://magpielocal.com/for-short-term-rental-host.html",
             "date": null
           },
           {
@@ -558,6 +588,11 @@
           {
             "title": "Pricing for Creators and Businesses",
             "url": "https://magpielocal.com/pricing.html",
+            "date": null
+          },
+          {
+            "title": "Promote Happy Hour with Local Influencers",
+            "url": "https://magpielocal.com/for-happy-hour-relaunch.html",
             "date": null
           },
           {
@@ -1486,6 +1521,11 @@
             "date": "2026-11-18"
           },
           {
+            "title": "How to Build a Second Income as a Part Time Creator",
+            "url": "https://magpielocal.com/learn/second-income-as-a-part-time-creator.html",
+            "date": "2026-11-28"
+          },
+          {
             "title": "How to find beauty creators in Atlanta",
             "url": "https://magpielocal.com/learn/how-to-find-beauty-creators-in-atlanta.html",
             "date": "2026-11-15"
@@ -1714,6 +1754,11 @@
             "title": "How to Find Micro Influencers in Hampton Roads",
             "url": "https://magpielocal.com/learn/how-to-find-micro-influencers-in-hampton-roads.html",
             "date": "2026-11-25"
+          },
+          {
+            "title": "How to Find Micro Influencers in Miami",
+            "url": "https://magpielocal.com/learn/how-to-find-micro-influencers-in-miami.html",
+            "date": "2026-11-28"
           },
           {
             "title": "How to Find Micro Influencers in Nashville",
