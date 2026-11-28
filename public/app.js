@@ -10534,6 +10534,35 @@ function clearStoredGoogleLink() {
   state.googlePrefill = null;
 }
 
+// Build -260 (Jeff, 2026-11-28): the "Get the app" badge block on
+// the sign-in surface. Shown ONLY to a phone-browser visitor: the
+// point is to move a mobile-web visitor into the native app. It
+// never renders inside the native shell (pointless there) and
+// never on desktop (Jeff asked for phone only). Shell detection
+// reuses the app's own mechanism: Capacitor injects
+// window.Capacitor into every page the shell loads, and
+// native-bridge.js wraps it as window.MagpieNative.isNative; a
+// plain browser has neither signal. Phone = a phone-width
+// viewport AND a mobile user agent, so a narrowed desktop window
+// does not count.
+function getAppBlockHtml260() {
+  try {
+    const Cap = window.Capacitor;
+    if (Cap && typeof Cap.isNativePlatform === "function" && Cap.isNativePlatform()) return "";
+    if (window.MagpieNative && window.MagpieNative.isNative) return "";
+    const narrow = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+    const mobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+    if (!narrow || !mobileUa) return "";
+    return `<div class="entry-app">
+        <p class="entry-app-line">Get the app</p>
+        <div class="entry-app-badges">
+          <a href="https://apps.apple.com/app/magpie-local/id6837488886" target="_blank" rel="noopener" aria-label="Download Magpie on the App Store"><img src="/assets/app-store-badge-black.svg" alt="Download on the App Store" width="120" height="40"></a>
+          <a href="https://play.google.com/store/apps/details?id=com.magpielocal.app" target="_blank" rel="noopener" aria-label="Get Magpie on Google Play"><img class="gp-img" src="/assets/google-play-badge.png" alt="Get it on Google Play" width="103" height="40"></a>
+        </div>
+      </div>`;
+  } catch (e) { return ""; }
+}
+
 function renderSignin() {
   // Build -219a (F2 entry, locked by Jeff 2026-11-20): the sign-in
   // view IS the F2 surface — the real logo over the settled film
@@ -10580,6 +10609,7 @@ function renderSignin() {
         <p class="entry-join"><a href="#" onclick="return go('join-creator')">Join as a creator</a> <span aria-hidden="true">&middot;</span> <a href="#" onclick="return go('for-businesses')">Join as a business</a></p>
         <p class="entry-more"><a href="#" onclick="return introSkipToHome()">See how Magpie works</a></p>
         <p class="entry-more"><a href="#" onclick="return goStaff()">Redeem a creator visit</a> <span class="entry-more-note">Staff at a Magpie business: PIN in, creator code in, redeemed.</span></p>
+        ${getAppBlockHtml260()}
       </div>
     </div>
   </section>`;

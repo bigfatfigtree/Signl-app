@@ -229,6 +229,16 @@
 .entry-more a { color: #41534a; font-weight: 600; }
 .entry-more-note { display: block; color: #7c8a83; font-size: 0.8rem; margin-top: 3px; }
 
+/* Build -260: "Get the app" badges at the foot of the sign-in
+   surface (phone browsers only; app.js decides, CSS just lays
+   them out). Quiet and centered like the rest of entry-bottom;
+   the Play PNG keeps its own ratio, height-matched to Apple. */
+.entry-app { margin-top: 30px; }
+.entry-app-line { font-size: 0.82rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #26312b; margin: 0 0 10px; }
+.entry-app-badges { display: flex; justify-content: center; align-items: center; gap: 10px; }
+.entry-app-badges a { display: inline-block; line-height: 0; }
+.entry-app-badges img { display: block; height: 40px; width: auto; }
+
 /* Splash / first paint (Build -227): a designed splash, not a
    pasted asset: solid dark ground (#0b0d0c), the real Magpie
    wordmark centered, nothing else. No app icon, no box, no

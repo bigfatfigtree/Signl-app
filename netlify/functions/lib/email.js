@@ -96,6 +96,37 @@ function listUnsubscribeHeader() {
 // not change. Sends that call sendEmail directly without an html
 // part (the campaign sweep's founder outreach, the internal
 // business-application notice) keep their plain shape.
+// App-store footer (Build -260, Jeff 2026-11-28: both stores,
+// everywhere the app already points to Apple). Every lifecycle
+// email that rides the branded shell carries the two badges in
+// its HTML part and one compact line in its text part. Badge
+// images are the official store badges hosted as site assets on
+// magpielocal.com (PNG: mail clients do not render SVG badges).
+const APP_STORE_URL = "https://apps.apple.com/app/magpie-local/id6837488886";
+const GOOGLE_PLAY_URL = "https://play.google.com/store/apps/details?id=com.magpielocal.app";
+const EMAIL_BADGE_APPLE_URL = "https://magpielocal.com/assets/app-store-badge.png";
+const EMAIL_BADGE_PLAY_URL = "https://magpielocal.com/assets/google-play-badge.png";
+const EMAIL_APP_FOOTER_LINE = `Get the Magpie app: iPhone ${APP_STORE_URL} / Android ${GOOGLE_PLAY_URL}`;
+
+// Append the compact app line to a plain-text body, once. The
+// router's deliverEmail applies this to the text part of every
+// lifecycle send; the HTML part gets the badge row below via
+// brandedEmailHtml, so the two parts never double up.
+function withAppFooter(text) {
+  const t = String(text == null ? "" : text);
+  if (t.includes(APP_STORE_URL) && t.includes(GOOGLE_PLAY_URL)) return t;
+  return `${t.replace(/\s+$/, "")}\n\n${EMAIL_APP_FOOTER_LINE}`;
+}
+
+function emailAppFooterHtml() {
+  return `<tr><td style="padding:6px 32px 22px 32px;font-family:Arial,Helvetica,sans-serif;">`
+    + `<p style="margin:0 0 8px 0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#41534A;font-weight:bold;">Get the Magpie app</p>`
+    + `<a href="${APP_STORE_URL}" style="text-decoration:none;"><img src="${EMAIL_BADGE_APPLE_URL}" width="120" height="40" alt="Download on the App Store" style="border:0;width:120px;height:40px;"></a>`
+    + `&nbsp;&nbsp;`
+    + `<a href="${GOOGLE_PLAY_URL}" style="text-decoration:none;"><img src="${EMAIL_BADGE_PLAY_URL}" width="103" height="40" alt="Get it on Google Play" style="border:0;width:103px;height:40px;"></a>`
+    + `</td></tr>`;
+}
+
 const EMAIL_LOGO_URL = "https://app.magpielocal.com/assets/logo.png";
 const EMAIL_GRADIENT = "linear-gradient(90deg,#006AFC 0%,#019BFC 35%,#03C9AB 70%,#2FE07E 100%)";
 
@@ -133,6 +164,7 @@ function brandedEmailHtml(text) {
     `<img src="${EMAIL_LOGO_URL}" width="160" alt="Magpie" style="display:block;border:0;width:160px;max-width:60%;height:auto;">`,
     "</td></tr>",
     `<tr><td style="padding:16px 32px 24px 32px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#0B0D0C;">${emailTextToHtml(text)}</td></tr>`,
+    emailAppFooterHtml(),
     `<tr><td style="height:6px;line-height:6px;font-size:0;background-color:#006AFC;background-image:${EMAIL_GRADIENT};">&nbsp;</td></tr>`,
     "</table>",
     "</td></tr></table>",
@@ -288,4 +320,4 @@ async function sendEmail({ to, subject, text, html, listUnsubscribe, profile, fr
   }
 }
 
-module.exports = { emailEnabled, sendEmail, listUnsubscribeHeader, UNSUBSCRIBE_ADDR, senderProfile, senderProfileAvailable, SENDER_PROFILE_NAMES, TEAM_REPLY_TO, brandedEmailHtml, EMAIL_LOGO_URL };
+module.exports = { emailEnabled, sendEmail, listUnsubscribeHeader, UNSUBSCRIBE_ADDR, senderProfile, senderProfileAvailable, SENDER_PROFILE_NAMES, TEAM_REPLY_TO, brandedEmailHtml, EMAIL_LOGO_URL, withAppFooter, APP_STORE_URL, GOOGLE_PLAY_URL, EMAIL_APP_FOOTER_LINE };

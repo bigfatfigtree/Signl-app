@@ -2885,7 +2885,7 @@ const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIE
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote, CATEGORY_FIT } = require("./fit");
 const { computeMatchScore } = require("./match");
-const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES, brandedEmailHtml } = require("./email");
+const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES, brandedEmailHtml, withAppFooter } = require("./email");
 const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
 const connect = require("./connect");
@@ -8309,7 +8309,11 @@ async function deliverEmail(kind, user, subject, text, band, opts) {
   // branded HTML alternative (logo + gradient band) generated
   // from the same text, so the wording a suite pins in the text
   // part is the wording the HTML part shows.
-  const result = await sendEmail({ to: user.email, subject, text, html: brandedEmailHtml(text), listUnsubscribe: !!(opts && opts.listUnsubscribe), profile: opts && opts.profile, fromMailbox: opts && opts.fromMailbox, replyTo: opts && opts.replyTo, fromName: opts && opts.fromName });
+  // Build -260: the text part of every lifecycle email carries
+  // the compact app-store line (withAppFooter); the HTML part
+  // renders the same text WITHOUT the line and gets the badge
+  // row from brandedEmailHtml instead, so neither part doubles.
+  const result = await sendEmail({ to: user.email, subject, text: withAppFooter(text), html: brandedEmailHtml(text), listUnsubscribe: !!(opts && opts.listUnsubscribe), profile: opts && opts.profile, fromMailbox: opts && opts.fromMailbox, replyTo: opts && opts.replyTo, fromName: opts && opts.fromName });
   if (result.sent) {
     await logEvent({ type: `${kind}_email_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
   } else {
@@ -22304,7 +22308,7 @@ async function handleFoundingApplication(event) {
       placeLine: rec.city ? `${rec.city} is a founding market, and founding businesses are the first ones local creators see when it opens.` : "",
       hasAccount: false,
     });
-    const result = await sendEmail({ to: rec.email, subject: mail.subject, text: mail.text, html: brandedEmailHtml(mail.text), listUnsubscribe: true });
+    const result = await sendEmail({ to: rec.email, subject: mail.subject, text: withAppFooter(mail.text), html: brandedEmailHtml(mail.text), listUnsubscribe: true });
     applicantEmailSent = !!(result && result.sent);
     applicantEmailReason = result && result.reason ? result.reason : null;
   } catch (e) {
@@ -28120,7 +28124,7 @@ async function marketingSend138(campaign, senderAdmin) {
     let text = templatesLib.substitute(campaign.text, values);
     if (!text.includes("take you off the list")) text = `${text}\n\n${MARKETING_UNSUB_LINE_138}`;
     const subject = templatesLib.substitute(campaign.subject || "", values);
-    const result = await sendEmail({ to: u.email, subject, text, html: brandedEmailHtml(text), listUnsubscribe: true });
+    const result = await sendEmail({ to: u.email, subject, text: withAppFooter(text), html: brandedEmailHtml(text), listUnsubscribe: true });
     if (result.sent) {
       sent += 1;
       await store.set(`mkrecipient:${recId}`, { campaignId: campaign.id, userId, email: u.email, channel: "email", status: "sent", sentAt: nowIso() });
